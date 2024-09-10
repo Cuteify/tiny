@@ -1,0 +1,102 @@
+package lexer
+
+// 关键字
+var (
+	keywords = map[string]int{
+		"export":   4,
+		"import":   4,
+		"from":     4,
+		"as":       4,
+		"if":       3,
+		"while":    3,
+		"for":      3,
+		"ret":      3,
+		"break":    3,
+		"continue": 3,
+		"else":     3,
+		"elif":     3,
+		"switch":   3,
+		"case":     3,
+		"try":      3,
+		"except":   3,
+		"finally":  3,
+		"exit":     3,
+		"//":       5,
+		";":        5,
+		"{":        5,
+		"}":        5,
+		"(":        5,
+		")":        5,
+		"[":        5,
+		"]":        5,
+		",":        5,
+		" ":        5,
+		"=":        5,
+		"+":        5,
+		"-":        5,
+		"*":        5,
+		"/":        5,
+		"%":        5,
+		":":        5,
+		"<":        5,
+		">":        5,
+		".":        5,
+		"&":        5,
+		"|":        5,
+		"^":        5,
+		"!":        5,
+		"~":        5,
+		"\"":       5,
+		"'":        5,
+		"\\":       5,
+		"@":        5,
+		"\n":       5,
+		"\r":       5,
+		"`":        5,
+		"==":       5,
+		"!=":       5,
+		"<=":       5,
+		">=":       5,
+		"++":       5,
+		"--":       5,
+		"->":       5,
+		"&&":       5,
+		"||":       5,
+		"<<":       5,
+		">>":       5,
+		":=":       5,
+		"type":     11,
+		"struct":   11,
+		"true":     13,
+		"false":    13,
+		"fn":       1,
+		"const":    2,
+		"var":      2,
+		"let":      2,
+	}
+
+	// LexToken类型
+	LexTokenType = map[string]int{
+		"FUNC":           0x1,
+		"VAR":            0x2,
+		"PROCESSCONTROL": 0x3,
+		"PACKAGE":        0x4,
+		"SEPARATOR":      0x5,
+		"STRING":         0x6,
+		"NUMBER":         0x7,
+		"IDENTIFIER":     0x8,
+		"NAME":           0x9,
+		"CHAR":           0xA,
+		"TYPE":           0xB,
+		"RAW":            0xC,
+		"BOOL":           0xD,
+	}
+)
+
+var SepListLength = 32
+var FuncListLength = 1
+var VarListLength = 3
+var ProcessControlListLength = 14
+var PackageListLength = 4
+var TypeListLength = 2
+var BoolListLength = 2
