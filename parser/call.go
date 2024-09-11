@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"fmt"
 	"future/lexer"
 	typeSys "future/type"
 )
@@ -76,6 +77,7 @@ end:
 		if typeSys.AutoType(arg.Type, arg.Defind.Type, true) {
 			arg.Type = arg.Defind.Type
 		} else {
+			fmt.Println(arg.Value.Type)
 			p.Error.MissErrors("Type Error", oldCursor, sepCursor+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())
 		}
 	}
