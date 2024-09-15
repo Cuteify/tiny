@@ -15,6 +15,9 @@ const (
 
 func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code string) {
 	c.ExpCount++
+	if exp == nil || exp.IsConst() {
+		return
+	}
     leftResult, rightResult := result, result
 	if exp.Left != nil && !exp.Left.IsConst() {
 		var leftReg *Reg
@@ -25,7 +28,7 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(leftReg.BeforeCode)
 			}
 		}
-		code += c.CompileExpr(exp, leftResult)
+		code += c.CompileExpr(exp.Left, leftResult)
 		if leftReg != nil {
 			if leftReg.AfterCode != "" {
 				code += Format(leftReg.AfterCode)
@@ -42,7 +45,7 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(rightReg.BeforeCode)
 			}
 		}
-		code += c.CompileExpr(exp, rightResult)
+		code += c.CompileExpr(exp.Right, rightResult)
 		if rightReg != nil {
 			if rightReg.AfterCode != "" {
 				code += Format(rightReg.AfterCode)
