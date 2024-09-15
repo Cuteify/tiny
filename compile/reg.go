@@ -94,6 +94,7 @@ type Reg struct {
 	RegIndex   int
 	Index      int
 	Occupie    bool
+	Name       string
 }
 
 func (reg *Register) GetRegister(name string) (regInfo *Reg) {
@@ -107,6 +108,7 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 	if reg.Record[name] != nil {
 		regInfo = reg.Record[name]
 		regInfo.Index = reg.Index
+		regInfo.Name = name
 		return
 	}
 	if architectures[GoArch].RegisterCount > reg.RegisterCount {
@@ -119,6 +121,7 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 				regInfo = reg.Record[name]
 				regInfo.Index = reg.Index
 				regInfo.RegIndex = i
+				regInfo.Name = name
 				return
 			}
 		}
@@ -138,6 +141,7 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 		newRegInfo.AfterCode = "pop " + indexOldest.RegName
 		newRegInfo.BeforeCode = "push " + newRegInfo.RegName
 		regInfo.Occupie = true
+		regInfo.Name = name
 		return
 	}
 	regInfo = nil
