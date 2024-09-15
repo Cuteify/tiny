@@ -144,7 +144,7 @@ func (p *Parser) Wait(value string) int {
 
 func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 	startCursor := p.Lexer.Cursor
-	for stopCursor > p.Lexer.Cursor+1 {
+	for stopCursor > p.Lexer.Cursor {
 		code := p.Lexer.Next()
 		if code.IsEmpty() {
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Incomplete expression")

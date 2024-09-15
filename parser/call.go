@@ -2,7 +2,6 @@ package parser
 
 import (
 	"errors"
-	"fmt"
 	"future/lexer"
 	typeSys "future/type"
 )
@@ -51,8 +50,7 @@ end:
 		oldCursor := p.Lexer.Cursor + 1
 		sepCursor := p.Has(lexer.Token{Type: lexer.LexTokenType["SEPARATOR"], Value: ","}, rightBra)
 		if sepCursor == -1 {
-
-			arg := &ArgBlock{Value: p.ParseExpression(rightBra)}
+			arg := &ArgBlock{Value: p.ParseExpression(rightBra-1)}
 			arg.Type = arg.Value.Type
 			c.Args = append(c.Args, arg)
 			if len(c.Func.Args) < 1 {
@@ -66,7 +64,7 @@ end:
 			}
 			break
 		}
-		arg := &ArgBlock{Value: p.ParseExpression(sepCursor)}
+		arg := &ArgBlock{Value: p.ParseExpression(sepCursor-1)}
 		arg.Type = arg.Value.Type
 		p.Lexer.Cursor++
 		c.Args = append(c.Args, arg)
@@ -77,7 +75,6 @@ end:
 		if typeSys.AutoType(arg.Type, arg.Defind.Type, true) {
 			arg.Type = arg.Defind.Type
 		} else {
-			fmt.Println(arg.Value.Type)
 			p.Error.MissErrors("Type Error", oldCursor, sepCursor+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())
 		}
 	}

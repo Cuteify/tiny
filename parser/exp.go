@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"future/lexer"
 	typeSys "future/type"
 	"math"
@@ -22,11 +21,10 @@ type Expression struct {
 	Type      typeSys.Type
 }
 
-func (e *Expression) Check(p *Parser) (ok bool) {
+func (e *Expression) Check(p *Parser) bool {
 	if e.Separator != "" {
 		if e.Left == nil || e.Right == nil {
-			ok = false
-			return
+			return false
 		}
 		left, right := e.Left, e.Right
 		switch e.Separator {
@@ -63,9 +61,9 @@ func (e *Expression) Check(p *Parser) (ok bool) {
 				} else {
 					e.Type = typeSys.GetSystemType("int")
 				}
+				return true
 			} else {
-				ok = false
-				return
+				return false
 			}
 		case "+":
 			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
@@ -83,12 +81,13 @@ func (e *Expression) Check(p *Parser) (ok bool) {
 				} else {
 					e.Type = typeSys.GetSystemType("int")
 				}
+				return true
 			} else if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("string")) {
 				e.Type = typeSys.GetSystemType("string")
 				e.StringVal = left.StringVal + right.StringVal
+				return true
 			} else {
-				ok = false
-				return
+				return false
 			}
 		case "*":
 			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
@@ -106,45 +105,43 @@ func (e *Expression) Check(p *Parser) (ok bool) {
 				} else {
 					e.Type = typeSys.GetSystemType("int")
 				}
+				return true
 			} else if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(left.Type, typeSys.GetSystemType("f64"), typeSys.GetSystemType("int")) {
 				e.Type = typeSys.GetSystemType("string")
 				e.StringVal = strings.Repeat(left.StringVal, int(right.Num))
+				return true
 			} else {
-				ok = false
-				return
+				return false
 			}
 		case "==", "!=", "<", ">", "<=", ">=":
 			if typeSys.GetTypeType(left.Type) == typeSys.GetTypeType(right.Type) {
 				e.Type = typeSys.GetSystemType("bool")
+				return true
 			} else {
-				ok = false
-				return
+				return false
 			}
-			return true
 		case "&&", "||":
 			if typeSys.CheckType(left.Type, typeSys.GetSystemType("bool")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("bool")) {
 				e.Type = typeSys.GetSystemType("bool")
-				if e.Separator == "&&" {
-					e.Bool = left.Bool && right.Bool
-				} else {
-					e.Bool = left.Bool || right.Bool
+				if e.Left.IsConst() && e.Right.IsConst() {
+					if e.Separator == "&&" {
+						e.Bool = left.Bool && right.Bool
+					} else {
+						e.Bool = left.Bool || right.Bool
+					}
 				}
+				return true
 			} else {
-				ok = false
-				return
+				return false
 			}
-			return true
 		case "":
 			return true
 		default:
-			ok = false
-			return
+			return false
 		}
 	} else {
-		ok = false
+		return false
 	}
-
-	return
 }
 
 func (e *Expression) IsConst() bool {
@@ -155,7 +152,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 	stackNum := []*Expression{}
 	stackSep := []*Expression{}
 	expStartCursor := p.Lexer.Cursor
-	for p.Lexer.Cursor <= stopCursor {
+	for p.Lexer.Cursor < stopCursor {
 		token := p.Lexer.Next()
 		switch token.Type {
 		case lexer.LexTokenType["SEPARATOR"]:
@@ -215,8 +212,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 				stackNum = append(stackNum, exp)
 			}
 		case lexer.LexTokenType["NUMBER"]:
-			num,
-				err := strconv.ParseFloat(token.Value, 64)
+			num, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
 				p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, err.Error())
 			}
@@ -261,8 +257,22 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 				stackSep[len(stackSep)-2] = stackSep[len(stackSep)-1]
 			}
 			stackSep = stackSep[:len(stackSep)-1]
-			stackNum[len(stackNum)-1].Check(p)
-			fmt.Println(num1.Type, num2.Type, stackNum[len(stackNum)-1].Type)
+			if !stackNum[len(stackNum)-1].Check(p) {
+				p.Error.MissError("experr", p.Lexer.Cursor, "")
+			}
+		}
+	}
+	if len(stackNum) == 2 && len(stackSep) == 1 {
+		num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
+		stackNum = stackNum[:len(stackNum)-2]
+		stackSep[0].Left = num1
+		stackSep[0].Right = num2
+		num1.Father = stackSep[0]
+		num2.Father = stackSep[0]
+		stackNum = stackNum[:1]
+		stackNum[0] = stackSep[0]
+		if !stackNum[0].Check(p) {
+			p.Error.MissError("experr", p.Lexer.Cursor, "")
 		}
 	}
 	return stackNum[0]
@@ -289,30 +299,4 @@ func getWe(token string) int {
 		return 5
 	}
 	return 0
-}
-
-func (e *Expression) Print(level int) {
-	if e == nil {
-		return
-	}
-
-	indent := strings.Repeat("  ", level)
-	fmt.Printf("%s", indent)
-
-	switch {
-	case e.Separator != "":
-		fmt.Printf("Operator: %s\n", e.Separator)
-	case e.StringVal != "":
-		fmt.Printf("String: %s, Type: %s\n", e.StringVal, e.Type.Type())
-	case e.Num != 0:
-		fmt.Printf("Number: %f, Type: %s\n", e.Num, e.Type.Type())
-	case e.Bool:
-		fmt.Printf("Bool: true, Type: %s\n", e.Type.Type())
-	case e.Var != nil:
-		fmt.Printf("Variable: %s, Type: %s\n", e.Var.Name, e.Type.Type())
-	case e.Call != nil:
-		fmt.Printf("Function Call: %s, Type: %s\n", e.Call.Name, e.Type.Type())
-	default:
-		fmt.Println("Unknown node")
-	}
 }

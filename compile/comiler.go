@@ -17,6 +17,7 @@ type Compiler struct {
 	Reg          *Register
 	ExpCount     int
 	IfCount      int
+	ExpType      int
 }
 
 func (c *Compiler) Compile(node *parser.Node) (code string) {

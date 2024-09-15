@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"future/lexer"
 	"future/parser"
+	"future/compile"
 	"os"
-	"strings"
+    "strings"
 )
 
 func main() {
@@ -28,11 +29,11 @@ func main() {
 	//p.CheckUnusedVar(p.Block)
 	//compile.DelEmptyCFGNode(p.Block)
 	pr(p.Block, 0)
-	//fmt.Println("\n" + strings.Repeat("=", 50) + "\n")
-	//fmt.Println(compile.Compile(p.Block))
 	fmt.Println("\n" + strings.Repeat("=", 50) + "\n")
-	/*co := &compile.Compiler{}
-	fmt.Println(co.Compile(p.Block))*/
+	//fmt.Println(compile.Compile(p.Block))
+	//fmt.Println("\n" + strings.Repeat("=", 50) + "\n")
+	co := &compile.Compiler{}
+	fmt.Println(co.Compile(p.Block))
 }
 func pr(block *parser.Node, tabnum int) {
 	tmp := ""

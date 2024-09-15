@@ -2,58 +2,93 @@ package compile
 
 import (
 	"future/parser"
-	typeSys "future/type"
 	"strconv"
 )
 
+const (
+	NumExp = 1
+	BoolExp = 2
+	AndExp = 3
+	OrExp = 4
+	NotExp = 5
+)
+
 func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code string) {
-	if len(exp.Children) == 1 && exp.Children[0].IsConst() {
-		if typeSys.CheckTypeType(exp.Children[0].Type, "int", "float", "uint") {
-			code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + strconv.FormatFloat(exp.Children[0].Num, 'f', -1, 64) + "\033[0m\033[32m; 修改局部变量\n")
-		} else if typeSys.CheckTypeType(exp.Children[0].Type, "bool") {
-			if exp.Children[0].Bool == true {
-				code += Format("\033[35mmov\033[0m \033[34m" + result + "\033[0m, 1\033[0m\033[32m; 修改局部变量\n")
-			} else {
-				code += Format("\033[35mmov\033[0m \033[34m" + result + "\033[0m, 0\033[0m\033[32m; 修改局部变量\n")
+	c.ExpCount++
+    leftResult, rightResult := result, result
+	if exp.Left != nil && !exp.Left.IsConst() {
+		var leftReg *Reg
+		if exp.Type.Type() == "bool" {
+			leftReg = c.Reg.GetRegister(strconv.Itoa(c.ExpCount)+"boolResult1")
+			leftResult = leftReg.RegName
+			if leftReg.BeforeCode != "" {
+				code += Format(leftReg.BeforeCode)
 			}
 		}
-	} else {
-		reg := c.Reg.GetRegister("exp" + strconv.Itoa(c.ExpCount))
-		c.ExpCount++
-		if reg.BeforeCode != "" {
-			code += Format(reg.BeforeCode)
-		}
-		for i := 0; i < len(exp.Children); i++ {
-			child := exp.Children[i]
-			before1 := &parser.Expression{}
-			before2 := &parser.Expression{}
-			before1Code, before2Code := "", ""
-			before1Result, before2Result := "", ""
-			if child.Separator != "" {
-				before1 = exp.Children[i-2]
-				before2 = exp.Children[i-1]
-				before1Code, before1Result = c.CompileExprVal(before1)
-				before2Code, before2Result = c.CompileExprVal(before2)
-				code += before1Code
-				code += before2Code
+		code += c.CompileExpr(exp, leftResult)
+		if leftReg != nil {
+			if leftReg.AfterCode != "" {
+				code += Format(leftReg.AfterCode)
 			}
-			switch exp.Children[i].Separator {
+			c.Reg.FreeRegister(leftReg.RegName)
+		}
+	}
+	if exp.Right != nil && !exp.Right.IsConst() {
+		var rightReg *Reg
+		if exp.Type.Type() == "bool" {
+			rightReg = c.Reg.GetRegister(strconv.Itoa(c.ExpCount)+"boolResult2")
+			rightResult = rightReg.RegName
+			if rightReg.BeforeCode != "" {
+				code += Format(rightReg.BeforeCode)
+			}
+		}
+		code += c.CompileExpr(exp, rightResult)
+		if rightReg != nil {
+			if rightReg.AfterCode != "" {
+				code += Format(rightReg.AfterCode)
+			}
+			c.Reg.FreeRegister(rightReg.RegName)
+		}
+	}
+	if exp.Left != nil && exp.Right != nil {
+		if exp.Type.Type() == "bool" {
+			code += Format("\033[35mcmp\033[0m " + result + ", 0\033[32m; 比较表达式的值\n")
+			if c.ExpType == BoolExp {
+				switch exp.Separator {
+					case "==":
+						code += Format("\033[35mje\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					case "!=":
+						code += Format("\033[35mjne\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					case "<":
+					    code += Format("\033[35mjl\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					case ">":
+					    code += Format("\033[35mjg\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					case "<=":
+						code += Format("\033[35mjl\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					case ">=":
+						code += Format("\033[35mjg\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+				}
+			}
+		} else {
+            reg := c.Reg.GetRegister("exp" + strconv.Itoa(c.ExpCount))
+		    c.ExpCount++
+		    if reg.BeforeCode != "" {
+			    code += Format(reg.BeforeCode)
+			}
+			switch exp.Separator {
 			case "+":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + before1Result + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35madd\033[0m \033[34m" + reg.RegName + "\033[0m, " + before2Result + "\033[32m; 计算表达式的值\n")
+				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
+				code += Format("\033[35madd\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
 			case "-":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + before1Result + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35msub\033[0m \033[34m" + reg.RegName + "\033[0m, " + before2Result + "\033[32m; 计算表达式的值\n")
+				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
+				code += Format("\033[35msub\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
 			case "*":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + before1Result + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35imul\033[0m \033[34m" + reg.RegName + "\033[0m, " + before2Result + "\033[32m; 计算表达式的值\n")
+				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
+				code += Format("\033[35imul\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
 			case "/":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + before1Result + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35idiv\033[0m \033[34m" + reg.RegName + "\033[0m, " + before2Result + "\033[32m; 计算表达式的值\n")
-			case ">":
-				code += Format("\033[35mcmp\033[0m " + before1Result + ", " + before2Result + "\033[32m; 比较表达式的值\n")
-				code += Format("\033[35msetg\033[0m \033[34m" + reg.RegName + "\033[0m\033[32m; 保存比较结果\n")
-			}
+				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
+				code += Format("\033[35idiv\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+			
 		}
 		if result == reg.RegName {
 			resultReg := c.Reg.GetRegister("expResult")
@@ -77,25 +112,20 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 		}
 		c.Reg.FreeRegister("exp" + strconv.Itoa(c.ExpCount-1))
 	}
-	return
-}
-
-func (c *Compiler) CompileExprVal(exp *parser.Expression) (code, result string) {
-	if exp.IsConst() {
-		if typeSys.CheckTypeType(exp.Type, "int", "float", "uint") {
-			result = strconv.FormatFloat(exp.Num, 'f', -1, 64)
-		} else if typeSys.CheckTypeType(exp.Type, "bool") {
-			if exp.Bool == true {
-				result = "1"
+	}
+	/*
+	if len(exp.Children) == 1 && exp.Children[0].IsConst() {
+		if typeSys.CheckTypeType(exp.Children[0].Type, "int", "float", "uint") {
+			code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + strconv.FormatFloat(exp.Children[0].Num, 'f', -1, 64) + "\033[0m\033[32m; 修改局部变量\n")
+		} else if typeSys.CheckTypeType(exp.Children[0].Type, "bool") {
+			if exp.Children[0].Bool == true {
+				code += Format("\033[35mmov\033[0m \033[34m" + result + "\033[0m, 1\033[0m\033[32m; 修改局部变量\n")
 			} else {
-				result = "0"
+				code += Format("\033[35mmov\033[0m \033[34m" + result + "\033[0m, 0\033[0m\033[32m; 修改局部变量\n")
 			}
 		}
-	} else if exp.Var != nil {
-		exp.Var.Offset = exp.Var.Define.Value.(*parser.VarBlock).Offset
-		result = getLengthName(exp.Var.Type.Size()) + "[ebp" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
-	} else if exp.Call != nil {
-
-	}
+	} else {
+		
+	}*/
 	return
 }
