@@ -26,8 +26,6 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 	}
 	leftCode, leftResult := c.CompileExprVal(exp.Left)
 	rightCode, rightResult := c.CompileExprVal(exp.Right)
-	code += leftCode
-	code += rightCode
 	var leftReg *Reg
 	var rightReg *Reg
 	if exp.Left != nil && !exp.Left.IsConst() {
@@ -38,7 +36,7 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(leftReg.BeforeCode)
 			}
 		}
-		code += c.CompileExpr(exp.Left, leftResult)
+		leftCode = c.CompileExpr(exp.Left, leftResult)
 	}
 	if exp.Right != nil && !exp.Right.IsConst() {
 		if exp.Type.Type() == "bool" {
@@ -48,8 +46,10 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(rightReg.BeforeCode)
 			}
 		}
-		code += c.CompileExpr(exp.Right, rightResult)
+		rightCode = c.CompileExpr(exp.Right, rightResult)
 	}
+	code += leftCode
+	code += rightCode
 	c.ExpCount++
 	if exp.Left != nil && exp.Right != nil {
 		if exp.Type.Type() == "bool" {

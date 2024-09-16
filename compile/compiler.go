@@ -65,10 +65,11 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			if varBlock.IsDefine {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
-				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(c.EspOffset), 10)+"]\033[0m")
+				fmt.Println()
+				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(varBlock.Offset), 10)+"]\033[0m")
 			} else {
 				varBlock.Offset = varBlock.Define.Value.(*parser.VarBlock).Offset
-				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(c.EspOffset), 10)+"]\033[0m")
+				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(varBlock.Offset), 10)+"]\033[0m")
 			}
 		case *parser.CallBlock:
 			// 设置参数
@@ -139,9 +140,4 @@ func getLengthName(size int) string {
 	default:
 		return ""
 	}
-}
-
-func (*Compiler) CompileIf(node *parser.Node) (code string) {
-
-	return ""
 }

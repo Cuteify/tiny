@@ -13,19 +13,18 @@ var architectures = map[string]Architecture{
 		Name: "x86",
 		Registers: []string{
 			"EAX", "EBX", "ECX", "EDX",
-			"ESI", "EDI", "EBP", "ESP",
+			"ESI", "EDI",
 		},
-		RegisterCount: 8,
+		RegisterCount: 6,
 	},
 	"amd64": {
 		Name: "x86-64",
 		Registers: []string{
 			"RAX", "RBX", "RCX", "RDX",
-			"RSI", "RDI", "RBP", "RSP",
 			"R8", "R9", "R10", "R11",
 			"R12", "R13", "R14", "R15",
 		},
-		RegisterCount: 16,
+		RegisterCount: 12,
 	},
 	"ARM": {
 		Name: "ARM",
