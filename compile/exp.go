@@ -15,7 +15,8 @@ const (
 )
 
 func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code string) {
-	if exp != nil && exp.Father != nil && exp.IsConst() {
+	c.ExpCount++
+	if exp != nil && exp.Father == nil && exp.IsConst() {
 		tmp, resultVal := c.CompileExprVal(exp)
 		code += tmp
 		code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + resultVal + "\033[0m\033[32m; 修改局部变量\n")
@@ -50,7 +51,6 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 	}
 	code += leftCode
 	code += rightCode
-	c.ExpCount++
 	if exp.Left != nil && exp.Right != nil {
 		if exp.Type.Type() == "bool" {
 			code += Format("\033[35mcmp\033[0m " + leftResult + ", " + rightResult + "\033[32m; 比较表达式的值\n")

@@ -41,16 +41,21 @@ func (n *Node) AddChild(node *Node) {
 		switch tmp.Value.(type) {
 		case *IfBlock:
 			// 把他的子节点的最后一个的After指向该节点
-			node.CFG = append(node.CFG, CFGNode{Before: tmp.Children[len(tmp.Children)-1]})
+			if len(tmp.Children) >= 1 {
+				node.CFG = append(node.CFG, CFGNode{Before: tmp.Children[len(tmp.Children)-1], Condition: tmp.Value.(*IfBlock).Condition})
+			} else {
+				node.CFG = append(node.CFG, CFGNode{Before: n.Children[len(n.Children)-2]})
+				tmp.CFG = append(n.CFG, CFGNode{After: node})
+			}
 			if tmp.Value.(*IfBlock).Else {
 				if len(tmp.Value.(*IfBlock).ElseBlock.Children) >= 1 {
-					node.CFG = append(node.CFG, CFGNode{Before: tmp.Value.(*IfBlock).ElseBlock.Children[len(tmp.Value.(*IfBlock).ElseBlock.Children)-1]})
+					node.CFG = append(node.CFG, CFGNode{Before: tmp.Value.(*IfBlock).ElseBlock.Children[len(tmp.Value.(*IfBlock).ElseBlock.Children)-1], Condition: tmp.Value.(*IfBlock).Condition})
 				}
 			}
 		default:
 			// before这是上个节点，after是下个节点
 			node.CFG = append(node.CFG, CFGNode{Before: n.Children[len(n.Children)-2]})
-			tmp.CFG[0].After = node
+			tmp.CFG = append(n.CFG, CFGNode{After: node})
 		}
 	}
 }

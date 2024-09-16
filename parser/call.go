@@ -46,11 +46,11 @@ end:
 	p.ThisBlock = oldThisBlock
 	// 解析括号
 	rightBra := p.FindRightBracket(false)
-	for p.Lexer.Cursor+1 < rightBra {
-		oldCursor := p.Lexer.Cursor + 1
+	for p.Lexer.Cursor < rightBra {
+		oldCursor := p.Lexer.Cursor
 		sepCursor := p.Has(lexer.Token{Type: lexer.LexTokenType["SEPARATOR"], Value: ","}, rightBra)
 		if sepCursor == -1 {
-			arg := &ArgBlock{Value: p.ParseExpression(rightBra-1)}
+			arg := &ArgBlock{Value: p.ParseExpression(rightBra - 1)}
 			arg.Type = arg.Value.Type
 			c.Args = append(c.Args, arg)
 			if len(c.Func.Args) < 1 {
@@ -64,7 +64,7 @@ end:
 			}
 			break
 		}
-		arg := &ArgBlock{Value: p.ParseExpression(sepCursor-1)}
+		arg := &ArgBlock{Value: p.ParseExpression(sepCursor - 1)}
 		arg.Type = arg.Value.Type
 		p.Lexer.Cursor++
 		c.Args = append(c.Args, arg)
@@ -72,6 +72,7 @@ end:
 			p.Error.MissErrors("Call Error", oldCursor, rightBra+1, "Args length error")
 		}
 		arg.Defind = c.Func.Args[len(c.Args)-1]
+		arg.Name = arg.Defind.Name
 		if typeSys.AutoType(arg.Type, arg.Defind.Type, true) {
 			arg.Type = arg.Defind.Type
 		} else {
@@ -81,14 +82,17 @@ end:
 	if err := c.ParseArgsDefault(p); err != nil {
 		p.Error.MissError("Call Error", rightBra-1, err.Error())
 	}
-	p.ThisBlock.AddChild(&Node{Value: c})
 	// 查找父级内容，找到定义位置
+	p.ThisBlock.AddChild(&Node{Value: c})
 	p.Lexer.Cursor++
 
 }
 
 func (c *CallBlock) ParseArgsDefault(p *Parser) error {
-	for i := 0; i < len(c.Func.Args); i++ {
+	if len(c.Args) == len(c.Func.Args) {
+		return nil
+	}
+	for i := len(c.Args); i < len(c.Func.Args); i++ {
 		if len(c.Args) <= i && c.Func.Args[i].Default == nil {
 			return errors.New("Args length error")
 		} else {

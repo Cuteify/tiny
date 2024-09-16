@@ -145,7 +145,7 @@ func (e *Expression) Check(p *Parser) bool {
 }
 
 func (e *Expression) IsConst() bool {
-	return e.Father != nil && e.Var == nil && e.Call == nil && e.Separator == ""
+	return e.Var == nil && e.Call == nil && e.Separator == ""
 }
 
 func (p *Parser) ParseExpression(stopCursor int) *Expression {

@@ -16,6 +16,7 @@ type Compiler struct {
 	RegTmp       int
 	Reg          *Register
 	ExpCount     int
+	CallCount    int
 	IfCount      int
 	ExpType      int
 }
@@ -65,7 +66,6 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			if varBlock.IsDefine {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
-				fmt.Println()
 				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(varBlock.Offset), 10)+"]\033[0m")
 			} else {
 				varBlock.Offset = varBlock.Define.Value.(*parser.VarBlock).Offset
@@ -73,7 +73,39 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			}
 		case *parser.CallBlock:
 			// 设置参数
+			// 便利参数，然后生成，然后设置到寄存器中，大于等于4个参数时，需要先将参数压入栈中，然后再从栈中取出
+			callBlock := n.Value.(*parser.CallBlock)
+			afterCode := ""
+			if len(callBlock.Args) >= 4 {
+				// 先将参数压入栈中
+				for i := len(callBlock.Args) - 1; i >= 4; i-- {
+					//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
+					code += c.CompileExpr(callBlock.Args[i].Value, " \033[34m[ebp+"+strconv.Itoa(c.CallCount)+"]\033[0m \033[32m; 设置 "+callBlock.Args[i].Name+" 参数")
+					c.CallCount += callBlock.Args[i].Type.Size()
+				}
+				// 然后从栈中取出参数
+				for i := 3; i >= 0; i-- {
+					reg := c.Reg.GetRegister(callBlock.Name + "_" + callBlock.Args[i].Name)
+					if reg.BeforeCode != "" {
+						code += reg.BeforeCode
+					}
+					code += c.CompileExpr(callBlock.Args[i].Value, " \033[34m"+reg.RegName+"\033[0m")
+					afterCode += reg.AfterCode
+				}
+			} else {
+				for i := len(callBlock.Args) - 1; i >= 0; i-- {
+					reg := c.Reg.GetRegister(callBlock.Name + "_" + callBlock.Args[i].Name)
+					if reg.BeforeCode != "" {
+						code += reg.BeforeCode
+					}
+					code += c.CompileExpr(callBlock.Args[i].Value, " \033[34m"+reg.RegName+"\033[0m")
+					afterCode += reg.AfterCode
+				}
+			}
 			code += Format("\033[35mcall\033[0m " + n.Value.(*parser.CallBlock).Func.Name + "\033[32m; 调用函数\n")
+			if afterCode != "" {
+				code += afterCode
+			}
 		}
 	}
 	switch node.Value.(type) {
@@ -104,7 +136,6 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	c.RegTmp = 0
 	// 深度优先遍历节点，计算需要的栈空间
 	c.calculateVarStackSize(node)
-	code += Format("\033[35msub\033[0m \033[34mrsp\033[0m, " + strconv.Itoa(c.VarStackSize) + "\033[32m; 为局部变量分配空间\n")
 	code += c.Compile(node)
 	return code
 }
@@ -123,6 +154,10 @@ func (c *Compiler) calculateVarStackSize(node *parser.Node) {
 			}
 		case *parser.FuncBlock:
 			c.calculateVarStackSize(child)
+		case *parser.CallBlock:
+			for i := 0; i < len(child.Value.(*parser.CallBlock).Args); i++ {
+				c.VarStackSize += child.Value.(*parser.CallBlock).Args[i].Defind.Type.Size()
+			}
 		}
 	}
 }

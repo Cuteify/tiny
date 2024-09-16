@@ -111,7 +111,6 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 		return
 	}
 	if architectures[GoArch].RegisterCount > reg.RegisterCount {
-		reg.RegisterCount++
 		for i := reg.RegisterCount; i < architectures[GoArch].RegisterCount; i++ {
 			if reg.Registers[i] == false {
 				reg.Record[name] = &Reg{}
@@ -121,12 +120,12 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 				regInfo.Index = reg.Index
 				regInfo.RegIndex = i
 				regInfo.Name = name
+				reg.RegisterCount++
 				return
 			}
 		}
 	} else {
-		indexOldest := &Reg{}
-		indexOldest = nil
+		var indexOldest *Reg
 		for _, regInfo := range reg.Record {
 			if indexOldest == nil || regInfo.RegIndex < indexOldest.RegIndex {
 				indexOldest = regInfo
@@ -136,11 +135,12 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 		newRegInfo.RegName = indexOldest.RegName
 		newRegInfo.RegIndex = indexOldest.RegIndex
 		newRegInfo.Index = reg.Index
-		reg.Record[name] = newRegInfo
 		newRegInfo.AfterCode = "pop " + indexOldest.RegName
 		newRegInfo.BeforeCode = "push " + newRegInfo.RegName
-		regInfo.Occupie = true
-		regInfo.Name = name
+		newRegInfo.Occupie = true
+		reg.Record[name] = newRegInfo
+		newRegInfo.Name = name
+		regInfo = newRegInfo
 		return
 	}
 	regInfo = nil
@@ -151,6 +151,7 @@ func (reg *Register) FreeRegister(name string) {
 	reg.Index++
 	if reg.Record == nil {
 		reg.Record = make(map[string]*Reg)
+		return
 	}
 	if reg.Registers == nil {
 		reg.Registers = make([]bool, architectures[GoArch].RegisterCount)
