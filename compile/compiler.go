@@ -76,7 +76,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			// 便利参数，然后生成，然后设置到寄存器中，大于等于4个参数时，需要先将参数压入栈中，然后再从栈中取出
 			callBlock := n.Value.(*parser.CallBlock)
 			afterCode := ""
-			if len(callBlock.Args) >= 4 {
+			/*if len(callBlock.Args) >= 4 {
 				// 先将参数压入栈中
 				for i := len(callBlock.Args) - 1; i >= 4; i-- {
 					//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
@@ -101,6 +101,11 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 					code += c.CompileExpr(callBlock.Args[i].Value, " \033[34m"+reg.RegName+"\033[0m")
 					afterCode += reg.AfterCode
 				}
+			}*/
+			// 先将参数压入栈中
+			for i := len(callBlock.Args) - 1; i >= 0; i-- {
+				//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
+				code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"\033[0m[\033[34mebp\033[0m+"+strconv.Itoa(callBlock.Args[i].Defind.Offset)+"]\033[0m")
 			}
 			code += Format("\033[35mcall\033[0m " + n.Value.(*parser.CallBlock).Func.Name + "\033[32m; 调用函数\n")
 			if afterCode != "" {
@@ -136,6 +141,13 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	c.RegTmp = 0
 	// 深度优先遍历节点，计算需要的栈空间
 	c.calculateVarStackSize(node)
+	code += Format("\033[35msub\033[0m \033[34mesp\033[0m, " + strconv.Itoa(c.VarStackSize) + "\033[32m; 调整栈指针\n")
+	tmp := c.VarStackSize
+	for i := 0; i < len(funcBlock.Args); i++ {
+		arg := funcBlock.Args[i]
+		arg.Offset = tmp
+		tmp += arg.Type.Size()
+	}
 	code += c.Compile(node)
 	return code
 }

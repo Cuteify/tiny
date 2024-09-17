@@ -157,11 +157,53 @@ _Z8hiMyLangiiiiiiiiiiiiiiiiiiiiiiiiii:
 	pop	rbp
 	ret
 	.seh_endproc
+	.globl	_Z3dddiiiiiiiiiiiii
+	.def	_Z3dddiiiiiiiiiiiii;	.scl	2;	.type	32;	.endef
+	.seh_proc	_Z3dddiiiiiiiiiiiii
+_Z3dddiiiiiiiiiiiii:
+.LFB1:
+	push	rbp
+	.seh_pushreg	rbp
+	mov	rbp, rsp
+	.seh_setframe	rbp, 0
+	.seh_endprologue
+	mov	DWORD PTR 16[rbp], ecx
+	mov	DWORD PTR 24[rbp], edx
+	mov	DWORD PTR 32[rbp], r8d
+	mov	DWORD PTR 40[rbp], r9d
+	mov	edx, DWORD PTR 16[rbp]
+	mov	eax, DWORD PTR 24[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 32[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 40[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 48[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 56[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 64[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 72[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 80[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 88[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 96[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 104[rbp]
+	add	edx, eax
+	mov	eax, DWORD PTR 112[rbp]
+	add	eax, edx
+	pop	rbp
+	ret
+	.seh_endproc
 	.globl	main
 	.def	main;	.scl	2;	.type	32;	.endef
 	.seh_proc	main
 main:
-.LFB1:
+.LFB2:
 	push	rbp
 	.seh_pushreg	rbp
 	sub	rsp, 336
@@ -199,6 +241,20 @@ main:
 	mov	edx, 1
 	mov	rcx, rax
 	call	_Z8hiMyLangiiiiiiiiiiiiiiiiiiiiiiiiii
+	mov	DWORD PTR 96[rsp], 13
+	mov	DWORD PTR 88[rsp], 12
+	mov	DWORD PTR 80[rsp], 11
+	mov	DWORD PTR 72[rsp], 10
+	mov	DWORD PTR 64[rsp], 9
+	mov	DWORD PTR 56[rsp], 8
+	mov	DWORD PTR 48[rsp], 7
+	mov	DWORD PTR 40[rsp], 6
+	mov	DWORD PTR 32[rsp], 5
+	mov	r9d, 4
+	mov	r8d, 3
+	mov	edx, 2
+	mov	ecx, 1
+	call	_Z3dddiiiiiiiiiiiii
 	mov	eax, 0
 	add	rsp, 336
 	pop	rbp

@@ -19,7 +19,7 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 	if exp != nil && exp.Father == nil && exp.IsConst() {
 		tmp, resultVal := c.CompileExprVal(exp)
 		code += tmp
-		code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + resultVal + "\033[0m\033[32m; 修改局部变量\n")
+		code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + resultVal + "\033[32m; 修改局部变量\n")
 		return
 	}
 	if exp == nil || exp.IsConst() || exp.Right == nil && exp.Left == nil {
