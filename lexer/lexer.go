@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unsafe"
 )
 
 // Lexer 词法分析
@@ -37,6 +38,9 @@ func (t Token) String() string {
 }
 
 func (l *Lexer) Init() {
+	f, _ := os.OpenFile(l.Filename, os.O_RDWR, 0777)
+	tmp, _ := io.ReadAll(f)
+	l.Text = unsafe.String(unsafe.SliceData(tmp), len(tmp))
 	if l.Text == "" {
 		panic("Lexer:Text is empty")
 	}
@@ -49,9 +53,9 @@ func (l *Lexer) Init() {
 	} else {
 		l.LineFeed = "\n"
 	}
-	f, _ := os.OpenFile(l.Filename, os.O_RDWR, 0777)
 	l.Error = &errorUtil.Error{
-		File:     f,
+		Text:     l.Text,
+		Path:     l.Filename,
 		LineFeed: l.LineFeed,
 	}
 	l.TextLength = len(l.Text)

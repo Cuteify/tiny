@@ -14,10 +14,6 @@ type Parser struct {
 	Error       *errorUtil.Error
 }
 
-
-
-
-
 func (p *Parser) Next() (finish bool) {
 	beforeCursor := p.Lexer.Cursor
 	code := p.Lexer.Next()
@@ -184,4 +180,13 @@ func NewParser(lexer *lexer.Lexer) *Parser {
 	p.Block = &Node{}
 	p.ThisBlock = p.Block
 	return p
+}
+
+func (p *Parser) Parse() *Node {
+	for {
+		if p.Next() {
+			break
+		}
+	}
+	return p.Block
 }

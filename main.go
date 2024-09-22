@@ -21,11 +21,7 @@ func main() {
 	}
 	lex.Init()
 	p := parser.NewParser(lex)
-	for {
-		if p.Next() {
-			break
-		}
-	}
+	p.Parse()
 	//p.CheckUnusedVar(p.Block)
 	//compile.DelEmptyCFGNode(p.Block)
 	pr(p.Block, 0)

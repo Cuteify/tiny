@@ -3,30 +3,21 @@ package errorUtil
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 type Error struct {
-	File     *os.File
+	Text string
+	Path string
 	LineFeed string
 }
 
 func (e *Error) GetErrPos(start int, end int) string {
-	wd, err := os.Getwd()
-	if err != nil {
-		wd = "."
-	}
-	filename := filepath.Join(wd, e.File.Name())
-	e.File.Seek(0, io.SeekStart)
 	cursor := start
-	tmp := []byte{}
-	if tmp, err = io.ReadAll(e.File); err != nil {
-		panic(err)
-	}
+	tmp := unsafe.Slice(unsafe.StringData(e.Text), len(e.Text))
 	lines := bytes.Split(tmp[:start], []byte(e.LineFeed))
 	line := len(lines)
 	if string(tmp[cursor]) == e.LineFeed[len(e.LineFeed)-1:] {
@@ -49,7 +40,7 @@ func (e *Error) GetErrPos(start int, end int) string {
 		text += "^"
 	}
 	text += "\033[0m"
-	text += "\n" + filename + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(col) + ":\n"
+	text += "\n" + e.Path + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(col) + ":\n"
 	return text
 }
 
