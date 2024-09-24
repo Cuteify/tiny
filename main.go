@@ -14,12 +14,7 @@ func main() {
 	if len(os.Args) != 1 {
 		path = os.Args[1]
 	}
-	text, _ := os.ReadFile(path)
-	lex := &lexer.Lexer{
-		Text:     string(text),
-		Filename: path,
-	}
-	lex.Init()
+	lex := lexer.NewLexer(path)
 	p := parser.NewParser(lex)
 	p.Parse()
 	//p.CheckUnusedVar(p.Block)

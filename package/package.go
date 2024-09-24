@@ -2,6 +2,8 @@ package packageSys
 
 import (
 	"encoding/json"
+	"future/lexer"
+	"future/parser"
 	"os"
 	"path"
 )
@@ -9,11 +11,11 @@ import (
 func GetPackage(packagePath string) *Info {
 	// 列出目录下所有文件
 	files, err := os.ReadDir(packagePath)
-	if err!= nil {
+	if err != nil {
 		return nil
 	}
 	packFile, err := os.OpenFile(path.Join(packagePath, "package.json"), os.O_RDONLY, 0666)
-	if err!= nil {
+	if err != nil {
 		return nil
 	}
 	defer packFile.Close()
@@ -26,7 +28,9 @@ func GetPackage(packagePath string) *Info {
 			packageInfo.Children = append(packageInfo.Children, GetPackage(path.Join(packagePath, file.Name())))
 		}
 		if path.Ext(file.Name()) == ".fut" {
-			
+			lex := lexer.NewLexer(file.Name())
+			p := parser.NewParser(lex)
+			p.Parse()
 		}
 	}
 	return packageInfo

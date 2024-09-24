@@ -37,7 +37,10 @@ func (t Token) String() string {
 	return "[" + typeName + "]" + t.Value
 }
 
-func (l *Lexer) Init() {
+func NewLexer(filename string) *Lexer {
+	l := &Lexer{
+		Filename: filename,
+	}
 	f, _ := os.OpenFile(l.Filename, os.O_RDWR, 0777)
 	tmp, _ := io.ReadAll(f)
 	l.Text = unsafe.String(unsafe.SliceData(tmp), len(tmp))
@@ -60,6 +63,7 @@ func (l *Lexer) Init() {
 	}
 	l.TextLength = len(l.Text)
 	l.Cursor = 0
+	return l
 }
 
 func (l *Lexer) GetString() string {
