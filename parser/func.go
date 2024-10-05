@@ -3,6 +3,7 @@ package parser
 import (
 	"future/lexer"
 	typeSys "future/type"
+	"future/utils"
 )
 
 type FuncBlock struct {
@@ -30,6 +31,12 @@ func (f *FuncBlock) Parse(p *Parser) {
 	if code.Type == lexer.LexTokenType["NAME"] {
 		// 匹配名字
 		f.Name = code.Value
+		if !utils.CheckName(f.Name) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+		}
+		if p.Package != nil {
+			f.Name = p.Package.Name + "." + f.Name
+		}
 		// 匹配参数
 		code := p.Lexer.Next()
 		if code.Value != "(" {
@@ -38,9 +45,9 @@ func (f *FuncBlock) Parse(p *Parser) {
 		f.ParseArgs(p)
 		p.Wait("{")
 		nodeTmp := &Node{Value: f}
+		p.Funcs[f.Name] = nodeTmp
 		p.ThisBlock.AddChild(nodeTmp)
 		p.ThisBlock = nodeTmp
-
 	} else if code.Value == "(" {
 		tmp := p.Brackets(true)
 		for _, v := range tmp.Children {
@@ -66,9 +73,15 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		}
 		if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == "" {
 			f.Args = []*ArgBlock{{Name: v.Value.Value}}
+			if !utils.CheckName(v.Value.Value) {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+			}
 			oldCursor = v.Value.Cursor
 		} else if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == "," {
 			f.Args = append(f.Args, &ArgBlock{Name: v.Value.Value})
+			if !utils.CheckName(v.Value.Value) {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+			}
 			oldCursor = v.Value.Cursor
 		} else if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == ":" {
 			tb := &TypeBlock{}

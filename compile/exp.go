@@ -14,12 +14,12 @@ const (
 	NotExp  = 5
 )
 
-func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code string) {
+func (c *Compiler) CompileExpr(exp *parser.Expression, result, desc string) (code string) {
 	c.ExpCount++
 	if exp != nil && exp.Father == nil && exp.IsConst() {
 		tmp, resultVal := c.CompileExprVal(exp)
 		code += tmp
-		code += Format("\033[35mmov\033[0m \033[34m" + result + ", " + resultVal + "\033[32m; 修改局部变量\n")
+		code += Format("mov " + result + ", " + resultVal + "; " + desc)
 		return
 	}
 	if exp == nil || exp.IsConst() || exp.Right == nil && exp.Left == nil {
@@ -37,7 +37,7 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(leftReg.BeforeCode)
 			}
 		}
-		leftCode = c.CompileExpr(exp.Left, leftResult)
+		leftCode = c.CompileExpr(exp.Left, leftResult, desc)
 	}
 	if exp.Right != nil && !exp.Right.IsConst() {
 		if exp.Type.Type() == "bool" {
@@ -47,13 +47,13 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 				code += Format(rightReg.BeforeCode)
 			}
 		}
-		rightCode = c.CompileExpr(exp.Right, rightResult)
+		rightCode = c.CompileExpr(exp.Right, rightResult, desc)
 	}
 	code += leftCode
 	code += rightCode
 	if exp.Left != nil && exp.Right != nil {
 		if exp.Type.Type() == "bool" {
-			code += Format("\033[35mcmp\033[0m " + leftResult + ", " + rightResult + "\033[32m; 比较表达式的值\n")
+			code += Format("cmp " + leftResult + ", " + rightResult + "; 比较表达式的值")
 			if c.ExpType == OrExp {
 
 			} else if c.ExpType == AndExp {
@@ -61,17 +61,17 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 			} else {
 				switch exp.Separator {
 				case "==":
-					code += Format("\033[35mjne\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("jne " + result + "; 判断后跳转到目标")
 				case "!=":
-					code += Format("\033[35mje\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("je " + result + "; 判断后跳转到目标")
 				case "<":
-					code += Format("\033[35mjng\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("jng " + result + "; 判断后跳转到目标")
 				case ">":
-					code += Format("\033[35mjnl\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("jnl " + result + "; 判断后跳转到目标")
 				case "<=":
-					code += Format("\033[35mjg\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("jg " + result + "; 判断后跳转到目标")
 				case ">=":
-					code += Format("\033[35mjl\033[0m " + result + "\033[32m; 判断后跳转到目标\n")
+					code += Format("jl " + result + "; 判断后跳转到目标")
 				}
 			}
 		} else {
@@ -82,37 +82,37 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result string) (code stri
 			}
 			switch exp.Separator {
 			case "+":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35madd\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
+				code += Format("add " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "-":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35msub\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
+				code += Format("sub " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "*":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35imul\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
+				code += Format("\033[35imul " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "/":
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35idiv\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
+				code += Format("\033[35idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "%": // 取模运算
-				code += Format("\033[35mmov\033[0m \033[34m" + reg.RegName + "\033[0m, " + leftResult + "\033[32m; 保存表达式左边的值\n")
-				code += Format("\033[35idiv\033[0m \033[34m" + reg.RegName + "\033[0m, " + rightResult + "\033[32m; 计算表达式的值\n")
+				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
+				code += Format("\033[35idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			}
 			if result == reg.RegName {
 				resultReg := c.Reg.GetRegister("expResult")
 				if resultReg.BeforeCode != "" {
 					code += Format(resultReg.BeforeCode)
 				}
-				code += Format("\033[35mmov\033[0m \033[34m" + resultReg.RegName + "\033[0m, " + reg.RegName + "\033[32m; 暂存表达式的值\n")
+				code += Format("mov " + resultReg.RegName + ", " + reg.RegName + "; 暂存表达式的值")
 				if reg.AfterCode != "" {
 					code += Format(resultReg.AfterCode)
 				}
-				code += Format("\033[35mmov\033[0m " + result + ", " + resultReg.RegName + "\033[32m; 保存表达式的值\n")
+				code += Format("mov " + result + ", " + resultReg.RegName + "; " + desc)
 				if resultReg.AfterCode != "" {
 					code += Format(resultReg.AfterCode)
 				}
 				c.Reg.FreeRegister("expResult")
 			} else {
-				code += Format("\033[35mmov\033[0m " + result + ", " + reg.RegName + "\033[32m; 保存表达式的值\n")
+				code += Format("mov " + result + ", " + reg.RegName + "; " + desc)
 				if reg.AfterCode != "" {
 					code += Format(reg.AfterCode)
 				}
@@ -147,8 +147,19 @@ func (c *Compiler) CompileExprVal(exp *parser.Expression) (code, result string) 
 			}
 		}
 	} else if exp.Var != nil {
-		exp.Var.Offset = exp.Var.Define.Value.(*parser.VarBlock).Offset
-		result = getLengthName(exp.Var.Type.Size()) + "[ebp" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
+		switch exp.Var.Define.Value.(type) {
+		case *parser.VarBlock:
+			exp.Var.Offset = exp.Var.Define.Value.(*parser.VarBlock).Offset
+		case *parser.ArgBlock:
+			exp.Var.Offset = exp.Var.Define.Value.(*parser.ArgBlock).Offset
+		}
+		addr := ""
+		if exp.Var.Offset < 0 {
+			addr = "[ebp" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
+		} else {
+			addr = "[ebp+" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
+		}
+		result = getLengthName(exp.Var.Type.Size()) + addr
 	} else if exp.Call != nil {
 
 	}

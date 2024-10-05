@@ -2,19 +2,22 @@ package main
 
 import (
 	"fmt"
-	"future/lexer"
-	"future/parser"
 	"future/compile"
+	packageSys "future/package"
+	"future/parser"
 	"os"
-    "strings"
 )
 
 func main() {
-	path := "./test/a.fut"
+	path := "./test"
 	if len(os.Args) != 1 {
 		path = os.Args[1]
 	}
-	lex := lexer.NewLexer(path)
+	tmp, _ := packageSys.GetPackage(path)
+	pr(tmp.AST[0].(*parser.Node),0)
+	co := &compile.Compiler{}
+	fmt.Println(co.Compile(tmp.AST[0].(*parser.Node)))
+	/*lex := lexer.NewLexer(path)
 	p := parser.NewParser(lex)
 	p.Parse()
 	//p.CheckUnusedVar(p.Block)
@@ -24,7 +27,7 @@ func main() {
 	//fmt.Println(compile.Compile(p.Block))
 	//fmt.Println("\n" + strings.Repeat("=", 50) + "\n")
 	co := &compile.Compiler{}
-	fmt.Println(co.Compile(p.Block))
+	fmt.Println(co.Compile(p.Block))*/
 }
 func pr(block *parser.Node, tabnum int) {
 	tmp := ""

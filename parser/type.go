@@ -3,6 +3,7 @@ package parser
 import (
 	"future/lexer"
 	typeSys "future/type"
+	"future/utils"
 )
 
 type TypeBlock struct {
@@ -15,6 +16,12 @@ func (t *TypeBlock) Parse(p *Parser) {
 	code := p.Lexer.Next()
 	if code.Type == lexer.LexTokenType["NAME"] {
 		t.Name = code.Value
+		if !utils.CheckName(t.Name) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+		}
+		if p.Package != nil {
+			t.Name = p.Package.Name + "." + t.Name
+		}
 		tmp.TypeName = code.Value
 		code2 := p.Lexer.Next()
 		if code2.Type == lexer.LexTokenType["NAME"] {
@@ -34,6 +41,9 @@ func (t *TypeBlock) FindDefine(p *Parser, name string) typeSys.Type {
 	switch name {
 	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte", "i32", "u32", "f32", "i16", "u16", "i8", "u8":
 		return typeSys.GetSystemType(name)
+	}
+	if !utils.CheckName(name) {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 	for {
 		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {

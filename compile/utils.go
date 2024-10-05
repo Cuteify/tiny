@@ -8,7 +8,7 @@ import (
 var count int = 0
 
 func Format(text string) string {
-	return strings.Repeat("    ", count) + text + "\033[0m"
+	return strings.Repeat("    ", count) + text + "\n"
 }
 
 // 快速遍历AST，找到CFG为空的节点，从AST中删除，Root节点不算

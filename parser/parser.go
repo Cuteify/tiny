@@ -3,6 +3,7 @@ package parser
 import (
 	errorUtil "future/error"
 	"future/lexer"
+	packageFmt "future/package/fmt"
 	"strings"
 )
 
@@ -12,6 +13,10 @@ type Parser struct {
 	Lexer       *lexer.Lexer
 	BracketsNum int
 	Error       *errorUtil.Error
+	Funcs       map[string]*Node
+	Vars        map[string]*Node
+	Types       map[string]*Node
+	Package    *packageFmt.Info
 }
 
 func (p *Parser) Next() (finish bool) {

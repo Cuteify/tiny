@@ -3,30 +3,30 @@ package compile
 import (
 	"fmt"
 	"future/parser"
-	"runtime"
 	"strconv"
 	"strings"
 )
 
-const GoArch = runtime.GOARCH
+const GoArch = "x86"
 
+// Compiler 结构体
 type Compiler struct {
-	VarStackSize int
-	EspOffset    int
-	RegTmp       int
-	Reg          *Register
-	ExpCount     int
-	CallCount    int
-	IfCount      int
-	ExpType      int
+	VarStackSize int       // 变量栈的大小
+	RspOffset    int       // 堆栈指针偏移量
+	Reg          *Register // 寄存器集合
+	ExpCount     int       // 表达式计数
+	ArgOffset    int       // 参数偏移量
+	IfCount      int       // if 块数量计数
+	ExpType      int       // 表达式类型
 }
 
+// Compile 方法
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	if c.Reg == nil {
 		c.Reg = &Register{}
 	}
 	if node.Father == nil {
-		code = "\033[35msection\033[0m .text\n\033[35mglobal\033[0m main\n\n"
+		code = "section .text\nglobal main\n\n"
 	}
 	for i := 0; i < len(node.Children); i++ {
 		n := node.Children[i]
@@ -35,56 +35,77 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			code += c.CompileFunc(n)
 		case *parser.IfBlock:
 			ifBlock := n.Value.(*parser.IfBlock)
-			// 使用全局的ifCount来生成一个唯一的标签
 			c.IfCount++
 			label := fmt.Sprintf("if_%d", c.IfCount)
-			// 生成if条件判断的代码
 			if ifBlock.Else {
-				code += c.CompileExpr(ifBlock.Condition, "else_"+label)
+				code += c.CompileExpr(ifBlock.Condition, "else_"+label, "")
 			} else {
-				code += c.CompileExpr(ifBlock.Condition, "end_"+label)
+				code += c.CompileExpr(ifBlock.Condition, "end_"+label, "")
 			}
-			// 生成if块的代码
-			code += Format(label+":\n") + c.Compile(n)
+			code += Format(label+":") + c.Compile(n)
 			if ifBlock.Else {
-				code += Format("else_" + label + ":\n")
-				// 生成else块的代码
+				code += Format("else_" + label + ":")
 				if ifBlock.ElseBlock.Value.(*parser.ElseBlock).IfCondition != nil {
-					code += c.CompileExpr(ifBlock.ElseBlock.Value.(*parser.ElseBlock).IfCondition, "end_"+label)
+					code += c.CompileExpr(ifBlock.ElseBlock.Value.(*parser.ElseBlock).IfCondition, "end_"+label, "")
 				}
 				if ifBlock.ElseBlock != nil {
 					code += c.Compile(ifBlock.ElseBlock)
 				}
 			}
-			// 生成endif的标签
-			code += Format("end_" + label + ":\n")
+			code += Format("end_" + label + ":")
 		case *parser.ReturnBlock:
-			code += Format("\033[35mpop\033[0m ebp\033[32m; 跳转到函数返回部分\n")
-			code += Format("\033[35mret\033[0m\n\n")
+			code += Format("add rsp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
+			code += Format("pop ebp; 跳转到函数返回部分")
+			code += Format("ret\n")
 		case *parser.VarBlock:
 			varBlock := n.Value.(*parser.VarBlock)
 			if varBlock.IsDefine {
-				c.EspOffset -= varBlock.Type.Size()
-				varBlock.Offset = c.EspOffset
-				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(varBlock.Offset), 10)+"]\033[0m")
+				c.RspOffset -= varBlock.Type.Size()
+				varBlock.Offset = c.RspOffset
+				addr := ""
+				if varBlock.Offset < 0 {
+					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				} else {
+					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				}
+				code += c.CompileExpr(varBlock.Value, " "+getLengthName(varBlock.Type.Size())+addr, "设置变量")
 			} else {
-				varBlock.Offset = varBlock.Define.Value.(*parser.VarBlock).Offset
-				code += c.CompileExpr(varBlock.Value, " \033[34m"+getLengthName(varBlock.Type.Size())+"\033[0m[ebp"+strconv.FormatInt(int64(varBlock.Offset), 10)+"]\033[0m")
+				switch varBlock.Define.Value.(type) {
+				case *parser.VarBlock:
+					varBlock.Offset = varBlock.Define.Value.(*parser.VarBlock).Offset
+				case *parser.ArgBlock:
+					varBlock.Offset = varBlock.Define.Value.(*parser.ArgBlock).Offset
+				}
+				addr := ""
+				if varBlock.Offset < 0 {
+					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				} else {
+					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				}
+				code += c.CompileExpr(varBlock.Value, " "+getLengthName(varBlock.Type.Size())+addr, "设置变量")
 			}
 		case *parser.CallBlock:
-			code += c.compileCall(n)
+			code += c.CompileCall(n)
 		}
 	}
 	switch node.Value.(type) {
 	case *parser.FuncBlock:
+		switch node.Children[len(node.Children)-1].Value.(type) {
+		case *parser.ReturnBlock:
+		default:
+			code += Format("add rsp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
+			code += Format("pop ebp; 弹出函数基指针")
+			code += Format("ret\n")
+		}
 		if count > 0 {
 			count--
 		}
-		code += Format("\033[32m; ======函数完毕=======\n")
+		code += Format("; ======函数完毕=======")
 	}
 	return code
 }
 
+// CompileFunc 方法
 func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	funcBlock := node.Value.(*parser.FuncBlock)
 	if funcBlock.Name == "main" {
@@ -92,34 +113,34 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	} else {
 		funcBlock.Name += strconv.Itoa(len(funcBlock.Args))
 	}
-	code += Format("\n\033[32m; " + strings.Repeat("=", 30) + "\n; Function:" + node.Value.(*parser.FuncBlock).Name + "\n")
-	code += Format(node.Value.(*parser.FuncBlock).Name + ":\n")
+	code += Format("\n; " + strings.Repeat("=", 30) + "\n; Function:" + funcBlock.Name)
+	code += Format(funcBlock.Name + ":")
 	count++
-	code += Format("\033[35mpush\033[0m \033[34mebp\033[0m\033[32m; 函数基指针入栈\n")
-	code += Format("\033[35mmov\033[0m \033[34mebp\033[0m, \033[34mesp\033[0m\033[32m; 设置基指针\n")
-	// 计算需要的栈空间
+	code += Format("push ebp; 函数基指针入栈")
+	code += Format("mov ebp, esp; 设置基指针")
+
 	c.VarStackSize = 0
-	c.EspOffset = 0
-	c.RegTmp = 0
-	// 深度优先遍历节点，计算需要的栈空间
+	c.RspOffset = 0
+	c.ArgOffset = 0
 	c.calculateVarStackSize(node)
-	code += Format("\033[35msub\033[0m \033[34mesp\033[0m, " + strconv.Itoa(c.VarStackSize) + "\033[32m; 调整栈指针\n")
-	tmp := c.VarStackSize
+	code += Format("sub rsp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
-		arg.Offset = tmp
-		tmp += arg.Type.Size()
+		c.ArgOffset += arg.Type.Size()
+		arg.Offset = c.ArgOffset
 	}
 	code += c.Compile(node)
 	return code
 }
 
+// 计算变量的栈空间
 func (c *Compiler) calculateVarStackSize(node *parser.Node) {
 	for _, child := range node.Children {
 		switch child.Value.(type) {
 		case *parser.VarBlock:
 			if child.Value.(*parser.VarBlock).IsDefine {
 				c.VarStackSize += child.Value.(*parser.VarBlock).Type.Size()
+
 			}
 		case *parser.IfBlock:
 			c.calculateVarStackSize(child)
@@ -149,4 +170,54 @@ func getLengthName(size int) string {
 	default:
 		return ""
 	}
+}
+
+// compileCallBlock 处理函数调用块
+func (c *Compiler) CompileCall(node *parser.Node) (code string) {
+	// 设置参数
+	// 便利参数，然后生成，然后设置到寄存器中，大于等于4个参数时，需要先将参数压入栈中，然后再从栈中取出
+	callBlock := node.Value.(*parser.CallBlock)
+	afterCode := ""
+	/*if len(callBlock.Args) >= 4 {
+		// 先将参数压入栈中
+		for i := len(callBlock.Args) - 1; i >= 4; i-- {
+			//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
+			code += c.CompileExpr(callBlock.Args[i].Value, " [ebp+"+strconv.Itoa(c.CallCount)+"] ; 设置 "+callBlock.Args[i].Name+" 参数")
+			c.CallCount += callBlock.Args[i].Type.Size()
+		}
+		// 然后从栈中取出参数
+		for i := 3; i >= 0; i-- {
+			reg := c.Reg.GetRegister(callBlock.Name + "_" + callBlock.Args[i].Name)
+			if reg.BeforeCode != "" {
+				code += reg.BeforeCode
+			}
+			code += c.CompileExpr(callBlock.Args[i].Value, " "+reg.RegName+"")
+			afterCode += reg.AfterCode
+		}
+	} else {
+		for i := len(callBlock.Args) - 1; i >= 0; i-- {
+			reg := c.Reg.GetRegister(callBlock.Name + "_" + callBlock.Args[i].Name)
+			if reg.BeforeCode != "" {
+				code += reg.BeforeCode
+			}
+			code += c.CompileExpr(callBlock.Args[i].Value, " "+reg.RegName+"")
+			afterCode += reg.AfterCode
+		}
+	}*/
+	// 先将参数压入栈中
+	for i := len(callBlock.Args) - 1; i >= 0; i-- {
+		//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
+		if callBlock.Args[i].Type == nil {
+			if callBlock.Args[i].Defind.Type == nil {
+				continue
+			}
+			callBlock.Args[i].Type = callBlock.Args[i].Defind.Type
+		}
+		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[ebp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset)+"]", "设置函数参数")
+	}
+	code += Format("call " + node.Value.(*parser.CallBlock).Func.Name + "; 调用函数")
+	if afterCode != "" {
+		code += afterCode
+	}
+	return code
 }

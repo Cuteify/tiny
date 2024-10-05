@@ -192,10 +192,20 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 						Name: name,
 					}
 					varBlock.ParseDefine(p)
-					varBlock.Type = varBlock.Define.Value.(*VarBlock).Type
-					exp := &Expression{
-						Var:  varBlock,
-						Type: varBlock.Define.Value.(*VarBlock).Type,
+					var exp *Expression
+					switch varBlock.Define.Value.(type) {
+					case *VarBlock:
+						varBlock.Offset = varBlock.Define.Value.(*VarBlock).Offset
+						exp = &Expression{
+							Var:  varBlock,
+							Type: varBlock.Define.Value.(*VarBlock).Type,
+						}
+					case *ArgBlock:
+						varBlock.Offset = varBlock.Define.Value.(*ArgBlock).Offset
+						exp = &Expression{
+							Var:  varBlock,
+							Type: varBlock.Define.Value.(*ArgBlock).Type,
+						}
 					}
 					stackNum = append(stackNum, exp)
 				}
@@ -204,10 +214,20 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					Name: name,
 				}
 				varBlock.ParseDefine(p)
-				varBlock.Type = varBlock.Define.Value.(*VarBlock).Type
-				exp := &Expression{
-					Var:  varBlock,
-					Type: varBlock.Define.Value.(*VarBlock).Type,
+				var exp *Expression
+				switch varBlock.Define.Value.(type) {
+				case *VarBlock:
+					varBlock.Offset = varBlock.Define.Value.(*VarBlock).Offset
+					exp = &Expression{
+						Var:  varBlock,
+						Type: varBlock.Define.Value.(*VarBlock).Type,
+					}
+				case *ArgBlock:
+					varBlock.Offset = varBlock.Define.Value.(*ArgBlock).Offset
+					exp = &Expression{
+						Var:  varBlock,
+						Type: varBlock.Define.Value.(*ArgBlock).Type,
+					}
 				}
 				stackNum = append(stackNum, exp)
 			}

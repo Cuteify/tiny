@@ -4,6 +4,7 @@ import (
 	"errors"
 	"future/lexer"
 	typeSys "future/type"
+	"strings"
 )
 
 type CallBlock struct {
@@ -14,10 +15,31 @@ type CallBlock struct {
 
 func (c *CallBlock) Parse(p *Parser) {
 	// 找到定义位置
-	oldThisBlock := p.ThisBlock
-	for {
-		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-			// 查找根级内容
+	//oldThisBlock := p.ThisBlock
+	if strings.Contains(c.Name, ".") {
+		c.Func = p.Funcs[c.Name].Value.(*FuncBlock)
+	} else {
+		if p.Package == nil {
+			c.Func = p.Funcs[c.Name].Value.(*FuncBlock)
+		} else {
+			c.Func = p.Funcs[p.Package.Name+"."+c.Name].Value.(*FuncBlock)
+		}
+	}
+	/*for {
+			if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
+				// 查找根级内容
+				for i := 0; i < len(p.ThisBlock.Children); i++ {
+					switch p.ThisBlock.Children[i].Value.(type) {
+					case *FuncBlock:
+						tmp := p.ThisBlock.Children[i].Value.(*FuncBlock)
+						if tmp.Name == c.Name {
+							c.Func = tmp
+							goto end
+						}
+					}
+				}
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+c.Name)
+			}
 			for i := 0; i < len(p.ThisBlock.Children); i++ {
 				switch p.ThisBlock.Children[i].Value.(type) {
 				case *FuncBlock:
@@ -28,22 +50,10 @@ func (c *CallBlock) Parse(p *Parser) {
 					}
 				}
 			}
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+c.Name)
+			p.ThisBlock = p.ThisBlock.Father
 		}
-		for i := 0; i < len(p.ThisBlock.Children); i++ {
-			switch p.ThisBlock.Children[i].Value.(type) {
-			case *FuncBlock:
-				tmp := p.ThisBlock.Children[i].Value.(*FuncBlock)
-				if tmp.Name == c.Name {
-					c.Func = tmp
-					goto end
-				}
-			}
-		}
-		p.ThisBlock = p.ThisBlock.Father
-	}
-end:
-	p.ThisBlock = oldThisBlock
+	end:
+		p.ThisBlock = oldThisBlock*/
 	// 解析括号
 	rightBra := p.FindRightBracket(false)
 	for p.Lexer.Cursor < rightBra {

@@ -1,6 +1,4 @@
-package packageSys
-
-import "future/parser"
+package packageFmt
 
 type Info struct {
 	Name    string            `json:"name"`
@@ -8,6 +6,6 @@ type Info struct {
 	Import  map[string]string `json:"import"`
 	Action  map[string]string `json:"action"`
 	Path    string
-	AST     *parser.Node
+	AST     []any
 	Children []*Info
 }

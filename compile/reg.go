@@ -1,5 +1,7 @@
 package compile
 
+import "fmt"
+
 // Architecture defines the CPU architecture and its registers.
 type Architecture struct {
 	Name          string   // The name of the architecture.
@@ -127,6 +129,7 @@ func (reg *Register) GetRegister(name string) (regInfo *Reg) {
 	} else {
 		var indexOldest *Reg
 		for _, regInfo := range reg.Record {
+			fmt.Println(regInfo.RegIndex, indexOldest.RegIndex)
 			if indexOldest == nil || regInfo.RegIndex < indexOldest.RegIndex {
 				indexOldest = regInfo
 			}
@@ -160,10 +163,8 @@ func (reg *Register) FreeRegister(name string) {
 		return
 	} else {
 		regInfo := reg.Record[name]
-		if regInfo.Occupie == true {
-			reg.RegisterCount--
-			reg.Registers[regInfo.RegIndex] = false
-		}
-		reg.Record[name] = nil
+		reg.RegisterCount--
+		reg.Registers[regInfo.RegIndex] = false
+		delete(reg.Record, name)
 	}
 }

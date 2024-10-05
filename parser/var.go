@@ -3,6 +3,7 @@ package parser
 import (
 	"future/lexer"
 	typeSys "future/type"
+	"future/utils"
 )
 
 type VarBlock struct {
@@ -15,7 +16,6 @@ type VarBlock struct {
 	StartCursor int
 	Offset      int
 	Type        typeSys.Type
-	Arg         *ArgBlock
 }
 
 func (v *VarBlock) Parse(p *Parser) {
@@ -24,6 +24,9 @@ func (v *VarBlock) Parse(p *Parser) {
 	if code.Type == lexer.LexTokenType["NAME"] {
 		v.StartCursor = p.Lexer.Cursor
 		v.Name = code.Value
+		if !utils.CheckName(v.Name) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+		}
 		code := p.Lexer.Next()
 		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == ":=" {
 			v.IsDefine = true
@@ -65,6 +68,9 @@ func (v *VarBlock) Parse(p *Parser) {
 		}
 		v.StartCursor = p.Lexer.Cursor
 		v.Name = code.Value
+		if !utils.CheckName(v.Name) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+		}
 		code = p.Lexer.Next()
 		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == ":" {
 			code = p.Lexer.Next()
@@ -115,6 +121,9 @@ func (v *VarBlock) Parse(p *Parser) {
 func (v *VarBlock) ParseDefine(p *Parser) {
 	// 找到定义位置
 	oldThisBlock := p.ThisBlock
+	if !utils.CheckName(v.Name) {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+	}
 	for {
 		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
 			p.Error.MissErrors("Syntax Error", p.Lexer.Cursor-len(v.Name), p.Lexer.Cursor, "need define "+v.Name)
@@ -126,6 +135,7 @@ func (v *VarBlock) ParseDefine(p *Parser) {
 				if tmp.Name == v.Name && tmp.IsDefine {
 					tmp.Used = true
 					v.Define = p.ThisBlock.Children[i]
+					v.Type = tmp.Type
 					goto end
 				}
 			}
@@ -136,8 +146,8 @@ func (v *VarBlock) ParseDefine(p *Parser) {
 			for j := 0; j < len(tmp.Args); j++ {
 				if tmp.Args[j].Name == v.Name {
 					arg := tmp.Args[j]
-					val := &VarBlock{Name: arg.Name, Type: arg.Type, IsDefine: true, Used: true, Arg: arg}
-					v.Define = &Node{Value: val}
+					v.Define = &Node{Value: arg}
+					v.Type = arg.Type
 					goto end
 				}
 			}

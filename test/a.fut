@@ -1,10 +1,10 @@
 import "go.os"
 
-fn hiMyLang(hi:int, b:i64 = "hi") i64 {
+fn hiMyLang(hi:i32, b:i32 = "hi") i32 {
     if (b+3 > hi) {
         ret 8
     }
-    a := hi
+    var a:i32 = hi
     var b:i32 = 123
     if (b > a) {
         hiMyLang((6.6+9)*5, 9)
@@ -15,9 +15,9 @@ fn hiMyLang(hi:int, b:i64 = "hi") i64 {
     ret a+b
 }
 
-fn hiFn(hi:int, b:i64 = "hi") i64 {
+fn hiFn(hi:int, b:i64 = "hi") i32 {
     hiMyLang((6.6+9)*5, 9)
-    abcdefg := 1
+    var abcdefg:i32 = 1
     var b:i32 = 123*abcdefg
     if (b > abcdefg) {
         //b = 12345
@@ -37,6 +37,6 @@ fn hiFn(hi:int, b:i64 = "hi") i64 {
     }
 }
 
-fn main() i64 {
+fn main() i32 {
     hiFn(1)
 }

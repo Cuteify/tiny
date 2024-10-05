@@ -41,8 +41,10 @@ func NewLexer(filename string) *Lexer {
 	l := &Lexer{
 		Filename: filename,
 	}
-	f, _ := os.OpenFile(l.Filename, os.O_RDWR, 0777)
-	tmp, _ := io.ReadAll(f)
+	tmp, err := os.ReadFile(filename)
+	if err!= nil {
+		panic(err)
+	}
 	l.Text = unsafe.String(unsafe.SliceData(tmp), len(tmp))
 	if l.Text == "" {
 		panic("Lexer:Text is empty")

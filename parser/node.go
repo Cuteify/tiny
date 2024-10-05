@@ -7,7 +7,7 @@ type CFGNode struct {
 }
 
 type Block interface {
-	Parse(p *Parser)
+	//Parse(p *Parser)
 }
 
 type Node struct {
