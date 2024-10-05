@@ -12,7 +12,7 @@ const GoArch = "x86"
 // Compiler 结构体
 type Compiler struct {
 	VarStackSize int       // 变量栈的大小
-	RspOffset    int       // 堆栈指针偏移量
+	EspOffset    int       // 堆栈指针偏移量
 	Reg          *Register // 寄存器集合
 	ExpCount     int       // 表达式计数
 	ArgOffset    int       // 参数偏移量
@@ -54,14 +54,14 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			}
 			code += Format("end_" + label + ":")
 		case *parser.ReturnBlock:
-			code += Format("add rsp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
+			code += Format("add esp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
 			code += Format("pop ebp; 跳转到函数返回部分")
 			code += Format("ret\n")
 		case *parser.VarBlock:
 			varBlock := n.Value.(*parser.VarBlock)
 			if varBlock.IsDefine {
-				c.RspOffset -= varBlock.Type.Size()
-				varBlock.Offset = c.RspOffset
+				c.EspOffset -= varBlock.Type.Size()
+				varBlock.Offset = c.EspOffset
 				addr := ""
 				if varBlock.Offset < 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
@@ -93,7 +93,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		switch node.Children[len(node.Children)-1].Value.(type) {
 		case *parser.ReturnBlock:
 		default:
-			code += Format("add rsp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
+			code += Format("add esp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
 			code += Format("pop ebp; 弹出函数基指针")
 			code += Format("ret\n")
 		}
@@ -101,6 +101,9 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			count--
 		}
 		code += Format("; ======函数完毕=======")
+	}
+	if node.Father == nil {
+		code += Format("\n\nmain:\ncall test.main0\nPRINT_STRING \"MyLang First Finish!\"\nret\n")
 	}
 	return code
 }
@@ -120,10 +123,10 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	code += Format("mov ebp, esp; 设置基指针")
 
 	c.VarStackSize = 0
-	c.RspOffset = 0
+	c.EspOffset = 0
 	c.ArgOffset = 0
 	c.calculateVarStackSize(node)
-	code += Format("sub rsp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
+	code += Format("sub esp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
 		c.ArgOffset += arg.Type.Size()

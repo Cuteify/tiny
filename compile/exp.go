@@ -89,13 +89,13 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result, desc string) (cod
 				code += Format("sub " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "*":
 				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
-				code += Format("\033[35imul " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
+				code += Format("imul " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "/":
 				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
-				code += Format("\033[35idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
+				code += Format("idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			case "%": // 取模运算
 				code += Format("mov " + reg.RegName + ", " + leftResult + "; 保存表达式左边的值")
-				code += Format("\033[35idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
+				code += Format("idiv " + reg.RegName + ", " + rightResult + "; 计算表达式的值")
 			}
 			if result == reg.RegName {
 				resultReg := c.Reg.GetRegister("expResult")

@@ -16,7 +16,9 @@ func main() {
 	tmp, _ := packageSys.GetPackage(path)
 	pr(tmp.AST[0].(*parser.Node),0)
 	co := &compile.Compiler{}
-	fmt.Println(co.Compile(tmp.AST[0].(*parser.Node)))
+	code := co.Compile(tmp.AST[0].(*parser.Node))
+	fmt.Println(code)
+	os.WriteFile(`C:\Users\gx\Desktop\aaaa\main.asm`, []byte(code), 0644)
 	/*lex := lexer.NewLexer(path)
 	p := parser.NewParser(lex)
 	p.Parse()
