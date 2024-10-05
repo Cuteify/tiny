@@ -1,7 +1,7 @@
 import "go.os"
 
 fn hiMyLang(hi:i32, b:i32 = 1) i32 {
-    if (b+3 > hi) {
+    if (b+3 > 6666) {
         ret 8
     }
     var a:i32 = hi
