@@ -255,17 +255,14 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		default:
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
 		}
-		if len(stackNum) >= 3 && len(stackSep) >= 2 && token.Type != lexer.LexTokenType["SEPARATOR"] {
+		if len(stackNum) >= 3 && len(stackSep) >= 2 && (token.Type != lexer.LexTokenType["SEPARATOR"] || stackSep[len(stackSep)-1].Separator == ")") {
 			tokenWe := getWe(stackSep[len(stackSep)-1].Separator)
 			lastTokenWe := getWe(stackSep[len(stackSep)-2].Separator)
 			if stackNum[len(stackNum)-1].Type == nil || stackNum[len(stackNum)-2] == nil {
 				p.Error.MissError("experr", p.Lexer.Cursor, "")
 			}
-			if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
-				continue
-			}
 			if stackSep[len(stackSep)-1].Separator == ")" {
-				if stackNum[len(stackNum)-2].Separator == "(" {
+				if stackSep[len(stackSep)-2].Separator == "(" {
 					stackSep = stackSep[:len(stackSep)-2]
 				} else {
 					stackSep = stackSep[:len(stackSep)-1]
@@ -277,9 +274,21 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					num2.Father = stackSep[0]
 					stackNum = stackNum[:1]
 					stackNum[0] = stackSep[0]
-					stackSep = stackSep[:len(stackSep)-1]
+					stackSep = stackSep[:len(stackSep)-2]
 				}
 			}
+			if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
+				continue
+			}
+			for i := 0; i < len(stackSep); i++ {
+				fmt.Print(stackSep[i], ",")
+			}
+			fmt.Print("\n", stackSep[len(stackSep)-1].Separator == ")")
+			for i := 0; i < len(stackNum); i++ {
+				fmt.Print(stackNum[i], ",")
+				fmt.Println(stackNum[i].Right, stackNum[i].Left)
+			}
+			fmt.Print("\n")
 			num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
 			stackNum = stackNum[:len(stackNum)-2]
 			if tokenWe > lastTokenWe {
