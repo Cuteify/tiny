@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"future/lexer"
 	typeSys "future/type"
 	"math"
@@ -254,11 +255,30 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		default:
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
 		}
-		if len(stackNum) >= 2 && len(stackSep) >= 2 && token.Type != lexer.LexTokenType["SEPARATOR"] {
+		if len(stackNum) >= 3 && len(stackSep) >= 2 && token.Type != lexer.LexTokenType["SEPARATOR"] {
 			tokenWe := getWe(stackSep[len(stackSep)-1].Separator)
 			lastTokenWe := getWe(stackSep[len(stackSep)-2].Separator)
 			if stackNum[len(stackNum)-1].Type == nil || stackNum[len(stackNum)-2] == nil {
 				p.Error.MissError("experr", p.Lexer.Cursor, "")
+			}
+			if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
+				continue
+			}
+			if stackSep[len(stackSep)-1].Separator == ")" {
+				if stackNum[len(stackNum)-2].Separator == "(" {
+					stackSep = stackSep[:len(stackSep)-2]
+				} else {
+					stackSep = stackSep[:len(stackSep)-1]
+					num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
+					stackNum = stackNum[:len(stackNum)-2]
+					stackSep[0].Left = num1
+					stackSep[0].Right = num2
+					num1.Father = stackSep[0]
+					num2.Father = stackSep[0]
+					stackNum = stackNum[:1]
+					stackNum[0] = stackSep[0]
+					stackSep = stackSep[:len(stackSep)-1]
+				}
 			}
 			num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
 			stackNum = stackNum[:len(stackNum)-2]
@@ -269,16 +289,20 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 				num2.Father = stackSep[len(stackSep)-1]
 				stackNum = append(stackNum, stackSep[len(stackSep)-1])
 			} else {
-				stackSep[len(stackSep)-2].Left = num1
-				stackSep[len(stackSep)-2].Right = num2
+				stackSep[len(stackSep)-2].Left = stackNum[len(stackNum)-1]
+				stackSep[len(stackSep)-2].Right = num1
+				stackNum[len(stackNum)-1].Father = stackSep[len(stackSep)-1]
 				num1.Father = stackSep[len(stackSep)-1]
-				num2.Father = stackSep[len(stackSep)-1]
+				stackNum = stackNum[:len(stackNum)-1]
 				stackNum = append(stackNum, stackSep[len(stackSep)-2])
 				stackSep[len(stackSep)-2] = stackSep[len(stackSep)-1]
 			}
 			stackSep = stackSep[:len(stackSep)-1]
 			if !stackNum[len(stackNum)-1].Check(p) {
 				p.Error.MissError("experr", p.Lexer.Cursor, "")
+			}
+			if tokenWe <= lastTokenWe {
+				stackNum = append(stackNum, num2)
 			}
 		}
 	}
@@ -296,6 +320,37 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		}
 	}
 	return stackNum[0]
+}
+
+func (e *Expression) Print() {
+	if e.Left != nil {
+		e.Left.Print()
+	}
+	if e.Right != nil {
+		e.Right.Print()
+	}
+	if e.Separator != "" {
+		fmt.Print(e.Separator)
+	} else {
+		if e.Var != nil {
+			fmt.Print(e.Var.Name)
+		} else if e.Call != nil {
+			fmt.Print(e.Call.Name)
+		} else if e.StringVal != "" {
+			fmt.Print("\"" + e.StringVal + "\"")
+		} else if e.Type == typeSys.GetSystemType("bool") {
+			if e.Bool {
+				fmt.Print("true")
+			} else {
+				fmt.Print("false")
+			}
+		} else {
+			fmt.Print(e.Num)
+		}
+	}
+	if e.Father == nil {
+		fmt.Print("\n")
+	}
 }
 
 func getWe(token string) int {
@@ -320,3 +375,9 @@ func getWe(token string) int {
 	}
 	return 0
 }
+
+/*
+b+3>666
+
+b3+
+>*/
