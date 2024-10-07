@@ -255,7 +255,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		default:
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
 		}
-		if len(stackNum) >= 3 && len(stackSep) >= 2 && (token.Type != lexer.LexTokenType["SEPARATOR"] || stackSep[len(stackSep)-1].Separator == ")") {
+		if len(stackNum) >= 2 && len(stackSep) >= 2 && (token.Type != lexer.LexTokenType["SEPARATOR"] || stackSep[len(stackSep)-1].Separator == ")") {
 			tokenWe := getWe(stackSep[len(stackSep)-1].Separator)
 			lastTokenWe := getWe(stackSep[len(stackSep)-2].Separator)
 			if stackNum[len(stackNum)-1].Type == nil || stackNum[len(stackNum)-2] == nil {
@@ -277,7 +277,10 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					stackSep = stackSep[:len(stackSep)-2]
 				}
 			}
-			if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
+			if len(stackNum) < 2 && len(stackSep) < 2 {
+continue
+			}
+						if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
 				continue
 			}
 			for i := 0; i < len(stackSep); i++ {
