@@ -268,30 +268,20 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					stackSep = stackSep[:len(stackSep)-1]
 					num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
 					stackNum = stackNum[:len(stackNum)-2]
-					stackSep[0].Left = num1
-					stackSep[0].Right = num2
-					num1.Father = stackSep[0]
-					num2.Father = stackSep[0]
-					stackNum = stackNum[:1]
-					stackNum[0] = stackSep[0]
+					stackSep[len(stackSep)-1].Left = num2
+					stackSep[len(stackSep)-1].Right = num1
+					num2.Father = stackSep[len(stackSep)-1]
+					num1.Father = stackSep[len(stackSep)-1]
+					stackNum = append(stackNum, stackSep[len(stackSep)-1])
 					stackSep = stackSep[:len(stackSep)-2]
 				}
 			}
 			if len(stackNum) < 2 && len(stackSep) < 2 {
-continue
-			}
-						if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
 				continue
 			}
-			for i := 0; i < len(stackSep); i++ {
-				fmt.Print(stackSep[i], ",")
+			if stackSep[len(stackSep)-1].Separator == "(" || stackSep[len(stackSep)-2].Separator == "(" {
+				continue
 			}
-			fmt.Print("\n", stackSep[len(stackSep)-1].Separator == ")")
-			for i := 0; i < len(stackNum); i++ {
-				fmt.Print(stackNum[i], ",")
-				fmt.Println(stackNum[i].Right, stackNum[i].Left)
-			}
-			fmt.Print("\n")
 			num1, num2 := stackNum[len(stackNum)-2], stackNum[len(stackNum)-1]
 			stackNum = stackNum[:len(stackNum)-2]
 			if tokenWe > lastTokenWe {
@@ -301,11 +291,10 @@ continue
 				num2.Father = stackSep[len(stackSep)-1]
 				stackNum = append(stackNum, stackSep[len(stackSep)-1])
 			} else {
-				stackSep[len(stackSep)-2].Left = stackNum[len(stackNum)-1]
+				stackSep[len(stackSep)-2].Left = num2
 				stackSep[len(stackSep)-2].Right = num1
-				stackNum[len(stackNum)-1].Father = stackSep[len(stackSep)-1]
+				num2.Father = stackSep[len(stackSep)-1]
 				num1.Father = stackSep[len(stackSep)-1]
-				stackNum = stackNum[:len(stackNum)-1]
 				stackNum = append(stackNum, stackSep[len(stackSep)-2])
 				stackSep[len(stackSep)-2] = stackSep[len(stackSep)-1]
 			}
