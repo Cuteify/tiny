@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"fmt"
 	"future/lexer"
 	typeSys "future/type"
 	"strings"
@@ -67,7 +68,8 @@ func (c *CallBlock) Parse(p *Parser) {
 				p.Error.MissErrors("Call Error", oldCursor, rightBra+1, "Args length error")
 			}
 			arg.Defind = c.Func.Args[len(c.Args)-1]
-			if typeSys.AutoType(arg.Type, arg.Defind.Type, true) {
+			fmt.Println(typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()))
+			if typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()) {
 				arg.Type = arg.Defind.Type
 			} else {
 				p.Error.MissErrors("Type Error", oldCursor, rightBra+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())
@@ -83,7 +85,9 @@ func (c *CallBlock) Parse(p *Parser) {
 		}
 		arg.Defind = c.Func.Args[len(c.Args)-1]
 		arg.Name = arg.Defind.Name
-		if typeSys.AutoType(arg.Type, arg.Defind.Type, true) {
+		fmt.Println(arg.Type.Type(),typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()))
+
+		if typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()) {
 			arg.Type = arg.Defind.Type
 		} else {
 			p.Error.MissErrors("Type Error", oldCursor, sepCursor+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())

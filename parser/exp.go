@@ -274,6 +274,9 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					num1.Father = stackSep[len(stackSep)-1]
 					stackNum = append(stackNum, stackSep[len(stackSep)-1])
 					stackSep = stackSep[:len(stackSep)-2]
+					if !stackNum[len(stackNum)-1].Check(p) {
+						p.Error.MissError("experr", p.Lexer.Cursor, "")
+					}
 				}
 			}
 			if len(stackNum) < 2 && len(stackSep) < 2 {
@@ -302,9 +305,6 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 			if !stackNum[len(stackNum)-1].Check(p) {
 				p.Error.MissError("experr", p.Lexer.Cursor, "")
 			}
-			if tokenWe <= lastTokenWe {
-				stackNum = append(stackNum, num2)
-			}
 		}
 	}
 	if len(stackNum) == 2 && len(stackSep) == 1 {
@@ -317,6 +317,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		stackNum = stackNum[:1]
 		stackNum[0] = stackSep[0]
 		if !stackNum[0].Check(p) {
+			stackNum[0].Print()
 			p.Error.MissError("experr", p.Lexer.Cursor, "")
 		}
 	}
