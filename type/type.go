@@ -1,7 +1,6 @@
 package typeSys
 
 import (
-	"fmt"
 	"math"
 	"strings"
 	"unsafe"
@@ -213,7 +212,6 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 					return true
 				}
 			}
-			fmt.Println(before.Type(), after.Type())
 			if before.Size() == after.Size() {
 				return true
 			}
