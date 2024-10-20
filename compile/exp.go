@@ -15,9 +15,6 @@ const (
 )
 
 func (c *Compiler) CompileExpr(exp *parser.Expression, result, desc string) (code string) {
-	if exp.Father == nil {
-		exp.Print()
-	}
 	c.ExpCount++
 	if exp != nil && exp.Father == nil && exp.IsConst() {
 		tmp, resultVal := c.CompileExprVal(exp)
