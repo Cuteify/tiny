@@ -124,13 +124,13 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 
 	c.VarStackSize = 0
 	c.EspOffset = 0
-	c.ArgOffset = 4
+	c.ArgOffset = 0
 	c.calculateVarStackSize(node)
 	code += Format("sub esp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
 		c.ArgOffset += arg.Type.Size()
-		arg.Offset = c.ArgOffset
+		arg.Offset = c.ArgOffset+4
 	}
 	code += c.Compile(node)
 	return code
