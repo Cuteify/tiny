@@ -18,7 +18,7 @@ func main() {
 	co := &compile.Compiler{}
 	code := co.Compile(tmp.AST[0].(*parser.Node))
 	//fmt.Println(code)
-	os.WriteFile(`.\_main.asm`, []byte(code), 0644)
+	os.WriteFile(`./_main.asm`, []byte(code), 0644)
 	/*lex := lexer.NewLexer(path)
 	p := parser.NewParser(lex)
 	p.Parse()
