@@ -124,7 +124,7 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 
 	c.VarStackSize = 0
 	c.EspOffset = 0
-	c.ArgOffset = 0
+	c.ArgOffset = 4
 	c.calculateVarStackSize(node)
 	code += Format("sub esp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
 	for i := 0; i < len(funcBlock.Args); i++ {
@@ -216,7 +216,7 @@ func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 			}
 			callBlock.Args[i].Type = callBlock.Args[i].Defind.Type
 		}
-		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[ebp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset)+"]", "设置函数参数")
+		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[esp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset)+"]", "设置函数参数")
 	}
 	code += Format("call " + node.Value.(*parser.CallBlock).Func.Name + "; 调用函数")
 	if afterCode != "" {
