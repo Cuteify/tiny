@@ -39,8 +39,8 @@ test.hiFn2:
     push ebp; 函数基指针入栈
     mov ebp, esp; 设置基指针
     sub esp, 20; 调整栈指针
-    mov DWORD[esp+16], 9; 设置函数参数
-    mov QWORD[esp+12], 78; 设置函数参数
+    mov DWORD[esp+12], 9; 设置函数参数
+    mov QWORD[esp+8], 78; 设置函数参数
     call test.hiMyLang2; 调用函数
     mov  DWORD[ebp-4], 1; 设置变量
     mov EAX, 123; 保存表达式左边的值
@@ -80,8 +80,8 @@ test.main0:
     push ebp; 函数基指针入栈
     mov ebp, esp; 设置基指针
     sub esp, 16; 调整栈指针
-    mov QWORD[esp+20], 1; 设置函数参数
-    mov QWORD[esp+12], 100; 设置函数参数
+    mov QWORD[esp+16], 1; 设置函数参数
+    mov QWORD[esp+8], 100; 设置函数参数
     call test.hiFn2; 调用函数
     add esp, 16; 还原栈指针
     pop ebp; 弹出函数基指针

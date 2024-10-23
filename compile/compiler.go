@@ -216,7 +216,7 @@ func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 			}
 			callBlock.Args[i].Type = callBlock.Args[i].Defind.Type
 		}
-		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[esp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset)+"]", "设置函数参数")
+		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[esp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset-4)+"]", "设置函数参数")
 	}
 	code += Format("call " + node.Value.(*parser.CallBlock).Func.Name + "; 调用函数")
 	if afterCode != "" {
