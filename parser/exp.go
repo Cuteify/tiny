@@ -19,6 +19,7 @@ type Expression struct {
 	Var       *VarBlock
 	StringVal string
 	Bool      bool
+	ConstBool bool
 	Type      typeSys.Type
 }
 

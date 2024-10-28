@@ -2,6 +2,7 @@ package parser
 
 import (
 	"future/lexer"
+	typeSys "future/type"
 	"reflect"
 )
 
@@ -20,6 +21,17 @@ func (i *IfBlock) Parse(p *Parser) {
 	brackets := p.Brackets(true)
 	p.Lexer.Cursor = brackets.Children[0].Value.Cursor
 	i.Condition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
+	if !typeSys.CheckTypeType(i.Condition.Type, "bool") {
+
+	}
+	if i.Condition.ConstBool {
+		p.DontBack=true
+		if i.Condition.Bool  {
+
+		} else {
+			return
+		}
+	}
 	p.Wait("{")
 	nodeTmp := &Node{Value: i}
 	p.ThisBlock.AddChild(nodeTmp)
