@@ -17,8 +17,9 @@ fn hiMyLang(hi:f64, b:i32 = 1) i32 {
 
 fn hiFn(hi:int, b:i64 = "hi") i32 {
     hiMyLang((6.6+9)*5, 9)
-    var abcdefg:i32 = 1
+    var abcdefg:i32 = 5
     var b:i32 = 123*abcdefg
+    b=6
     if (b > abcdefg) {
         b = 0
     } else {

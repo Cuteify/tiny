@@ -118,27 +118,28 @@ func (v *VarBlock) Parse(p *Parser) {
 
 }
 
-func (v *VarBlock) ParseDefine(p *Parser) {
+func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 	// 找到定义位置
 	oldThisBlock := p.ThisBlock
 	if !utils.CheckName(v.Name) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
-	for {
-		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-			p.Error.MissErrors("Syntax Error", p.Lexer.Cursor-len(v.Name), p.Lexer.Cursor, "need define "+v.Name)
-		}
+ 	for {
 		for i := 0; i < len(p.ThisBlock.Children); i++ {
 			switch p.ThisBlock.Children[i].Value.(type) {
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
 				if tmp.Name == v.Name && tmp.IsDefine {
-					tmp.Used = true
 					v.Define = p.ThisBlock.Children[i]
 					v.Type = tmp.Type
-					goto end
+					tmp.Used = true
+					p.ThisBlock = oldThisBlock
+					return tmp
 				}
 			}
+		}
+		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
+			p.Error.MissErrors("Syntax Error", p.Lexer.Cursor-len(v.Name), p.Lexer.Cursor, "need define "+v.Name)
 		}
 		switch p.ThisBlock.Value.(type) {
 		case *FuncBlock:
@@ -148,12 +149,52 @@ func (v *VarBlock) ParseDefine(p *Parser) {
 					arg := tmp.Args[j]
 					v.Define = &Node{Value: arg}
 					v.Type = arg.Type
-					goto end
+					p.ThisBlock = oldThisBlock
+					return nil
 				}
 			}
+		}
+
+		p.ThisBlock = p.ThisBlock.Father
+	}
+}
+
+func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
+	if v.Define == nil {
+		v.ParseDefine(p)
+	}
+	if v.Define.Father.Father == nil {
+		return nil
+	}
+	oldThisBlock := p.ThisBlock
+
+	if !utils.CheckName(v.Name) {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+	}
+	for {
+		for i := len(p.ThisBlock.Children) - 1; i >= 0; i-- {
+			switch p.ThisBlock.Children[i].Value.(type) {
+			case *IfBlock:
+				goto end
+			case *VarBlock:
+				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
+				if tmp.Name == v.Name {
+					if tmp.Value.IsConst() {
+						v.Value = new(Expression)
+						*v.Value = *tmp.Value
+					}
+					p.ThisBlock = oldThisBlock
+					return tmp
+				}
+			}
+		}
+		switch p.ThisBlock.Value.(type) {
+		case *FuncBlock:
+			goto end
 		}
 		p.ThisBlock = p.ThisBlock.Father
 	}
 end:
 	p.ThisBlock = oldThisBlock
+	return nil
 }
