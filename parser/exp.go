@@ -115,8 +115,30 @@ func (e *Expression) Check(p *Parser) bool {
 			} else {
 				return false
 			}
-		case "==", "!=", "<", ">", "<=", ">=":
+		case "==", "!=":
 			if typeSys.GetTypeType(left.Type) == typeSys.GetTypeType(right.Type) {
+				e.Type = typeSys.GetSystemType("bool")
+				return true
+			} else {
+				return false
+			}
+		case "<", ">", "<=", ">=":
+			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
+				if left.IsConst() && right.IsConst() {
+					// 根据操作符计算结果
+					switch e.Separator {
+					case "<":
+						e.Bool = left.Num < right.Num
+					case ">":
+						e.Bool = left.Num > right.Num
+					case "<=":
+						e.Bool = left.Num <= right.Num
+					case ">=":
+						e.Bool = left.Num >= right.Num
+					}
+					e.Separator = ""
+					e.Left, e.Right = nil, nil
+				}
 				e.Type = typeSys.GetSystemType("bool")
 				return true
 			} else {
@@ -144,8 +166,8 @@ func (e *Expression) Check(p *Parser) bool {
 	} else {
 		return false
 	}
-}
 
+}
 func (e *Expression) IsConst() bool {
 	return e.Var == nil && e.Call == nil && e.Separator == ""
 }

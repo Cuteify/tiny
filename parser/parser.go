@@ -16,7 +16,8 @@ type Parser struct {
 	Funcs       map[string]*Node
 	Vars        map[string]*Node
 	Types       map[string]*Node
-	Package    *packageFmt.Info
+	Package     *packageFmt.Info
+	DontBack    bool
 }
 
 func (p *Parser) Next() (finish bool) {
@@ -106,6 +107,10 @@ func (p *Parser) Back(num int) error {
 	}
 	if p.ThisBlock.Father == nil {
 		p.Error.MissError("Internal Compiler Errors", p.Lexer.Cursor, "Back at root")
+	}
+	if p.DontBack {
+		p.DontBack = false
+		return nil
 	}
 	p.ThisBlock = p.ThisBlock.Father
 	if num < 0 {

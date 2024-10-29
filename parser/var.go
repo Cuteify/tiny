@@ -38,17 +38,23 @@ func (v *VarBlock) Parse(p *Parser) {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 			}
 		} else if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "=" {
-			// 找到行尾，解析表达式
-			v.Value = p.ParseExpression(p.FindEndCursor())
-			v.ParseDefine(p)
-			v.Type = v.Value.Type
-			if typeSys.AutoType(v.Type, v.Define.Value.(*VarBlock).Type, true) {
-				v.Type = v.Define.Value.(*VarBlock).Type
+			tmp := v.FindStaticVal(p)
+			if tmp != nil && !tmp.Used {
+				v.Value = p.ParseExpression(p.FindEndCursor())
+				return
 			} else {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Define.Value.(*VarBlock).Type.Type())
-			}
-			if v.Define.Value.(*VarBlock).IsConst {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, v.Name+":const can not be redefined")
+				// 找到行尾，解析表达式
+				v.Value = p.ParseExpression(p.FindEndCursor())
+				v.ParseDefine(p)
+				v.Type = v.Value.Type
+				if typeSys.AutoType(v.Type, v.Define.Value.(*VarBlock).Type, true) {
+					v.Type = v.Define.Value.(*VarBlock).Type
+				} else {
+					p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Define.Value.(*VarBlock).Type.Type())
+				}
+				if v.Define.Value.(*VarBlock).IsConst {
+					p.Error.MissError("Syntax Error", p.Lexer.Cursor, v.Name+":const can not be redefined")
+				}
 			}
 		}
 	} else if code.Type == lexer.LexTokenType["VAR"] {
@@ -124,7 +130,7 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 	if !utils.CheckName(v.Name) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
- 	for {
+	for {
 		for i := 0; i < len(p.ThisBlock.Children); i++ {
 			switch p.ThisBlock.Children[i].Value.(type) {
 			case *VarBlock:
@@ -132,7 +138,6 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 				if tmp.Name == v.Name && tmp.IsDefine {
 					v.Define = p.ThisBlock.Children[i]
 					v.Type = tmp.Type
-					tmp.Used = true
 					p.ThisBlock = oldThisBlock
 					return tmp
 				}
