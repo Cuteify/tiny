@@ -220,7 +220,10 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 					switch varBlock.Define.Value.(type) {
 					case *VarBlock:
 						varBlock.Offset = varBlock.Define.Value.(*VarBlock).Offset
-						varBlock.FindStaticVal(p)
+						tmp := varBlock.FindStaticVal(p)
+						if tmp != nil {
+							tmp.Used = true
+						}
 						if varBlock.Value != nil {
 							exp = varBlock.Value
 						} else {
@@ -247,7 +250,10 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 				switch varBlock.Define.Value.(type) {
 				case *VarBlock:
 					varBlock.Offset = varBlock.Define.Value.(*VarBlock).Offset
-					varBlock.FindStaticVal(p)
+					tmp := varBlock.FindStaticVal(p)
+					if tmp != nil {
+						tmp.Used = true
+					}
 					if varBlock.Value != nil {
 						exp = varBlock.Value
 					} else {

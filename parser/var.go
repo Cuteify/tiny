@@ -40,14 +40,14 @@ func (v *VarBlock) Parse(p *Parser) {
 		} else if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "=" {
 			tmp := v.FindStaticVal(p)
 			if tmp != nil && !tmp.Used {
-				v.Value = p.ParseExpression(p.FindEndCursor())
+				tmp.Value = p.ParseExpression(p.FindEndCursor())
 				return
 			} else {
 				// 找到行尾，解析表达式
 				v.Value = p.ParseExpression(p.FindEndCursor())
 				v.ParseDefine(p)
 				v.Type = v.Value.Type
-				if typeSys.AutoType(v.Type, v.Define.Value.(*VarBlock).Type, true) {
+				if typeSys.AutoType(v.Type, v.Define.Value.(*VarBlock).Type, v.Value.IsConst()) {
 					v.Type = v.Define.Value.(*VarBlock).Type
 				} else {
 					p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Define.Value.(*VarBlock).Type.Type())
