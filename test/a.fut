@@ -5,7 +5,7 @@ fn hiMyLang(hi:f64, b:i32 = 1) i32 {
         ret 8
     }
     var a:f64 = hi
-    var b:f64 = 123.1
+    var b:f64 = 123
     if (b > a) {
         //hiMyLang((6.6+9)*5, 9)
         b = 9.5
