@@ -19,8 +19,8 @@ test.hiMyLang2:
     ret
 
     end_if_1:
-    mov  QWORD[ebp-16], 123.1; 设置变量
-    cmp 123.1, EAX; 比较表达式的值
+    mov  QWORD[ebp-16], 123; 设置变量
+    cmp 123, EAX; 比较表达式的值
     jnl else_if_2; 判断后跳转到目标
     if_2:
     mov  QWORD[ebp-16], 9.5; 设置变量
@@ -43,10 +43,8 @@ test.hiFn2:
     mov QWORD[esp+8], 78; 设置函数参数
     call test.hiMyLang2; 调用函数
     mov  DWORD[ebp-4], 5; 设置变量
-    mov  DWORD[ebp-8], 615; 设置变量
     mov  DWORD[ebp-8], 6; 设置变量
-    cmp 6, 5; 比较表达式的值
-    jnl else_if_3; 判断后跳转到目标
+    mov else_if_3, 1; 
     if_3:
     mov  DWORD[ebp-8], 0; 设置变量
     else_if_3:
