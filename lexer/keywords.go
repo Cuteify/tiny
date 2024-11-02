@@ -73,6 +73,7 @@ var (
 		"const":    2,
 		"var":      2,
 		"let":      2,
+		"build": 16,
 	}
 
 	// LexToken类型
@@ -90,6 +91,7 @@ var (
 		"TYPE":           0xB,
 		"RAW":            0xC,
 		"BOOL":           0xD,
+		"BUILD": 0xF,
 	}
 )
 
