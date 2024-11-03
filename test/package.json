@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "description": "",
     "import": {
-        "test":"./test copy"
+        "test":"./test copy",
+        "runtime":"./runtime"
     }
 }

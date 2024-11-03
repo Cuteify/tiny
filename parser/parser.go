@@ -89,6 +89,9 @@ func (p *Parser) Next() (finish bool) {
 		p.Lexer.Cursor = beforeCursor
 		block := &VarBlock{}
 		block.Parse(p)
+	case lexer.LexTokenType["BUILD"]:
+		block := &Build{}
+		block.Parse(p)
 	default:
 		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
 			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Miss "+code.Value)
@@ -130,7 +133,7 @@ func (p *Parser) Need(value string) []lexer.Token {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '"+value+"'")
 		}
 		tmp2 = append(tmp2, tmp)
-		if tmp.Value == value {
+		if tmp.Value == value && tmp.Type != lexer.LexTokenType["STRING"] && tmp.Type != lexer.LexTokenType["RAW"] {
 			return tmp2
 		}
 	}
