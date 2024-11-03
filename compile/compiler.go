@@ -86,6 +86,8 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			}
 		case *parser.CallBlock:
 			code += c.CompileCall(n)
+		case *parser.Build:
+			code += c.CompileBuild(n)
 		}
 	}
 	switch node.Value.(type) {
