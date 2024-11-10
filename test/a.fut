@@ -39,4 +39,25 @@ fn hiFn(hi:int, b:i64 = "hi") i32 {
 
 fn main() i32 {
     hiFn(100, 1)
+print()
+}
+
+fn print() {
+    build asm {
+        extern GetStdHandle
+extern WriteConsoleW
+extern ExitProcess
+       mov rcx, -11     ; STD_OUTPUT_HANDLE
+    call GetStdHandle
+
+    ; 准备WriteConsoleW的参数
+    mov rcx, rax      ; 第一个参数：句柄
+    lea rdx, [message] ; 第二个参数：指向要写入的字符串
+    mov r8, messageLen ; 第三个参数：字符串的长度
+    lea r9, [rsp+4]    ; 第四个参数：缓冲区，用于接收实际写入的字节数
+    xor rax, rax      ; 第五个参数：不保留额外的字节
+
+    ; 调用WriteConsoleW
+    call WriteConsoleW 
+    }
 }
