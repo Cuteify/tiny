@@ -73,7 +73,7 @@ var (
 		"const":    2,
 		"var":      2,
 		"let":      2,
-		"build": 16,
+		"build":    15,
 	}
 
 	// LexToken类型
@@ -91,7 +91,7 @@ var (
 		"TYPE":           0xB,
 		"RAW":            0xC,
 		"BOOL":           0xD,
-		"BUILD": 0xF,
+		"BUILD":          0xF,
 	}
 )
 
@@ -102,3 +102,4 @@ var ProcessControlListLength = 14
 var PackageListLength = 4
 var TypeListLength = 2
 var BoolListLength = 2
+var BuildListLength = 1

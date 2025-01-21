@@ -2,7 +2,7 @@ package compile
 
 import (
 	"fmt"
-	"future/parser"
+	"cuteify/parser"
 	"strconv"
 	"strings"
 )
@@ -54,6 +54,8 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			}
 			code += Format("end_" + label + ":")
 		case *parser.ReturnBlock:
+			returnBlock:=n.Value.(*parser.ReturnBlock)
+			for (i:=len(returnBlock.))
 			code += Format("add esp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
 			code += Format("pop ebp; 跳转到函数返回部分")
 			code += Format("ret\n")
@@ -63,7 +65,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
 				addr := ""
-				if varBlock.Offset < 0 {
+				if varBlock.Offset <= 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
@@ -77,7 +79,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 					varBlock.Offset = varBlock.Define.Value.(*parser.ArgBlock).Offset
 				}
 				addr := ""
-				if varBlock.Offset < 0 {
+				if varBlock.Offset <= 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
@@ -113,6 +115,12 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 // CompileFunc 方法
 func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	funcBlock := node.Value.(*parser.FuncBlock)
+	for i := 0; i < len(funcBlock.BuildFlags); i++ {
+		bdf := funcBlock.BuildFlags[i]
+		if bdf.Type == "ext" {
+			return
+		}
+	}
 	if funcBlock.Name == "main" {
 		return ""
 	} else {
@@ -132,7 +140,7 @@ func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
 		c.ArgOffset += arg.Type.Size()
-		arg.Offset = c.ArgOffset+4
+		arg.Offset = c.ArgOffset + 4
 	}
 	code += c.Compile(node)
 	return code
@@ -155,6 +163,13 @@ func (c *Compiler) calculateVarStackSize(node *parser.Node) {
 		case *parser.FuncBlock:
 			c.calculateVarStackSize(child)
 		case *parser.CallBlock:
+			funcBlock := child.Value.(*parser.CallBlock).Func
+			for i := 0; i < len(funcBlock.BuildFlags); i++ {
+				bdf := funcBlock.BuildFlags[i]
+				if bdf.Type == "UseMoreStack" {
+					continue
+				}
+			}
 			for i := 0; i < len(child.Value.(*parser.CallBlock).Args); i++ {
 				c.VarStackSize += child.Value.(*parser.CallBlock).Args[i].Defind.Type.Size()
 			}
@@ -182,6 +197,7 @@ func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 	// 设置参数
 	// 便利参数，然后生成，然后设置到寄存器中，大于等于4个参数时，需要先将参数压入栈中，然后再从栈中取出
 	callBlock := node.Value.(*parser.CallBlock)
+	funcBlock := node.Value.(*parser.CallBlock).Func
 	afterCode := ""
 	/*if len(callBlock.Args) >= 4 {
 		// 先将参数压入栈中
@@ -209,6 +225,13 @@ func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 			afterCode += reg.AfterCode
 		}
 	}*/
+	useMoreStack := false
+	for i := 0; i < len(funcBlock.BuildFlags); i++ {
+		bdf := funcBlock.BuildFlags[i]
+		if bdf.Type == "UseMoreStack" {
+			useMoreStack = true
+		}
+	}
 	// 先将参数压入栈中
 	for i := len(callBlock.Args) - 1; i >= 0; i-- {
 		//处理表达式到栈中, 根据c.CallCount来生成一个寄存器位置
@@ -218,7 +241,22 @@ func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 			}
 			callBlock.Args[i].Type = callBlock.Args[i].Defind.Type
 		}
-		code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[esp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset-4)+"]", "设置函数参数")
+		if useMoreStack {
+			code += c.CompileExpr(callBlock.Args[i].Value, "push", "设置函数参数")
+		} else {
+			code += c.CompileExpr(callBlock.Args[i].Value, getLengthName(callBlock.Args[i].Type.Size())+"[esp+"+strconv.Itoa(callBlock.Args[i].Defind.Offset-4)+"]", "设置函数参数")
+		}
+	}
+	for i := 0; i < len(funcBlock.BuildFlags); i++ {
+		bdf := funcBlock.BuildFlags[i]
+		if bdf.Type == "ext" {
+			code += Format("extern " + bdf.Ext + "; 外部函数")
+			code += Format("call " + bdf.Ext + "; 调用外部函数")
+			if afterCode != "" {
+				code += afterCode
+			}
+			return code
+		}
 	}
 	code += Format("call " + node.Value.(*parser.CallBlock).Func.Name + "; 调用函数")
 	if afterCode != "" {

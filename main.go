@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"future/compile"
-	packageSys "future/package"
-	"future/parser"
+	"cuteify/compile"
+	packageSys "cuteify/package"
+	"cuteify/parser"
 	"os"
 )
 
@@ -14,7 +14,7 @@ func main() {
 		path = os.Args[1]
 	}
 	tmp, _ := packageSys.GetPackage(path)
-	pr(tmp.AST[0].(*parser.Node),0)
+	pr(tmp.AST[0].(*parser.Node), 0)
 	co := &compile.Compiler{}
 	code := co.Compile(tmp.AST[0].(*parser.Node))
 	//fmt.Println(code)

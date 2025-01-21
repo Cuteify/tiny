@@ -1,8 +1,8 @@
 package compile
 
 import (
-	"future/parser"
-	typeSys "future/type"
+	"cuteify/parser"
+	typeSys "cuteify/type"
 	"strconv"
 )
 
@@ -19,6 +19,10 @@ func (c *Compiler) CompileExpr(exp *parser.Expression, result, desc string) (cod
 	if exp != nil && exp.Father == nil && exp.IsConst() {
 		tmp, resultVal := c.CompileExprVal(exp)
 		code += tmp
+		if result == "push" {
+			code += Format("push " + resultVal + "; " + desc)
+			return
+		}
 		code += Format("mov " + result + ", " + resultVal + "; " + desc)
 		return
 	}

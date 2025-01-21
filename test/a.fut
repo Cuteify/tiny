@@ -1,6 +1,6 @@
 import "go.os"
 
-fn hiMyLang(hi:f64, b:i32 = 1) i32 {
+fn hiMyLang(hi:f32, b:i32 = 1) i32 {
     if (b+3 > 6666) {
         ret 8
     }
@@ -8,14 +8,14 @@ fn hiMyLang(hi:f64, b:i32 = 1) i32 {
     var b:f64 = 123
     if (b > a) {
         //hiMyLang((6.6+9)*5, 9)
-        b = 9.5
+        b = 9
     } else {
-        b = 10.4
+        b = 10
     }
     ret a+b
 }
 
-fn hiFn(hi:int, b:i64 = "hi") i32 {
+fn hiFn(hi:int, b:i32 = "hi") i32 {
     hiMyLang((6.6+9)*5, 9)
     var abcdefg:i32 = 5
     var b:i32 = 123*abcdefg
@@ -37,27 +37,32 @@ fn hiFn(hi:int, b:i64 = "hi") i32 {
     }
 }
 
-fn main() i32 {
-    hiFn(100, 1)
-print()
+fn GetStdHandle(mode:i32) int {
+    build UseMoreStack
+    build ext GetStdHandle@1
 }
 
 fn print() {
+    GetStdHandle(-11)
     build asm {
-        extern GetStdHandle
-extern WriteConsoleW
-extern ExitProcess
-       mov rcx, -11     ; STD_OUTPUT_HANDLE
-    call GetStdHandle
+extern WriteFile
 
     ; 准备WriteConsoleW的参数
-    mov rcx, rax      ; 第一个参数：句柄
-    lea rdx, [message] ; 第二个参数：指向要写入的字符串
-    mov r8, messageLen ; 第三个参数：字符串的长度
-    lea r9, [rsp+4]    ; 第四个参数：缓冲区，用于接收实际写入的字节数
-    xor rax, rax      ; 第五个参数：不保留额外的字节
+    push 0      ; 第五个参数：不保留额外
+    push 0          ; 第四个参数：缓冲区，用于接收实际写入的字节数
+    push messageLen ; 第三个参数：字符串的长度
+    push message ; 第二个参数：指向要写入的字符串
+    push eax      ; 第一个参数：句柄
+    
+    ; 调用WriteFileW
+    call WriteFile
 
-    ; 调用WriteConsoleW
-    call WriteConsoleW 
+    xor eax, eax
     }
+}
+
+
+fn main() i32 {
+    hiFn(100, 1)
+print()
 }

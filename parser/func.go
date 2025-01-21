@@ -1,16 +1,17 @@
 package parser
 
 import (
-	"future/lexer"
-	typeSys "future/type"
-	"future/utils"
+	"cuteify/lexer"
+	typeSys "cuteify/type"
+	"cuteify/utils"
 )
 
 type FuncBlock struct {
-	Args   []*ArgBlock
-	Class  typeSys.Type
-	Return []typeSys.Type
-	Name   string
+	Args       []*ArgBlock
+	Class      typeSys.Type
+	Return     []typeSys.Type
+	Name       string
+	BuildFlags []*Build
 }
 
 type ArgBlock struct {

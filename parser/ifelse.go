@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"future/lexer"
-	typeSys "future/type"
+	"cuteify/lexer"
+	typeSys "cuteify/type"
 	"reflect"
 )
 

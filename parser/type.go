@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"future/lexer"
-	typeSys "future/type"
-	"future/utils"
+	"cuteify/lexer"
+	typeSys "cuteify/type"
+	"cuteify/utils"
 )
 
 type TypeBlock struct {

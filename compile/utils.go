@@ -1,7 +1,7 @@
 package compile
 
 import (
-	"future/parser"
+	"cuteify/parser"
 	"strings"
 )
 
