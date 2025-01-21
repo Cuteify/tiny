@@ -1,9 +1,9 @@
 package parser
 
 import (
-	errorUtil "future/error"
-	"future/lexer"
-	packageFmt "future/package/fmt"
+	errorUtil "cuteify/error"
+	"cuteify/lexer"
+	packageFmt "cuteify/package/fmt"
 	"strings"
 )
 

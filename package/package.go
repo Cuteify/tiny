@@ -2,9 +2,9 @@ package packageSys
 
 import (
 	"encoding/json"
-	"future/lexer"
-	packageFmt "future/package/fmt"
-	"future/parser"
+	"cuteify/lexer"
+	packageFmt "cuteify/package/fmt"
+	"cuteify/parser"
 	"os"
 	"path"
 	"strconv"

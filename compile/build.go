@@ -1,6 +1,6 @@
 package compile
 
-import "future/parser"
+import "cuteify/parser"
 
 func (c *Compiler) CompileBuild(n *parser.Node) (code string) {
 	block := n.Value.(*parser.Build)

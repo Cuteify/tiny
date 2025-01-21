@@ -2,8 +2,8 @@ package parser
 
 import (
 	"errors"
-	"future/lexer"
-	typeSys "future/type"
+	"cuteify/lexer"
+	typeSys "cuteify/type"
 	"strings"
 )
 
@@ -61,6 +61,9 @@ func (c *CallBlock) Parse(p *Parser) {
 		sepCursor := p.Has(lexer.Token{Type: lexer.LexTokenType["SEPARATOR"], Value: ","}, rightBra)
 		if sepCursor == -1 {
 			arg := &ArgBlock{Value: p.ParseExpression(rightBra - 1)}
+			if arg.Value == nil {
+				break
+			}
 			arg.Type = arg.Value.Type
 			c.Args = append(c.Args, arg)
 			if len(c.Func.Args) < 1 {

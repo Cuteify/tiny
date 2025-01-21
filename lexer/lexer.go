@@ -1,7 +1,7 @@
 package lexer
 
 import (
-	errorUtil "future/error"
+	errorUtil "cuteify/error"
 	"io"
 	"os"
 	"strings"
@@ -212,7 +212,7 @@ func (l *Lexer) GetToken() (Token, error) {
 			// 找到行末
 			for i := l.Cursor; i < l.TextLength; i++ {
 				if l.Text[i-len(l.LineFeed):i] == l.LineFeed {
-					l.Cursor = i
+					l.Cursor = i-len(l.LineFeed)
 					return l.GetToken()
 				}
 			}

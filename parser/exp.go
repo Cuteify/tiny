@@ -2,8 +2,8 @@ package parser
 
 import (
 	"fmt"
-	"future/lexer"
-	typeSys "future/type"
+	"cuteify/lexer"
+	typeSys "cuteify/type"
 	"math"
 	"strconv"
 	"strings"
@@ -176,6 +176,10 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 	stackNum := []*Expression{}
 	stackSep := []*Expression{}
 	expStartCursor := p.Lexer.Cursor
+	nextIsNar := false
+	if p.Lexer.Cursor == stopCursor {
+		return nil
+	}
 	for p.Lexer.Cursor < stopCursor {
 		token := p.Lexer.Next()
 		switch token.Type {
@@ -285,6 +289,21 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 				exp.Type = typeSys.GetSystemType("f64")
 			}
 			stackNum = append(stackNum, exp)
+			if nextIsNar {
+				if stackNum[len(stackNum)-1].IsConst() {
+					stackNum[len(stackNum)-1].Num = -stackNum[len(stackNum)-1].Num
+				} else {
+					stackNum[len(stackNum)-1] = &Expression{
+						Type: stackNum[len(stackNum)-1].Type,
+						Left: stackNum[len(stackNum)-1],
+						Right: &Expression{
+							Type: stackNum[len(stackNum)-1].Type,
+							Num:  -1,
+						},
+						Separator: "*",
+					}
+				}
+			}
 		case lexer.LexTokenType["BOOL"]:
 			exp := &Expression{
 				Bool: token.Value == "true",
@@ -293,6 +312,14 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 			stackNum = append(stackNum, exp)
 		default:
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
+		}
+		if len(stackSep)-len(stackNum) >= 2 {
+			if stackSep[len(stackSep)-2].Separator == "(" {
+				nextIsNar = true
+				stackSep = stackSep[:len(stackSep)-1]
+			} else {
+				p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
+			}
 		}
 		if len(stackNum) >= 2 && len(stackSep) >= 2 && (token.Type != lexer.LexTokenType["SEPARATOR"] || stackSep[len(stackSep)-1].Separator == ")") {
 			if stackNum[len(stackNum)-1].Type == nil || stackNum[len(stackNum)-2] == nil {
@@ -359,9 +386,32 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		num2.Father = stackSep[0]
 		stackNum = stackNum[:1]
 		stackNum[0] = stackSep[0]
+		if len(stackNum) == 0 {
+			return nil
+		}
 		if !stackNum[0].Check(p) {
 			p.Error.MissError("experr", p.Lexer.Cursor, "")
 		}
+	}
+	if len(stackNum) == 1 && len(stackSep) == 1 && stackSep[0].Separator == "-" {
+		if stackNum[len(stackNum)-1].IsConst() {
+			stackNum[len(stackNum)-1].Num = -stackNum[len(stackNum)-1].Num
+		} else {
+			stackNum[len(stackNum)-1] = &Expression{
+				Type: stackNum[len(stackNum)-1].Type,
+				Left: stackNum[len(stackNum)-1],
+				Right: &Expression{
+					Type: stackNum[len(stackNum)-1].Type,
+					Num:  -1,
+				},
+				Separator: "*",
+			}
+		}
+		stackSep = stackSep[:len(stackSep)-1]
+		stackNum[len(stackNum)-1].Check(p)
+	}
+	if len(stackNum) == 0 {
+		return nil
 	}
 	return stackNum[0]
 }

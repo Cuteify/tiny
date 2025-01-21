@@ -1,6 +1,6 @@
 package parser
 
-import "future/lexer"
+import "cuteify/lexer"
 
 type ReturnBlock struct {
 	Value []*Expression
@@ -27,4 +27,11 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	node := &Node{Value: r}
 	p.ThisBlock.AddChild(node)
 
+}
+
+func findFunc(p *Parser) *Node {
+	nowThisBlock := p.ThisBlock
+	for {
+		if p.ThisBlock.
+	}
 }
