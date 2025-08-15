@@ -28,10 +28,3 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	p.ThisBlock.AddChild(node)
 
 }
-
-func findFunc(p *Parser) *Node {
-	nowThisBlock := p.ThisBlock
-	for {
-		if p.ThisBlock.
-	}
-}

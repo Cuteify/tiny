@@ -1,10 +1,10 @@
 package packageSys
 
 import (
-	"encoding/json"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
+	"encoding/json"
 	"os"
 	"path"
 	"strconv"
@@ -29,14 +29,14 @@ func GetPackage(packagePath string) (*packageFmt.Info, error) {
 	if err != nil {
 		return nil, err // 返回错误
 	}
-	
+
 	// 打开package.json文件
 	packFile, err := os.OpenFile(path.Join(packagePath, "package.json"), os.O_RDONLY, 0666)
 	if err != nil {
 		return nil, err // 返回错误
 	}
 	defer packFile.Close()
-	
+
 	// 解码package.json内容
 	jsonDe := json.NewDecoder(packFile)
 	packageInfo := &packageFmt.Info{}
@@ -61,7 +61,7 @@ func GetPackage(packagePath string) (*packageFmt.Info, error) {
 			all.Types = p.Types
 		}
 	}
-	
+
 	// 处理包名重复
 	if packagesCount[packageInfo.Name] == 0 {
 		packages[packageInfo.Name] = packageInfo

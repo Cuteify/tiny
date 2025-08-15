@@ -21,9 +21,9 @@ func DelEmptyCFGNode(node *parser.Node) {
 	}
 	for i := 0; i < len(node.Children); i++ {
 		switch node.Children[i].Value.(type) {
-			case *parser.FuncBlock:
-				DelEmptyCFGNode(node.Children[i])
-				continue
+		case *parser.FuncBlock:
+			DelEmptyCFGNode(node.Children[i])
+			continue
 		}
 		if node.Children[i].CFG == nil || len(node.Children[i].CFG) == 0 {
 			node.Children = append(node.Children[:i], node.Children[i+1:]...)

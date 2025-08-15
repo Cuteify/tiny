@@ -42,7 +42,7 @@ func NewLexer(filename string) *Lexer {
 		Filename: filename,
 	}
 	tmp, err := os.ReadFile(filename)
-	if err!= nil {
+	if err != nil {
 		panic(err)
 	}
 	l.Text = unsafe.String(unsafe.SliceData(tmp), len(tmp))
@@ -212,7 +212,7 @@ func (l *Lexer) GetToken() (Token, error) {
 			// 找到行末
 			for i := l.Cursor; i < l.TextLength; i++ {
 				if l.Text[i-len(l.LineFeed):i] == l.LineFeed {
-					l.Cursor = i-len(l.LineFeed)
+					l.Cursor = i - len(l.LineFeed)
 					return l.GetToken()
 				}
 			}

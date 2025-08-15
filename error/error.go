@@ -10,8 +10,8 @@ import (
 )
 
 type Error struct {
-	Text string
-	Path string
+	Text     string
+	Path     string
 	LineFeed string
 }
 

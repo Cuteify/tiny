@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"errors"
 	"cuteify/lexer"
 	typeSys "cuteify/type"
+	"errors"
 	"strings"
 )
 
