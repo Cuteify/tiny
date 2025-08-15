@@ -1,8 +1,8 @@
 package compile
 
 import (
-	"fmt"
 	"cuteify/parser"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -37,6 +37,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			ifBlock := n.Value.(*parser.IfBlock)
 			c.IfCount++
 			label := fmt.Sprintf("if_%d", c.IfCount)
+			ifBlock.Condition.Check()
 			if ifBlock.Else {
 				code += c.CompileExpr(ifBlock.Condition, "else_"+label, "")
 			} else {
@@ -54,13 +55,13 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			}
 			code += Format("end_" + label + ":")
 		case *parser.ReturnBlock:
-			returnBlock:=n.Value.(*parser.ReturnBlock)
-			for (i:=len(returnBlock.))
+			//returnBlock:=n.Value.(*parser.ReturnBlock)
 			code += Format("add esp, " + strconv.Itoa(c.VarStackSize) + "; 还原栈指针")
 			code += Format("pop ebp; 跳转到函数返回部分")
 			code += Format("ret\n")
 		case *parser.VarBlock:
 			varBlock := n.Value.(*parser.VarBlock)
+			varBlock.Value.Check()
 			if varBlock.IsDefine {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
@@ -70,6 +71,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				}
+
 				code += c.CompileExpr(varBlock.Value, " "+getLengthName(varBlock.Type.Size())+addr, "设置变量")
 			} else {
 				switch varBlock.Define.Value.(type) {

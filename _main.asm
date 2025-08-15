@@ -1,7 +1,3 @@
-section .data
-    message db 'Hello, World!', 0
-    messageLen equ $ - message
-
 section .text
 global main
 
@@ -23,13 +19,13 @@ test.hiMyLang2:
     ret
 
     end_if_1:
-    mov  DWORD[ebp-16], 123; 设置变量
+    mov  QWORD[ebp-16], 123; 设置变量
     cmp 123, EAX; 比较表达式的值
     jnl else_if_2; 判断后跳转到目标
     if_2:
-    mov  DWORD[ebp-16], 9; 设置变量
+    mov  QWORD[ebp-16], 9; 设置变量
     else_if_2:
-    mov  DWORD[ebp-16], 10; 设置变量
+    mov  QWORD[ebp-16], 10; 设置变量
     end_if_2:
     add esp, 16; 还原栈指针
     pop ebp; 跳转到函数返回部分
@@ -112,7 +108,7 @@ test.main0:
     mov ebp, esp; 设置基指针
     sub esp, 12; 调整栈指针
     mov DWORD[esp+12], 1; 设置函数参数
-    mov DWORD[esp+8], 100; 设置函数参数
+    mov QWORD[esp+8], 100; 设置函数参数
     call test.hiFn2; 调用函数
     call test.print0; 调用函数
     add esp, 12; 还原栈指针
@@ -124,6 +120,6 @@ test.main0:
 
 main:
 call test.main0
-;PRINT_STRING "MyLang First Finish!"
+PRINT_STRING "MyLang First Finish!"
 ret
 

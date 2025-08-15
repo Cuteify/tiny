@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"cuteify/compile"
 	packageSys "cuteify/package"
 	"cuteify/parser"
+	"fmt"
 	"os"
 )
 
