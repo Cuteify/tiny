@@ -6,17 +6,23 @@ import (
 	"cuteify/parser"
 	"fmt"
 	"os"
+	"time"
 )
 
 func main() {
+	startTime := time.Now()
 	path := "./test"
 	if len(os.Args) != 1 {
 		path = os.Args[1]
 	}
-	tmp, _ := packageSys.GetPackage(path)
-	pr(tmp.AST[0].(*parser.Node), 0)
+	tmp, err := packageSys.GetPackage(path, true)
+	if err != nil {
+		panic(err)
+	}
+	//pr(tmp.AST[0].(*parser.Node), 0)
 	co := &compile.Compiler{}
-	code := co.Compile(tmp.AST[0].(*parser.Node))
+	//pr(tmp.AST.(*parser.Node), 0)
+	code := co.Compile(tmp.AST.(*parser.Node))
 	//fmt.Println(code)
 	os.WriteFile(`./_main.asm`, []byte(code), 0644)
 	/*lex := lexer.NewLexer(path)
@@ -30,6 +36,7 @@ func main() {
 	//fmt.Println("\n" + strings.Repeat("=", 50) + "\n")
 	co := &compile.Compiler{}
 	fmt.Println(co.Compile(p.Block))*/
+	fmt.Println("\033[32mOK\033[0m:Finish in", time.Now().Sub(startTime))
 }
 func pr(block *parser.Node, tabnum int) {
 	tmp := ""

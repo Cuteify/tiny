@@ -4,7 +4,7 @@ fn hiMyLang(hi:f32, b:i32 = 1) i32 {
     if (b+3 > 6666) {
         ret 8
     }
-    var a:f64 = hi
+    var a:f64 = hi * 5 + b /// 5 * 5 / (hi + b)
     var b:f64 = 123
     if (b > a) {
         //hiMyLang((6.6+9)*5, 9)
@@ -64,5 +64,5 @@ extern WriteFile
 
 fn main() i32 {
     hiFn(100, 1)
-print()
+    print()
 }

@@ -12,12 +12,12 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	for {
 		code := p.Lexer.Next()
 		count++
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && (code.Value == "\n" || code.Value == "\r") {
+		if code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
 			p.Lexer.Back(count)
 			r.Value = append(r.Value, p.ParseExpression(p.Lexer.Cursor+count))
 			break
 		}
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "," {
+		if code.Type == lexer.SEPARATOR && code.Value == "," {
 			p.Lexer.Back(count)
 			r.Value = append(r.Value, p.ParseExpression(p.Lexer.Cursor+count))
 			p.Lexer.Cursor++

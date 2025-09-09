@@ -33,12 +33,12 @@ func (i *IfBlock) Parse(p *Parser) {
 
 func (e *ElseBlock) Parse(p *Parser) {
 	tmp := p.Lexer.Next()
-	if tmp.Value == "IF" && tmp.Type == lexer.LexTokenType["PROCESSCONTROL"] {
+	if tmp.Value == "IF" && tmp.Type == lexer.PROCESSCONTROL {
 		brackets := p.Brackets(true)
 		p.Lexer.Cursor = brackets.Children[0].Value.Cursor
 		e.IfCondition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
 		p.Wait("{")
-	} else if !(tmp.Value == "{" && tmp.Type == lexer.LexTokenType["SEPARATOR"]) {
+	} else if !(tmp.Value == "{" && tmp.Type == lexer.SEPARATOR) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need {")
 	}
 	if len(p.ThisBlock.Children) == 0 {

@@ -29,14 +29,11 @@ func (f *FuncBlock) Parse(p *Parser) {
 	}
 	// 判断有没有父类
 	code := p.Lexer.Next()
-	if code.Type == lexer.LexTokenType["NAME"] {
+	if code.Type == lexer.NAME {
 		// 匹配名字
 		f.Name = code.Value
 		if !utils.CheckName(f.Name) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
-		}
-		if p.Package != nil {
-			f.Name = p.Package.Name + "." + f.Name
 		}
 		// 匹配参数
 		code := p.Lexer.Next()
@@ -46,7 +43,7 @@ func (f *FuncBlock) Parse(p *Parser) {
 		f.ParseArgs(p)
 		p.Wait("{")
 		nodeTmp := &Node{Value: f}
-		p.Funcs[f.Name] = nodeTmp
+		//p.Funcs[f.Name] = nodeTmp
 		p.ThisBlock.AddChild(nodeTmp)
 		p.ThisBlock = nodeTmp
 	} else if code.Value == "(" {
@@ -72,19 +69,19 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		if v.Brackets != nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss )")
 		}
-		if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == "" {
+		if v.Value.Type == lexer.NAME && lastVal == "" {
 			f.Args = []*ArgBlock{{Name: v.Value.Value}}
 			if !utils.CheckName(v.Value.Value) {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 			}
 			oldCursor = v.Value.Cursor
-		} else if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == "," {
+		} else if v.Value.Type == lexer.NAME && lastVal == "," {
 			f.Args = append(f.Args, &ArgBlock{Name: v.Value.Value})
 			if !utils.CheckName(v.Value.Value) {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 			}
 			oldCursor = v.Value.Cursor
-		} else if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == ":" {
+		} else if v.Value.Type == lexer.NAME && lastVal == ":" {
 			tb := &TypeBlock{}
 			tmp := tb.FindDefine(p, v.Value.Value)
 			f.Args[len(f.Args)-1].Type = tmp
@@ -94,7 +91,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			} else {
 				p.Error.MissErrors("Syntax Error", oldCursor, v.Value.Cursor, "need type")
 			}
-		} else if v.Value.Type == lexer.LexTokenType["NAME"] && lastVal == "*" {
+		} else if v.Value.Type == lexer.NAME && lastVal == "*" {
 			isPtr = true
 		} else if v.Value.Value == "=" {
 			tmp := []lexer.Token{}

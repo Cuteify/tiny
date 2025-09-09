@@ -25,7 +25,7 @@ func (b *Build) Parse(p *Parser) {
 					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need }")
 				}
 			}
-			if code.Value == "}" && code.Type == lexer.LexTokenType["SEPARATOR"] {
+			if code.Value == "}" && code.Type == lexer.SEPARATOR {
 				break
 			}
 		}

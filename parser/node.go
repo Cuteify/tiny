@@ -16,6 +16,23 @@ type Node struct {
 	Children []*Node
 
 	CFG []CFGNode // 存储与该节点相关的CFG
+
+	Checked bool
+}
+
+func (n *Node) Check(p *Parser) {
+	if n.Checked {
+		return
+	}
+	n.Checked = true
+	for _, child := range n.Children {
+		child.Check(p)
+	}
+	switch n.Value.(type) {
+	case *CallBlock:
+		callBlock := n.Value.(*CallBlock)
+		callBlock.Check(p)
+	}
 }
 
 func (n *Node) AddChild(node *Node) {
