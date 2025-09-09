@@ -21,14 +21,14 @@ type VarBlock struct {
 func (v *VarBlock) Parse(p *Parser) {
 	// 解析变量名
 	code := p.Lexer.Next()
-	if code.Type == lexer.LexTokenType["NAME"] {
+	if code.Type == lexer.NAME {
 		v.StartCursor = p.Lexer.Cursor
 		v.Name = code.Value
 		if !utils.CheckName(v.Name) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 		}
 		code := p.Lexer.Next()
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == ":=" {
+		if code.Type == lexer.SEPARATOR && code.Value == ":=" {
 			v.IsDefine = true
 			// 找到行尾，解析表达式
 			v.Value = p.ParseExpression(p.FindEndCursor())
@@ -37,7 +37,7 @@ func (v *VarBlock) Parse(p *Parser) {
 			} else {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 			}
-		} else if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "=" {
+		} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
 			tmp := v.FindStaticVal(p)
 			if tmp != nil && !tmp.Used {
 				tmp.Value = p.ParseExpression(p.FindEndCursor())
@@ -57,7 +57,7 @@ func (v *VarBlock) Parse(p *Parser) {
 				}
 			}
 		}
-	} else if code.Type == lexer.LexTokenType["VAR"] {
+	} else if code.Type == lexer.VAR {
 		v.IsDefine = true
 		switch code.Value {
 		case "CONST":
@@ -69,7 +69,7 @@ func (v *VarBlock) Parse(p *Parser) {
 			p.Error.Warning("let is not support, use var instead")
 		}
 		code = p.Lexer.Next()
-		if code.Type != lexer.LexTokenType["NAME"] {
+		if code.Type != lexer.NAME {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
 		}
 		v.StartCursor = p.Lexer.Cursor
@@ -78,17 +78,17 @@ func (v *VarBlock) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 		}
 		code = p.Lexer.Next()
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == ":" {
+		if code.Type == lexer.SEPARATOR && code.Value == ":" {
 			code = p.Lexer.Next()
-			if code.Type == lexer.LexTokenType["NAME"] {
+			if code.Type == lexer.NAME {
 				tb := &TypeBlock{}
 				tmp := tb.FindDefine(p, code.Value)
 				rTmp := typeSys.ToRType(tmp)
 				v.Type = rTmp
-			} else if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "*" {
+			} else if code.Type == lexer.SEPARATOR && code.Value == "*" {
 				// 指针
 				code = p.Lexer.Next()
-				if code.Type == lexer.LexTokenType["NAME"] {
+				if code.Type == lexer.NAME {
 					tb := &TypeBlock{}
 					tmp := tb.FindDefine(p, code.Value)
 					rTmp := typeSys.ToRType(tmp)
@@ -104,7 +104,7 @@ func (v *VarBlock) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 		}
 		code = p.Lexer.Next()
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "=" {
+		if code.Type == lexer.SEPARATOR && code.Value == "=" {
 			v.Value = p.ParseExpression(p.FindEndCursor())
 			if typeSys.AutoType(v.Value.Type, v.Type, true) {
 				v.Value.Type = v.Type

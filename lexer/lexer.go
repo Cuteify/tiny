@@ -58,11 +58,7 @@ func NewLexer(filename string) *Lexer {
 	} else {
 		l.LineFeed = "\n"
 	}
-	l.Error = &errorUtil.Error{
-		Text:     l.Text,
-		Path:     l.Filename,
-		LineFeed: l.LineFeed,
-	}
+	l.Error = errorUtil.NewError(l.Filename, l.Text, l.LineFeed)
 	l.TextLength = len(l.Text)
 	l.Cursor = 0
 	return l
@@ -143,7 +139,7 @@ func (l *Lexer) GetWord() (string, bool) {
 			continue
 		}
 		word := l.Text[l.Cursor : l.Cursor+e]
-		if keywords[word] == LexTokenType["SEPARATOR"] {
+		if keywords[word] == SEPARATOR {
 			if word == " " {
 				return l.GetWord()
 			}
@@ -156,7 +152,7 @@ func (l *Lexer) GetWord() (string, bool) {
 		// 遍历分隔符列表
 		word := l.Text[i : i+2]
 		if i+1 < l.TextLength {
-			if keywords[word] == LexTokenType["SEPARATOR"] {
+			if keywords[word] == SEPARATOR {
 				text := l.Text[l.Cursor:i]
 				l.Cursor = i
 				l.LastSepTmp = word
@@ -164,7 +160,7 @@ func (l *Lexer) GetWord() (string, bool) {
 			}
 		}
 		word = l.Text[i : i+1]
-		if keywords[word] == LexTokenType["SEPARATOR"] {
+		if keywords[word] == SEPARATOR {
 			text := l.Text[l.Cursor:i]
 			l.Cursor = i
 			l.LastSepTmp = word
@@ -187,14 +183,14 @@ func (l *Lexer) GetToken() (Token, error) {
 		case "\"":
 			token := l.GetString()
 			return Token{
-				Type:      LexTokenType["STRING"],
+				Type:      STRING,
 				Value:     token,
 				EndCursor: l.Cursor,
 				Cursor:    l.Cursor - len(token),
 			}, nil
 		case "`":
 			token := Token{
-				Type:      LexTokenType["RAW"],
+				Type:      RAW,
 				Value:     l.GetRawString(),
 				EndCursor: l.Cursor,
 			}
@@ -202,7 +198,7 @@ func (l *Lexer) GetToken() (Token, error) {
 			return token, nil
 		case "'":
 			token := Token{
-				Type:      LexTokenType["CHAR"],
+				Type:      CHAR,
 				Value:     l.GetChar(),
 				EndCursor: l.Cursor,
 			}
@@ -219,7 +215,7 @@ func (l *Lexer) GetToken() (Token, error) {
 			return Token{}, io.EOF
 		default:
 			return Token{
-				Type:      LexTokenType["SEPARATOR"],
+				Type:      SEPARATOR,
 				Value:     word,
 				EndCursor: l.Cursor,
 				Cursor:    l.Cursor - len(word),
@@ -228,7 +224,7 @@ func (l *Lexer) GetToken() (Token, error) {
 	}
 	// 匹配Token，返回类型
 	if typeNum, ok := keywords[word]; ok {
-		if typeNum == LexTokenType["BOOL"] && (word == "true" || word == "false") {
+		if typeNum == BOOL && (word == "true" || word == "false") {
 			goto other
 		}
 		token := Token{
@@ -245,7 +241,7 @@ other:
 		word3, _ := l.GetWord()
 		if word2 == "." && IsDigit(word3) {
 			token := Token{
-				Type:      LexTokenType["NUMBER"],
+				Type:      NUMBER,
 				Value:     word + "." + word3,
 				EndCursor: l.Cursor,
 			}
@@ -254,7 +250,7 @@ other:
 		}
 		l.Back(len(word2 + word3))
 		token := Token{
-			Type:      LexTokenType["NUMBER"],
+			Type:      NUMBER,
 			Value:     word,
 			EndCursor: l.Cursor,
 		}
@@ -262,7 +258,7 @@ other:
 		return token, nil
 	} else {
 		token := Token{
-			Type:      LexTokenType["NAME"],
+			Type:      NAME,
 			Value:     word,
 			EndCursor: l.Cursor,
 		}

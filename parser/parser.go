@@ -13,9 +13,6 @@ type Parser struct {
 	Lexer       *lexer.Lexer
 	BracketsNum int
 	Error       *errorUtil.Error
-	Funcs       map[string]*Node
-	Vars        map[string]*Node
-	Types       map[string]*Node
 	Package     *packageFmt.Info
 	DontBack    int
 }
@@ -30,17 +27,17 @@ func (p *Parser) Next() (finish bool) {
 		finish = true
 		return
 	}
-	if code.Value == "}" && code.Type == lexer.LexTokenType["SEPARATOR"] {
+	if code.Value == "}" && code.Type == lexer.SEPARATOR {
 		p.Back(1)
 		return
 	}
 	switch code.Type {
-	case lexer.LexTokenType["FUNC"]:
+	case lexer.FUNC:
 		if code.Value == "fn" {
 			block := &FuncBlock{}
 			block.Parse(p)
 		}
-	case lexer.LexTokenType["PROCESSCONTROL"]:
+	case lexer.PROCESSCONTROL:
 		if code.Value == "if" {
 			block := &IfBlock{}
 			block.Parse(p)
@@ -51,9 +48,9 @@ func (p *Parser) Next() (finish bool) {
 			ret := &ReturnBlock{}
 			ret.Parse(p)
 		}
-	case lexer.LexTokenType["NAME"]:
+	case lexer.NAME:
 		code2 := p.Lexer.Next()
-		if code2.Type != lexer.LexTokenType["SEPARATOR"] {
+		if code2.Type != lexer.SEPARATOR {
 			beforeCursor++
 			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+len(code.Value), "'"+code.Value+"' is not a valid expression")
 		}
@@ -70,7 +67,7 @@ func (p *Parser) Next() (finish bool) {
 			block.ParseDefine(p)
 			block.Type = block.Define.Value.(*VarBlock).Type
 			code3 := p.Lexer.Next()
-			if code3.Type == lexer.LexTokenType["NAME"] {
+			if code3.Type == lexer.NAME {
 
 			}
 		} else if code2.Value == "=" {
@@ -85,15 +82,15 @@ func (p *Parser) Next() (finish bool) {
 			beforeCursor++
 			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+len(code.Value), "'"+code.Value+"' is not a valid expression")
 		}
-	case lexer.LexTokenType["VAR"]:
+	case lexer.VAR:
 		p.Lexer.Cursor = beforeCursor
 		block := &VarBlock{}
 		block.Parse(p)
-	case lexer.LexTokenType["BUILD"]:
+	case lexer.BUILD:
 		block := &Build{}
 		block.Parse(p)
 	default:
-		if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
+		if code.Type == lexer.SEPARATOR && code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
 			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Miss "+code.Value)
 		}
 	}
@@ -133,7 +130,7 @@ func (p *Parser) Need(value string) []lexer.Token {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '"+value+"'")
 		}
 		tmp2 = append(tmp2, tmp)
-		if tmp.Value == value && tmp.Type != lexer.LexTokenType["STRING"] && tmp.Type != lexer.LexTokenType["RAW"] {
+		if tmp.Value == value && tmp.Type != lexer.STRING && tmp.Type != lexer.RAW {
 			return tmp2
 		}
 	}
@@ -202,4 +199,33 @@ func (p *Parser) Parse() *Node {
 		}
 	}
 	return p.Block
+}
+
+func (p *Parser) FindFunc(name string) *Node {
+	// 查找包名
+	tmp := strings.Split(name, ".")
+	if len(tmp) != 1 {
+		packageName, funcName := tmp[0], tmp[len(tmp)-1]
+		importPackage := packageFmt.FixPathName(p.Package.Import[packageName])
+		fullName := importPackage + "." + funcName
+		children := p.Package.AST.(*Node).Children
+		for i := 0; i < len(children); i++ {
+			if f, ok := children[i].Value.(*FuncBlock); ok {
+				if f.Name == fullName {
+					return children[i]
+				}
+			}
+		}
+	} else {
+		children := p.Block.Children
+		for i := 0; i < len(children); i++ {
+			if f, ok := children[i].Value.(*FuncBlock); ok {
+				if f.Name == name {
+					return children[i]
+				}
+			}
+		}
+	}
+	p.Lexer.Error.MissError("func", p.Lexer.Cursor-1, "not found function '"+name+"'")
+	return nil
 }

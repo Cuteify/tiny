@@ -14,19 +14,16 @@ type TypeBlock struct {
 func (t *TypeBlock) Parse(p *Parser) {
 	tmp := &typeSys.RType{}
 	code := p.Lexer.Next()
-	if code.Type == lexer.LexTokenType["NAME"] {
+	if code.Type == lexer.NAME {
 		t.Name = code.Value
 		if !utils.CheckName(t.Name) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 		}
-		if p.Package != nil {
-			t.Name = p.Package.Name + "." + t.Name
-		}
 		tmp.TypeName = code.Value
 		code2 := p.Lexer.Next()
-		if code2.Type == lexer.LexTokenType["NAME"] {
+		if code2.Type == lexer.NAME {
 			tmp.RFather = t.FindDefine(p, code2.Value)
-		} else if code2.Type == lexer.LexTokenType["TYPE"] && code2.Value == "STRUCT" {
+		} else if code2.Type == lexer.TYPE && code2.Value == "STRUCT" {
 			tmp.TypeName = "STRUCT"
 		}
 	} else {
@@ -64,31 +61,31 @@ func (t *TypeBlock) FindDefine(p *Parser, name string) typeSys.Type {
 func (t *TypeBlock) ParseStruct(p *Parser) (name string, Type typeSys.Type, tag string, Default *Expression) {
 	// 解析结构体
 	code := p.Lexer.Next()
-	if code.Type == lexer.LexTokenType["NAME"] {
+	if code.Type == lexer.NAME {
 		name = code.Value
-		if code := p.Lexer.Next(); code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == ":" {
+		if code := p.Lexer.Next(); code.Type == lexer.SEPARATOR && code.Value == ":" {
 			code = p.Lexer.Next()
-			if code.Type == lexer.LexTokenType["NAME"] {
+			if code.Type == lexer.NAME {
 				Type = t.FindDefine(p, code.Value)
-				if code := p.Lexer.Next(); code.Type == lexer.LexTokenType["SEPARATOR"] && (code.Value == "\n" || code.Value == "\r") {
+				if code := p.Lexer.Next(); code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
 					return
-				} else if code.Type == lexer.LexTokenType["SEPARATOR"] && code.Value == "=" {
+				} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
 					oldCursor := p.Lexer.Cursor
 					end := 0
 					for {
 						code = p.Lexer.Next()
-						if code.Type == lexer.LexTokenType["RAW"] {
+						if code.Type == lexer.RAW {
 							tag = code.Value
 							end = p.Lexer.Cursor - 1
 							break
-						} else if code.Type == lexer.LexTokenType["SEPARATOR"] && (code.Value == "\n" || code.Value == "\r") {
+						} else if code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
 							end = p.Lexer.Cursor - 1
 							break
 						}
 					}
 					p.Lexer.Cursor = oldCursor
 					Default = p.ParseExpression(end)
-				} else if code.Type == lexer.LexTokenType["RAW"] {
+				} else if code.Type == lexer.RAW {
 					tag = code.Value
 				}
 			} else {

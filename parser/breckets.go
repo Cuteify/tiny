@@ -28,7 +28,7 @@ func (p *Parser) Brackets(parseToken bool) *Brackets {
 	}
 	for {
 		tmp := p.Lexer.Next()
-		if tmp.Type == lexer.LexTokenType["SEPARATOR"] {
+		if tmp.Type == lexer.SEPARATOR {
 
 			if tmp.IsEmpty() || tmp.Value == "\n" || tmp.Value == "\r" {
 				p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")

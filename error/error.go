@@ -9,6 +9,18 @@ import (
 	"unsafe"
 )
 
+var Errors = map[string]*Error{}
+
+func NewError(path string, text string, linefeed string) *Error {
+	err := &Error{
+		Text:     text,
+		Path:     path,
+		LineFeed: linefeed,
+	}
+	Errors[path] = err
+	return err
+}
+
 type Error struct {
 	Text     string
 	Path     string

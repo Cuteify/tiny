@@ -9,18 +9,20 @@ import (
 
 const GoArch = "x86"
 
-// Compiler 结构体
+// Compiler 编译器结构体，负责将AST转换为汇编代码
 type Compiler struct {
-	VarStackSize int       // 变量栈的大小
-	EspOffset    int       // 堆栈指针偏移量
-	Reg          *Register // 寄存器集合
-	ExpCount     int       // 表达式计数
-	ArgOffset    int       // 参数偏移量
-	IfCount      int       // if 块数量计数
-	ExpType      int       // 表达式类型
+	VarStackSize int          // 变量栈的大小，用于跟踪局部变量所需栈空间
+	EspOffset    int          // 堆栈指针偏移量，用于跟踪当前栈帧中变量的位置
+	Reg          *Register    // 寄存器集合，用于管理寄存器分配
+	ExpCount     int          // 表达式计数，用于给表达式生成唯一标识
+	ArgOffset    int          // 参数偏移量，用于跟踪函数参数在栈中的位置
+	IfCount      int          // if 块数量计数，用于生成唯一的if标签
+	ExpType      int          // 表达式类型，用于区分不同类型的表达式（如逻辑表达式）
+	Now          *parser.Node // 当前节点，指向正在编译的AST节点
+	Parser       *parser.Parser
 }
 
-// Compile 方法
+// Compile 编译入口方法，将AST节点编译为汇编代码
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	if c.Reg == nil {
 		c.Reg = &Register{}
@@ -30,6 +32,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 	}
 	for i := 0; i < len(node.Children); i++ {
 		n := node.Children[i]
+		c.Now = n
 		switch n.Value.(type) {
 		case *parser.FuncBlock:
 			code += c.CompileFunc(n)
@@ -37,7 +40,6 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			ifBlock := n.Value.(*parser.IfBlock)
 			c.IfCount++
 			label := fmt.Sprintf("if_%d", c.IfCount)
-			ifBlock.Condition.Check()
 			if ifBlock.Else {
 				code += c.CompileExpr(ifBlock.Condition, "else_"+label, "")
 			} else {
@@ -61,18 +63,19 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			code += Format("ret\n")
 		case *parser.VarBlock:
 			varBlock := n.Value.(*parser.VarBlock)
-			varBlock.Value.Check()
 			if varBlock.IsDefine {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
 				addr := ""
-				if varBlock.Offset <= 0 {
+				if varBlock.Offset < 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				} else if varBlock.Offset == 0 {
+					addr = "[ebp]"
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				}
 
-				code += c.CompileExpr(varBlock.Value, " "+getLengthName(varBlock.Type.Size())+addr, "设置变量")
+				code += c.CompileExpr(varBlock.Value, getLengthName(varBlock.Type.Size())+addr, "设置变量"+varBlock.Name)
 			} else {
 				switch varBlock.Define.Value.(type) {
 				case *parser.VarBlock:
@@ -81,12 +84,14 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 					varBlock.Offset = varBlock.Define.Value.(*parser.ArgBlock).Offset
 				}
 				addr := ""
-				if varBlock.Offset <= 0 {
+				if varBlock.Offset < 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
+				} else if varBlock.Offset == 0 {
+					addr = "[ebp]"
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				}
-				code += c.CompileExpr(varBlock.Value, " "+getLengthName(varBlock.Type.Size())+addr, "设置变量")
+				code += c.CompileExpr(varBlock.Value, getLengthName(varBlock.Type.Size())+addr, "设置变量"+varBlock.Name)
 			}
 		case *parser.CallBlock:
 			code += c.CompileCall(n)
@@ -109,41 +114,60 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		code += Format("; ======函数完毕=======")
 	}
 	if node.Father == nil {
-		code += Format("\n\nmain:\ncall test.main0\nPRINT_STRING \"MyLang First Finish!\"\nret\n")
+		code += Format("\n\nmain:\nPRINT_STRING \"MyLang First Finish!\"\nret\n")
 	}
 	return code
 }
 
-// CompileFunc 方法
+// CompileFunc 编译函数定义节点
+// 该方法负责生成函数的汇编代码，包括函数入口、栈帧设置和函数体编译
 func (c *Compiler) CompileFunc(node *parser.Node) (code string) {
 	funcBlock := node.Value.(*parser.FuncBlock)
+
+	// 检查是否有外部函数标记，如果有则不生成函数体
 	for i := 0; i < len(funcBlock.BuildFlags); i++ {
 		bdf := funcBlock.BuildFlags[i]
 		if bdf.Type == "ext" {
 			return
 		}
 	}
+
+	// 处理main函数的特殊命名
 	if funcBlock.Name == "main" {
-		return ""
+		//return ""
 	} else {
+		// 为函数名添加参数数量后缀，以支持函数重载
 		funcBlock.Name += strconv.Itoa(len(funcBlock.Args))
 	}
+
+	// 生成函数头和注释
 	code += Format("\n; " + strings.Repeat("=", 30) + "\n; Function:" + funcBlock.Name)
 	code += Format(funcBlock.Name + ":")
 	count++
+
+	// 设置函数调用约定：保存旧的基址指针并设置新的基址指针
 	code += Format("push ebp; 函数基指针入栈")
 	code += Format("mov ebp, esp; 设置基指针")
 
+	// 初始化栈相关变量
 	c.VarStackSize = 0
 	c.EspOffset = 0
 	c.ArgOffset = 0
+
+	// 计算局部变量所需栈空间大小
 	c.calculateVarStackSize(node)
+
+	// 为局部变量分配栈空间
 	code += Format("sub esp, " + strconv.Itoa(c.VarStackSize) + "; 调整栈指针")
+
+	// 设置函数参数的偏移量
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
 		c.ArgOffset += arg.Type.Size()
 		arg.Offset = c.ArgOffset + 4
 	}
+
+	// 编译函数体
 	code += c.Compile(node)
 	return code
 }
@@ -194,11 +218,12 @@ func getLengthName(size int) string {
 	}
 }
 
-// compileCallBlock 处理函数调用块
+// CompileCall 处理函数调用块
 func (c *Compiler) CompileCall(node *parser.Node) (code string) {
 	// 设置参数
 	// 便利参数，然后生成，然后设置到寄存器中，大于等于4个参数时，需要先将参数压入栈中，然后再从栈中取出
 	callBlock := node.Value.(*parser.CallBlock)
+	callBlock.Check(c.Parser) // parser
 	funcBlock := node.Value.(*parser.CallBlock).Func
 	afterCode := ""
 	/*if len(callBlock.Args) >= 4 {
