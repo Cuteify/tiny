@@ -63,11 +63,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		if path.Ext(file.Name()) == ".cute" {
 			lex := lexer.NewLexer(path.Join(packagePath, file.Name()))
 			p := parser.NewParser(lex)
-			p.Block = packageInfo.AST.(*parser.Node)
-			p.ThisBlock = p.Block
+			p.Block.Parser = p
 			p.Package = packageInfo
 			p.Parse()
-			p.Block.Check(p)
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
 					switch p.Block.Children[i].Value.(type) {
@@ -86,7 +84,7 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			tmp := info.AST.(*parser.Node)
 			packageInfo.AST.(*parser.Node).Children = append(packageInfo.AST.(*parser.Node).Children, tmp.Children...)
 		}
-
+		packageInfo.AST.(*parser.Node).Check()
 	}
 
 	return packageInfo, nil

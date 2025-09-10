@@ -167,10 +167,10 @@ func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 
 func (p *Parser) CheckUnusedVar(node *Node) {
 	for i := 0; i < len(node.Children); i++ {
-		if node.Children[i].CFG == nil {
+		/*if node.Children[i].CFG == nil {
 			node.Children = append(node.Children[:i], node.Children[i+1:]...)
 			i--
-		}
+		}*/
 		switch node.Children[i].Value.(type) {
 		case *VarBlock:
 			varBlock := node.Children[i].Value.(*VarBlock)

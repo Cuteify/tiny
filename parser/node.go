@@ -15,31 +15,33 @@ type Node struct {
 	Father   *Node
 	Children []*Node
 
-	CFG []CFGNode // 存储与该节点相关的CFG
+	//CFG []CFGNode // 存储与该节点相关的CFG
 
 	Checked bool
+	Parser  *Parser
 }
 
-func (n *Node) Check(p *Parser) {
-	if n.Checked {
+func (n *Node) Check() {
+	if n.Checked && n.Father != nil {
 		return
 	}
 	n.Checked = true
 	for _, child := range n.Children {
-		child.Check(p)
+		child.Check()
 	}
 	switch n.Value.(type) {
 	case *CallBlock:
 		callBlock := n.Value.(*CallBlock)
-		callBlock.Check(p)
+		callBlock.Check(n.Parser)
 	}
 }
 
 func (n *Node) AddChild(node *Node) {
 	n.Children = append(n.Children, node)
+	node.Parser = n.Parser
 	node.Father = n
 	// 判断是否为转移或跳转节点，包括添加的子节点和目标父节点，如果不是将CFG的Before指向前一个节点，并将前一个的CFG的After指向该节点，都设为无条件转移
-	if len(n.Children) == 1 {
+	/*if len(n.Children) == 1 {
 		switch n.Value.(type) {
 		case *IfBlock:
 			// 添加CFG
@@ -74,5 +76,5 @@ func (n *Node) AddChild(node *Node) {
 			node.CFG = append(node.CFG, CFGNode{Before: n.Children[len(n.Children)-2]})
 			tmp.CFG = append(n.CFG, CFGNode{After: node})
 		}
-	}
+	}*/
 }
