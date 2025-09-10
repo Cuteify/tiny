@@ -42,10 +42,10 @@ func DelEmptyCFGNode(node *parser.Node) {
 		}
 
 		// 如果当前节点的CFG为空，则删除该节点
-		if len(node.Children[i].CFG) == 0 {
+		/*if len(node.Children[i].CFG) == 0 {
 			node.Children = append(node.Children[:i], node.Children[i+1:]...)
 			i--
-		}
+		}*/
 
 		// 特殊处理不同类型的节点
 		switch node.Children[i].Value.(type) {
