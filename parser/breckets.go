@@ -1,6 +1,8 @@
 package parser
 
-import "cuteify/lexer"
+import (
+	"cuteify/lexer"
+)
 
 type Brackets struct {
 	Father   *Brackets

@@ -31,6 +31,10 @@ func (i *IfBlock) Parse(p *Parser) {
 
 }
 
+func (i *IfBlock) Check(p *Parser) bool {
+	return i.Condition.Check(p)
+}
+
 func (e *ElseBlock) Parse(p *Parser) {
 	tmp := p.Lexer.Next()
 	if tmp.Value == "IF" && tmp.Type == lexer.PROCESSCONTROL {

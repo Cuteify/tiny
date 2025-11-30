@@ -32,11 +32,6 @@ func (v *VarBlock) Parse(p *Parser) {
 			v.IsDefine = true
 			// 找到行尾，解析表达式
 			v.Value = p.ParseExpression(p.FindEndCursor())
-			if v.Value.Type != nil {
-				v.Type = v.Value.Type
-			} else {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
-			}
 		} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
 			tmp := v.FindStaticVal(p)
 			if tmp != nil && !tmp.Used {
@@ -45,16 +40,6 @@ func (v *VarBlock) Parse(p *Parser) {
 			} else {
 				// 找到行尾，解析表达式
 				v.Value = p.ParseExpression(p.FindEndCursor())
-				v.ParseDefine(p)
-				v.Type = v.Value.Type
-				if typeSys.AutoType(v.Type, v.Define.Value.(*VarBlock).Type, v.Value.IsConst()) {
-					v.Type = v.Define.Value.(*VarBlock).Type
-				} else {
-					p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Define.Value.(*VarBlock).Type.Type())
-				}
-				if v.Define.Value.(*VarBlock).IsConst {
-					p.Error.MissError("Syntax Error", p.Lexer.Cursor, v.Name+":const can not be redefined")
-				}
 			}
 		}
 	} else if code.Type == lexer.VAR {
@@ -106,11 +91,6 @@ func (v *VarBlock) Parse(p *Parser) {
 		code = p.Lexer.Next()
 		if code.Type == lexer.SEPARATOR && code.Value == "=" {
 			v.Value = p.ParseExpression(p.FindEndCursor())
-			if typeSys.AutoType(v.Value.Type, v.Type, true) {
-				v.Value.Type = v.Type
-			} else {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
-			}
 		} else {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
 		}
@@ -130,7 +110,16 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 	if !utils.CheckName(v.Name) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
+	v.Used = true
+	if p.Block == p.ThisBlock || p.ThisBlock == nil {
+		varDef := p.Find(v.Name, v).Value.(*VarBlock)
+		varDef.Check(p)
+		return varDef
+	}
 	for {
+		if p.ThisBlock == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
+		}
 		for i := 0; i < len(p.ThisBlock.Children); i++ {
 			switch p.ThisBlock.Children[i].Value.(type) {
 			case *VarBlock:
@@ -139,12 +128,10 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 					v.Define = p.ThisBlock.Children[i]
 					v.Type = tmp.Type
 					p.ThisBlock = oldThisBlock
+					tmp.Check(p)
 					return tmp
 				}
 			}
-		}
-		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-			p.Error.MissErrors("Syntax Error", p.Lexer.Cursor-len(v.Name), p.Lexer.Cursor, "need define "+v.Name)
 		}
 		switch p.ThisBlock.Value.(type) {
 		case *FuncBlock:
@@ -167,6 +154,9 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
 	if v.Define == nil {
 		v.ParseDefine(p)
+	}
+	if v.Define == nil {
+		return nil
 	}
 	if v.Define.Father.Father == nil {
 		return nil
@@ -202,4 +192,59 @@ func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
 end:
 	p.ThisBlock = oldThisBlock
 	return nil
+}
+
+func (v *VarBlock) Check(p *Parser) bool {
+	if v.IsDefine {
+		if ok := v.Value.Check(p); !ok {
+			return false
+		}
+		if v.Value.Type == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "need type")
+		}
+		if v.Type == nil {
+			v.Type = v.Value.Type
+		}
+		if !typeSys.AutoType(v.Value.Type, v.Type, true) {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
+		}
+	} else {
+		if v.Define == nil {
+			v.ParseDefine(p)
+		}
+		if v.Define == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
+		}
+		if v.Value == nil {
+			if _, ok := v.Define.Value.(*VarBlock); ok {
+				v.Value = v.Define.Value.(*VarBlock).Value
+			} else {
+				v.Value = v.Define.Value.(*ArgBlock).Value
+			}
+		} else {
+			if ok := v.Value.Check(p); !ok {
+				return false
+			}
+		}
+		if varDef, ok := v.Define.Value.(*VarBlock); ok {
+			v.Type = varDef.Type
+			if varDef.IsConst {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, v.Name+":const can not be redefined")
+			}
+			if !typeSys.AutoType(v.Value.Type, varDef.Type, v.Value.IsConst()) {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+varDef.Type.Type())
+			}
+			v.Type = varDef.Type
+			v.Offset = varDef.Offset
+		} else {
+			argDef := v.Define.Value.(*ArgBlock)
+			v.Type = argDef.Type
+			if !typeSys.AutoType(v.Value.Type, argDef.Type, v.Value.IsConst()) {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+argDef.Type.Type())
+			}
+			v.Type = argDef.Type
+			v.Offset = argDef.Offset
+		}
+	}
+	return true
 }

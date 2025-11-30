@@ -1,5 +1,13 @@
 package utils
 
+import (
+	"strings"
+)
+
+// Count 用于全局控制 Format 缩进级别 (与之前 compile 包中的 count 一致)
+var Count int = 0
+var lineNum int = 0
+
 func CheckName(name string) bool {
 	if len(name) == 0 {
 		return false
@@ -15,4 +23,27 @@ func CheckName(name string) bool {
 		}
 	}
 	return true
+}
+
+// Format 格式化汇编代码行（带缩进）
+func Format(text string) string {
+	//lineNum++
+	//fmt.Println(strconv.Itoa(lineNum), "|", strings.Repeat("    ", Count)+text)
+	return strings.Repeat("    ", Count) + text + "\n"
+}
+
+// GetLengthName 返回大小对应的汇编长度前缀
+func GetLengthName(size int) string {
+	switch size {
+	case 1:
+		return "BYTE"
+	case 2:
+		return "WORD"
+	case 4:
+		return "DWORD"
+	case 8:
+		return "QWORD"
+	default:
+		return ""
+	}
 }

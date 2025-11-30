@@ -1,5 +1,4 @@
 {
-    "name": "runtime",
     "version": "1.0.0",
     "description": "Runtime package for the cuteify project"
 }

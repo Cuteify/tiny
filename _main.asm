@@ -1,127 +1,99 @@
 section .text
 global main
 
-
 ; ==============================
-; Function:hiMyLang2
-hiMyLang2:
-    push ebp; 函数基指针入栈
-    mov ebp, esp; 设置基指针
-    sub esp, 16; 调整栈指针
-    mov EAX, DWORD[ebp+12]; 保存表达式左边的值
-    add EAX, 3; 计算表达式的值
-    cmp EAX, 6666; 比较表达式的值
-    jnl end_if_1; 判断后跳转到目标
+; Function:fib1
+fib1:
+    push ebp; 保存栈帧
+    ; ---- 保存寄存器 ----
+    push EBX; 保存寄存器
+    ; ---- 分配栈空间 ----
+    mov ebp, esp; 创建新的栈帧
+    sub esp, 8; 创建栈空间
+    ; ---- 函数内容 ----
+    mov EAX, DWORD[ebp+8]; 临时存储内存数据
+    cmp EAX, 2; 比较表达式的值
+    jle end_if_1; 判断后跳转到目标
     if_1:
-    add esp, 16; 还原栈指针
+    pop EBX; 保存寄存器
     pop ebp; 跳转到函数返回部分
     ret
 
     end_if_1:
-    mov EAX, DWORD[ebp+8]; 保存表达式左边的值
-    imul EAX, 5; 计算表达式的值
-    add EAX, DWORD[ebp+12]; 计算表达式的值
-    mov QWORD[ebp-8], EAX; 设置变量a
-    mov QWORD[ebp-16], 123; 设置变量b
-    cmp 123, EAX; 比较表达式的值
-    jnl else_if_2; 判断后跳转到目标
-    if_2:
-    mov QWORD[ebp-16], 9; 设置变量b
-    else_if_2:
-    mov QWORD[ebp-16], 10; 设置变量b
-    end_if_2:
-    add esp, 16; 还原栈指针
+    sub esp, 4; 创建参数栈空间
+    mov ECX, DWORD[ebp+8]; 临时存储内存数据
+    sub ECX, 1; 计算表达式的值
+    mov DWORD[ebp], ECX; 
+    call fib1
+    add esp, 4; 清理参数栈
+    sub esp, 4; 创建参数栈空间
+    mov EDX, DWORD[ebp+8]; 临时存储内存数据
+    sub EDX, 2; 计算表达式的值
+    mov DWORD[ebp], EDX; 
+    call fib1
+    add esp, 4; 清理参数栈
+    mov EBX, EAX; 临时存储内存数据
+    add EBX, EAX; 计算表达式的值
+    mov EAX, EBX; return
+    pop EBX; 保存寄存器
     pop ebp; 跳转到函数返回部分
     ret
 
 ; ======函数完毕=======
 
+
 ; ==============================
-; Function:hiFn2
-hiFn2:
-    push ebp; 函数基指针入栈
-    mov ebp, esp; 设置基指针
-    sub esp, 16; 调整栈指针
-    mov QWORD[esp+8], 9; 设置函数参数
-    mov QWORD[esp+4], 78; 设置函数参数
-    call hiMyLang2; 调用函数
-    mov DWORD[ebp-4], 5; 设置变量abcdefg
-    mov DWORD[ebp-8], 6; 设置变量b
-    mov else_if_3, 1; 
-    if_3:
-    mov DWORD[ebp-8], 0; 设置变量b
-    else_if_3:
-    mov DWORD[ebp-8], 10; 设置变量b
-    end_if_3:
-    cmp DWORD[ebp-8], 0; 比较表达式的值
-    jnl else_if_4; 判断后跳转到目标
-    if_4:
-    mov DWORD[ebp-8], 9; 设置变量b
-    else_if_4:
-    add esp, 16; 还原栈指针
+; Function:callee_function8
+callee_function8:
+    push ebp; 保存栈帧
+    ; ---- 保存寄存器 ----
+    push EBX; 保存寄存器
+    ; ---- 分配栈空间 ----
+    mov ebp, esp; 创建新的栈帧
+    sub esp, 8; 创建栈空间
+    ; ---- 函数内容 ----
+    mov EAX, DWORD[ebp+12]; 临时存储内存数据
+    add EAX, DWORD[ebp+8]; 计算表达式的值
+    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
+    mov EAX, DWORD[ebp+20]; 临时存储内存数据
+    add EAX, DWORD[ebp+16]; 计算表达式的值
+    imul EAX, EAX; 计算表达式的值
+    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
+    mov EAX, DWORD[ebp+24]; 临时存储内存数据
+    add EAX, DWORD[ebp+20]; 计算表达式的值
+    add EAX, DWORD[ebp+28]; 计算表达式的值
+    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
+    mov EAX, DWORD[ebp+36]; 临时存储内存数据
+    add EAX, DWORD[ebp+32]; 计算表达式的值
+    imul EAX, EAX; 计算表达式的值
+    sub EAX, EAX; 计算表达式的值
+    mov QWORD[ebp-8], EAX; 设置变量result
+    mov EAX, QWORD[ebp-8]; 临时存储内存数据
+    mov EAX, EAX; return
+    pop EBX; 保存寄存器
     pop ebp; 跳转到函数返回部分
     ret
 
-    end_if_4:
-    cmp DWORD[ebp-8], 0; 比较表达式的值
-    jnl end_if_5; 判断后跳转到目标
-    if_5:
-    mov DWORD[ebp-8], 9; 设置变量b
-    end_if_5:
-    add esp, 16; 还原栈指针
-    pop ebp; 弹出函数基指针
-    ret
-
 ; ======函数完毕=======
 
-; ==============================
-; Function:print0
-print0:
-    push ebp; 函数基指针入栈
-    mov ebp, esp; 设置基指针
-    sub esp, 4; 调整栈指针
-    push -11; 设置函数参数
-    extern  GetStdHandle@1; 外部函数
-    call  GetStdHandle@1; 调用外部函数
-
-extern WriteFile
-
-    ; 准备WriteConsoleW的参数
-    push 0      ; 第五个参数：不保留额外
-    push 0          ; 第四个参数：缓冲区，用于接收实际写入的字节数
-    push messageLen ; 第三个参数：字符串的长度
-    push message ; 第二个参数：指向要写入的字符串
-    push eax      ; 第一个参数：句柄
-    
-    ; 调用WriteFileW
-    call WriteFile
-
-    xor eax, eax
-    
-    add esp, 4; 还原栈指针
-    pop ebp; 弹出函数基指针
-    ret
-
-; ======函数完毕=======
 
 ; ==============================
 ; Function:main
 main:
-    push ebp; 函数基指针入栈
-    mov ebp, esp; 设置基指针
-    sub esp, 12; 调整栈指针
-    mov QWORD[esp+12], 1; 设置函数参数
-    mov QWORD[esp+8], 100; 设置函数参数
-    call hiFn2; 调用函数
-    call print0; 调用函数
-    add esp, 12; 还原栈指针
-    pop ebp; 弹出函数基指针
+    push ebp; 保存栈帧
+    ; ---- 保存寄存器 ----
+    push EBX; 保存寄存器
+    ; ---- 分配栈空间 ----
+    mov ebp, esp; 创建新的栈帧
+    sub esp, 4; 创建栈空间
+    ; ---- 函数内容 ----
+    sub esp, 4; 创建参数栈空间
+    call fib1
+    add esp, 4; 清理参数栈
+    pop EBX; 保存寄存器
+    pop ebp; 跳转到函数返回部分
     ret
 
 ; ======函数完毕=======
 
-
-main:
-PRINT_STRING "MyLang First Finish!"
-ret
 

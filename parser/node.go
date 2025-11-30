@@ -14,8 +14,10 @@ type Node struct {
 	Value    Block
 	Father   *Node
 	Children []*Node
+	Ignore   bool
 
 	//CFG []CFGNode // 存储与该节点相关的CFG
+	// Code string
 
 	Checked bool
 	Parser  *Parser
@@ -33,6 +35,20 @@ func (n *Node) Check() {
 	case *CallBlock:
 		callBlock := n.Value.(*CallBlock)
 		callBlock.Check(n.Parser)
+	case *VarBlock:
+		varBlock := n.Value.(*VarBlock)
+		varBlock.Check(n.Parser)
+	case *Expression:
+		expression := n.Value.(*Expression)
+		expression.Check(n.Parser)
+	case *FuncBlock:
+		funcBlock := n.Value.(*FuncBlock)
+		for _, arg := range funcBlock.Args {
+			arg.Check(n.Parser)
+		}
+	case *IfBlock:
+		ifBlock := n.Value.(*IfBlock)
+		ifBlock.Check(n.Parser)
 	}
 }
 
