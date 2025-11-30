@@ -3,22 +3,8 @@ package compile
 
 import (
 	"cuteify/parser"
-	"strings"
+	"fmt"
 )
-
-// count 用于跟踪当前缩进级别
-var count int = 0
-
-// Format 格式化汇编代码行
-// 在代码行前后添加换行符和制表符，使其符合汇编代码格式
-// 参数:
-//   - text: 要格式化的汇编代码行
-//
-// 返回:
-//   - 格式化后的代码行
-func Format(text string) string {
-	return strings.Repeat("    ", count) + text + "\n"
-}
 
 // DelEmptyCFGNode 删除AST中CFG为空的节点
 // 从AST中删除CFG为空的节点，Root节点不处理
@@ -72,5 +58,16 @@ func DelEmptyCFGNode(node *parser.Node) {
 
 		// 递归处理当前节点的子节点
 		DelEmptyCFGNode(node.Children[i])
+	}
+}
+
+func pr(block *parser.Node, tabnum int) {
+	tmp := ""
+	for i := 0; i < tabnum; i++ {
+		tmp += "\t"
+	}
+	fmt.Println(tmp, block.Value)
+	for _, k := range block.Children {
+		pr(k, tabnum+1)
 	}
 }

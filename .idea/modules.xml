@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/cuteify.iml" filepath="$PROJECT_DIR$/.idea/cuteify.iml" />
+      <module fileurl="file://$PROJECT_DIR$/tiny.iml" filepath="$PROJECT_DIR$/tiny.iml" />
     </modules>
   </component>
 </project>

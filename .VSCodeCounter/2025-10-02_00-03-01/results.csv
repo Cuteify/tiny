@@ -1,0 +1,51 @@
+"filename", "language", "Go Module File", "C++", "Go", "Batch", "Cuteify", "x86 and x86_64 Assembly", "YAML", "Shell Script", "Lamina", "XML", "JSON", "Markdown", "comment", "blank", "total"
+"/home/gx/Desktop/tiny/.idea/cuteify.iml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 4
+"/home/gx/Desktop/tiny/.idea/future.iml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 10
+"/home/gx/Desktop/tiny/.idea/misc.xml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 6
+"/home/gx/Desktop/tiny/.idea/modules.xml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 8
+"/home/gx/Desktop/tiny/.idea/vcs.xml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 6
+"/home/gx/Desktop/tiny/.test.fut", "Cuteify", 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 5, 4, 31
+"/home/gx/Desktop/tiny/README.md", "Markdown", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2
+"/home/gx/Desktop/tiny/_a.cpp", "C++", 0, 44, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 47
+"/home/gx/Desktop/tiny/_aa.asm", "x86 and x86_64 Assembly", 0, 0, 0, 0, 0, 264, 0, 0, 0, 0, 0, 0, 0, 1, 265
+"/home/gx/Desktop/tiny/_main.asm", "x86 and x86_64 Assembly", 0, 0, 0, 0, 0, 94, 0, 0, 0, 0, 0, 0, 14, 20, 128
+"/home/gx/Desktop/tiny/a.cute", "Lamina", 0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 66, 1, 76
+"/home/gx/Desktop/tiny/compile/build.go", "Go", 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 13
+"/home/gx/Desktop/tiny/compile/compiler.go", "Go", 0, 0, 226, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 20, 294
+"/home/gx/Desktop/tiny/compile/exp.go", "Go", 0, 0, 146, 0, 0, 0, 0, 0, 0, 0, 0, 0, 43, 20, 209
+"/home/gx/Desktop/tiny/compile/reg.go", "Go", 0, 0, 264, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 23, 350
+"/home/gx/Desktop/tiny/compile/utils.go", "Go", 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 26, 11, 77
+"/home/gx/Desktop/tiny/error/error.go", "Go", 0, 0, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 78
+"/home/gx/Desktop/tiny/go.mod", "Go Module File", 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4
+"/home/gx/Desktop/tiny/lexer/keywords.go", "Go", 0, 0, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 5, 123
+"/home/gx/Desktop/tiny/lexer/lexer.go", "Go", 0, 0, 285, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 16, 309
+"/home/gx/Desktop/tiny/main.go", "Go", 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 39
+"/home/gx/Desktop/tiny/main_test.go", "Go", 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 23
+"/home/gx/Desktop/tiny/optimizer/optimizer.go", "Go", 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4
+"/home/gx/Desktop/tiny/package/fmt/fmt.go", "Go", 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 37
+"/home/gx/Desktop/tiny/package/package.go", "Go", 0, 0, 76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 11, 92
+"/home/gx/Desktop/tiny/parser/breckets.go", "Go", 0, 0, 81, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 90
+"/home/gx/Desktop/tiny/parser/build.go", "Go", 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 74
+"/home/gx/Desktop/tiny/parser/call.go", "Go", 0, 0, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 16, 175
+"/home/gx/Desktop/tiny/parser/exp.go", "Go", 0, 0, 499, 0, 0, 0, 0, 0, 0, 0, 0, 0, 123, 55, 677
+"/home/gx/Desktop/tiny/parser/func.go", "Go", 0, 0, 107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 7, 120
+"/home/gx/Desktop/tiny/parser/ifelse.go", "Go", 0, 0, 47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 9, 57
+"/home/gx/Desktop/tiny/parser/node.go", "Go", 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 39, 8, 87
+"/home/gx/Desktop/tiny/parser/parser.go", "Go", 0, 0, 214, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 15, 234
+"/home/gx/Desktop/tiny/parser/return.go", "Go", 0, 0, 25, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 5, 31
+"/home/gx/Desktop/tiny/parser/type.go", "Go", 0, 0, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 102
+"/home/gx/Desktop/tiny/parser/var.go", "Go", 0, 0, 208, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 223
+"/home/gx/Desktop/tiny/qodana.yaml", "YAML", 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 30, 8, 42
+"/home/gx/Desktop/tiny/run.bat", "Batch", 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5
+"/home/gx/Desktop/tiny/run.sh", "Shell Script", 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 5
+"/home/gx/Desktop/tiny/test/a.cute", "Lamina", 0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 1, 10
+"/home/gx/Desktop/tiny/test/package.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 6
+"/home/gx/Desktop/tiny/test/runtime/malloc_linux.cute", "Lamina", 0, 0, 0, 0, 0, 0, 0, 0, 74, 0, 0, 0, 10, 17, 101
+"/home/gx/Desktop/tiny/test/runtime/malloc_windows.cute", "Lamina", 0, 0, 0, 0, 0, 0, 0, 0, 75, 0, 0, 0, 10, 17, 102
+"/home/gx/Desktop/tiny/test/runtime/package.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4
+"/home/gx/Desktop/tiny/test/test copy/a.cute", "Lamina", 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 1, 3, 42
+"/home/gx/Desktop/tiny/test/test copy/package.json", "JSON", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 5
+"/home/gx/Desktop/tiny/tiny.iml", "XML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 9
+"/home/gx/Desktop/tiny/type/type.go", "Go", 0, 0, 258, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 22, 287
+"/home/gx/Desktop/tiny/utils/utils.go", "Go", 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 19
+"Total", "-", 2, 44, 3063, 5, 22, 358, 4, 5, 205, 43, 15, 0, 598, 378, 4742

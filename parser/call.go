@@ -23,7 +23,7 @@ func (c *CallBlock) Check(parser *Parser) bool {
 
 	// 查找函数定义
 	if c.Func == nil {
-		c.Func = parser.FindFunc(c.Name).Value.(*FuncBlock)
+		c.Func = parser.Find(c.Name, c.Func).Value.(*FuncBlock)
 	}
 
 	// 检查参数个数是否匹配（考虑默认参数）
@@ -59,12 +59,19 @@ func (c *CallBlock) Check(parser *Parser) bool {
 		// 获取对应的函数定义参数
 		defArg := c.Func.Args[i]
 
+		arg.Value.Check(parser)
+
 		// 类型检查
-		if !typeSys.AutoType(arg.Value.Type, defArg.Type, arg.Value.IsConst()) {
-			parser.Error.MissError("Type Error", parser.Lexer.Cursor,
-				"cannot use "+arg.Value.Type.Type()+" as type "+defArg.Type.Type()+" in argument to "+c.Name)
+		if !typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
+			parser.Error.MissError("Type Error", parser.Lexer.Cursor-1,
+				"cannot use "+arg.Value.Type.Type()+" as type "+
+					defArg.Type.Type()+" in argument to "+c.Name)
 			return false
 		}
+
+		arg.Type = defArg.Type
+		arg.Name = defArg.Name
+		arg.Offset = defArg.Offset
 
 		arg.Defind = defArg
 	}
@@ -78,6 +85,11 @@ func (c *CallBlock) Check(parser *Parser) bool {
 }
 
 func (c *CallBlock) Parse(p *Parser) {
+	c.ParseCall(p)
+	c.Node.Ignore = false
+}
+
+func (c *CallBlock) ParseCall(p *Parser) {
 	// 找到定义位置
 	//oldThisBlock := p.ThisBlock
 	/*for {
@@ -110,17 +122,20 @@ func (c *CallBlock) Parse(p *Parser) {
 	end:
 		p.ThisBlock = oldThisBlock*/
 	// 解析括号
-	rightBra := p.FindRightBracket(false)
+	rightBra := p.FindRightBracket(true)
 	for p.Lexer.Cursor < rightBra {
 		//oldCursor := p.Lexer.Cursor
 		sepCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ","}, rightBra)
 		if sepCursor == -1 {
-			arg := &ArgBlock{Value: p.ParseExpression(rightBra - 1)}
+			exp := p.ParseExpression(rightBra - 1)
+			arg := &ArgBlock{Value: exp}
+			//p.Error.MissError("Call Error", rightBra-1, "Args length error")
 			if arg.Value == nil {
 				break
 			}
 			arg.Type = arg.Value.Type
 			c.Args = append(c.Args, arg)
+
 			/*if len(c.Func.Args) < 1 {
 				p.Error.MissErrors("Call Error", oldCursor, rightBra+1, "Args length error")
 			}
@@ -152,11 +167,11 @@ func (c *CallBlock) Parse(p *Parser) {
 		p.Error.MissError("Call Error", rightBra-1, err.Error())
 	}*/
 	// 查找父级内容，找到定义位置
+	p.Lexer.Cursor++
 	node := &Node{Value: c}
 	c.Node = node
 	p.ThisBlock.AddChild(node)
-	p.Lexer.Cursor++
-
+	c.Node.Ignore = true
 }
 
 func (c *CallBlock) ParseArgsDefault(p *Parser) error {

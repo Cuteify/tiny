@@ -17,7 +17,7 @@ type Lexer struct {
 	Error      *errorUtil.Error
 	Filename   string
 	TextLength int
-	LastSepTmp string
+	SepTmp     string
 }
 
 type Token struct {
@@ -27,6 +27,14 @@ type Token struct {
 	EndCursor int
 }
 
+// 不可见字符表
+var invisibleChar = map[string]string{
+	" ":  "[SPACE]",
+	"\t": "\\t",
+	"\n": "\\n",
+	"\r": "\\r",
+}
+
 func (t Token) String() string {
 	typeName := ""
 	for i, v := range LexTokenType {
@@ -34,7 +42,16 @@ func (t Token) String() string {
 			typeName = i
 		}
 	}
-	return "[" + typeName + "]" + t.Value
+	val := t.Value
+	// 转换不可见字符，使用map表
+	for k, v := range invisibleChar {
+		val = strings.ReplaceAll(val, k, v)
+	}
+	return "[" + typeName + "]" + val
+}
+
+func (t Token) Len() int {
+	return len(t.Value)
 }
 
 func NewLexer(filename string) *Lexer {
@@ -116,9 +133,9 @@ func (l *Lexer) GetRawString() string {
 }
 
 func (l *Lexer) GetWord() (string, bool) {
-	if l.LastSepTmp != "" {
-		tmp := l.LastSepTmp
-		l.LastSepTmp = ""
+	if l.SepTmp != "" { //
+		tmp := l.SepTmp
+		l.SepTmp = ""
 		l.Cursor += len(tmp)
 		if tmp == " " {
 			return l.GetWord()
@@ -134,37 +151,24 @@ func (l *Lexer) GetWord() (string, bool) {
 		}
 		return l.GetWord()
 	}
-	for e := 2; e > 0; e-- {
-		if l.Cursor+e-1 >= l.TextLength {
-			continue
-		}
-		word := l.Text[l.Cursor : l.Cursor+e]
-		if keywords[word] == SEPARATOR {
-			if word == " " {
-				return l.GetWord()
-			}
-			l.Cursor += e
-			return word, true
-		}
-	}
+
 	for i := l.Cursor; i < l.TextLength; i++ {
 		//判断是否是分隔符
 		// 遍历分隔符列表
-		word := l.Text[i : i+2]
-		if i+1 < l.TextLength {
+		for e := 2; e > 0; e-- {
+			if i+e-1 >= l.TextLength {
+				continue
+			}
+			word := l.Text[i : i+e]
 			if keywords[word] == SEPARATOR {
 				text := l.Text[l.Cursor:i]
 				l.Cursor = i
-				l.LastSepTmp = word
+				l.SepTmp = word
+				if text == "" {
+					return l.GetWord()
+				}
 				return text, false
 			}
-		}
-		word = l.Text[i : i+1]
-		if keywords[word] == SEPARATOR {
-			text := l.Text[l.Cursor:i]
-			l.Cursor = i
-			l.LastSepTmp = word
-			return text, false
 		}
 	}
 	tmp2 := l.Text[l.Cursor:]
@@ -194,7 +198,7 @@ func (l *Lexer) GetToken() (Token, error) {
 				Value:     l.GetRawString(),
 				EndCursor: l.Cursor,
 			}
-			token.Cursor = l.Cursor - len(token.Value)
+			token.Cursor = l.Cursor - token.Len()
 			return token, nil
 		case "'":
 			token := Token{
@@ -202,7 +206,7 @@ func (l *Lexer) GetToken() (Token, error) {
 				Value:     l.GetChar(),
 				EndCursor: l.Cursor,
 			}
-			token.Cursor = l.Cursor - len(token.Value)
+			token.Cursor = l.Cursor - token.Len()
 			return token, nil
 		case "//":
 			// 找到行末
@@ -232,7 +236,7 @@ func (l *Lexer) GetToken() (Token, error) {
 			Value:     word,
 			EndCursor: l.Cursor,
 		}
-		token.Cursor = l.Cursor - len(token.Value)
+		token.Cursor = l.Cursor - token.Len()
 		return token, nil
 	}
 other:
@@ -245,7 +249,7 @@ other:
 				Value:     word + "." + word3,
 				EndCursor: l.Cursor,
 			}
-			token.Cursor = l.Cursor - len(token.Value)
+			token.Cursor = l.Cursor - token.Len()
 			return token, nil
 		}
 		l.Back(len(word2 + word3))
@@ -254,7 +258,7 @@ other:
 			Value:     word,
 			EndCursor: l.Cursor,
 		}
-		token.Cursor = l.Cursor - len(token.Value)
+		token.Cursor = l.Cursor - token.Len()
 		return token, nil
 	} else {
 		token := Token{
@@ -262,7 +266,7 @@ other:
 			Value:     word,
 			EndCursor: l.Cursor,
 		}
-		token.Cursor = l.Cursor - len(token.Value)
+		token.Cursor = l.Cursor - token.Len()
 		return token, nil
 	}
 }
@@ -287,7 +291,7 @@ func (l *Lexer) Back(num int) {
 
 	l.Cursor -= strings.Count(l.Text[l.Cursor-num:l.Cursor], " ")
 	l.Cursor -= num
-	l.LastSepTmp = ""
+	l.SepTmp = ""
 	if l.Cursor < 0 {
 		l.Cursor = 0
 	}

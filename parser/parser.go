@@ -52,9 +52,10 @@ func (p *Parser) Next() (finish bool) {
 		code2 := p.Lexer.Next()
 		if code2.Type != lexer.SEPARATOR {
 			beforeCursor++
-			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+len(code.Value), "'"+code.Value+"' is not a valid expression")
+			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
 		}
 		if code2.Value == "(" {
+			p.Lexer.Back(1)
 			block := &CallBlock{
 				Name: code.Value,
 			}
@@ -80,7 +81,7 @@ func (p *Parser) Next() (finish bool) {
 			block.Parse(p)
 		} else {
 			beforeCursor++
-			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+len(code.Value), "'"+code.Value+"' is not a valid expression")
+			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
 		}
 	case lexer.VAR:
 		p.Lexer.Cursor = beforeCursor
@@ -90,7 +91,7 @@ func (p *Parser) Next() (finish bool) {
 		block := &Build{}
 		block.Parse(p)
 	default:
-		if code.Type == lexer.SEPARATOR && code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
+		if code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
 			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Miss "+code.Value)
 		}
 	}
@@ -201,28 +202,36 @@ func (p *Parser) Parse() *Node {
 	return p.Block
 }
 
-func (p *Parser) FindFunc(name string) *Node {
+func (p *Parser) Find(name string, dstType any) *Node {
 	// 查找包名
 	tmp := strings.Split(name, ".")
+	var children []*Node
 	if len(tmp) != 1 {
 		packageName, funcName := tmp[0], tmp[len(tmp)-1]
 		importPackage := packageFmt.FixPathName(p.Package.Import[packageName])
-		fullName := importPackage + "." + funcName
-		children := p.Package.AST.(*Node).Children
-		for i := 0; i < len(children); i++ {
-			if f, ok := children[i].Value.(*FuncBlock); ok {
-				if f.Name == fullName {
-					return children[i]
-				}
-			}
-		}
+		name = importPackage + "." + funcName
+		children = p.Package.AST.(*Node).Children
 	} else {
-		children := p.Block.Children
-		for i := 0; i < len(children); i++ {
-			if f, ok := children[i].Value.(*FuncBlock); ok {
-				if f.Name == name {
-					return children[i]
-				}
+		children = p.Block.Children
+	}
+	for i := 0; i < len(children); i++ {
+		value := children[i].Value
+		switch dstType.(type) {
+		case *VarBlock:
+			v, ok := value.(*VarBlock)
+			if !ok {
+				continue
+			}
+			if v.Name == name {
+				return children[i]
+			}
+		case *FuncBlock:
+			f, ok := value.(*FuncBlock)
+			if !ok {
+				continue
+			}
+			if f.Name == name {
+				return children[i]
 			}
 		}
 	}

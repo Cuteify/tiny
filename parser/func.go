@@ -41,6 +41,15 @@ func (f *FuncBlock) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need (")
 		}
 		f.ParseArgs(p)
+		// 获取返回值类型
+		f.Return = []typeSys.Type{}
+		// 开始获取返回值
+		code = p.Lexer.Next()
+		if code.Type == lexer.NAME {
+			f.Return = append(f.Return, typeSys.GetSystemType(code.Value))
+		} else {
+			p.Lexer.Back(code.Len())
+		}
 		p.Wait("{")
 		nodeTmp := &Node{Value: f}
 		//p.Funcs[f.Name] = nodeTmp
@@ -115,5 +124,38 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		}
 		lastVal = v.Value.Value
 	}
+	// 如果没有参数类型，则报错
+	for i := len(f.Args) - 1; i >= 0; i-- {
+		if f.Args[i].Type == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss type")
+		}
+	}
+}
 
+func (f *ArgBlock) Check(p *Parser) bool {
+	if f.Default != nil {
+		return f.Default.Check(p)
+	}
+	if f.Value != nil {
+		return f.Value.Check(p)
+	}
+	if f.Defind != nil {
+		if !f.Defind.Check(p) {
+			return false
+		}
+		// 检测类型
+		return typeSys.CheckType(f.Type, f.Defind.Type)
+	}
+	return true
+}
+
+func (f *FuncBlock) Check(p *Parser) bool {
+	argCount := 4 // Todo: 返回指针长度，需要根据Arch改后续！
+	for _, v := range f.Args {
+		if !v.Check(p) {
+			return false
+		}
+		v.Offset = argCount + v.Type.Size()
+	}
+	return true
 }

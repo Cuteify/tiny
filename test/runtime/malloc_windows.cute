@@ -1,0 +1,102 @@
+build os "windows"
+// 常量定义
+const PAGE_READWRITE = 0x04
+const MEM_COMMIT     = 0x1000
+const MEM_RESERVE    = 0x2000
+const MEM_RELEASE    = 0x8000
+const STD_ERROR_HANDLE = -11
+
+// 导入 Windows API 函数
+fn VirtualAlloc(lpAddress: void*, dwSize: u64, flAllocationType: u32, flProtect: u32) void* {
+    build ext linkname("VirtualAlloc") VirtualAlloc@4
+}
+
+fn VirtualFree(lpAddress: void*, dwSize: u64, dwFreeType: u32) bool {
+    build ext linkname("VirtualFree") VirtualFree@3
+}
+
+fn GetStdHandle(mode: i32) void* {
+    build ext linkname("GetStdHandle") GetStdHandle@1
+}
+
+fn WriteFile(hFile: void*, lpBuffer: void*, nNumberOfBytesToWrite: u32, lpNumberOfBytesWritten: &u32, lpOverlapped: void*) bool {
+    build ext linkname("WriteFile") WriteFile@5
+}
+
+fn ExitProcess(uExitCode: u32) {
+    build ext linkname("ExitProcess") ExitProcess@1
+}
+
+// 错误处理函数
+fn panic(message: string) {
+    // 获取标准错误句柄
+    var stderr: void* = GetStdHandle(STD_ERROR_HANDLE)
+    
+    // 写入错误信息
+    var bytesWritten: u32 = 0
+    var success: bool = WriteFile(
+        stderr,
+        message.data, 
+        message.length,
+        &bytesWritten,
+        null
+    )
+    
+    // 强制退出进程
+    ExitProcess(1)
+}
+
+// 基本内存分配
+fn malloc(size: u64) u8* {
+    // 使用默认参数分配内存
+    var ptr: void* = VirtualAlloc(
+        null,               // 系统选择地址
+        size,               // 分配大小
+        MEM_COMMIT | MEM_RESERVE, // 分配类型
+        PAGE_READWRITE      // 内存保护
+    )
+    
+    if ptr == null {
+        panic("Memory allocation failed")
+    }
+    
+    ret ptr as u8*
+}
+
+// 高级内存分配
+fn malloc_ex(
+    size: u64,
+    start: u8*, 
+    flAllocationType: u32, 
+    flProtect: u32
+) u8* {
+    var ptr: void* = VirtualAlloc(
+        start as void*,     // 指定起始地址
+        size,               // 分配大小
+        flAllocationType,   // 分配类型
+        flProtect           // 内存保护
+    )
+    
+    if ptr == null {
+        panic("Memory allocation failed")
+    }
+    
+    ret ptr as u8*
+}
+
+// 释放内存
+fn free(ptr: u8*) {
+    if ptr == null {
+        ret
+    }
+    
+    var success: bool = VirtualFree(
+        ptr as void*,   // 要释放的内存指针
+        0,              // 释放整个区域
+        MEM_RELEASE     // 释放类型
+    )
+    
+    if !success {
+        panic("Memory free failed")
+    }
+}

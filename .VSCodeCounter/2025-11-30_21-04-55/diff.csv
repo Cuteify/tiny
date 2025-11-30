@@ -1,0 +1,30 @@
+"filename", "language", "x86 and x86_64 Assembly", "Shell Script", "Go", "Python", "Cuteify", "comment", "blank", "total"
+"/home/gx/Desktop/tiny/_main.asm", "x86 and x86_64 Assembly", -24, 0, 0, 0, 0, 4, -8, -28
+"/home/gx/Desktop/tiny/compile/arch/arch.go", "Go", 0, 0, 79, 0, 0, 18, 13, 110
+"/home/gx/Desktop/tiny/compile/arch/x86/cdecl.go", "Go", 0, 0, 122, 0, 0, 9, 14, 145
+"/home/gx/Desktop/tiny/compile/arch/x86/exp.go", "Go", 0, 0, 199, 0, 0, 22, 18, 239
+"/home/gx/Desktop/tiny/compile/arch/x86/expold.go", "Go", 0, 0, 1, 0, 0, 131, 3, 135
+"/home/gx/Desktop/tiny/compile/arch/x86/fastcall.go", "Go", 0, 0, 1, 0, 0, 110, 2, 113
+"/home/gx/Desktop/tiny/compile/arch/x86/stdcall.go", "Go", 0, 0, 77, 0, 0, 9, 10, 96
+"/home/gx/Desktop/tiny/compile/arch/x86/x86.go", "Go", 0, 0, 22, 0, 0, 1, 4, 27
+"/home/gx/Desktop/tiny/compile/compiler.go", "Go", 0, 0, -71, 0, 0, -37, -9, -117
+"/home/gx/Desktop/tiny/compile/exp.go", "Go", 0, 0, -146, 0, 0, -43, -20, -209
+"/home/gx/Desktop/tiny/compile/reg.go", "Go", 0, 0, -264, 0, 0, -63, -23, -350
+"/home/gx/Desktop/tiny/compile/regmgr/regmgr.go", "Go", 0, 0, 343, 0, 0, 48, 59, 450
+"/home/gx/Desktop/tiny/compile/utils.go", "Go", 0, 0, 6, 0, 0, -8, -1, -3
+"/home/gx/Desktop/tiny/lexer/lexer.go", "Go", 0, 0, -1, 0, 0, 2, 3, 4
+"/home/gx/Desktop/tiny/optimizer/optimizer.go", "Go", 0, 0, -2, 0, 0, 0, -2, -4
+"/home/gx/Desktop/tiny/parser/breckets.go", "Go", 0, 0, 2, 0, 0, 0, 0, 2
+"/home/gx/Desktop/tiny/parser/call.go", "Go", 0, 0, 11, 0, 0, 1, 3, 15
+"/home/gx/Desktop/tiny/parser/exp.go", "Go", 0, 0, 44, 0, 0, 21, 9, 74
+"/home/gx/Desktop/tiny/parser/func.go", "Go", 0, 0, 37, 0, 0, 4, 1, 42
+"/home/gx/Desktop/tiny/parser/ifelse.go", "Go", 0, 0, 3, 0, 0, 0, 1, 4
+"/home/gx/Desktop/tiny/parser/node.go", "Go", 0, 0, 9, 0, 0, 1, 0, 10
+"/home/gx/Desktop/tiny/parser/parser.go", "Go", 0, 0, 7, 0, 0, 0, 0, 7
+"/home/gx/Desktop/tiny/parser/return.go", "Go", 0, 0, 20, 0, 0, 0, 1, 21
+"/home/gx/Desktop/tiny/parser/var.go", "Go", 0, 0, 28, 0, 0, 0, 0, 28
+"/home/gx/Desktop/tiny/run.sh", "Shell Script", 0, 2, 0, 0, 0, 1, 0, 3
+"/home/gx/Desktop/tiny/test/a.cute", "Cuteify", 0, 0, 0, 0, 4, 0, 1, 5
+"/home/gx/Desktop/tiny/utils/utils.go", "Go", 0, 0, 22, 0, 0, 5, 4, 31
+"/home/gx/Desktop/tiny/watch.py", "Python", 0, 0, 0, 66, 0, 2, 15, 83
+"Total", "-", -24, 2, 549, 66, 4, 238, 98, 933
