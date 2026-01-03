@@ -153,6 +153,8 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		}
 		code += utils.Format("; ======函数完毕=======\n\n")
 
+		fmt.Println(node.Value.(*parser.FuncBlock).Name, c.Reg.Record, c.Reg.RegisterCount)
+
 		// 清理寄存器记录
 		c.Reg.Record = map[*parser.Expression]*regmgr.Reg{}
 		c.Reg.RegisterCount = 0
