@@ -83,7 +83,7 @@ func (t *TypeBlock) ParseStruct(p *Parser) (name string, Type typeSys.Type, tag 
 							break
 						}
 					}
-					p.Lexer.Cursor = oldCursor
+					p.Lexer.SetCursor(oldCursor)
 					Default = p.ParseExpression(end)
 				} else if code.Type == lexer.RAW {
 					tag = code.Value

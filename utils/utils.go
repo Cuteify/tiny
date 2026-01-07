@@ -27,8 +27,6 @@ func CheckName(name string) bool {
 
 // Format 格式化汇编代码行（带缩进）
 func Format(text string) string {
-	//lineNum++
-	//fmt.Println(strconv.Itoa(lineNum), "|", strings.Repeat("    ", Count)+text)
 	return strings.Repeat("    ", Count) + text + "\n"
 }
 

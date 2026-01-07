@@ -1,0 +1,9 @@
+break fib1
+run
+commands
+silent
+print $eax
+continue
+end
+continue 20
+quit

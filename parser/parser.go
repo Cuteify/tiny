@@ -55,13 +55,13 @@ func (p *Parser) Next() (finish bool) {
 			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
 		}
 		if code2.Value == "(" {
-			p.Lexer.Back(1)
+			p.Lexer.SetCursor(code2.Cursor)
 			block := &CallBlock{
 				Name: code.Value,
 			}
 			block.Parse(p)
 		} else if code2.Value == "." {
-			p.Lexer.Cursor = beforeCursor
+			p.Lexer.SetCursor(beforeCursor)
 			block := &VarBlock{
 				Name: code.Value,
 			}
@@ -72,11 +72,11 @@ func (p *Parser) Next() (finish bool) {
 
 			}
 		} else if code2.Value == "=" {
-			p.Lexer.Cursor = beforeCursor
+			p.Lexer.SetCursor(beforeCursor)
 			block := &VarBlock{}
 			block.Parse(p)
 		} else if code2.Value == ":=" {
-			p.Lexer.Cursor = beforeCursor
+			p.Lexer.SetCursor(beforeCursor)
 			block := &VarBlock{}
 			block.Parse(p)
 		} else {
@@ -84,7 +84,7 @@ func (p *Parser) Next() (finish bool) {
 			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
 		}
 	case lexer.VAR:
-		p.Lexer.Cursor = beforeCursor
+		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
 	case lexer.BUILD:
@@ -158,11 +158,11 @@ func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 		}
 		if code.Value == token.Value && code.Type == token.Type {
 			cursorTmp := p.Lexer.Cursor
-			p.Lexer.Cursor = startCursor
+			p.Lexer.SetCursor(startCursor)
 			return cursorTmp
 		}
 	}
-	p.Lexer.Cursor = startCursor
+	p.Lexer.SetCursor(startCursor)
 	return -1
 }
 

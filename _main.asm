@@ -1,99 +1,80 @@
 section .text
-global main
+global _start
 
 ; ==============================
-; Function:fib1
+; Function: fib1
 fib1:
-    push ebp; 保存栈帧
-    ; ---- 保存寄存器 ----
-    push EBX; 保存寄存器
-    ; ---- 分配栈空间 ----
-    mov ebp, esp; 创建新的栈帧
-    sub esp, 8; 创建栈空间
-    ; ---- 函数内容 ----
-    mov EAX, DWORD[ebp+8]; 临时存储内存数据
-    cmp EAX, 2; 比较表达式的值
-    jle end_if_1; 判断后跳转到目标
+    push ebp; 保存调用者的栈帧基址
+    mov ebp, esp; 设置当前栈帧基址
+    push EBX; 保存EBX
+    ; ---- 函数开始 ----
+    mov EAX, [ebp+8]
+    cmp EAX, 2
+    jg end_if_1; 判断后跳转到目标
     if_1:
-    pop EBX; 保存寄存器
-    pop ebp; 跳转到函数返回部分
+    mov EAX, 1; return值存入EAX
+    ; ---- 退出函数 ----
+    mov EBX, dword [ebp-4]; 恢复EBX
+    leave
     ret
 
     end_if_1:
-    sub esp, 4; 创建参数栈空间
-    mov ECX, DWORD[ebp+8]; 临时存储内存数据
-    sub ECX, 1; 计算表达式的值
-    mov DWORD[ebp], ECX; 
+    mov ECX, [ebp+8]
+
+    sub ECX, 1
+    push ECX; 参数0
     call fib1
-    add esp, 4; 清理参数栈
-    sub esp, 4; 创建参数栈空间
-    mov EDX, DWORD[ebp+8]; 临时存储内存数据
-    sub EDX, 2; 计算表达式的值
-    mov DWORD[ebp], EDX; 
+    add esp, 4; 清理参数栈(cdecl)
+
+    mov EBX, EAX; 函数返回值直接移到EBX
+    mov EDX, [ebp+8]
+    sub EDX, 2
+    push EDX; 参数0
     call fib1
-    add esp, 4; 清理参数栈
-    mov EBX, EAX; 临时存储内存数据
-    add EBX, EAX; 计算表达式的值
-    mov EAX, EBX; return
-    pop EBX; 保存寄存器
-    pop ebp; 跳转到函数返回部分
+    add esp, 4; 清理参数栈(cdecl)
+    mov EDX, EAX
+    add EBX, EDX; EBX = fib(i-1) + fib(i-2)
+    mov EAX, EBX; return值存入EAX
+    ; ---- 退出函数 ----
+    mov EBX, dword [ebp-4]; 恢复EBX
+    leave
     ret
 
 ; ======函数完毕=======
 
 
 ; ==============================
-; Function:callee_function8
-callee_function8:
-    push ebp; 保存栈帧
-    ; ---- 保存寄存器 ----
-    push EBX; 保存寄存器
-    ; ---- 分配栈空间 ----
-    mov ebp, esp; 创建新的栈帧
-    sub esp, 8; 创建栈空间
-    ; ---- 函数内容 ----
-    mov EAX, DWORD[ebp+12]; 临时存储内存数据
-    add EAX, DWORD[ebp+8]; 计算表达式的值
-    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
-    mov EAX, DWORD[ebp+20]; 临时存储内存数据
-    add EAX, DWORD[ebp+16]; 计算表达式的值
-    imul EAX, EAX; 计算表达式的值
-    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
-    mov EAX, DWORD[ebp+24]; 临时存储内存数据
-    add EAX, DWORD[ebp+20]; 计算表达式的值
-    add EAX, DWORD[ebp+28]; 计算表达式的值
-    mov QWORD[ebp-8], EAX; 溢出到局部变量栈
-    mov EAX, DWORD[ebp+36]; 临时存储内存数据
-    add EAX, DWORD[ebp+32]; 计算表达式的值
-    imul EAX, EAX; 计算表达式的值
-    sub EAX, EAX; 计算表达式的值
-    mov QWORD[ebp-8], EAX; 设置变量result
-    mov EAX, QWORD[ebp-8]; 临时存储内存数据
-    mov EAX, EAX; return
-    pop EBX; 保存寄存器
-    pop ebp; 跳转到函数返回部分
-    ret
-
-; ======函数完毕=======
-
-
-; ==============================
-; Function:main
+; Function: main
 main:
-    push ebp; 保存栈帧
-    ; ---- 保存寄存器 ----
-    push EBX; 保存寄存器
-    ; ---- 分配栈空间 ----
-    mov ebp, esp; 创建新的栈帧
-    sub esp, 4; 创建栈空间
-    ; ---- 函数内容 ----
-    sub esp, 4; 创建参数栈空间
+    push ebp; 保存调用者的栈帧基址
+    mov ebp, esp; 设置当前栈帧基址
+    push EBX; 保存EBX
+    ; ---- 函数开始 ----
+    mov EAX, 30
+    push EAX; 参数0
     call fib1
-    add esp, 4; 清理参数栈
-    pop EBX; 保存寄存器
-    pop ebp; 跳转到函数返回部分
+    add esp, 4; 清理参数栈(cdecl)
+    ;call _bp ;; 【人工插入断点】
+    ; ---- 退出函数 ----
+    mov EBX, dword [ebp-4]; 恢复EBX
+    leave
     ret
 
 ; ======函数完毕=======
 
+_bp:
+    nop
+    ; 空操作
+    ret
+
+; ==============================
+; 程序入口点 (ELF入口)
+_start:
+    ; 调用main函数
+    call main
+    ; 使用系统调用退出程序 (sys_exit = 1)
+    ; 返回值在EAX中
+    mov ebx, eax; 返回码
+    mov eax, 1; sys_exit
+    int 0x80; 调用内核
 
