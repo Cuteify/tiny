@@ -36,7 +36,7 @@ func (b *Build) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
 		}
 		b.Ext = p.Lexer.Text[p.Lexer.Cursor:p.FindEndCursor()]
-		p.Lexer.Cursor = p.FindEndCursor()
+		p.Lexer.SetCursor(p.FindEndCursor())
 		b.Type = "ext"
 		switch p.ThisBlock.Value.(type) {
 		case *FuncBlock:
@@ -49,7 +49,7 @@ func (b *Build) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
 		}
 		b.ExtRet = p.Lexer.Text[p.Lexer.Cursor:p.FindEndCursor()]
-		p.Lexer.Cursor = p.FindEndCursor()
+		p.Lexer.SetCursor(p.FindEndCursor())
 		b.Type = "extret"
 		switch p.ThisBlock.Value.(type) {
 		case *FuncBlock:

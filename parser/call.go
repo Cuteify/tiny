@@ -4,7 +4,6 @@ import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
 	"errors"
-	//"strings"
 )
 
 type CallBlock struct {
@@ -52,10 +51,6 @@ func (c *CallBlock) Check(parser *Parser) bool {
 	// 检查每个参数
 	for i, arg := range c.Args {
 		// 检查参数表达式
-		/*if !arg.Value.Check(parser) {
-			return false
-		}*/
-
 		// 获取对应的函数定义参数
 		defArg := c.Func.Args[i]
 
@@ -90,84 +85,28 @@ func (c *CallBlock) Parse(p *Parser) {
 }
 
 func (c *CallBlock) ParseCall(p *Parser) {
-	// 找到定义位置
-	//oldThisBlock := p.ThisBlock
-	/*for {
-			if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-				// 查找根级内容
-				for i := 0; i < len(p.ThisBlock.Children); i++ {
-					switch p.ThisBlock.Children[i].Value.(type) {
-					case *FuncBlock:
-						tmp := p.ThisBlock.Children[i].Value.(*FuncBlock)
-						if tmp.Name == c.Name {
-							c.Func = tmp
-							goto end
-						}
-					}
-				}
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+c.Name)
-			}
-			for i := 0; i < len(p.ThisBlock.Children); i++ {
-				switch p.ThisBlock.Children[i].Value.(type) {
-				case *FuncBlock:
-					tmp := p.ThisBlock.Children[i].Value.(*FuncBlock)
-					if tmp.Name == c.Name {
-						c.Func = tmp
-						goto end
-					}
-				}
-			}
-			p.ThisBlock = p.ThisBlock.Father
-		}
-	end:
-		p.ThisBlock = oldThisBlock*/
 	// 解析括号
 	rightBra := p.FindRightBracket(true)
 	for p.Lexer.Cursor < rightBra {
-		//oldCursor := p.Lexer.Cursor
 		sepCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ","}, rightBra)
 		if sepCursor == -1 {
 			exp := p.ParseExpression(rightBra - 1)
 			arg := &ArgBlock{Value: exp}
-			//p.Error.MissError("Call Error", rightBra-1, "Args length error")
 			if arg.Value == nil {
 				break
 			}
 			arg.Type = arg.Value.Type
 			c.Args = append(c.Args, arg)
-
-			/*if len(c.Func.Args) < 1 {
-				p.Error.MissErrors("Call Error", oldCursor, rightBra+1, "Args length error")
-			}
-			arg.Defind = c.Func.Args[len(c.Args)-1]
-			if typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()) {
-				arg.Type = arg.Defind.Type
-			} else {
-				p.Error.MissErrors("Type Error", oldCursor, rightBra+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())
-			}*/
 			break
 		}
 		arg := &ArgBlock{Value: p.ParseExpression(sepCursor - 1)}
 		arg.Type = arg.Value.Type
-		p.Lexer.Cursor++
+		p.Lexer.Skip(',')
 		c.Args = append(c.Args, arg)
-		/*if len(c.Func.Args) <= len(c.Args) {
-			p.Error.MissErrors("Call Error", oldCursor, rightBra+1, "Args length error")
-		}
-		arg.Defind = c.Func.Args[len(c.Args)-1]
-		arg.Name = arg.Defind.Name
-
-		if typeSys.AutoType(arg.Type, arg.Defind.Type, arg.Value.IsConst()) {
-			arg.Type = arg.Defind.Type
-		} else {
-			p.Error.MissErrors("Type Error", oldCursor, sepCursor+1, "need type "+arg.Defind.Type.Type()+", not "+arg.Value.Type.Type())
-		}*/
 	}
-	/*if err := c.ParseArgsDefault(p); err != nil {
-		p.Error.MissError("Call Error", rightBra-1, err.Error())
-	}*/
 	// 查找父级内容，找到定义位置
-	p.Lexer.Cursor++
+	p.Lexer.Skip(')')
+
 	node := &Node{Value: c}
 	c.Node = node
 	p.ThisBlock.AddChild(node)
@@ -180,7 +119,7 @@ func (c *CallBlock) ParseArgsDefault(p *Parser) error {
 	}
 	for i := len(c.Args); i < len(c.Func.Args); i++ {
 		if len(c.Args) <= i && c.Func.Args[i].Default == nil {
-			return errors.New("Args length error")
+			return errors.New("args length error")
 		} else {
 			c.Args = append(c.Args, &ArgBlock{Value: c.Func.Args[i].Default, Defind: c.Func.Args[i]})
 		}

@@ -55,16 +55,9 @@ func CalcStackSize(node *parser.Node, align int) int {
 		case *parser.FuncBlock:
 			stackSize += CalcStackSize(child, 0)
 		case *parser.CallBlock:
-			funcBlock := child.Value.(*parser.CallBlock).Func
-			for i := 0; i < len(funcBlock.BuildFlags); i++ {
-				bdf := funcBlock.BuildFlags[i]
-				if bdf.Type == "UseMoreStack" {
-					continue
-				}
-			}
-			for i := 0; i < len(child.Value.(*parser.CallBlock).Args); i++ {
-				stackSize += child.Value.(*parser.CallBlock).Args[i].Defind.Type.Size()
-			}
+			// 函数调用的参数使用临时栈，不计入局部变量栈空间
+			// 参数在调用时通过push传递，调用后立即清理
+			continue
 		}
 	}
 
@@ -106,4 +99,20 @@ func GetNeedSaveRegs(regMgr *regmgr.RegMgr, callerSave bool) (ret []string) {
 		}
 	}
 	return
+}
+
+func ResetLocalVarOffset(n *parser.Node, offset int) {
+	// 在原有基础上增加offset
+	// 只有在函数起始位置，变量的偏移量修改才有效
+	for _, child := range n.Children {
+		switch child.Value.(type) {
+		case *parser.VarBlock:
+			child.Value.(*parser.VarBlock).Offset += offset
+		case *parser.IfBlock:
+			ResetLocalVarOffset(child, offset)
+			if child.Value.(*parser.IfBlock).Else {
+				ResetLocalVarOffset(child.Value.(*parser.IfBlock).ElseBlock, offset)
+			}
+		}
+	}
 }

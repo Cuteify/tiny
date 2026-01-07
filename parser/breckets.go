@@ -76,8 +76,8 @@ func (p *Parser) FindRightBracket(parseToken bool) int {
 			count--
 		}
 		if count == 0 {
-			cursorTmp := p.Lexer.Cursor
-			p.Lexer.Cursor = startCursor
+			cursorTmp := tmp.EndCursor
+			p.Lexer.SetCursor(startCursor)
 			return cursorTmp
 		}
 	}

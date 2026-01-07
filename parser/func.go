@@ -48,7 +48,7 @@ func (f *FuncBlock) Parse(p *Parser) {
 		if code.Type == lexer.NAME {
 			f.Return = append(f.Return, typeSys.GetSystemType(code.Value))
 		} else {
-			p.Lexer.Back(code.Len())
+			p.Lexer.SetCursor(code.Cursor)
 		}
 		p.Wait("{")
 		nodeTmp := &Node{Value: f}
@@ -116,7 +116,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 					break
 				}
 			}
-			p.Lexer.Cursor = v.Value.EndCursor
+			p.Lexer.SetCursor(v.Value.EndCursor)
 			f.Args[len(f.Args)-1].Default = p.ParseExpression(tmp[len(tmp)-1].EndCursor)
 		}
 		if len(f.Args)-2 >= 0 && f.Args[len(f.Args)-1].Default == nil && f.Args[len(f.Args)-2].Default != nil {
@@ -150,12 +150,17 @@ func (f *ArgBlock) Check(p *Parser) bool {
 }
 
 func (f *FuncBlock) Check(p *Parser) bool {
-	argCount := 4 // Todo: 返回指针长度，需要根据Arch改后续！
+	// 计算参数起始偏移量
+	// 在 cdecl 调用约定中，参数从右到左压栈
+	// 返回地址占用 4 字节，所以第一个参数从 [ebp+8] 开始
+	argCount := 8
+
 	for _, v := range f.Args {
 		if !v.Check(p) {
 			return false
 		}
-		v.Offset = argCount + v.Type.Size()
+		v.Offset = argCount
+		argCount += v.Type.Size()
 	}
 	return true
 }

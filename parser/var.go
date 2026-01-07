@@ -112,6 +112,7 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 	}
 	v.Used = true
 	if p.Block == p.ThisBlock || p.ThisBlock == nil {
+		// 全局变量查找
 		varDef := p.Find(v.Name, v).Value.(*VarBlock)
 		varDef.Check(p)
 		return varDef
@@ -147,6 +148,25 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 			}
 		}
 
+		// 如果父节点是 Block 的根节点，说明查找到了全局作用域
+		if p.ThisBlock.Father == nil {
+			// 在全局作用域查找变量
+			for i := 0; i < len(p.Block.Children); i++ {
+				switch p.Block.Children[i].Value.(type) {
+				case *VarBlock:
+					tmp := p.Block.Children[i].Value.(*VarBlock)
+					if tmp.Name == v.Name && tmp.IsDefine {
+						v.Define = p.Block.Children[i]
+						v.Type = tmp.Type
+						p.ThisBlock = oldThisBlock
+						tmp.Check(p)
+						return tmp
+					}
+				}
+			}
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
+		}
+
 		p.ThisBlock = p.ThisBlock.Father
 	}
 }
@@ -173,11 +193,9 @@ func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
 				goto end
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
-				if tmp.Name == v.Name {
-					if tmp.Value.IsConst() {
-						v.Value = new(Expression)
-						*v.Value = *tmp.Value
-					}
+				if tmp.Name == v.Name && tmp.Value.IsConst() {
+					v.Value = new(Expression)
+					*v.Value = *tmp.Value
 					p.ThisBlock = oldThisBlock
 					return tmp
 				}
@@ -215,15 +233,33 @@ func (v *VarBlock) Check(p *Parser) bool {
 		if v.Define == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
 		}
-		if v.Value == nil {
-			if _, ok := v.Define.Value.(*VarBlock); ok {
-				v.Value = v.Define.Value.(*VarBlock).Value
+		// 检查是否为全局变量，如果是则进行类型检查
+		if v.Define.Father != nil && v.Define.Father.Father == nil {
+			// 全局变量定义
+			if v.Value == nil {
+				if _, ok := v.Define.Value.(*VarBlock); ok {
+					v.Value = v.Define.Value.(*VarBlock).Value
+				} else {
+					v.Value = v.Define.Value.(*ArgBlock).Value
+				}
 			} else {
-				v.Value = v.Define.Value.(*ArgBlock).Value
+				// 修改全局变量，需要进行类型检查
+				if ok := v.Value.Check(p); !ok {
+					return false
+				}
 			}
 		} else {
-			if ok := v.Value.Check(p); !ok {
-				return false
+			// 局部变量
+			if v.Value == nil {
+				if _, ok := v.Define.Value.(*VarBlock); ok {
+					v.Value = v.Define.Value.(*VarBlock).Value
+				} else {
+					v.Value = v.Define.Value.(*ArgBlock).Value
+				}
+			} else {
+				if ok := v.Value.Check(p); !ok {
+					return false
+				}
 			}
 		}
 		if varDef, ok := v.Define.Value.(*VarBlock); ok {

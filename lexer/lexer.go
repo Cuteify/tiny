@@ -43,10 +43,7 @@ func (t Token) String() string {
 		}
 	}
 	val := t.Value
-	// 转换不可见字符，使用map表
-	for k, v := range invisibleChar {
-		val = strings.ReplaceAll(val, k, v)
-	}
+	val = makeVisible(val)
 	return "[" + typeName + "]" + val
 }
 
@@ -91,7 +88,7 @@ func (l *Lexer) GetString() string {
 		if word == '\n' || word == '\r' {
 			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
 		}
-		l.Cursor++
+		l.AddCursor(1)
 		if word == '"' {
 			break
 		}
@@ -109,7 +106,7 @@ func (l *Lexer) GetChar() string {
 		if word == '\n' || word == '\r' {
 			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
 		}
-		l.Cursor++
+		l.AddCursor(1)
 		if word == '\'' {
 			break
 		}
@@ -124,7 +121,7 @@ func (l *Lexer) GetChar() string {
 func (l *Lexer) GetRawString() string {
 	startCursor := l.Cursor
 	for {
-		l.Cursor++
+		l.AddCursor(1)
 		if l.Text[l.Cursor] == '`' {
 			break
 		}
@@ -132,25 +129,28 @@ func (l *Lexer) GetRawString() string {
 	return l.Text[startCursor : l.Cursor-1]
 }
 
+func (l *Lexer) SkipSep() {
+	if l.Text[l.Cursor] == ' ' {
+		for i := l.Cursor; i < l.TextLength; i++ {
+			if l.Text[i] != ' ' {
+				l.SetCursor(i)
+				break
+			}
+		}
+	}
+}
+
 func (l *Lexer) GetWord() (string, bool) {
-	if l.SepTmp != "" { //
+	if l.SepTmp != "" {
 		tmp := l.SepTmp
-		l.SepTmp = ""
-		l.Cursor += len(tmp)
-		if tmp == " " {
+		l.AddCursor(len(tmp))
+		if tmp == " " { // 空格不作为分隔符返回
 			return l.GetWord()
 		}
 		return tmp, true
 	}
-	if l.Text[l.Cursor] == ' ' {
-		for i := l.Cursor; i < l.TextLength; i++ {
-			if l.Text[i] != ' ' {
-				l.Cursor = i
-				break
-			}
-		}
-		return l.GetWord()
-	}
+
+	l.SkipSep()
 
 	for i := l.Cursor; i < l.TextLength; i++ {
 		//判断是否是分隔符
@@ -162,7 +162,7 @@ func (l *Lexer) GetWord() (string, bool) {
 			word := l.Text[i : i+e]
 			if keywords[word] == SEPARATOR {
 				text := l.Text[l.Cursor:i]
-				l.Cursor = i
+				l.SetCursor(i)
 				l.SepTmp = word
 				if text == "" {
 					return l.GetWord()
@@ -172,8 +172,53 @@ func (l *Lexer) GetWord() (string, bool) {
 		}
 	}
 	tmp2 := l.Text[l.Cursor:]
-	l.Cursor += len(tmp2)
+	l.AddCursor(len(tmp2))
 	return tmp2, false
+}
+
+func (l *Lexer) handleSep(word string) (Token, error) {
+	switch word {
+	case "\"":
+		token := l.GetString()
+		return Token{
+			Type:      STRING,
+			Value:     token,
+			EndCursor: l.Cursor,
+			Cursor:    l.Cursor - len(token),
+		}, nil
+	case "`":
+		token := Token{
+			Type:      RAW,
+			Value:     l.GetRawString(),
+			EndCursor: l.Cursor,
+		}
+		token.Cursor = l.Cursor - token.Len()
+		return token, nil
+	case "'":
+		token := Token{
+			Type:      CHAR,
+			Value:     l.GetChar(),
+			EndCursor: l.Cursor,
+		}
+		token.Cursor = l.Cursor - token.Len()
+		return token, nil
+	case "//":
+		// 找到行末
+		for i := l.Cursor; i < l.TextLength; i++ {
+			if l.Text[i-len(l.LineFeed):i] == l.LineFeed {
+				l.SetCursor(i - len(l.LineFeed))
+				return l.GetToken()
+			}
+		}
+		return Token{}, io.EOF
+	default:
+		return Token{
+			Type:      SEPARATOR,
+			Value:     word,
+			EndCursor: l.Cursor,
+			Cursor:    l.Cursor - len(word),
+		}, nil
+	}
 }
 
 func (l *Lexer) GetToken() (Token, error) {
@@ -183,48 +228,7 @@ func (l *Lexer) GetToken() (Token, error) {
 	// 直接操作光标，获取Token
 	word, isSep := l.GetWord()
 	if isSep {
-		switch word {
-		case "\"":
-			token := l.GetString()
-			return Token{
-				Type:      STRING,
-				Value:     token,
-				EndCursor: l.Cursor,
-				Cursor:    l.Cursor - len(token),
-			}, nil
-		case "`":
-			token := Token{
-				Type:      RAW,
-				Value:     l.GetRawString(),
-				EndCursor: l.Cursor,
-			}
-			token.Cursor = l.Cursor - token.Len()
-			return token, nil
-		case "'":
-			token := Token{
-				Type:      CHAR,
-				Value:     l.GetChar(),
-				EndCursor: l.Cursor,
-			}
-			token.Cursor = l.Cursor - token.Len()
-			return token, nil
-		case "//":
-			// 找到行末
-			for i := l.Cursor; i < l.TextLength; i++ {
-				if l.Text[i-len(l.LineFeed):i] == l.LineFeed {
-					l.Cursor = i - len(l.LineFeed)
-					return l.GetToken()
-				}
-			}
-			return Token{}, io.EOF
-		default:
-			return Token{
-				Type:      SEPARATOR,
-				Value:     word,
-				EndCursor: l.Cursor,
-				Cursor:    l.Cursor - len(word),
-			}, nil
-		}
+		return l.handleSep(word)
 	}
 	// 匹配Token，返回类型
 	if typeNum, ok := keywords[word]; ok {
@@ -240,10 +244,11 @@ func (l *Lexer) GetToken() (Token, error) {
 		return token, nil
 	}
 other:
-	if IsDigit(word) {
+	if isDigit(word) {
+		oldCursor := l.Cursor
 		word2, _ := l.GetWord()
 		word3, _ := l.GetWord()
-		if word2 == "." && IsDigit(word3) {
+		if word2 == "." && isDigit(word3) {
 			token := Token{
 				Type:      NUMBER,
 				Value:     word + "." + word3,
@@ -252,7 +257,7 @@ other:
 			token.Cursor = l.Cursor - token.Len()
 			return token, nil
 		}
-		l.Back(len(word2 + word3))
+		l.SetCursor(oldCursor)
 		token := Token{
 			Type:      NUMBER,
 			Value:     word,
@@ -273,6 +278,9 @@ other:
 
 func (l *Lexer) Next() Token {
 	code, err := l.GetToken()
+	if l.Text[code.Cursor:code.EndCursor] != code.Value {
+		panic("Lexer: Next Token Value Error")
+	}
 	if err == io.EOF {
 		return Token{}
 	}
@@ -282,26 +290,31 @@ func (l *Lexer) Next() Token {
 	return code
 }
 
-func (l *Lexer) Back(num int) {
-	if num < 0 {
-		num = -num
+func (l *Lexer) Skip(s ...byte) {
+	if string(s) != " " {
+		l.SkipSep()
 	}
-	// 统计之间的空格，并回退
-	// 统计之间的空格，并回退
+	if l.Text[l.Cursor:l.Cursor+len(s)] != string(s) {
+		l.Error.MissError("Syntax Error", l.Cursor, "need "+makeVisible(string(s)))
+	}
+	l.AddCursor(len(s))
+}
 
-	l.Cursor -= strings.Count(l.Text[l.Cursor-num:l.Cursor], " ")
-	l.Cursor -= num
+func (l *Lexer) SetCursor(cursor int) {
+	l.Cursor = cursor
 	l.SepTmp = ""
-	if l.Cursor < 0 {
-		l.Cursor = 0
-	}
+}
+
+func (l *Lexer) AddCursor(cursor int) {
+	l.Cursor += cursor
+	l.SepTmp = ""
 }
 
 func (token Token) IsEmpty() bool {
 	return token.Type == 0
 }
 
-func IsDigit(str string) bool {
+func isDigit(str string) bool {
 	strLength := len(str)
 	for i := 0; i < strLength; i++ {
 		if str[i] < '0' || str[i] > '9' {
@@ -309,4 +322,12 @@ func IsDigit(str string) bool {
 		}
 	}
 	return true
+}
+
+func makeVisible(str string) string {
+	// 转换不可见字符，使用map表
+	for k, v := range invisibleChar {
+		str = strings.ReplaceAll(str, k, v)
+	}
+	return str
 }

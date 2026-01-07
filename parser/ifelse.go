@@ -19,7 +19,7 @@ type ElseBlock struct {
 func (i *IfBlock) Parse(p *Parser) {
 	// 解析括号
 	brackets := p.Brackets(true)
-	p.Lexer.Cursor = brackets.Children[0].Value.Cursor
+	p.Lexer.SetCursor(brackets.Children[0].Value.Cursor)
 	i.Condition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
 	if !typeSys.CheckTypeType(i.Condition.Type, "bool") {
 
@@ -39,7 +39,7 @@ func (e *ElseBlock) Parse(p *Parser) {
 	tmp := p.Lexer.Next()
 	if tmp.Value == "IF" && tmp.Type == lexer.PROCESSCONTROL {
 		brackets := p.Brackets(true)
-		p.Lexer.Cursor = brackets.Children[0].Value.Cursor
+		p.Lexer.SetCursor(brackets.Children[0].Value.Cursor)
 		e.IfCondition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
 		p.Wait("{")
 	} else if !(tmp.Value == "{" && tmp.Type == lexer.SEPARATOR) {

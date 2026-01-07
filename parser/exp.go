@@ -187,9 +187,17 @@ func (exp *Expression) Check(p *Parser) bool {
 				if left.IsConst() && right.IsConst() {
 					switch exp.Separator {
 					case "==":
-						//exp.Bool = exp.calcEqual(left, right)
+						if typeSys.CheckTypeType(left.Type, "int", "uint") {
+							exp.Bool = int64(left.Num) == int64(right.Num)
+						} else {
+							exp.Bool = left.Num == right.Num
+						}
 					case "!=":
-						//exp.Bool = !exp.calcEqual(left, right)
+						if typeSys.CheckTypeType(left.Type, "int", "uint") {
+							exp.Bool = int64(left.Num) != int64(right.Num)
+						} else {
+							exp.Bool = left.Num != right.Num
+						}
 					}
 					exp.Separator = ""
 					exp.Left, exp.Right = nil, nil
@@ -273,17 +281,6 @@ func (exp *Expression) CheckVar(p *Parser) bool {
 	switch exp.Var.Define.Value.(type) {
 	case *VarBlock:
 		exp.Var.Offset = exp.Var.Define.Value.(*VarBlock).Offset
-		/*tmp := exp.Var.FindStaticVal(p)
-		if tmp != nil {
-			tmp.Used = true
-		}
-		if exp.Var.Value != nil {
-			father := exp.Father // 不能忘了爹(尽管大概没有)
-			*exp = *exp.Var.Value
-			exp.Father = father
-		} else {
-			exp.Type = exp.Var.Define.Value.(*VarBlock).Type
-		}*/
 		exp.Type = exp.Var.Define.Value.(*VarBlock).Type
 	case *ArgBlock:
 		exp.Var.Type = exp.Var.Define.Value.(*ArgBlock).Type
@@ -329,7 +326,6 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 	for p.Lexer.Cursor < stopCursor {
 		// 获取下一个词法单元
 		token := p.Lexer.Next()
-		//fmt.Println(token)
 
 		if p.Lexer.Cursor > stopCursor {
 			p.Error.MissError("expression error", p.Lexer.Cursor, "expression error")
@@ -346,7 +342,6 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 			stackSep = append(stackSep, &Expression{
 				Separator: token.Value,
 			})
-			fmt.Println(stackSep)
 		case lexer.STRING, lexer.CHAR, lexer.RAW:
 			// 字符串、字符、原始字符串
 			exp = &Expression{
@@ -385,7 +380,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		// 处理括号和操作符优先级
 		if len(stackSep)-len(stackNum) >= 2 {
 			if stackSep[len(stackSep)-2].Separator == "(" {
-				nextIsNar = true // 负号处理不正确
+				// 左括号后的第一个操作符可能是负号
 				stackSep = stackSep[:len(stackSep)-1]
 			} else {
 				p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing "+token.String())
@@ -413,7 +408,7 @@ func (exp *Expression) parseName(p *Parser, name string, stopCursor int) {
 		if token.IsEmpty() {
 			p.Lexer.Error.MissError("Invalid expression", p.Lexer.Cursor, "Incomplete expression")
 		}
-		p.Lexer.Back(token.Len())
+		p.Lexer.SetCursor(token.Cursor)
 		// 如果是左括号，则解析函数调用
 		if token.Type == lexer.SEPARATOR && token.Value == "(" {
 			exp.Call = &CallBlock{
@@ -438,17 +433,6 @@ func (exp *Expression) handleVar(p *Parser, name string) {
 	switch varBlock.Define.Value.(type) {
 	case *VarBlock:
 		varBlock.Offset = varBlock.Define.Value.(*VarBlock).Offset
-		/*tmp := varBlock.FindStaticVal(p)
-		if tmp != nil {
-			tmp.Used = true
-		}
-		if varBlock.Value != nil {
-			father := exp.Father // 不能忘了爹(尽管大概没有)
-			*exp = *varBlock.Value
-			exp.Father = father
-		} else {
-			exp.Type = varBlock.Define.Value.(*VarBlock).Type
-		}*/
 		exp.Type = varBlock.Define.Value.(*VarBlock).Type
 	case *ArgBlock:
 		varBlock.Offset = varBlock.Define.Value.(*ArgBlock).Offset
@@ -467,16 +451,6 @@ func (exp *Expression) handleNum(p *Parser, nextIsNar bool) {
 	if nextIsNar {
 		if exp.IsConst() {
 			exp.Num = -exp.Num
-		} else {
-			exp = &Expression{
-				Type: exp.Type,
-				Left: exp,
-				Right: &Expression{
-					Type: exp.Type,
-					Num:  -1,
-				},
-				Separator: "*",
-			}
 		}
 	}
 }
@@ -687,7 +661,7 @@ func (exp *Expression) String() (buf string) {
 		if exp.Var != nil {
 			buf += fmt.Sprint(exp.Var.Name)
 		} else if exp.Call != nil {
-			buf += fmt.Sprint(exp.Call.Name)
+			buf += fmt.Sprint(exp.Call.Name) + "(" + strconv.Itoa(len(exp.Call.Args)) + ")"
 		} else if exp.StringVal != "" {
 			buf += fmt.Sprint("\"" + exp.StringVal + "\"")
 		} else if exp.Type == typeSys.GetSystemType("bool") {

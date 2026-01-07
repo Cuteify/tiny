@@ -57,7 +57,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		c.Reg = c.Arch.Regs()
 	}
 	if node.Father == nil {
-		code = "section .text\nglobal main\n\n"
+		code = "section .text\nglobal _start\n\n"
 	}
 	for i := 0; i < len(node.Children); i++ {
 		n := node.Children[i]
@@ -70,6 +70,15 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		case *parser.FuncBlock:
 			funcBlock := n.Value.(*parser.FuncBlock)
 			funcBlock.Check(c.Parser) // parser
+			//fmt.Println(funcBlock.Name)
+			name := funcBlock.Name
+			if name != "main" {
+				name = name + strconv.Itoa(len(funcBlock.Args))
+			}
+			code += utils.Format("; ==============================")
+			code += utils.Format("; Function: " + name)
+			code += utils.Format(name + ":")
+			utils.Count++
 			code += c.Arch.Func(funcBlock)
 			code += c.Compile(n)
 		case *parser.IfBlock:
@@ -106,7 +115,6 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			if varBlock.IsDefine {
 				c.EspOffset -= varBlock.Type.Size()
 				varBlock.Offset = c.EspOffset
-				fmt.Println(varBlock.Offset, c.EspOffset)
 				addr := ""
 				if varBlock.Offset < 0 {
 					addr = "[ebp" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
@@ -116,7 +124,10 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				}
 
-				code += c.Arch.Exp(varBlock.Value, utils.GetLengthName(varBlock.Type.Size())+addr, "设置变量"+varBlock.Name)
+				// 使用DWORD或QWORD前缀
+				// 在x86 32位平台，i32及以下类型使用DWORD（4字节）
+				sizePrefix := utils.GetLengthName(varBlock.Type.Size())
+				code += c.Arch.Exp(varBlock.Value, sizePrefix+addr, "设置变量"+varBlock.Name)
 			} else {
 				switch varBlock.Define.Value.(type) {
 				case *parser.VarBlock:
@@ -132,7 +143,9 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 				} else {
 					addr = "[ebp+" + strconv.FormatInt(int64(varBlock.Offset), 10) + "]"
 				}
-				code += c.Arch.Exp(varBlock.Value, utils.GetLengthName(varBlock.Type.Size())+addr, "设置变量"+varBlock.Name)
+				// 使用DWORD或QWORD前缀
+				sizePrefix := utils.GetLengthName(varBlock.Type.Size())
+				code += c.Arch.Exp(varBlock.Value, sizePrefix+addr, "设置变量"+varBlock.Name)
 			}
 		case *parser.CallBlock:
 			callBlock := n.Value.(*parser.CallBlock)
@@ -153,14 +166,12 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 		}
 		code += utils.Format("; ======函数完毕=======\n\n")
 
-		fmt.Println(node.Value.(*parser.FuncBlock).Name, c.Reg.Record, c.Reg.RegisterCount)
-
 		// 清理寄存器记录
 		c.Reg.Record = map[*parser.Expression]*regmgr.Reg{}
 		c.Reg.RegisterCount = 0
 	}
 	if node.Father == nil {
-		// Only emit an automatic main if the user did not define one
+		// 检查是否有main函数
 		hasMain := false
 		for _, ch := range node.Children {
 			if fb, ok := ch.Value.(*parser.FuncBlock); ok {
@@ -170,8 +181,22 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 				}
 			}
 		}
-		if !hasMain {
-			code += utils.Format("\n\nmain:\nPRINT_STRING \"MyLang First Finish!\"\nret\n")
+
+		if hasMain {
+			// 生成_start入口点，调用main函数后使用系统调用退出
+			code += utils.Format("; ==============================")
+			code += utils.Format("; 程序入口点 (ELF入口)")
+			code += utils.Format("_start:")
+			utils.Count++
+			code += utils.Format("; 调用main函数")
+			code += utils.Format("call main")
+			code += utils.Format("; 使用系统调用退出程序 (sys_exit = 1)")
+			code += utils.Format("; 返回值在EAX中")
+			code += utils.Format("mov ebx, eax; 返回码")
+			code += utils.Format("mov eax, 1; sys_exit")
+			code += utils.Format("int 0x80; 调用内核\n")
+		} else {
+			//code += utils.Format("\n\nmain:\nPRINT_STRING \"MyLang First Finish!\"\nret\n")
 		}
 	}
 	return code

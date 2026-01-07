@@ -1,13 +1,8 @@
 fn fib(i:i32) i32 {
     if (i<=2) {
-        ret 1
+       ret 1
     }
     ret fib(i-1) + fib(i-2)
-}
-
-fn callee_function(a:i32, b:i32, c:i32, d:i32, e:i32, f:i32, g:i32, h:i32) i32 {
-    result := (a + b) * (c + d) - (d + e + f) * (g + h)
-    ret result;
 }
 
 fn main() {

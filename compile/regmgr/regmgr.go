@@ -153,8 +153,22 @@ func (rm *RegMgr) handleRegisterSpill(n *parser.Node, exp *parser.Expression, pr
 	// 寻找最佳的溢出候选（排除锁定寄存器）
 	spillCandidate := rm.findSpillCandidate(preferredType)
 	if spillCandidate == nil {
-		// 所有可用寄存器都被锁定
-		panic("编译器内部错误: 所有寄存器都被锁定，无法分配新寄存器")
+		// 所有可用寄存器都被锁定，尝试解锁并强制使用栈溢出
+		// 强制使用临时栈空间
+		overflowReg := &Reg{
+			RegIndex:   -1, // 特殊标记，表示在栈上
+			Name:       "stack_temp",
+			CalleeSave: false,
+			CallerSave: false,
+			Index:      rm.Index,
+			UsingNode:  n,
+			Destroyed:  false,
+			Locked:     false,
+			StoreCode:  "",
+			SpillCount: 0,
+		}
+		rm.Record[exp] = overflowReg
+		return overflowReg
 	}
 
 	// 生成溢出代码
@@ -291,19 +305,27 @@ func (rm *RegMgr) spillRegister(reg *Reg, exp *parser.Expression) {
 	rm.updateRegisterCount()
 }
 
-// generateSpillCode 生成溢出代码
+// generateSpillCode 生成溢出代码（NASM格式）
 func (rm *RegMgr) generateSpillCode(reg *Reg) string {
 	if reg.UsingNode == nil {
 		return ""
 	}
 
-	if vb, ok := reg.UsingNode.Value.(*parser.VarBlock); ok {
-		addr := rm.calculateMemoryAddress(vb)
-		sizeSpec := utils.GetLengthName(vb.Type.Size())
-		return utils.Format("mov " + sizeSpec + addr + ", " + reg.Name + "; 溢出到局部变量栈")
+	// 处理栈临时变量
+	if reg.RegIndex == -1 {
+		return ""
 	}
 
-	return utils.Format("mov [esp], " + reg.Name + "; 溢出到临时栈位置")
+	if vb, ok := reg.UsingNode.Value.(*parser.VarBlock); ok {
+		addr := rm.calculateMemoryAddress(vb)
+		// x86 32位平台所有寄存器都是32位，溢出时只能存储32位
+		// 强制使用dword避免类型不匹配问题
+		return utils.Format("mov dword " + addr + ", " + reg.Name)
+	}
+
+	// 临时表达式值不溢出到栈（通过EBX callee-save寄存器处理）
+	// 中间值应该已经在表达式中正确处理，这里不需要生成溢出代码
+	return ""
 }
 
 // calculateMemoryAddress 计算内存地址

@@ -9,31 +9,34 @@ type ReturnBlock struct {
 }
 
 func (r *ReturnBlock) Parse(p *Parser) {
-	// 解析逗号
-	count := 0
+	p.Lexer.Skip(' ')           // 跳过空格
+	oldCursor := p.Lexer.Cursor // 记录初始位置
 	brecket := 0
 	for {
 		code := p.Lexer.Next()
-		count += code.Len()
-		if code.Type == lexer.SEPARATOR && (code.Value == "(" || code.Value == ")") {
+		if code.Type == lexer.SEPARATOR {
 			if code.Value == "(" {
 				brecket++
-			} else {
+			} else if code.Value == ")" {
 				brecket--
 			}
 		}
-		if brecket == 0 && code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
-			cursor := p.Lexer.Cursor - 1
-			p.Lexer.Back(count)
-			r.Value = append(r.Value, p.ParseExpression(cursor))
-			break
+		if code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
+			if brecket == 0 {
+				cursor := code.Cursor // 到终止符
+				p.Lexer.SetCursor(oldCursor)
+				r.Value = append(r.Value, p.ParseExpression(cursor))
+				break
+			} else {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss )")
+			}
 		}
 		if brecket == 0 && code.Type == lexer.SEPARATOR && code.Value == "," {
-			cursor := p.Lexer.Cursor - 1
-			p.Lexer.Back(count)
+			cursor := code.Cursor // 到终止符
+			p.Lexer.SetCursor(oldCursor)
 			r.Value = append(r.Value, p.ParseExpression(cursor))
-			p.Lexer.Cursor++
-			count = 0
+			tmp := p.Lexer.Next()
+			oldCursor = tmp.EndCursor
 		}
 	}
 	node := &Node{Value: r}
