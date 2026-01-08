@@ -14,29 +14,26 @@ fib1:
     if_1:
     mov EAX, 1; return值存入EAX
     ; ---- 退出函数 ----
-    mov EBX, dword [ebp-4]; 恢复EBX
+    pop EBX; 恢复EBX
     leave
     ret
 
     end_if_1:
     mov ECX, [ebp+8]
-
     sub ECX, 1
     push ECX; 参数0
     call fib1
     add esp, 4; 清理参数栈(cdecl)
-
     mov EBX, EAX; 函数返回值直接移到EBX
     mov EDX, [ebp+8]
     sub EDX, 2
     push EDX; 参数0
     call fib1
     add esp, 4; 清理参数栈(cdecl)
-    mov EDX, EAX
-    add EBX, EDX; EBX = fib(i-1) + fib(i-2)
+    add EBX, EAX; EBX = fib(i-1) + fib(i-2)
     mov EAX, EBX; return值存入EAX
     ; ---- 退出函数 ----
-    mov EBX, dword [ebp-4]; 恢复EBX
+    pop EBX; 恢复EBX
     leave
     ret
 
@@ -50,22 +47,16 @@ main:
     mov ebp, esp; 设置当前栈帧基址
     push EBX; 保存EBX
     ; ---- 函数开始 ----
-    mov EAX, 30
-    push EAX; 参数0
+    push 30; 参数0
     call fib1
     add esp, 4; 清理参数栈(cdecl)
-    ;call _bp ;; 【人工插入断点】
     ; ---- 退出函数 ----
-    mov EBX, dword [ebp-4]; 恢复EBX
+    pop EBX; 恢复EBX
     leave
     ret
 
 ; ======函数完毕=======
 
-_bp:
-    nop
-    ; 空操作
-    ret
 
 ; ==============================
 ; 程序入口点 (ELF入口)

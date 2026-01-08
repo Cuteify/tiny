@@ -89,17 +89,20 @@ func (a *Cdecl) Return(ret *parser.ReturnBlock) string {
 
 	code += utils.Format("; ---- 退出函数 ----")
 
-	csCount := 0
-	// 恢复callee-saved寄存器（按后进先出顺序）
+	// 清理局部变量栈空间
+	if a.stackSize > 0 {
+		code += utils.Format("add esp, " + strconv.Itoa(a.stackSize) + "; 清理局部变量栈空间(" + strconv.Itoa(a.stackSize) + "字节)")
+	}
+
+	// 恢复callee-saved寄存器
 	for i := len(regs) - 1; i >= 0; i-- {
 		r := regs[i]
 		if r.CalleeSave {
-			csCount++
-			code += utils.Format("mov " + r.Name + ", dword [ebp-" + strconv.Itoa(4*csCount) + "]" + "; 恢复" + r.Name)
+			code += utils.Format("pop " + r.Name + "; 恢复" + r.Name)
 		}
 	}
 
-	// 恢复栈帧并返回
+	// 恢复调用者的栈帧基址
 	code += utils.Format("leave")
 	code += utils.Format("ret\n")
 	return code
