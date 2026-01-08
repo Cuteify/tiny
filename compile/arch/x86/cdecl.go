@@ -10,20 +10,35 @@ import (
 
 // Cdecl 实现 x86 cdecl 调用约定（全部压栈，调用者清理）。
 type Cdecl struct {
-	stackSize int
-	regmgr    *regmgr.RegMgr
-	now       *parser.Node
+	session *Session
+}
+
+func NewCdecl() *Cdecl {
+	return &Cdecl{
+		session: NewSession(nil),
+	}
+}
+
+// initSession 初始化 session（在首次使用时调用）
+func (a *Cdecl) initSession() {
+	if a.session == nil {
+		a.session = NewSession(a)
+	}
 }
 
 func (a *Cdecl) Info() string { return "x86 cdecl" }
 func (a *Cdecl) Regs() *regmgr.RegMgr {
-	if a.regmgr == nil {
-		a.regmgr = regmgr.NewRegMgr(regs)
+	a.initSession()
+	if a.session.RegMgr() == nil {
+		a.session.SetRegMgr(regmgr.NewRegMgr(regs))
 	}
-	return a.regmgr
+	return a.session.RegMgr()
 }
 
-func (a *Cdecl) Now(node *parser.Node) { a.now = node }
+func (a *Cdecl) Now(node *parser.Node) {
+	a.initSession()
+	a.session.SetCurrentNode(node)
+}
 
 func (a *Cdecl) Call(call *parser.CallBlock) string {
 	if call == nil || call.Func == nil {
@@ -35,7 +50,7 @@ func (a *Cdecl) Call(call *parser.CallBlock) string {
 	// 1. 溢出caller-saved寄存器到栈（除了已经在EBX中的中间值）
 	// 在函数调用前，需要将caller-saved寄存器中的值保存到内存
 	// 注意：如果中间值已经通过 containsCall 检测保存到 EBX，这里不再溢出
-	savedRegs := a.regmgr.SaveAll(false)
+	savedRegs := a.session.RegMgr().SaveAll(false)
 	for _, regCode := range savedRegs {
 		code += regCode
 	}
@@ -75,7 +90,7 @@ func (a *Cdecl) Return(ret *parser.ReturnBlock) string {
 	if ret != nil && len(ret.Value) != 0 {
 		// 强制使用EAX作为返回值寄存器
 		eaxReg := &regmgr.Reg{Name: "EAX", RegIndex: 0}
-		a.regmgr.Force(eaxReg, a.now, ret.Value[0])
+		a.session.RegMgr().Force(eaxReg, a.session.CurrentNode(), ret.Value[0])
 
 		if eaxReg.StoreCode != "" {
 			code += utils.Format(eaxReg.StoreCode)
@@ -84,14 +99,14 @@ func (a *Cdecl) Return(ret *parser.ReturnBlock) string {
 		// 编译返回表达式到EAX
 		code += a.Exp(ret.Value[0], "EAX", "return值存入EAX")
 		// 释放表达式使用的寄存器
-		a.regmgr.Free(ret.Value[0])
+		a.session.RegMgr().Free(ret.Value[0])
 	}
 
 	code += utils.Format("; ---- 退出函数 ----")
 
 	// 清理局部变量栈空间
-	if a.stackSize > 0 {
-		code += utils.Format("add esp, " + strconv.Itoa(a.stackSize) + "; 清理局部变量栈空间(" + strconv.Itoa(a.stackSize) + "字节)")
+	if a.session.StackSize() > 0 {
+		code += utils.Format("add esp, " + strconv.Itoa(a.session.StackSize()) + "; 清理局部变量栈空间(" + strconv.Itoa(a.session.StackSize()) + "字节)")
 	}
 
 	// 恢复callee-saved寄存器
@@ -140,13 +155,13 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) string {
 	}
 
 	// 调整局部变量起始位置让出callee-saved寄存器空间
-	arch.ResetLocalVarOffset(a.now, -4*csCount)
+	arch.ResetLocalVarOffset(a.session.CurrentNode(), -4*csCount)
 
 	// 为局部变量分配栈空间（4字节对齐）
 	//code += utils.Format("; ---- 分配局部变量栈空间 ----")
-	a.stackSize = arch.CalcStackSize(a.now, 4)
-	if a.stackSize > 0 {
-		code += utils.Format("sub esp, " + strconv.Itoa(a.stackSize) + "; 分配局部变量栈空间(" + strconv.Itoa(a.stackSize) + "字节)")
+	a.session.SetStackSize(arch.CalcStackSize(a.session.CurrentNode(), 4))
+	if a.session.StackSize() > 0 {
+		code += utils.Format("sub esp, " + strconv.Itoa(a.session.StackSize()) + "; 分配局部变量栈空间(" + strconv.Itoa(a.session.StackSize()) + "字节)")
 	}
 
 	code += utils.Format("; ---- 函数开始 ----")
@@ -154,7 +169,7 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) string {
 }
 
 func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) string {
-	expc := expCom{arch: a, now: a.now, regmgr: a.regmgr}
+	expc := expCom{session: a.session}
 	return expc.CompileExpr(exp, result, desc)
 }
 
