@@ -4,6 +4,7 @@ import (
 	"cuteify/compile/arch"
 	"cuteify/compile/arch/x86"
 	"cuteify/compile/regmgr"
+	"cuteify/optimizer"
 	"cuteify/parser"
 	"cuteify/utils"
 	"fmt"
@@ -71,6 +72,7 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 			funcBlock := n.Value.(*parser.FuncBlock)
 			funcBlock.Check(c.Parser) // parser
 			//fmt.Println(funcBlock.Name)
+			optimizer.AnalyzeRecursion(n)
 			name := funcBlock.Name
 			if name != "main" {
 				name = name + strconv.Itoa(len(funcBlock.Args))
