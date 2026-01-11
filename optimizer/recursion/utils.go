@@ -1,5 +1,5 @@
-// Package optimizer 提供编译器优化工具集
-package optimizer
+// Package recursion
+package recursion
 
 import (
 	"fmt"
@@ -8,17 +8,7 @@ import (
 	"cuteify/parser"
 )
 
-// RecursionType 递归类型
-type RecursionType int
-
-const (
-	NoRecursion       RecursionType = iota // 非递归
-	DirectRecursion                        // 直接递归
-	IndirectRecursion                      // 间接递归
-	MutualRecursion                        // 互递归
-)
-
-// RecursionInfo 递归检测信息
+// RecursionInfo 递归检测信息（兼容旧接口）
 type RecursionInfo struct {
 	IsRecursive     bool          // 是否递归
 	RecursionType   RecursionType // 递归类型
@@ -30,7 +20,7 @@ type RecursionInfo struct {
 	Report          string        // 分析报告
 }
 
-// DetectRecursion 检测函数是否递归
+// DetectRecursion 检测函数是否递归（兼容旧接口）
 // 输入: funcNode - 函数定义所在的 AST 节点
 //
 //	callGraph - 可选，函数调用图（用于间接递归检测）
@@ -65,13 +55,13 @@ func DetectRecursion(funcNode *parser.Node, callGraph map[string][]string) *Recu
 	// 1. 检测直接递归
 	if hasDirectRecursiveCall(funcNode, funcName) {
 		result.IsRecursive = true
-		result.RecursionType = DirectRecursion
+		result.RecursionType = GeneralRecursive // 使用新的类型
 		result.CallChain = []string{funcName}
 	} else if callGraph != nil {
 		// 2. 检测间接递归
 		if path := findRecursivePath(callGraph, funcName); path != nil {
 			result.IsRecursive = true
-			result.RecursionType = IndirectRecursion
+			result.RecursionType = MutualRecursive
 			result.CallChain = path
 			result.CallDepth = len(path)
 		}
@@ -317,13 +307,17 @@ func generateReport(funcName string, info *RecursionInfo) string {
 	return sb.String()
 }
 
-// recursionTypeToString 递归类型转字符串
+// recursionTypeToString 递归类型转字符串（兼容旧接口）
 func recursionTypeToString(rt RecursionType) string {
 	names := map[RecursionType]string{
-		NoRecursion:       "非递归",
-		DirectRecursion:   "直接递归",
-		IndirectRecursion: "间接递归",
-		MutualRecursion:   "互递归",
+		NoRecursion:      "非递归",
+		SimpleLinear:     "简单线性递归",
+		DoubleRecursion:  "双递归",
+		TailRecursive:    "尾递归",
+		MutualRecursive:  "互递归",
+		NestedRecursive:  "嵌套递归",
+		TreeRecursion:    "树递归",
+		GeneralRecursive: "一般递归",
 	}
 	if name, ok := names[rt]; ok {
 		return name

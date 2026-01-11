@@ -19,150 +19,143 @@ type VarBlock struct {
 }
 
 func (v *VarBlock) Parse(p *Parser) {
-	// 解析变量名
+	v.ParseVar(p)
+	p.AddChild(&Node{Value: v})
+}
+
+func (v *VarBlock) ParseVar(p *Parser) {
 	code := p.Lexer.Next()
-	if code.Type == lexer.NAME {
-		v.StartCursor = p.Lexer.Cursor
-		v.Name = code.Value
-		if !utils.CheckName(v.Name) {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
-		}
-		code := p.Lexer.Next()
-		if code.Type == lexer.SEPARATOR && code.Value == ":=" {
-			v.IsDefine = true
-			// 找到行尾，解析表达式
-			v.Value = p.ParseExpression(p.FindEndCursor())
-		} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
-			tmp := v.FindStaticVal(p)
-			if tmp != nil && !tmp.Used {
-				tmp.Value = p.ParseExpression(p.FindEndCursor())
-				return
-			} else {
-				// 找到行尾，解析表达式
-				v.Value = p.ParseExpression(p.FindEndCursor())
-			}
-		}
-	} else if code.Type == lexer.VAR {
-		v.IsDefine = true
-		switch code.Value {
-		case "CONST":
-			v.IsConst = true
-		case "VAR":
-			v.IsConst = false
-		case "LET":
-			v.IsConst = false
-			p.Error.Warning("let is not support, use var instead")
-		}
-		code = p.Lexer.Next()
-		if code.Type != lexer.NAME {
+
+	switch code.Type {
+	case lexer.NAME:
+		v.parseNameVar(p, code)
+	case lexer.VAR:
+		v.parseKeywordVar(p, code)
+	default:
+		if p.Lexer.Cursor == 0 {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
 		}
-		v.StartCursor = p.Lexer.Cursor
-		v.Name = code.Value
-		if !utils.CheckName(v.Name) {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
-		}
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
+	}
+}
+
+func (v *VarBlock) parseNameVar(p *Parser, code lexer.Token) {
+	v.StartCursor = p.Lexer.Cursor
+	v.Name = code.Value
+	if !utils.CheckName(v.Name) {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+	}
+
+	code = p.Lexer.Next()
+	if code.Type == lexer.SEPARATOR && code.Value == ":=" {
+		v.IsDefine = true
+		v.Value = p.ParseExpression(p.FindEndCursor())
+	} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
+		v.Value = p.ParseExpression(p.FindEndCursor())
+		v.removeOldStaticVal(p)
+	}
+}
+
+func (v *VarBlock) parseKeywordVar(p *Parser, code lexer.Token) {
+	v.IsDefine = true
+	v.setVarConst(p, code.Value)
+
+	code = p.Lexer.Next()
+	if code.Type != lexer.NAME {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
+	}
+	v.parseVarName(p, code)
+
+	code = p.Lexer.Next()
+	if code.Type == lexer.SEPARATOR && code.Value == ":" {
 		code = p.Lexer.Next()
-		if code.Type == lexer.SEPARATOR && code.Value == ":" {
+		if code.Type == lexer.NAME {
+			tb := &TypeBlock{}
+			tmp := tb.FindDefine(p, code.Value)
+			v.Type = typeSys.ToRType(tmp)
+		} else if code.Type == lexer.SEPARATOR && code.Value == "*" {
 			code = p.Lexer.Next()
 			if code.Type == lexer.NAME {
 				tb := &TypeBlock{}
 				tmp := tb.FindDefine(p, code.Value)
 				rTmp := typeSys.ToRType(tmp)
+				rTmp.IsPtr = true
 				v.Type = rTmp
-			} else if code.Type == lexer.SEPARATOR && code.Value == "*" {
-				// 指针
-				code = p.Lexer.Next()
-				if code.Type == lexer.NAME {
-					tb := &TypeBlock{}
-					tmp := tb.FindDefine(p, code.Value)
-					rTmp := typeSys.ToRType(tmp)
-					rTmp.IsPtr = true
-					v.Type = rTmp
-				} else {
-					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
-				}
 			} else {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 			}
 		} else {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 		}
-		code = p.Lexer.Next()
-		if code.Type == lexer.SEPARATOR && code.Value == "=" {
-			v.Value = p.ParseExpression(p.FindEndCursor())
-		} else {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
-		}
 	} else {
-		if p.Lexer.Cursor == 0 {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
-		}
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 	}
-	p.AddChild(&Node{Value: v})
 
+	code = p.Lexer.Next()
+	if code.Type == lexer.SEPARATOR && code.Value == "=" {
+		v.Value = p.ParseExpression(p.FindEndCursor())
+	} else {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
+	}
 }
 
-func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
-	// 找到定义位置
+func (v *VarBlock) setVarConst(p *Parser, keyword string) {
+	switch keyword {
+	case "CONST":
+		v.IsConst = true
+	case "VAR":
+		v.IsConst = false
+	case "LET":
+		v.IsConst = false
+		p.Error.Warning("let is not support, use var instead")
+	}
+}
+
+func (v *VarBlock) parseVarName(p *Parser, code lexer.Token) {
+	v.StartCursor = p.Lexer.Cursor
+	v.Name = code.Value
+	if !utils.CheckName(v.Name) {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
+	}
+}
+
+func (v *VarBlock) ParseDefine(p *Parser) bool {
 	oldThisBlock := p.ThisBlock
+
 	if !utils.CheckName(v.Name) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 	v.Used = true
+
 	if p.Block == p.ThisBlock || p.ThisBlock == nil {
-		// 全局变量查找
-		varDef := p.Find(v.Name, v).Value.(*VarBlock)
-		varDef.Check(p)
-		return varDef
+		return v.findGlobalVar(p)
 	}
+
+	return v.findLocalVar(p, oldThisBlock)
+}
+
+func (v *VarBlock) findGlobalVar(p *Parser) bool {
+	varNode := p.Find(v.Name, v)
+	varNode.Value.(*VarBlock).Check(p)
+	v.Define = varNode
+	return varNode != nil
+}
+
+func (v *VarBlock) findLocalVar(p *Parser, oldThisBlock *Node) bool {
 	for {
 		if p.ThisBlock == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
 		}
-		for i := 0; i < len(p.ThisBlock.Children); i++ {
-			switch p.ThisBlock.Children[i].Value.(type) {
-			case *VarBlock:
-				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
-				if tmp.Name == v.Name && tmp.IsDefine {
-					v.Define = p.ThisBlock.Children[i]
-					v.Type = tmp.Type
-					p.ThisBlock = oldThisBlock
-					tmp.Check(p)
-					return tmp
-				}
-			}
-		}
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			tmp := p.ThisBlock.Value.(*FuncBlock)
-			for j := 0; j < len(tmp.Args); j++ {
-				if tmp.Args[j].Name == v.Name {
-					arg := tmp.Args[j]
-					v.Define = &Node{Value: arg}
-					v.Type = arg.Type
-					p.ThisBlock = oldThisBlock
-					return nil
-				}
-			}
+
+		if ok := v.searchInBlock(p); ok {
+			p.ThisBlock = oldThisBlock
+			return ok
 		}
 
-		// 如果父节点是 Block 的根节点，说明查找到了全局作用域
 		if p.ThisBlock.Father == nil {
-			// 在全局作用域查找变量
-			for i := 0; i < len(p.Block.Children); i++ {
-				switch p.Block.Children[i].Value.(type) {
-				case *VarBlock:
-					tmp := p.Block.Children[i].Value.(*VarBlock)
-					if tmp.Name == v.Name && tmp.IsDefine {
-						v.Define = p.Block.Children[i]
-						v.Type = tmp.Type
-						p.ThisBlock = oldThisBlock
-						tmp.Check(p)
-						return tmp
-					}
-				}
+			if ok := v.searchInGlobal(p); ok {
+				p.ThisBlock = oldThisBlock
+				return ok
 			}
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name)
 		}
@@ -171,15 +164,81 @@ func (v *VarBlock) ParseDefine(p *Parser) *VarBlock {
 	}
 }
 
-func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
+func (v *VarBlock) searchInBlock(p *Parser) bool {
+	if ok := v.searchInChildren(p); ok {
+		return ok
+	}
+
+	if ok := v.searchInFuncArgs(p); ok {
+		return ok
+	}
+
+	if ok := v.searchInForVar(p); ok {
+		return ok
+	}
+
+	return false
+}
+
+func (v *VarBlock) searchInChildren(p *Parser) bool {
+	for i := 0; i < len(p.ThisBlock.Children); i++ {
+		if tmp, ok := p.ThisBlock.Children[i].Value.(*VarBlock); ok {
+			if tmp.Name == v.Name && tmp.IsDefine {
+				v.Define = p.ThisBlock.Children[i]
+				v.Type = tmp.Type
+				tmp.Check(p)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (v *VarBlock) searchInFuncArgs(p *Parser) bool {
+	if funcBlock, ok := p.ThisBlock.Value.(*FuncBlock); ok {
+		for j := 0; j < len(funcBlock.Args); j++ {
+			if funcBlock.Args[j].Name == v.Name {
+				arg := funcBlock.Args[j]
+				v.Define = &Node{Value: arg}
+				v.Type = arg.Type
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (v *VarBlock) searchInForVar(p *Parser) bool {
+	if forBlock, ok := p.ThisBlock.Value.(*ForBlock); ok {
+		if forBlock.Var != nil && forBlock.Var.Name == v.Name && forBlock.Var.IsDefine {
+			v.Define = &Node{Value: forBlock.Var}
+			v.Type = forBlock.Var.Type
+			return true
+		}
+	}
+	return false
+}
+
+func (v *VarBlock) searchInGlobal(p *Parser) bool {
+	for i := 0; i < len(p.Block.Children); i++ {
+		if tmp, ok := p.Block.Children[i].Value.(*VarBlock); ok {
+			if tmp.Name == v.Name && tmp.IsDefine {
+				v.Define = p.Block.Children[i]
+				v.Type = tmp.Type
+				tmp.Check(p)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (v *VarBlock) removeOldStaticVal(p *Parser) { // 多次赋值时，删除旧的静态值，内联优化器
 	if v.Define == nil {
 		v.ParseDefine(p)
 	}
 	if v.Define == nil {
-		return nil
-	}
-	if v.Define.Father.Father == nil {
-		return nil
+		return
 	}
 	oldThisBlock := p.ThisBlock
 
@@ -188,28 +247,27 @@ func (v *VarBlock) FindStaticVal(p *Parser) *VarBlock {
 	}
 	for {
 		for i := len(p.ThisBlock.Children) - 1; i >= 0; i-- {
+			if p.ThisBlock.Children[i].Ignore {
+				continue
+			}
 			switch p.ThisBlock.Children[i].Value.(type) {
-			case *IfBlock:
+			case *FuncBlock, *ForBlock, *ElseBlock, *IfBlock:
 				goto end
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
 				if tmp.Name == v.Name && tmp.Value.IsConst() {
-					v.Value = new(Expression)
-					*v.Value = *tmp.Value
-					p.ThisBlock = oldThisBlock
-					return tmp
+					if i == len(p.ThisBlock.Children)-1 {
+						p.ThisBlock.Children = p.ThisBlock.Children[:i]
+					} else {
+						p.ThisBlock.Children = append(p.ThisBlock.Children[:i], p.ThisBlock.Children[i+1:]...)
+					}
 				}
 			}
-		}
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			goto end
 		}
 		p.ThisBlock = p.ThisBlock.Father
 	}
 end:
 	p.ThisBlock = oldThisBlock
-	return nil
 }
 
 func (v *VarBlock) Check(p *Parser) bool {

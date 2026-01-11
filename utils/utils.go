@@ -6,7 +6,7 @@ import (
 
 // Count 用于全局控制 Format 缩进级别 (与之前 compile 包中的 count 一致)
 var Count int = 0
-var lineNum int = 0
+var LineNum int = 0
 
 func CheckName(name string) bool {
 	if len(name) == 0 {
@@ -27,6 +27,7 @@ func CheckName(name string) bool {
 
 // Format 格式化汇编代码行（带缩进）
 func Format(text string) string {
+	LineNum++
 	return strings.Repeat("    ", Count) + text + "\n"
 }
 

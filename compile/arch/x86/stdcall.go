@@ -3,6 +3,7 @@ package x86
 
 import (
 	"cuteify/compile/arch"
+	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
 	"cuteify/utils"
@@ -13,24 +14,17 @@ import (
 // 由于 Arch 接口的 Return 无法直接得知总参数字节数，这里暂以简单 ret 代替；
 // 真实 ret N 需要外层提供 totalArgBytes 信息并拼接到返回处（后续接线时补上）。
 type Stdcall struct {
-	session *Session
+	ctx *context.Context
 }
 
-func NewStdcall() *Stdcall {
+func NewStdcall(ctx *context.Context) *Stdcall {
+	ctx.Reg = regmgr.NewRegMgr(regs)
 	return &Stdcall{
-		session: NewSession(nil),
+		ctx: ctx,
 	}
 }
 
 func (a *Stdcall) Info() string { return "x86 stdcall" }
-func (a *Stdcall) Regs() *regmgr.RegMgr {
-	if a.session.RegMgr() == nil {
-		a.session.SetRegMgr(regmgr.NewRegMgr(regs))
-	}
-	return a.session.RegMgr()
-}
-
-func (a *Stdcall) Now(node *parser.Node) { a.session.SetCurrentNode(node) }
 
 func (a *Stdcall) Call(call *parser.CallBlock) string {
 	if call == nil || call.Func == nil {
@@ -65,8 +59,8 @@ func (a *Stdcall) Return(ret *parser.ReturnBlock) string {
 		code += a.Exp(ret.Value[0], "EAX", "return")
 	}
 
-	if a.session.ArgsSize()+a.session.StackSize() > 0 {
-		code += utils.Format("add esp, " + strconv.Itoa(a.session.ArgsSize()) + "; 清理参数栈")
+	if a.ctx.ArgsSize+a.ctx.StackSize > 0 {
+		code += utils.Format("add esp, " + strconv.Itoa(a.ctx.ArgsSize) + "; 清理参数栈")
 	}
 	code += utils.Format("pop ebp; 跳转到函数返回部分")
 	code += utils.Format("ret\n")
@@ -87,11 +81,23 @@ func (a *Stdcall) Func(funcBlock *parser.FuncBlock) string {
 	utils.Count++
 	code += utils.Format("push ebp")
 	code += utils.Format("mov ebp, esp")
-	a.session.SetStackSize(arch.CalcStackSize(a.session.CurrentNode(), 4))
+	a.ctx.StackSize = arch.CalcStackSize(a.ctx.Now, 4)
 	return code
 }
 
 func (a *Stdcall) Exp(exp *parser.Expression, result, desc string) string {
-	expc := expCom{session: a.session}
+	expc := expCom{ctx: a.ctx}
 	return expc.CompileExpr(exp, result, desc)
+}
+
+func (a *Stdcall) For(forBlock *parser.ForBlock) string {
+	return ""
+}
+
+func (a *Stdcall) EndFor(forBlock *parser.ForBlock) (code string) {
+	return ""
+}
+
+func (a *Stdcall) Var(varBlock *parser.VarBlock) string {
+	return ""
 }

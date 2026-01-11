@@ -1,6 +1,7 @@
 package x86
 
 import (
+	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
 	typeSys "cuteify/type"
@@ -18,30 +19,27 @@ const (
 )
 
 type expCom struct {
-	session *Session
+	ctx *context.Context
 }
 
 func (c *expCom) CompileExpr(exp *parser.Expression, result, desc string) (code string) {
 	if exp.Type.Type() == "bool" {
 		return c.CompileBoolExpr(exp, result)
 	}
-	if typeSys.CheckTypeType(exp.Type, "int", "uint") && exp.IsConst() {
-		var tmp string
-		code, tmp = c.CompileExprVal(exp)
-		if result == "push" {
-			code += utils.Format("push " + tmp + "; " + desc)
-		} else {
-			code += utils.Format("mov " + result + ", " + tmp + "; " + desc)
-		}
+	if tmp := c.numConstHandle(exp, result, desc); tmp != "" {
+		code = tmp
 		return
 	}
+
 	var reg *regmgr.Reg
 	code, reg = c.CompileExprChildren(exp)
+
+	// 保存结果
 	if reg != nil {
 		if result == "push" {
 			code += utils.Format("push " + reg.Name + "; " + desc)
 			// push后立即释放寄存器，避免被SaveAll溢出
-			c.session.RegMgr().Free(exp)
+			c.ctx.Reg.Free(exp)
 		} else {
 			if result != reg.Name {
 				code += utils.Format("mov " + result + ", " + reg.Name + "; " + desc)
@@ -64,16 +62,30 @@ func (c *expCom) CompileExprChildren(exp *parser.Expression) (code string, reg *
 	return c.compileBinaryOp(exp)
 }
 
+func (c *expCom) numConstHandle(exp *parser.Expression, result, desc string) (code string) {
+	if typeSys.CheckTypeType(exp.Type, "int", "uint") && exp.IsConst() {
+		var tmp string
+		code, tmp = c.CompileExprVal(exp)
+		if result == "push" {
+			code += utils.Format("push " + tmp + "; " + desc)
+		} else {
+			code += utils.Format("mov " + result + ", " + tmp + "; " + desc)
+		}
+		return
+	}
+	return ""
+}
+
 // 编译末端叶子节点（常量、变量、函数调用）
 func (c *expCom) compileLeafNode(exp *parser.Expression) (code string, reg *regmgr.Reg) {
 	tmp, resultVal := c.CompileExprVal(exp)
 	code += tmp
-	reg = c.session.RegMgr().Get(c.session.CurrentNode(), exp, false)
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
 
 	// 如果 EBX 已被占用（左子使用），重新分配到其他寄存器
-	if c.session.EbxOccupied() && reg != nil && reg.Name == "EBX" {
-		c.session.RegMgr().Free(exp)
-		reg = c.session.RegMgr().Get(c.session.CurrentNode(), exp, false)
+	if c.ctx.EbxOccupied && reg != nil && reg.Name == "EBX" {
+		c.ctx.Reg.Free(exp)
+		reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
 	}
 
 	if reg.StoreCode != "" {
@@ -130,13 +142,13 @@ func (c *expCom) compileLeftChild(exp *parser.Expression) (code string, reg *reg
 
 	// 优化：如果左子是函数调用且右子也有函数调用，直接把返回值移到 EBX
 	if exp.Left.Call != nil && exp.Right != nil && c.containsCall(exp.Right) {
-		c.session.SetUseEBXDirect(true)
+		c.ctx.UseEBXDirect = true
 		code, result = c.CompileExprVal(exp.Left)
-		c.session.SetUseEBXDirect(false)
+		c.ctx.UseEBXDirect = false
 		reg = nil
 
 		// 锁定 EBX，防止被右子分配使用
-		c.session.RegMgr().Force(&regmgr.Reg{Name: "EBX", RegIndex: 1}, c.session.CurrentNode(), exp.Left)
+		c.ctx.Reg.Force(&regmgr.Reg{Name: "EBX", RegIndex: 1}, c.ctx.Now, exp.Left)
 		return
 	}
 
@@ -157,9 +169,9 @@ func (c *expCom) compileRightChild(exp *parser.Expression, leftResult string) (c
 
 	// 如果左子结果在 EBX 中，设置标志防止右子使用 EBX
 	if leftResult == "EBX" {
-		c.session.SetEbxOccupied(true)
+		c.ctx.EbxOccupied = true
 	}
-	defer func() { c.session.SetEbxOccupied(false) }()
+	defer func() { c.ctx.EbxOccupied = false }()
 
 	if exp.Right.IsConst() {
 		code, result = c.CompileExprVal(exp.Right)
@@ -192,7 +204,7 @@ func (c *expCom) saveLeftToEBX(leftExp *parser.Expression, leftReg *regmgr.Reg, 
 	code := ""
 	// 释放左子寄存器（如果有的话）
 	if leftReg != nil {
-		c.session.RegMgr().Free(leftExp)
+		c.ctx.Reg.Free(leftExp)
 	}
 	code += utils.Format("mov EBX, " + leftResult + "; 保存中间结果到EBX(callee-save)")
 	return code
@@ -202,7 +214,7 @@ func (c *expCom) saveLeftToEBX(leftExp *parser.Expression, leftReg *regmgr.Reg, 
 func (c *expCom) generateOpWithEBX(code string, exp *parser.Expression, rightResult string, rightReg *regmgr.Reg, leftExp *parser.Expression) string {
 	// 释放右子寄存器
 	if rightReg != nil {
-		c.session.RegMgr().Free(exp.Right)
+		c.ctx.Reg.Free(exp.Right)
 	}
 
 	formattedSrc := rightResult
@@ -227,7 +239,7 @@ func (c *expCom) generateOpWithEBX(code string, exp *parser.Expression, rightRes
 	}
 
 	// 解锁 EBX
-	c.session.RegMgr().Free(leftExp)
+	c.ctx.Reg.Free(leftExp)
 
 	return code
 }
@@ -237,7 +249,7 @@ func (c *expCom) generateOpNormal(code string, exp *parser.Expression, leftReg, 
 	reg, src := c.selectResultReg(leftReg, rightReg, leftResult, rightResult, exp)
 
 	if reg == nil {
-		reg = c.session.RegMgr().Get(c.session.CurrentNode(), exp, false)
+		reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
 		if reg.StoreCode != "" {
 			code += utils.Format(reg.StoreCode)
 		}
@@ -255,13 +267,13 @@ func (c *expCom) generateOpNormal(code string, exp *parser.Expression, leftReg, 
 func (c *expCom) selectResultReg(leftReg, rightReg *regmgr.Reg, leftResult, rightResult string, exp *parser.Expression) (*regmgr.Reg, string) {
 	if leftReg != nil {
 		if rightReg != nil {
-			c.session.RegMgr().Free(exp.Right)
+			c.ctx.Reg.Free(exp.Right)
 		}
 		return leftReg, rightResult
 	}
 	if rightReg != nil {
 		if leftReg != nil {
-			c.session.RegMgr().Free(exp.Left)
+			c.ctx.Reg.Free(exp.Left)
 		}
 		return rightReg, leftResult
 	}
@@ -326,12 +338,12 @@ func (c *expCom) CompileBoolExpr(exp *parser.Expression, result string) (code st
 		code += utils.Format("cmp " + formattedLeft + ", " + formattedRight)
 		// 释放寄存器
 		if exp.Left != nil {
-			c.session.RegMgr().Free(exp.Left)
+			c.ctx.Reg.Free(exp.Left)
 		}
 		if exp.Right != nil {
-			c.session.RegMgr().Free(exp.Right)
+			c.ctx.Reg.Free(exp.Right)
 		}
-		switch c.session.ExpType() {
+		switch c.ctx.ExpType {
 		case OrExp:
 		case AndExp:
 		default:
@@ -370,33 +382,16 @@ func (c *expCom) CompileExprVal(exp *parser.Expression) (code, result string) {
 		}
 	} else if exp.Var != nil {
 		// 如果是变量表达式，计算变量在栈中的偏移量
-		switch exp.Var.Define.Value.(type) {
-		case *parser.VarBlock:
-			exp.Var.Offset = exp.Var.Define.Value.(*parser.VarBlock).Offset
-		case *parser.ArgBlock:
-			exp.Var.Offset = exp.Var.Define.Value.(*parser.ArgBlock).Offset
-		}
-
-		if rInfo := c.session.RegMgr().Reuse(exp.Var.Define); rInfo != nil {
+		if rInfo := c.ctx.Reg.Reuse(exp.Var.Define); rInfo != nil {
 			result = rInfo.Name
 		} else {
-			// 根据偏移量生成内存地址（NASM格式：[ebp+offset]）
-			addr := ""
-			if exp.Var.Offset < 0 {
-				addr = "[ebp" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
-			} else if exp.Var.Offset == 0 {
-				addr = "[ebp]"
-			} else {
-				addr = "[ebp+" + strconv.FormatInt(int64(exp.Var.Offset), 10) + "]"
-			}
-			// NASM格式：dword [ebp-4] 而不是 DWORD[ebp-4]
-			result = addr
+			result = genVarAddr(c.ctx, exp.Var)
 		}
 	} else if exp.Call != nil {
-		code = c.session.arch.Call(exp.Call)
+		code = c.ctx.Arch.Call(exp.Call)
 		result = "EAX"
 		// 如果标记为直接使用 EBX，生成 mov EBX, EAX
-		if c.session.UseEBXDirect() {
+		if c.ctx.UseEBXDirect {
 			code += utils.Format("mov EBX, EAX; 函数返回值直接移到EBX")
 			result = "EBX"
 		}

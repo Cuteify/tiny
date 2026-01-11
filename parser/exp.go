@@ -38,232 +38,243 @@ func (exp *Expression) Check(p *Parser) bool {
 
 	exp.CheckVar(p)
 
-	// 如果是函数调用，检查函数调用
 	if exp.Call != nil {
-		if !exp.Call.Check(p) {
-			return false
-		}
-		if len(exp.Call.Func.Return) != 1 {
-			p.Error.MissError("Expression Error", p.Lexer.Cursor, "function call must have exactly one return value in expression context")
-			return false
-		}
-		// 设置表达式类型为函数返回类型
-		exp.Type = exp.Call.Func.Return[0]
-		exp.checked = true
-		return true
+		return exp.checkCall(p)
 	}
 
-	// 如果有操作符
 	if exp.Separator != "" {
-		// 检查左右子表达式是否存在
-		if exp.Left == nil || exp.Right == nil {
-			return false
-		}
+		return exp.checkOperator(p)
+	}
 
-		// 获取左右子表达式
-		left, right := exp.Left, exp.Right
-		left.Check(p)
-		right.Check(p)
+	exp.checked = true
+	return true
+}
 
-		// 根据操作符类型进行不同的检查和处理
-		switch exp.Separator {
-		case "-", "/", "%", "^", "<<", ">>", "&", "|":
-			// 数值运算操作符
-			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
-				// 如果左和右操作数都是常量，则进行常量折叠优化
-				if left.IsConst() && right.IsConst() {
-					// 根据操作符执行计算
-					switch exp.Separator {
-					case "-":
-						exp.Num = left.Num - right.Num
-					case "/":
-						exp.Num = left.Num / right.Num
-					case "%":
-						exp.Num = float64(int(left.Num) % int(right.Num))
-					case "^":
-						exp.Num = math.Pow(left.Num, right.Num)
-					case "<<":
-						exp.Num = float64(int(left.Num) << int(right.Num))
-					case ">>":
-						exp.Num = float64(int(left.Num) >> int(right.Num))
-					case "&":
-						exp.Num = float64(int(left.Num) & int(right.Num))
-					case "|":
-						exp.Num = float64(int(left.Num) | int(right.Num))
-					}
+func (exp *Expression) checkCall(p *Parser) bool {
+	if !exp.Call.Check(p) {
+		return false
+	}
+	if len(exp.Call.Func.Return) != 1 {
+		p.Error.MissError("Expression Error", p.Lexer.Cursor, "function call must have exactly one return value in expression context")
+		return false
+	}
+	exp.Type = exp.Call.Func.Return[0]
+	exp.checked = true
+	return true
+}
 
-					// 根据计算结果设置类型
-					if float64(int(exp.Num)) == exp.Num {
-						exp.Type = typeSys.GetSystemType("int")
-					} else {
-						exp.Type = typeSys.GetSystemType("f64")
-					}
+func (exp *Expression) checkOperator(p *Parser) bool {
+	if exp.Left == nil || exp.Right == nil {
+		return false
+	}
 
-					// 清除操作符和子表达式，将表达式转换为常量
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
-					// 浮点数运算
-					exp.Type = typeSys.GetSystemType("f64")
-				} else {
-					// 整数运算
-					exp.Type = typeSys.GetSystemType("int")
-				}
-				exp.checked = true
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "+":
-			// 加法操作符
-			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
-				// 数值加法
-				if left.IsConst() && right.IsConst() {
-					exp.Num = left.Num + right.Num
-					if float64(int(exp.Num)) == exp.Num {
-						exp.Type = typeSys.GetSystemType("int")
-					} else {
-						exp.Type = typeSys.GetSystemType("f64")
-					}
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
-					exp.Type = typeSys.GetSystemType("f64")
-				} else {
-					exp.Type = typeSys.GetSystemType("int")
-				}
-				exp.checked = true
-				return true
-			} else if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("string")) {
-				// 字符串连接
-				exp.Type = typeSys.GetSystemType("string")
-				exp.StringVal = left.StringVal + right.StringVal
-				exp.checked = true
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "*":
-			// 乘法操作符
-			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
-				// 数值乘法
-				if left.IsConst() && right.IsConst() {
-					exp.Num = left.Num * right.Num
-					if float64(int(exp.Num)) == exp.Num {
-						exp.Type = typeSys.GetSystemType("int")
-					} else {
-						exp.Type = typeSys.GetSystemType("f64")
-					}
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
-					exp.Type = typeSys.GetSystemType("f64")
-				} else {
-					exp.Type = typeSys.GetSystemType("int")
-				}
-				exp.checked = true
-				return true
-			} else if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("int")) {
-				// 字符串重复
-				exp.Type = typeSys.GetSystemType("string")
-				if left.IsConst() && right.IsConst() {
-					exp.StringVal = strings.Repeat(left.StringVal, int(right.Num))
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				}
-				exp.checked = true
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "==", "!=":
-			// 相等比较操作符
-			if typeSys.GetTypeType(left.Type) == typeSys.GetTypeType(right.Type) {
-				exp.Type = typeSys.GetSystemType("bool")
-				// 常量折叠优化
-				if left.IsConst() && right.IsConst() {
-					switch exp.Separator {
-					case "==":
-						if typeSys.CheckTypeType(left.Type, "int", "uint") {
-							exp.Bool = int64(left.Num) == int64(right.Num)
-						} else {
-							exp.Bool = left.Num == right.Num
-						}
-					case "!=":
-						if typeSys.CheckTypeType(left.Type, "int", "uint") {
-							exp.Bool = int64(left.Num) != int64(right.Num)
-						} else {
-							exp.Bool = left.Num != right.Num
-						}
-					}
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				}
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "<", ">", "<=", ">=":
-			// 大小比较操作符
-			if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
-				// 如果左和右操作数都是常量，则进行常量折叠优化
-				if left.IsConst() && right.IsConst() {
-					// 根据操作符计算结果
-					switch exp.Separator {
-					case "<":
-						exp.Bool = left.Num < right.Num
-					case ">":
-						exp.Bool = left.Num > right.Num
-					case "<=":
-						exp.Bool = left.Num <= right.Num
-					case ">=":
-						exp.Bool = left.Num >= right.Num
-					}
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				}
-				exp.Type = typeSys.GetSystemType("bool")
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "&&", "||":
-			// 逻辑操作符
-			if typeSys.CheckType(left.Type, typeSys.GetSystemType("bool")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("bool")) {
-				exp.Type = typeSys.GetSystemType("bool")
-				if left.IsConst() && right.IsConst() {
-					// 常量折叠优化
-					if exp.Separator == "&&" {
-						exp.Bool = left.Bool && right.Bool
-					} else {
-						exp.Bool = left.Bool || right.Bool
-					}
-					exp.Separator = ""
-					exp.Left, exp.Right = nil, nil
-				}
-				return true
-			} else {
-				// 类型不匹配
-				return false
-			}
-		case "":
-			// 空操作符
-			exp.checked = true
-			return true
-		default:
-			// 不支持的操作符
-			return false
-		}
+	left, right := exp.Left, exp.Right
+	left.Check(p)
+	right.Check(p)
+
+	switch exp.Separator {
+	case "-", "/", "%", "^", "<<", ">>", "&", "|":
+		return exp.checkArithmeticOp(p, left, right)
+	case "+":
+		return exp.checkAddOp(p, left, right)
+	case "*":
+		return exp.checkMulOp(p, left, right)
+	case "==", "!=":
+		return exp.checkEqualityOp(p, left, right)
+	case "<", ">", "<=", ">=":
+		return exp.checkComparisonOp(p, left, right)
+	case "&&", "||":
+		return exp.checkLogicalOp(p, left, right)
+	case "":
+		exp.checked = true
+		return true
+	default:
+		return false
+	}
+}
+
+func (exp *Expression) checkArithmeticOp(p *Parser, left, right *Expression) bool {
+	if !typeSys.CheckTypeType(left.Type, "uint", "int", "float") || !typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
+		return false
+	}
+
+	if left.IsConst() && right.IsConst() {
+		exp.foldArithmeticConstants(left, right)
+	} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
+		exp.Type = typeSys.GetSystemType("f64")
 	} else {
-		// 没有操作符的情况
+		exp.Type = typeSys.GetSystemType("int")
+	}
+
+	exp.checked = true
+	return true
+}
+
+func (exp *Expression) checkAddOp(p *Parser, left, right *Expression) bool {
+	if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
+		if left.IsConst() && right.IsConst() {
+			exp.Num = left.Num + right.Num
+			if float64(int(exp.Num)) == exp.Num {
+				exp.Type = typeSys.GetSystemType("int")
+			} else {
+				exp.Type = typeSys.GetSystemType("f64")
+			}
+			exp.Separator = ""
+			exp.Left, exp.Right = nil, nil
+		} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
+			exp.Type = typeSys.GetSystemType("f64")
+		} else {
+			exp.Type = typeSys.GetSystemType("int")
+		}
 		exp.checked = true
 		return true
 	}
+
+	if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("string")) {
+		exp.Type = typeSys.GetSystemType("string")
+		exp.StringVal = left.StringVal + right.StringVal
+		exp.checked = true
+		return true
+	}
+
+	return false
+}
+
+func (exp *Expression) checkMulOp(p *Parser, left, right *Expression) bool {
+	if typeSys.CheckTypeType(left.Type, "uint", "int", "float") && typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
+		if left.IsConst() && right.IsConst() {
+			exp.Num = left.Num * right.Num
+			if float64(int(exp.Num)) == exp.Num {
+				exp.Type = typeSys.GetSystemType("int")
+			} else {
+				exp.Type = typeSys.GetSystemType("f64")
+			}
+			exp.Separator = ""
+			exp.Left, exp.Right = nil, nil
+		} else if typeSys.CheckTypeType(left.Type, "float") && typeSys.CheckTypeType(right.Type, "float") {
+			exp.Type = typeSys.GetSystemType("f64")
+		} else {
+			exp.Type = typeSys.GetSystemType("int")
+		}
+		exp.checked = true
+		return true
+	}
+
+	if typeSys.CheckType(left.Type, typeSys.GetSystemType("string")) && typeSys.CheckType(right.Type, typeSys.GetSystemType("int")) {
+		exp.Type = typeSys.GetSystemType("string")
+		if left.IsConst() && right.IsConst() {
+			exp.StringVal = strings.Repeat(left.StringVal, int(right.Num))
+			exp.Separator = ""
+			exp.Left, exp.Right = nil, nil
+		}
+		exp.checked = true
+		return true
+	}
+
+	return false
+}
+
+func (exp *Expression) checkEqualityOp(p *Parser, left, right *Expression) bool {
+	if typeSys.GetTypeType(left.Type) != typeSys.GetTypeType(right.Type) {
+		return false
+	}
+
+	exp.Type = typeSys.GetSystemType("bool")
+
+	if left.IsConst() && right.IsConst() {
+		switch exp.Separator {
+		case "==":
+			if typeSys.CheckTypeType(left.Type, "int", "uint") {
+				exp.Bool = int64(left.Num) == int64(right.Num)
+			} else {
+				exp.Bool = left.Num == right.Num
+			}
+		case "!=":
+			if typeSys.CheckTypeType(left.Type, "int", "uint") {
+				exp.Bool = int64(left.Num) != int64(right.Num)
+			} else {
+				exp.Bool = left.Num != right.Num
+			}
+		}
+		exp.Separator = ""
+		exp.Left, exp.Right = nil, nil
+	}
+
+	return true
+}
+
+func (exp *Expression) checkComparisonOp(p *Parser, left, right *Expression) bool {
+	if !typeSys.CheckTypeType(left.Type, "uint", "int", "float") || !typeSys.CheckTypeType(right.Type, "uint", "int", "float") {
+		return false
+	}
+
+	if left.IsConst() && right.IsConst() {
+		switch exp.Separator {
+		case "<":
+			exp.Bool = left.Num < right.Num
+		case ">":
+			exp.Bool = left.Num > right.Num
+		case "<=":
+			exp.Bool = left.Num <= right.Num
+		case ">=":
+			exp.Bool = left.Num >= right.Num
+		}
+		exp.Separator = ""
+		exp.Left, exp.Right = nil, nil
+	}
+
+	exp.Type = typeSys.GetSystemType("bool")
+	return true
+}
+
+func (exp *Expression) checkLogicalOp(p *Parser, left, right *Expression) bool {
+	if !typeSys.CheckType(left.Type, typeSys.GetSystemType("bool")) || !typeSys.CheckType(right.Type, typeSys.GetSystemType("bool")) {
+		return false
+	}
+
+	exp.Type = typeSys.GetSystemType("bool")
+
+	if left.IsConst() && right.IsConst() {
+		if exp.Separator == "&&" {
+			exp.Bool = left.Bool && right.Bool
+		} else {
+			exp.Bool = left.Bool || right.Bool
+		}
+		exp.Separator = ""
+		exp.Left, exp.Right = nil, nil
+	}
+
+	return true
+}
+
+func (exp *Expression) foldArithmeticConstants(left, right *Expression) {
+	switch exp.Separator {
+	case "-":
+		exp.Num = left.Num - right.Num
+	case "/":
+		exp.Num = left.Num / right.Num
+	case "%":
+		exp.Num = float64(int(left.Num) % int(right.Num))
+	case "^":
+		exp.Num = math.Pow(left.Num, right.Num)
+	case "<<":
+		exp.Num = float64(int(left.Num) << int(right.Num))
+	case ">>":
+		exp.Num = float64(int(left.Num) >> int(right.Num))
+	case "&":
+		exp.Num = float64(int(left.Num) & int(right.Num))
+	case "|":
+		exp.Num = float64(int(left.Num) | int(right.Num))
+	}
+
+	if float64(int(exp.Num)) == exp.Num {
+		exp.Type = typeSys.GetSystemType("int")
+	} else {
+		exp.Type = typeSys.GetSystemType("f64")
+	}
+
+	exp.Separator = ""
+	exp.Left, exp.Right = nil, nil
 }
 
 func (exp *Expression) CheckVar(p *Parser) bool {
@@ -327,7 +338,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		// 获取下一个词法单元
 		token := p.Lexer.Next()
 
-		if p.Lexer.Cursor > stopCursor {
+		if token.EndCursor > stopCursor {
 			p.Error.MissError("expression error", p.Lexer.Cursor, "expression error")
 		}
 
@@ -336,7 +347,8 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 		switch token.Type {
 		case lexer.SEPARATOR:
 			if token.Value == ";" {
-				continue
+				p.Lexer.SetCursor(token.Cursor) // 退格
+				goto end
 			}
 			// 分隔符
 			stackSep = append(stackSep, &Expression{
@@ -393,6 +405,7 @@ func (p *Parser) ParseExpression(stopCursor int) *Expression {
 			stackNum, stackSep = handleWe(stackNum, stackSep)
 		}
 	}
+end:
 	if len(stackNum) == 0 {
 		p.Error.MissError("Invalid expression", p.Lexer.Cursor, "Missing expression")
 	}
@@ -709,7 +722,8 @@ func getWe(token string) int {
 		"-":
 		return 3
 	case "*",
-		"/":
+		"/",
+		"%":
 		return 4
 	case "^":
 		return 5

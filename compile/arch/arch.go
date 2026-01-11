@@ -14,7 +14,6 @@ import (
 // - 保持接口签名不变（严格遵循用户定义）。若需扩展能力，应通过新增实现内部配置或由编译器侧补充上下文。
 type Arch interface {
 	Info() string
-	Regs() *regmgr.RegMgr
 
 	// 函数调用类
 	// Call: 生成调用序列（含按 ABI 设置实参、保存/恢复 caller-saved、发起 call、清理参数等）。
@@ -29,7 +28,11 @@ type Arch interface {
 	// desc 用于注释文本。
 	Exp(exp *parser.Expression, result, desc string) string
 
-	Now(node *parser.Node)
+	For(forBlock *parser.ForBlock) string
+
+	Var(varBlock *parser.VarBlock) string
+
+	EndFor(forBlock *parser.ForBlock) string
 }
 
 type ExpResult struct {

@@ -1,4 +1,4 @@
-goimports -w -v .
+goimports -w .
 gofmt -d -w -s .
 clear
 go build -o cuteify

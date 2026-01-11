@@ -320,7 +320,7 @@ func (rm *RegMgr) generateSpillCode(reg *Reg) string {
 		addr := rm.calculateMemoryAddress(vb)
 		// x86 32位平台所有寄存器都是32位，溢出时只能存储32位
 		// 强制使用dword避免类型不匹配问题
-		return utils.Format("mov dword " + addr + ", " + reg.Name)
+		return utils.Format("mov dword " + addr + ", " + reg.Name + "; spill")
 	}
 
 	// 临时表达式值不溢出到栈（通过EBX callee-save寄存器处理）
