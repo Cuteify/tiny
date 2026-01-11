@@ -20,82 +20,107 @@ type Parser struct {
 func (p *Parser) Next() (finish bool) {
 	beforeCursor := p.Lexer.Cursor
 	code := p.Lexer.Next()
+
 	if code.IsEmpty() {
-		if p.ThisBlock.Father != nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need }")
-		}
-		finish = true
-		return
+		return p.handleEmptyToken(beforeCursor)
 	}
+
 	if code.Value == "}" && code.Type == lexer.SEPARATOR {
 		p.Back(1)
 		return
 	}
+
 	switch code.Type {
 	case lexer.FUNC:
-		if code.Value == "fn" {
-			block := &FuncBlock{}
-			block.Parse(p)
-		}
+		p.processFuncToken(code)
 	case lexer.PROCESSCONTROL:
-		if code.Value == "if" {
-			block := &IfBlock{}
-			block.Parse(p)
-		} else if code.Value == "else" {
-			block := &ElseBlock{}
-			block.Parse(p)
-		} else if code.Value == "ret" {
-			ret := &ReturnBlock{}
-			ret.Parse(p)
-		}
+		p.processControlToken(code)
 	case lexer.NAME:
-		code2 := p.Lexer.Next()
-		if code2.Type != lexer.SEPARATOR {
-			beforeCursor++
-			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
-		}
-		if code2.Value == "(" {
-			p.Lexer.SetCursor(code2.Cursor)
-			block := &CallBlock{
-				Name: code.Value,
-			}
-			block.Parse(p)
-		} else if code2.Value == "." {
-			p.Lexer.SetCursor(beforeCursor)
-			block := &VarBlock{
-				Name: code.Value,
-			}
-			block.ParseDefine(p)
-			block.Type = block.Define.Value.(*VarBlock).Type
-			code3 := p.Lexer.Next()
-			if code3.Type == lexer.NAME {
-
-			}
-		} else if code2.Value == "=" {
-			p.Lexer.SetCursor(beforeCursor)
-			block := &VarBlock{}
-			block.Parse(p)
-		} else if code2.Value == ":=" {
-			p.Lexer.SetCursor(beforeCursor)
-			block := &VarBlock{}
-			block.Parse(p)
-		} else {
-			beforeCursor++
-			p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
-		}
+		p.processNameToken(code, beforeCursor)
 	case lexer.VAR:
+		p.processVarToken(beforeCursor)
+	case lexer.BUILD:
+		p.processBuildToken()
+	default:
+		p.processDefaultToken(code)
+	}
+
+	return
+}
+
+func (p *Parser) handleEmptyToken(beforeCursor int) bool {
+	if p.ThisBlock.Father != nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need }")
+	}
+	return true
+}
+
+func (p *Parser) processFuncToken(code lexer.Token) {
+	if code.Value == "fn" {
+		block := &FuncBlock{}
+		block.Parse(p)
+	}
+}
+
+func (p *Parser) processControlToken(code lexer.Token) {
+	switch code.Value {
+	case "if":
+		block := &IfBlock{}
+		block.Parse(p)
+	case "else":
+		block := &ElseBlock{}
+		block.Parse(p)
+	case "ret":
+		ret := &ReturnBlock{}
+		ret.Parse(p)
+	case "for":
+		block := &ForBlock{}
+		block.Parse(p)
+	}
+}
+
+func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
+	code2 := p.Lexer.Next()
+	if code2.Type != lexer.SEPARATOR {
+		beforeCursor++
+		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
+	}
+
+	switch code2.Value {
+	case "(":
+		p.Lexer.SetCursor(code2.Cursor)
+		block := &CallBlock{Name: code.Value}
+		block.Parse(p)
+	case ".":
+		p.Lexer.SetCursor(beforeCursor)
+		block := &VarBlock{Name: code.Value}
+		block.ParseDefine(p)
+		block.Type = block.Define.Value.(*VarBlock).Type
+	case "=", ":=":
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
-	case lexer.BUILD:
-		block := &Build{}
-		block.Parse(p)
 	default:
-		if code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
-			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Miss "+code.Value)
-		}
+		beforeCursor++
+		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
 	}
-	return
+}
+
+func (p *Parser) processVarToken(beforeCursor int) {
+	p.Lexer.SetCursor(beforeCursor)
+	block := &VarBlock{}
+	block.Parse(p)
+}
+
+func (p *Parser) processBuildToken() {
+	block := &Build{}
+	block.Parse(p)
+}
+
+func (p *Parser) processDefaultToken(code lexer.Token) {
+	if code.Value != ";" && code.Value != "\n" && code.Value != "\r" {
+		p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "Miss "+code.Value)
+	}
 }
 
 func (p *Parser) AddChild(node *Node) {

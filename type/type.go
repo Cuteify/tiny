@@ -55,7 +55,7 @@ func (r *RType) Size() int {
 	if r.RSize == 0 {
 		switch r.TypeName {
 		case "int", "uint":
-			if math.MaxInt == math.MaxInt32 {
+			if math.MaxInt != math.MaxInt32 { // 临时修改！！！！！！
 				r.RSize = 4
 			} else {
 				r.RSize = 8

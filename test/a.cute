@@ -5,6 +5,26 @@ fn fib(i:i32) i32 {
     ret fib(i-1) + fib(i-2)
 }
 
+//fn fib2(i: i32) -> i32 {
+//    if (i <= 2) {
+//        ret 1
+//    }
+//    
+//    prev1 := 1
+//    prev2 := 1
+//    current := 0
+//    
+//    for (j:=3;j<=i;) {
+//        current = prev1 + prev2;
+//        prev1 = prev2;
+//        prev2 = current;
+//        j = j + 1;
+//    }
+//    
+//    ret current;
+//}
+
+
 fn main() {
     fib(30)
 }
