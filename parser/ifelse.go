@@ -21,9 +21,6 @@ func (i *IfBlock) Parse(p *Parser) {
 	brackets := p.Brackets(true)
 	p.Lexer.SetCursor(brackets.Children[0].Value.Cursor)
 	i.Condition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
-	if !typeSys.CheckTypeType(i.Condition.Type, "bool") {
-
-	}
 	p.Wait("{")
 	nodeTmp := &Node{Value: i}
 	p.ThisBlock.AddChild(nodeTmp)
@@ -32,7 +29,21 @@ func (i *IfBlock) Parse(p *Parser) {
 }
 
 func (i *IfBlock) Check(p *Parser) bool {
-	return i.Condition.Check(p)
+	if !i.Condition.Check(p) {
+		return false
+	}
+	if !typeSys.CheckTypeType(i.Condition.Type, "bool") {
+		return false
+	}
+	if i.Else {
+		if !i.ElseBlock.Value.(*ElseBlock).IfCondition.Check(p) {
+			return false
+		}
+		if !typeSys.CheckTypeType(i.ElseBlock.Value.(*ElseBlock).IfCondition.Type, "bool") {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *ElseBlock) Parse(p *Parser) {

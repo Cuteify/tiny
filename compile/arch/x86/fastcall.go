@@ -97,6 +97,10 @@ func (a *Fastcall) Func(funcBlock *parser.FuncBlock) string {
 	code += utils.Format(name + ":")
 	code += utils.Format("push ebp")
 	code += utils.Format("mov ebp, esp")
+
+	// Fastcall 简化实现，暂不处理栈分配
+	// 如需完整支持，可参考 cdecl 的实现
+
 	return code
 }
 

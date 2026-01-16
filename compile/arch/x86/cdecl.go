@@ -15,10 +15,11 @@ type Cdecl struct {
 }
 
 func NewCdecl(ctx *context.Context) *Cdecl {
-	ctx.Reg = regmgr.NewRegMgr(regs)
-	return &Cdecl{
+	a := &Cdecl{
 		ctx: ctx,
 	}
+	ctx.Reg = regmgr.NewRegMgr(regs, a.GenVarAddr)
+	return a
 }
 
 func (a *Cdecl) Info() (code string) { return "x86 cdecl" }
@@ -132,14 +133,13 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 		}
 	}
 
-	// 调整局部变量起始位置让出callee-saved寄存器空间
-	arch.ResetLocalVarOffset(a.ctx.Now, -4*csCount)
+	// 设置变量偏移量并计算栈大小
+	// StackSize 会包含局部变量空间，后续再加上 callee-saved 寄存器空间
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*csCount)
 
-	// 为局部变量分配栈空间（4字节对齐）
-	//code += utils.Format("; ---- 分配局部变量栈空间 ----")
-	a.ctx.StackSize = arch.CalcStackSize(a.ctx.Now, 4)
+	// 为局部变量和callee-saved寄存器分配栈空间
 	if a.ctx.StackSize > 0 {
-		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配局部变量栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
+		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
 	}
 
 	code += utils.Format("; ---- 函数开始 ----")
@@ -148,24 +148,10 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 
 func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) (code string) {
 	expc := expCom{ctx: a.ctx}
+	exp.Check(a.ctx.Parser)
 	return expc.CompileExpr(exp, result, desc)
 }
 
-// For 编译 for 循环
-// for 循环结构: for (init; condition; increment) { body }
-// 汇编结构:
-//
-//	[init]
-//
-// for_loop:
-//
-//	[condition]
-//	jz for_end
-//	[body]
-//	[increment]
-//	jmp for_loop
-//
-// for_end:
 func (a *Cdecl) For(forBlock *parser.ForBlock) (code string) {
 	if forBlock == nil {
 		return ""
@@ -179,10 +165,9 @@ func (a *Cdecl) For(forBlock *parser.ForBlock) (code string) {
 	code += utils.Format("")
 
 	// 1. 初始化 - 编译变量定义
-	if forBlock.Var != nil && forBlock.Var.IsDefine {
+	if forBlock.Init != nil {
 		// 编译初始化表达式到变量地址
-		addr := genVarAddr(a.ctx, forBlock.Var)
-		code += a.Exp(forBlock.Var.Value, addr, "初始化for循环变量"+forBlock.Var.Name)
+		code += a.Exp(forBlock.Init, "", "初始化for循环")
 	}
 
 	code += utils.Format("")
@@ -208,6 +193,7 @@ func (a *Cdecl) EndFor(forBlock *parser.ForBlock) (code string) {
 	code += utils.Format("")
 
 	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
+	code += a.Exp(forBlock.Increment, "", "for循环增量")
 	code += utils.Format("jmp " + forLabel + "; for循环")
 	code += utils.Format(forLabel + "_end: ; for循环结束")
 	return
@@ -215,6 +201,13 @@ func (a *Cdecl) EndFor(forBlock *parser.ForBlock) (code string) {
 
 func (a *Cdecl) Var(varBlock *parser.VarBlock) (code string) {
 	addr := genVarAddr(a.ctx, varBlock)
+	if varBlock.Value == nil {
+		return
+	}
 	code += a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name)
 	return
+}
+
+func (a *Cdecl) GenVarAddr(varBlock *parser.VarBlock) (addr string) {
+	return genVarAddr(a.ctx, varBlock)
 }

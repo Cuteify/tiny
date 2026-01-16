@@ -18,10 +18,11 @@ type Stdcall struct {
 }
 
 func NewStdcall(ctx *context.Context) *Stdcall {
-	ctx.Reg = regmgr.NewRegMgr(regs)
-	return &Stdcall{
+	a := &Stdcall{
 		ctx: ctx,
 	}
+	ctx.Reg = regmgr.NewRegMgr(regs, a.GenVarAddr)
+	return a
 }
 
 func (a *Stdcall) Info() string { return "x86 stdcall" }
@@ -81,7 +82,14 @@ func (a *Stdcall) Func(funcBlock *parser.FuncBlock) string {
 	utils.Count++
 	code += utils.Format("push ebp")
 	code += utils.Format("mov ebp, esp")
-	a.ctx.StackSize = arch.CalcStackSize(a.ctx.Now, 4)
+
+	// 设置变量偏移量并计算栈大小
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4)
+
+	if a.ctx.StackSize > 0 {
+		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间")
+	}
+
 	return code
 }
 
@@ -100,4 +108,8 @@ func (a *Stdcall) EndFor(forBlock *parser.ForBlock) (code string) {
 
 func (a *Stdcall) Var(varBlock *parser.VarBlock) string {
 	return ""
+}
+
+func (a *Stdcall) GenVarAddr(varBlock *parser.VarBlock) (addr string) {
+	return genVarAddr(a.ctx, varBlock)
 }

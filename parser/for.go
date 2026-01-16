@@ -7,7 +7,7 @@ import (
 
 // ForBlock for 循环结构体
 type ForBlock struct {
-	Var       *VarBlock   // for 循环的变量定义
+	Init      *Expression // for 循环的变量定义
 	Condition *Expression // 循环条件
 	Increment *Expression // 循环后执行的增量表达式
 	Offset    int
@@ -51,13 +51,7 @@ func (f *ForBlock) parseInit(p *Parser) {
 		return
 	}
 	// 使用VarBlock解析变量定义
-	varBlock := &VarBlock{}
-	varBlock.ParseVar(p)
-	if p.Lexer.Cursor > sepCursor {
-		panic("")
-	}
-	f.Var = varBlock
-	p.AddChild(&Node{Value: varBlock, Ignore: true})
+	f.Init = p.ParseExpression(sepCursor)
 	p.Lexer.Skip(';')
 }
 
@@ -84,6 +78,7 @@ func (f *ForBlock) parseCondition(p *Parser) {
 		}
 	} else {
 		f.Condition = p.ParseExpression(sepCursor)
+		p.Lexer.Skip(';')
 	}
 }
 
@@ -99,21 +94,20 @@ func (f *ForBlock) parseIncrement(p *Parser) {
 	incToken := p.Lexer.Next()
 	// 检查是否直接遇到 ')' 或 ';' 后面是 ')'
 	if incToken.Type == lexer.SEPARATOR && (incToken.Value == ")" || incToken.Value == ";") {
-		// 没有增量，光标已经在正确的位置（在 ) 或 ; 处）
-		// 如果是 ;，Skip(')') 会继续前进
 		return
 	}
 
 	// 有增量表达式
 	p.Lexer.SetCursor(incToken.Cursor)
 	f.Increment = p.ParseExpression(endCursor)
+	p.ThisBlock.Children = p.ThisBlock.Children[:len(p.ThisBlock.Children)-1]
 }
 
 // Check 检查 for 循环的有效性
 func (f *ForBlock) Check(p *Parser) bool {
 	// 检查初始化表达式
-	if f.Var != nil {
-		if !f.Var.Check(p) {
+	if f.Increment != nil {
+		if !f.Increment.Check(p) {
 			return false
 		}
 	}

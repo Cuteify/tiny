@@ -19,10 +19,15 @@ const (
 )
 
 type expCom struct {
-	ctx *context.Context
+	ctx           *context.Context
+	varWithSetVal bool
 }
 
 func (c *expCom) CompileExpr(exp *parser.Expression, result, desc string) (code string) {
+	if exp.Type == nil {
+		panic("Expression Type is nil: " + desc)
+	}
+
 	if exp.Type.Type() == "bool" {
 		return c.CompileBoolExpr(exp, result)
 	}
@@ -35,7 +40,7 @@ func (c *expCom) CompileExpr(exp *parser.Expression, result, desc string) (code 
 	code, reg = c.CompileExprChildren(exp)
 
 	// 保存结果
-	if reg != nil {
+	if reg != nil && !c.varWithSetVal {
 		if result == "push" {
 			code += utils.Format("push " + reg.Name + "; " + desc)
 			// push后立即释放寄存器，避免被SaveAll溢出
@@ -43,6 +48,7 @@ func (c *expCom) CompileExpr(exp *parser.Expression, result, desc string) (code 
 		} else {
 			if result != reg.Name {
 				code += utils.Format("mov " + result + ", " + reg.Name + "; " + desc)
+				c.ctx.Reg.Free(exp)
 			} else {
 				code = code[:len(code)-1] // 去除原先的换行
 				code += "; " + desc + "\n"
@@ -81,6 +87,10 @@ func (c *expCom) compileLeafNode(exp *parser.Expression) (code string, reg *regm
 	tmp, resultVal := c.CompileExprVal(exp)
 	code += tmp
 	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+
+	if c.varWithSetVal {
+		return
+	}
 
 	// 如果 EBX 已被占用（左子使用），重新分配到其他寄存器
 	if c.ctx.EbxOccupied && reg != nil && reg.Name == "EBX" {
@@ -381,6 +391,11 @@ func (c *expCom) CompileExprVal(exp *parser.Expression) (code, result string) {
 			}
 		}
 	} else if exp.Var != nil {
+		if exp.Var.Value != nil {
+			code = c.ctx.Arch.Var(exp.Var)
+			c.varWithSetVal = true
+			return
+		}
 		// 如果是变量表达式，计算变量在栈中的偏移量
 		if rInfo := c.ctx.Reg.Reuse(exp.Var.Define); rInfo != nil {
 			result = rInfo.Name

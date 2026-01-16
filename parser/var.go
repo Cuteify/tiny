@@ -28,9 +28,9 @@ func (v *VarBlock) ParseVar(p *Parser) {
 
 	switch code.Type {
 	case lexer.NAME:
-		v.parseNameVar(p, code)
+		v.ParseNameVar(p, code, p.FindEndCursor())
 	case lexer.VAR:
-		v.parseKeywordVar(p, code)
+		v.ParseKeywordVar(p, code, p.FindEndCursor())
 	default:
 		if p.Lexer.Cursor == 0 {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
@@ -39,7 +39,7 @@ func (v *VarBlock) ParseVar(p *Parser) {
 	}
 }
 
-func (v *VarBlock) parseNameVar(p *Parser, code lexer.Token) {
+func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 	v.StartCursor = p.Lexer.Cursor
 	v.Name = code.Value
 	if !utils.CheckName(v.Name) {
@@ -47,16 +47,61 @@ func (v *VarBlock) parseNameVar(p *Parser, code lexer.Token) {
 	}
 
 	code = p.Lexer.Next()
-	if code.Type == lexer.SEPARATOR && code.Value == ":=" {
-		v.IsDefine = true
-		v.Value = p.ParseExpression(p.FindEndCursor())
-	} else if code.Type == lexer.SEPARATOR && code.Value == "=" {
-		v.Value = p.ParseExpression(p.FindEndCursor())
-		v.removeOldStaticVal(p)
+
+	if code.Type != lexer.SEPARATOR {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '=', ':=' or other")
 	}
+
+	// 判断自增/自减
+	if code.Value == "++" || code.Value == "--" {
+		valPart := &Expression{
+			Var: &VarBlock{Name: v.Name},
+		}
+
+		v.Value = &Expression{
+			Separator: code.Value[0 : len(code.Value)-1],
+			Left:      &Expression{Num: 1, Type: typeSys.GetSystemType("int")},
+			Right:     valPart,
+		}
+
+		v.Value.Left.Father = v.Value
+		v.Value.Right.Father = v.Value
+
+		valPart.Var.ParseDefine(p)
+		v.ParseDefine(p)
+		return
+	}
+
+	// 对数据进行解析
+	v.Value = p.ParseExpression(stopCursor)
+
+	// 对数据后处理
+	switch code.Value {
+	case ":=":
+		v.IsDefine = true
+		return
+	case "=":
+		v.removeOldStaticVal(p)
+	case "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=":
+		valPart := &Expression{
+			Var: &VarBlock{Name: v.Name},
+		}
+
+		v.Value = &Expression{
+			Separator: code.Value[0 : len(code.Value)-1],
+			Left:      v.Value,
+			Right:     valPart,
+		}
+
+		v.Value.Left.Father = v.Value
+		v.Value.Right.Father = v.Value
+
+		valPart.Var.ParseDefine(p)
+	}
+	v.ParseDefine(p)
 }
 
-func (v *VarBlock) parseKeywordVar(p *Parser, code lexer.Token) {
+func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) {
 	v.IsDefine = true
 	v.setVarConst(p, code.Value)
 
@@ -93,7 +138,7 @@ func (v *VarBlock) parseKeywordVar(p *Parser, code lexer.Token) {
 
 	code = p.Lexer.Next()
 	if code.Type == lexer.SEPARATOR && code.Value == "=" {
-		v.Value = p.ParseExpression(p.FindEndCursor())
+		v.Value = p.ParseExpression(stopCursor)
 	} else {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
 	}
@@ -125,9 +170,10 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	if !utils.CheckName(v.Name) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
+
 	v.Used = true
 
-	if p.Block == p.ThisBlock || p.ThisBlock == nil {
+	if !v.IsDefine && v.Define == nil && (p.Block == p.ThisBlock || p.ThisBlock == nil) {
 		return v.findGlobalVar(p)
 	}
 
@@ -173,10 +219,6 @@ func (v *VarBlock) searchInBlock(p *Parser) bool {
 		return ok
 	}
 
-	if ok := v.searchInForVar(p); ok {
-		return ok
-	}
-
 	return false
 }
 
@@ -203,17 +245,6 @@ func (v *VarBlock) searchInFuncArgs(p *Parser) bool {
 				v.Type = arg.Type
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func (v *VarBlock) searchInForVar(p *Parser) bool {
-	if forBlock, ok := p.ThisBlock.Value.(*ForBlock); ok {
-		if forBlock.Var != nil && forBlock.Var.Name == v.Name && forBlock.Var.IsDefine {
-			v.Define = &Node{Value: forBlock.Var}
-			v.Type = forBlock.Var.Type
-			return true
 		}
 	}
 	return false
