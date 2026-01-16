@@ -29,7 +29,6 @@ func (p *Parser) Next() (finish bool) {
 		p.Back(1)
 		return
 	}
-
 	switch code.Type {
 	case lexer.FUNC:
 		p.processFuncToken(code)
@@ -91,12 +90,12 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		p.Lexer.SetCursor(code2.Cursor)
 		block := &CallBlock{Name: code.Value}
 		block.Parse(p)
-	case ".":
-		p.Lexer.SetCursor(beforeCursor)
-		block := &VarBlock{Name: code.Value}
-		block.ParseDefine(p)
-		block.Type = block.Define.Value.(*VarBlock).Type
-	case "=", ":=":
+	/*case ".":
+	p.Lexer.SetCursor(beforeCursor)
+	block := &VarBlock{Name: code.Value}
+	block.ParseDefine(p)
+	block.Type = block.Define.Value.(*VarBlock).Type*/
+	case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)

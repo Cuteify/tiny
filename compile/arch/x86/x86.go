@@ -2,11 +2,11 @@ package x86
 
 import "cuteify/compile/regmgr"
 
-var regs = []regmgr.RegInfo{
-	{Name: "EAX", CallerSave: true},
+var regs = []*regmgr.Reg{
+	{Name: "EAX"},
 	{Name: "EBX", CalleeSave: true}, // CalleeSave
-	{Name: "ECX", CallerSave: true},
-	{Name: "EDX", CallerSave: true},
+	{Name: "ECX"},
+	{Name: "EDX"},
 }
 
 // GetLengthName 返回大小对应的汇编长度前缀

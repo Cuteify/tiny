@@ -2,8 +2,6 @@ package compile
 
 import (
 	"cuteify/compile/context"
-	"cuteify/compile/regmgr"
-	"cuteify/optimizer"
 	"cuteify/parser"
 	"cuteify/utils"
 	"fmt"
@@ -34,8 +32,6 @@ func NewCompiler(parser *parser.Parser) *Compiler {
 	}
 }
 
-var tmp = 0
-
 // Compile 编译入口方法，将AST节点编译为汇编代码
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.initializeContext()
@@ -56,11 +52,6 @@ func (c *Compiler) initializeContext() {
 
 func (c *Compiler) compileRoot(node *parser.Node, code string) string {
 	if node.Father == nil {
-		if tmp > 0 {
-			fmt.Println(reflect.TypeOf(node.Value))
-			panic("")
-		}
-		tmp++
 		return "section .text\nglobal _start\n\n"
 	}
 	return ""
@@ -79,6 +70,7 @@ func (c *Compiler) compileChildren(node *parser.Node, code string) string {
 }
 
 func (c *Compiler) compileChild(n *parser.Node) string {
+	n.Check()
 	switch n.Value.(type) {
 	case *parser.FuncBlock:
 		return c.compileFuncBlock(n)
@@ -101,7 +93,7 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 
 func (c *Compiler) compileFuncBlock(n *parser.Node) string {
 	funcBlock := n.Value.(*parser.FuncBlock)
-	funcBlock.Check(c.Ctx.Parser)
+	// 变量栈设置和栈大小计算现在由 arch.Func 调用 arch.SetupVarOffsets 处理
 	return c.funcHandle(funcBlock, n)
 }
 
@@ -111,11 +103,14 @@ func (c *Compiler) compileIfBlock(n *parser.Node) string {
 	label := fmt.Sprintf("if_%d", c.Ctx.IfCount)
 
 	var code string
+	var endLabel string
 	if ifBlock.Else {
-		code += c.Ctx.Arch.Exp(ifBlock.Condition, "else_"+label, "")
+		endLabel = "else_" + label
 	} else {
-		code += c.Ctx.Arch.Exp(ifBlock.Condition, "end_"+label, "")
+		endLabel = "end_" + label
 	}
+
+	code += c.Ctx.Arch.Exp(ifBlock.Condition, endLabel, "")
 
 	code += utils.Format(label+":") + c.Compile(n)
 
@@ -140,25 +135,21 @@ func (c *Compiler) compileElseBlock(ifBlock *parser.IfBlock, label string) strin
 
 func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 	ret := n.Value.(*parser.ReturnBlock)
-	ret.Check(c.Ctx.Parser)
 	return c.Ctx.Arch.Return(ret)
 }
 
 func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	varBlock := n.Value.(*parser.VarBlock)
-	varBlock.Check(c.Ctx.Parser)
 	return c.Ctx.Arch.Var(varBlock)
 }
 
 func (c *Compiler) compileCallBlock(n *parser.Node) string {
 	callBlock := n.Value.(*parser.CallBlock)
-	callBlock.Check(c.Ctx.Parser)
 	return c.Ctx.Arch.Call(callBlock)
 }
 
 func (c *Compiler) compileForBlock(n *parser.Node) string {
 	forBlock := n.Value.(*parser.ForBlock)
-	forBlock.Check(c.Ctx.Parser)
 	var code string
 	code += c.Ctx.Arch.For(forBlock)
 	code += c.Compile(n)
@@ -203,9 +194,8 @@ func (c *Compiler) generateStartEntry() string {
 }
 
 func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (code string) {
-	optimizer.OptimizeRecursion(c.Ctx.Now)           // 尝试优化递归函数
-	optimizer.ConvertRecursionToIteration(c.Ctx.Now) // 实际转换递归为迭代
-	pr(c.Ctx.Now, 0)
+	//optimizer.OptimizeRecursion(c.Ctx.Now)           // 尝试优化递归函数
+	//optimizer.ConvertRecursionToIteration(c.Ctx.Now) // 实际转换递归为迭代
 
 	name := funcBlock.Name
 	if name != "main" {
@@ -228,9 +218,9 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	}
 	code += utils.Format("; ======函数完毕=======\n\n")
 
-	// 清理寄存器记录
-	c.Ctx.Reg.Record = map[*parser.Expression]*regmgr.Reg{}
-	c.Ctx.Reg.RegisterCount = 0
+	// 清理寄存器分配数据
+	c.Ctx.Reg.Reset()
+
 	return
 }
 
@@ -238,7 +228,7 @@ func pr(block *parser.Node, tabnum int) {
 	if block.Ignore {
 		return
 	}
-	fmt.Println(strings.Repeat("\t", tabnum), block.Value)
+	fmt.Println(strings.Repeat("\t", tabnum), reflect.TypeOf(block.Value), block.Value)
 	for _, k := range block.Children {
 		pr(k, tabnum+1)
 	}

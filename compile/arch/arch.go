@@ -33,44 +33,13 @@ type Arch interface {
 	Var(varBlock *parser.VarBlock) string
 
 	EndFor(forBlock *parser.ForBlock) string
+
+	GenVarAddr(v *parser.VarBlock) string
 }
 
 type ExpResult struct {
 	Reg       *regmgr.Reg
 	MemOffset int
-}
-
-// 计算变量的栈空间
-func CalcStackSize(node *parser.Node, align int) int {
-	stackSize := 0
-	for _, child := range node.Children {
-		switch child.Value.(type) {
-		case *parser.VarBlock:
-			if child.Value.(*parser.VarBlock).IsDefine {
-				stackSize += child.Value.(*parser.VarBlock).Type.Size()
-
-			}
-		case *parser.IfBlock:
-			stackSize += CalcStackSize(child, 0)
-			if child.Value.(*parser.IfBlock).Else {
-				stackSize += CalcStackSize(child.Value.(*parser.IfBlock).ElseBlock, 0)
-			}
-		case *parser.FuncBlock:
-			stackSize += CalcStackSize(child, 0)
-		case *parser.CallBlock:
-			// 函数调用的参数使用临时栈，不计入局部变量栈空间
-			// 参数在调用时通过push传递，调用后立即清理
-			continue
-		}
-	}
-
-	// 如果需要对齐，就尝试对其
-	if align > 0 {
-		// 尝试对齐(可以被align整除)
-		stackSize = (stackSize + align - 1) & ^(align - 1)
-	}
-
-	return stackSize
 }
 
 // 计算参数的栈空间
@@ -86,10 +55,10 @@ func CalcArgsSize(funcBlock *parser.FuncBlock) int {
 }
 
 func GetNeedSaveRegs(regMgr *regmgr.RegMgr, callerSave bool) (ret []string) {
-	rs := regMgr.Records
+	rs := regMgr.Regs
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
-		if callerSave == r.CallerSave {
+		if callerSave != r.CalleeSave && r.Using {
 			had := false
 			for e := 0; e < len(ret); e++ {
 				if r.Name == ret[e] {
@@ -116,6 +85,62 @@ func ResetLocalVarOffset(n *parser.Node, offset int) {
 			if child.Value.(*parser.IfBlock).Else {
 				ResetLocalVarOffset(child.Value.(*parser.IfBlock).ElseBlock, offset)
 			}
+		}
+	}
+}
+
+// SetupVarOffsets 设置函数中所有变量的栈偏移量
+// 在进入函数体之前调用，确保所有变量都有正确的栈位置
+// 返回计算出的栈大小（已对齐）
+func SetupVarOffsets(funcNode *parser.Node, alignment int, offset int) int {
+	collectVarOffsets(funcNode, &offset)
+
+	// 计算栈大小（最小偏移量的绝对值），使用对齐值
+	stackSize := -offset
+	if alignment > 0 && stackSize%alignment != 0 {
+		stackSize = (stackSize + alignment - 1) & ^(alignment - 1)
+	}
+
+	return stackSize
+}
+
+// collectVarOffsets 递归收集并设置所有变量的偏移量
+// 包括函数体中的变量、if/else 块中的变量
+// 变量分配时进行自然对齐：每个变量按其类型大小对齐
+func collectVarOffsets(node *parser.Node, offset *int) {
+	for _, child := range node.Children {
+		if child.Ignore {
+			continue
+		}
+
+		switch v := child.Value.(type) {
+		case *parser.VarBlock:
+			// 只为定义的变量分配栈空间
+			if v.IsDefine {
+				varSize := v.Type.Size()
+				*offset -= varSize
+				v.Offset = *offset
+			}
+		case *parser.ForBlock:
+			if v.Init != nil && v.Init.Var != nil {
+				initVar := v.Init.Var
+				varSize := initVar.Type.Size()
+				*offset -= varSize
+				initVar.Offset = *offset
+			}
+			collectVarOffsets(child, offset)
+		case *parser.IfBlock:
+			// 递归处理 if 块中的变量
+			collectVarOffsets(child, offset)
+			// 如果有 else 块，也递归处理    mov EBX, DWORD[ebp-16]
+
+			if v.Else {
+				collectVarOffsets(v.ElseBlock, offset)
+			}
+		case *parser.FuncBlock:
+			// 跳过嵌套函数（如果有的话）
+			collectVarOffsets(child, offset)
+			continue
 		}
 	}
 }

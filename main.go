@@ -6,6 +6,7 @@ import (
 	"cuteify/parser"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -30,7 +31,7 @@ func pr(block *parser.Node, tabnum int) {
 	if block.Ignore {
 		return
 	}
-	fmt.Println(strings.Repeat("\t", tabnum), block.Value)
+	fmt.Println(strings.Repeat("\t", tabnum), reflect.TypeOf(block.Value), block.Value)
 	for _, k := range block.Children {
 		pr(k, tabnum+1)
 	}

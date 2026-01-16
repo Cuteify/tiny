@@ -4,7 +4,6 @@ import (
 	"cuteify/compile/arch"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
-	"strconv"
 )
 
 // Context 编译器上下文，统一管理编译状态
@@ -24,6 +23,9 @@ type Context struct {
 	StackSize int // 当前函数的栈大小
 	ArgsSize  int // 当前函数的参数大小
 
+	// 栈对齐
+	StackAlignment int // 栈对齐大小（字节），默认8
+
 	// 表达式编译状态
 	UseEBXDirect bool // 标记是否直接使用 EBX（不通过寄存器分配）
 	EbxOccupied  bool // 标记 EBX 是否已被左子占用
@@ -41,19 +43,20 @@ type Context struct {
 // NewContext 创建新的编译器上下文
 func NewContext() *Context {
 	return &Context{
-		Arch:         nil,
-		SpOffset:     0,
-		BpOffset:     0,
-		StackSize:    0,
-		ArgsSize:     0,
-		UseEBXDirect: false,
-		EbxOccupied:  false,
-		ExpType:      0,
-		VarStackSize: 0,
-		ExpCount:     0,
-		ArgOffset:    0,
-		IfCount:      0,
-		ForCount:     0,
+		Arch:           nil,
+		SpOffset:       0,
+		BpOffset:       0,
+		StackSize:      0,
+		ArgsSize:       0,
+		StackAlignment: 8, // 默认8字节对齐
+		UseEBXDirect:   false,
+		EbxOccupied:    false,
+		ExpType:        0,
+		VarStackSize:   0,
+		ExpCount:       0,
+		ArgOffset:      0,
+		IfCount:        0,
+		ForCount:       0,
 	}
 }
 
@@ -63,6 +66,7 @@ func (ctx *Context) Reset() {
 	ctx.BpOffset = 0
 	ctx.StackSize = 0
 	ctx.ArgsSize = 0
+	ctx.StackAlignment = 8 // 重置为默认8字节对齐
 	ctx.UseEBXDirect = false
 	ctx.EbxOccupied = false
 	ctx.ExpType = 0
@@ -72,29 +76,22 @@ func (ctx *Context) Reset() {
 // Clone 克隆当前上下文（用于保存和恢复状态）
 func (ctx *Context) Clone() *Context {
 	return &Context{
-		Now:          ctx.Now,
-		Reg:          ctx.Reg,
-		Arch:         ctx.Arch,
-		SpOffset:     ctx.SpOffset,
-		BpOffset:     ctx.BpOffset,
-		StackSize:    ctx.StackSize,
-		ArgsSize:     ctx.ArgsSize,
-		UseEBXDirect: ctx.UseEBXDirect,
-		EbxOccupied:  ctx.EbxOccupied,
-		ExpType:      ctx.ExpType,
-		VarStackSize: ctx.VarStackSize,
-		ExpCount:     ctx.ExpCount,
-		ArgOffset:    ctx.ArgOffset,
-		IfCount:      ctx.IfCount,
-		ForCount:     ctx.ForCount,
-		Parser:       ctx.Parser,
+		Now:            ctx.Now,
+		Reg:            ctx.Reg,
+		Arch:           ctx.Arch,
+		SpOffset:       ctx.SpOffset,
+		BpOffset:       ctx.BpOffset,
+		StackSize:      ctx.StackSize,
+		ArgsSize:       ctx.ArgsSize,
+		StackAlignment: ctx.StackAlignment,
+		UseEBXDirect:   ctx.UseEBXDirect,
+		EbxOccupied:    ctx.EbxOccupied,
+		ExpType:        ctx.ExpType,
+		VarStackSize:   ctx.VarStackSize,
+		ExpCount:       ctx.ExpCount,
+		ArgOffset:      ctx.ArgOffset,
+		IfCount:        ctx.IfCount,
+		ForCount:       ctx.ForCount,
+		Parser:         ctx.Parser,
 	}
-}
-
-func (ctx *Context) Sp(offset int) string {
-	return strconv.FormatInt(int64(ctx.SpOffset+offset), 10)
-}
-
-func (ctx *Context) Bp(offset int) string {
-	return strconv.FormatInt(int64(ctx.BpOffset+offset), 10)
 }

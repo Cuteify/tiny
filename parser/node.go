@@ -23,33 +23,41 @@ type Node struct {
 	Parser  *Parser
 }
 
-func (n *Node) Check() {
+func (n *Node) Check() bool {
 	if n.Checked && n.Father != nil {
-		return
+		return true
 	}
 	n.Checked = true
 	for _, child := range n.Children {
-		child.Check()
+		if !child.Check() {
+			return false
+		}
 	}
 	switch n.Value.(type) {
 	case *CallBlock:
 		callBlock := n.Value.(*CallBlock)
-		callBlock.Check(n.Parser)
+		return callBlock.Check(n.Parser)
 	case *VarBlock:
 		varBlock := n.Value.(*VarBlock)
-		varBlock.Check(n.Parser)
+		return varBlock.Check(n.Parser)
 	case *Expression:
 		expression := n.Value.(*Expression)
-		expression.Check(n.Parser)
+		return expression.Check(n.Parser)
 	case *FuncBlock:
 		funcBlock := n.Value.(*FuncBlock)
 		for _, arg := range funcBlock.Args {
-			arg.Check(n.Parser)
+			if !arg.Check(n.Parser) {
+				return false
+			}
 		}
 	case *IfBlock:
 		ifBlock := n.Value.(*IfBlock)
-		ifBlock.Check(n.Parser)
+		return ifBlock.Check(n.Parser)
+	case *ForBlock:
+		forBlock := n.Value.(*ForBlock)
+		return forBlock.Check(n.Parser)
 	}
+	return true
 }
 
 func (n *Node) AddChild(node *Node) {
