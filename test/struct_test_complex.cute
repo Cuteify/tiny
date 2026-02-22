@@ -9,9 +9,6 @@ struct Student : Person {
     pub score: float
 }
 
-struct EmptyStruct {
-}
-
 fn main() int {
     ret 0
 }

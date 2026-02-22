@@ -1,9 +1,11 @@
 package parser
 
 import (
+	"bytes"
 	errorUtil "cuteify/error"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
+	"cuteify/utils"
 	"strings"
 )
 
@@ -29,6 +31,7 @@ func (p *Parser) Next() (finish bool) {
 		p.Back(1)
 		return
 	}
+
 	switch code.Type {
 	case lexer.FUNC:
 		p.processFuncToken(code)
@@ -38,6 +41,8 @@ func (p *Parser) Next() (finish bool) {
 		p.processNameToken(code, beforeCursor)
 	case lexer.VAR:
 		p.processVarToken(beforeCursor)
+	case lexer.TYPE:
+		p.processTypeToken(code)
 	case lexer.BUILD:
 		p.processBuildToken()
 	default:
@@ -79,29 +84,29 @@ func (p *Parser) processControlToken(code lexer.Token) {
 }
 
 func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
+	// 退回到beforeCursor位置，然后使用统一的Name函数解析名称
+	p.Lexer.SetCursor(beforeCursor)
+	name, _ := p.Name(false) // 不等待，获取当前位置的名称
+
+	// 继续处理后续内容
 	code2 := p.Lexer.Next()
 	if code2.Type != lexer.SEPARATOR {
 		beforeCursor++
-		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
+		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+name.String()+"' is not a valid expression")
 	}
 
 	switch code2.Value {
 	case "(":
 		p.Lexer.SetCursor(code2.Cursor)
-		block := &CallBlock{Name: code.Value}
+		block := &CallBlock{Name: name}
 		block.Parse(p)
-	/*case ".":
-	p.Lexer.SetCursor(beforeCursor)
-	block := &VarBlock{Name: code.Value}
-	block.ParseDefine(p)
-	block.Type = block.Define.Value.(*VarBlock).Type*/
 	case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
 	default:
 		beforeCursor++
-		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+code.Value+"' is not a valid expression")
+		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+name.String()+"' is not a valid expression")
 	}
 }
 
@@ -111,7 +116,24 @@ func (p *Parser) processVarToken(beforeCursor int) {
 	block.Parse(p)
 }
 
+func (p *Parser) processTypeToken(code lexer.Token) {
+	// 根据类型关键字处理不同的类型定义
+	switch code.Value {
+	case "struct":
+		block := &StructBlock{}
+		block.Parse(p)
+	case "interface":
+		block := &InterfaceBlock{}
+		block.Parse(p)
+	default:
+		p.processDefaultToken(code) // 其他类型暂不处理
+	}
+}
+
 func (p *Parser) processBuildToken() {
+	// 回退到"build"开始位置
+	cursor := p.Lexer.Cursor - len("build")
+	p.Lexer.SetCursor(cursor)
 	block := &Build{}
 	block.Parse(p)
 }
@@ -190,6 +212,86 @@ func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 	return -1
 }
 
+func (p *Parser) Name(wait bool) (name Name, cursor int) {
+	if wait {
+		// 等待名称
+		for {
+			oldCursor := p.Lexer.Cursor
+			code := p.Lexer.Next()
+			if code.IsEmpty() {
+				// 语法错误：需要名称
+				p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
+			}
+			if code.Value == "\n" || code.Value == "\r" || code.Value == ";" {
+				// 语法错误：需要名称
+				p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
+			}
+			if code.Type == lexer.NAME {
+				// 退格，获取完整名称
+				p.Lexer.SetCursor(oldCursor)
+				break
+			}
+		}
+	}
+
+	// 记录名称起始位置
+	cursor = p.Lexer.Cursor
+
+	buf := ""
+
+	lastCursor := p.Lexer.Cursor
+
+	// 开始获取完整名称
+	for {
+		// 记录当前位置
+		lastCursor = p.Lexer.Cursor
+		code := p.Lexer.Next()
+		switch code.Type {
+		case lexer.NAME:
+			buf += code.Value
+		case lexer.SEPARATOR:
+			// 必须是一个字符的分隔符
+			// 检查是否是可用于名称的符号
+			if len(code.Value) != 1 || bytes.IndexByte([]byte{'.', '_'}, code.Value[0]) == -1 {
+				goto nameFindEnd
+			}
+			buf += code.Value
+		default:
+			goto nameFindEnd
+		}
+	}
+
+nameFindEnd:
+	// 还原到名称结束位置
+	p.Lexer.SetCursor(lastCursor)
+
+	// 对名称完整性检查
+	if len(buf) > 0 && (buf[len(buf)-1] == '.' || buf[len(buf)-1] == '_') {
+		// 语法错误：名称不能以 '.' 或 '_' 结尾
+		p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "name cannot end with '.' or '_'")
+	}
+
+	// 使用.解析路径
+	if buf == "" {
+		// 如果缓冲区为空，这是错误情况
+		p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "empty name is not allowed")
+		name = []string{""} // 返回一个占位符，但实际上不会继续执行
+	} else if strings.Contains(buf, ".") {
+		name = strings.Split(buf, ".")
+	} else {
+		name = []string{buf}
+	}
+
+	// 检查路径中的每个元素是否为有效名称
+	for _, part := range name {
+		if part == "" || !utils.CheckName(part) {
+			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "invalid name part: "+part)
+		}
+	}
+
+	return
+}
+
 func (p *Parser) CheckUnusedVar(node *Node) {
 	for i := 0; i < len(node.Children); i++ {
 		/*if node.Children[i].CFG == nil {
@@ -200,7 +302,7 @@ func (p *Parser) CheckUnusedVar(node *Node) {
 		case *VarBlock:
 			varBlock := node.Children[i].Value.(*VarBlock)
 			if varBlock.IsDefine && !varBlock.Used {
-				p.Lexer.Error.MissErrors("Variable Error", varBlock.StartCursor-len(varBlock.Name)+1, varBlock.StartCursor, varBlock.Name+" is unused")
+				p.Lexer.Error.MissErrors("Variable Error", varBlock.StartCursor-len(varBlock.Name)+1, varBlock.StartCursor, varBlock.Name.String()+" is unused")
 			}
 		}
 		p.CheckUnusedVar(node.Children[i])
@@ -226,18 +328,21 @@ func (p *Parser) Parse() *Node {
 	return p.Block
 }
 
-func (p *Parser) Find(name string, dstType any) *Node {
+func (p *Parser) Find(_name Name, dstType any) *Node {
 	// 查找包名
-	tmp := strings.Split(name, ".")
 	var children []*Node
-	if len(tmp) != 1 {
-		packageName, funcName := tmp[0], tmp[len(tmp)-1]
-		importPackage := packageFmt.FixPathName(p.Package.Import[packageName])
-		name = importPackage + "." + funcName
+
+	// 为了不改变原始名称，复制一份
+	name := _name.Fork()
+
+	// 修补包名为路径
+	if name.IsPath() {
+		name.FixPath(p.Package)
 		children = p.Package.AST.(*Node).Children
 	} else {
 		children = p.Block.Children
 	}
+
 	for i := 0; i < len(children); i++ {
 		value := children[i].Value
 		switch dstType.(type) {
@@ -246,7 +351,7 @@ func (p *Parser) Find(name string, dstType any) *Node {
 			if !ok {
 				continue
 			}
-			if v.Name == name {
+			if name.Eq(v.Name) {
 				return children[i]
 			}
 		case *FuncBlock:
@@ -254,11 +359,11 @@ func (p *Parser) Find(name string, dstType any) *Node {
 			if !ok {
 				continue
 			}
-			if f.Name == name {
+			if name.Eq(f.Name) {
 				return children[i]
 			}
 		}
 	}
-	p.Lexer.Error.MissError("func", p.Lexer.Cursor-1, "not found function '"+name+"'")
+	p.Lexer.Error.MissError("func", p.Lexer.Cursor-1, "not found function '"+name.String()+"'")
 	return nil
 }

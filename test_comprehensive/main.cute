@@ -9,7 +9,16 @@ struct Student : Person {
     pub score: float
 }
 
-struct EmptyStruct {
+// 测试空struct
+struct Empty {
+}
+
+// 测试多种类型
+struct Complex {
+    pub id: int
+    pub title: string
+    pub isActive: bool
+    pub rating: float
 }
 
 fn main() int {

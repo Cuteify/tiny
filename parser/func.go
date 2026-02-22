@@ -3,7 +3,6 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"cuteify/utils"
 )
 
 // FuncBlock 函数定义结构体
@@ -11,13 +10,13 @@ type FuncBlock struct {
 	Args       []*ArgBlock    // 函数参数列表
 	Class      typeSys.Type   // 所属类类型（面向对象时使用）
 	Return     []typeSys.Type // 返回值类型列表（支持多返回值）
-	Name       string         // 函数名
+	Name       Name           // 函数名
 	BuildFlags []*Build       // 编译标志
 }
 
 // ArgBlock 函数参数结构体
 type ArgBlock struct {
-	Name    string       // 参数名
+	Name    Name         // 参数名
 	Type    typeSys.Type // 参数类型
 	Default *Expression  // 默认值表达式
 	Defind  *ArgBlock    // 指向参数定义（用于类型检查）
@@ -33,14 +32,14 @@ func (f *FuncBlock) Parse(p *Parser) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Function can't be defined in Function")
 	}
 
+	oldCursor := p.Lexer.Cursor
 	// 判断有没有父类
 	code := p.Lexer.Next()
 	if code.Type == lexer.NAME {
+		// 退格到函数名开始位置
+		p.Lexer.SetCursor(oldCursor)
 		// 匹配函数名
-		f.Name = code.Value
-		if !utils.CheckName(f.Name) {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
-		}
+		f.Name, _ = p.Name(false)
 		// 匹配参数列表
 		code := p.Lexer.Next()
 		if code.Value != "(" {
@@ -121,22 +120,26 @@ func (f *FuncBlock) parseArgToken(p *Parser, v *BracketsValue, lastVal string, i
 }
 
 func (f *FuncBlock) parseFirstArg(p *Parser, v *BracketsValue) {
-	f.Args = []*ArgBlock{{Name: v.Value.Value}}
-	if !utils.CheckName(v.Value.Value) {
+	f.Args = []*ArgBlock{{}} // 第一个参数
+	// 解析参数名
+	(&f.Args[0].Name).ReadFromToken(v.Value)
+	if !f.Args[0].Name.Check() || f.Args[0].Name.IsPath() {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 }
 
 func (f *FuncBlock) parseCommaArg(p *Parser, v *BracketsValue) {
-	f.Args = append(f.Args, &ArgBlock{Name: v.Value.Value})
-	if !utils.CheckName(v.Value.Value) {
+	f.Args = append(f.Args, &ArgBlock{})
+	// 解析参数名
+	(&f.Args[len(f.Args)-1].Name).ReadFromToken(v.Value)
+	if !f.Args[len(f.Args)-1].Name.Check() || f.Args[len(f.Args)-1].Name.IsPath() {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 }
 
 func (f *FuncBlock) parseTypeArg(p *Parser, v *BracketsValue, isPtr bool, oldCursor int) {
 	tb := &TypeBlock{}
-	tmp := tb.FindDefine(p, v.Value.Value)
+	tmp := tb.FindDefine(p, Name([]string{v.Value.Value}))
 	f.Args[len(f.Args)-1].Type = tmp
 
 	if tmp != nil {
@@ -167,7 +170,7 @@ func (f *FuncBlock) parseArgDefault(p *Parser, brackets *Brackets, i int) int {
 
 func (f *FuncBlock) validateDefaultOrder(p *Parser) {
 	if len(f.Args) >= 2 && f.Args[len(f.Args)-1].Default == nil && f.Args[len(f.Args)-2].Default != nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss default value, before "+f.Args[len(f.Args)-1].Name)
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss default value, before "+f.Args[len(f.Args)-1].Name.String())
 	}
 }
 

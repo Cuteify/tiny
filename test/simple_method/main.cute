@@ -1,0 +1,21 @@
+struct Point {
+    x: int
+    y: int
+}
+
+fn Point.GetX() int {
+    ret 42
+}
+
+fn Point.SetX(x: int) {
+    self.x = x
+}
+
+fn main() int {
+    p: Point
+    p.x = 10
+    p.y = 20
+    x: int = p.GetX()
+    p.SetX(15)
+    ret x
+}

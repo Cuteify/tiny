@@ -1,5 +1,12 @@
 package parser
 
+import (
+	"cuteify/lexer"
+	packageFmt "cuteify/package/fmt"
+	"cuteify/utils"
+	"strings"
+)
+
 type CFGNode struct {
 	After     *Node
 	Before    *Node
@@ -9,6 +16,8 @@ type CFGNode struct {
 type Block interface {
 	//Parse(p *Parser)
 }
+
+type Name []string
 
 type Node struct {
 	Value    Block
@@ -101,4 +110,81 @@ func (n *Node) AddChild(node *Node) {
 			tmp.CFG = append(n.CFG, CFGNode{After: node})
 		}
 	}*/
+}
+
+func (n Name) String() string {
+	return strings.Join(n, ".")
+}
+
+func (n Name) Path() string {
+	return strings.Join(n[:len(n)-1], ".")
+}
+
+func (n Name) Last() string {
+	return n[len(n)-1]
+}
+
+func (n Name) IsPrivate() bool {
+	for _, part := range n {
+		if part[0] == '_' {
+			return true
+		}
+	}
+	return false
+}
+
+func (n Name) Eq(other Name) bool {
+	if len(n) != len(other) {
+		return false
+	}
+	for i := 0; i < len(n); i++ {
+		if n[i] != other[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (n Name) IsEmpty() bool {
+	return len(n) == 0
+}
+
+func (n Name) IsPath() bool {
+	return len(n) > 1
+}
+
+func (n Name) Check() bool {
+	ok := !n.IsEmpty()
+	for _, part := range n {
+		ok = ok && utils.CheckName(part)
+	}
+	return ok
+}
+
+func (n *Name) ReadFromToken(t lexer.Token) bool {
+	if t.Type == lexer.NAME {
+		*n = append(*n, t.Value)
+		return true
+	}
+	return false
+}
+
+func (n Name) Fork() Name {
+	nn := make(Name, len(n))
+	copy(nn, n)
+	return nn
+}
+
+func (n Name) FixPath(pkg *packageFmt.Info) bool {
+	if !n.IsPath() {
+		return false
+	}
+	importName := n[0]
+	pkgRealPath := packageFmt.FixPathName(pkg.Import[importName])
+	n[0] = pkgRealPath
+	return true
+}
+
+func (n Name) SetPkgPath(pkgPath string) {
+	n = append([]string{packageFmt.FixPathName(pkgPath)}, n...)
 }

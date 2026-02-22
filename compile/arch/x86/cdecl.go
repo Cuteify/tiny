@@ -48,7 +48,7 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 	}
 
 	// 3. 生成call指令
-	name := fn.Name
+	name := fn.Name.String() // 将Name转换为字符串
 	if name != "main" {
 		name = name + strconv.Itoa(len(fn.Args))
 	}
@@ -204,7 +204,7 @@ func (a *Cdecl) Var(varBlock *parser.VarBlock) (code string) {
 	if varBlock.Value == nil {
 		return
 	}
-	code += a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name)
+	code += a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
 	return
 }
 

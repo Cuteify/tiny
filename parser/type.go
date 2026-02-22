@@ -8,22 +8,22 @@ import (
 
 type TypeBlock struct {
 	Type typeSys.Type
-	Name string
+	Name Name
 }
 
 func (t *TypeBlock) Parse(p *Parser) {
 	tmp := &typeSys.RType{}
 	code := p.Lexer.Next()
 	if code.Type == lexer.NAME {
-		t.Name = code.Value
-		if !utils.CheckName(t.Name) {
+		t.Name = Name([]string{code.Value})
+		if !utils.CheckName(t.Name.String()) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 		}
 		tmp.TypeName = code.Value
 		code2 := p.Lexer.Next()
 		if code2.Type == lexer.NAME {
-			tmp.RFather = t.FindDefine(p, code2.Value)
-		} else if code2.Type == lexer.TYPE && code2.Value == "STRUCT" {
+			tmp.RFather = t.FindDefine(p, Name([]string{code2.Value}))
+		} else if code2.Type == lexer.SEPARATOR && code2.Value == "STRUCT" {
 			tmp.TypeName = "STRUCT"
 		}
 	} else {
@@ -32,25 +32,26 @@ func (t *TypeBlock) Parse(p *Parser) {
 	t.Type = tmp
 }
 
-func (t *TypeBlock) FindDefine(p *Parser, name string) typeSys.Type {
+func (t *TypeBlock) FindDefine(p *Parser, name Name) typeSys.Type {
 	// 寻找定义位置，如果找不到，则报错，int, float, uint, i64, u64, f64, bool, byte
 	// 从当前作用域开始向上寻找
-	switch name {
+	nameStr := name.String()
+	switch nameStr {
 	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte", "i32", "u32", "f32", "i16", "u16", "i8", "u8":
-		return typeSys.GetSystemType(name)
+		return typeSys.GetSystemType(nameStr)
 	}
-	if !utils.CheckName(name) {
+	if !utils.CheckName(nameStr) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 	for {
 		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+name)
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+nameStr)
 		}
 		for i := 0; i < len(p.ThisBlock.Children); i++ {
 			switch p.ThisBlock.Children[i].Value.(type) {
 			case *TypeBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*TypeBlock)
-				if tmp.Name == name {
+				if tmp.Name.String() == name.String() {
 					return p.ThisBlock.Children[i].Value.(*TypeBlock).Type
 				}
 			}
@@ -58,15 +59,15 @@ func (t *TypeBlock) FindDefine(p *Parser, name string) typeSys.Type {
 	}
 }
 
-func (t *TypeBlock) ParseStruct(p *Parser) (name string, Type typeSys.Type, tag string, Default *Expression) {
+func (t *TypeBlock) ParseStruct(p *Parser) (name Name, Type typeSys.Type, tag string, Default *Expression) {
 	// 解析结构体
 	code := p.Lexer.Next()
 	if code.Type == lexer.NAME {
-		name = code.Value
+		name = Name([]string{code.Value})
 		if code := p.Lexer.Next(); code.Type == lexer.SEPARATOR && code.Value == ":" {
 			code = p.Lexer.Next()
 			if code.Type == lexer.NAME {
-				Type = t.FindDefine(p, code.Value)
+				Type = t.FindDefine(p, Name([]string{code.Value}))
 				if code := p.Lexer.Next(); code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
 					return
 				} else if code.Type == lexer.SEPARATOR && code.Value == "=" {

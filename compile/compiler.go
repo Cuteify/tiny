@@ -84,6 +84,8 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		return c.compileCallBlock(n)
 	case *parser.ForBlock:
 		return c.compileForBlock(n)
+	case *parser.StructBlock:
+		return c.compileStructBlock(n)
 	case *parser.Build:
 		return c.CompileBuild(n)
 	default:
@@ -169,7 +171,7 @@ func (c *Compiler) compileRootTail(node *parser.Node) string {
 func (c *Compiler) hasMainFunction(node *parser.Node) bool {
 	for _, ch := range node.Children {
 		if fb, ok := ch.Value.(*parser.FuncBlock); ok {
-			if fb.Name == "main" {
+			if fb.Name.String() == "main" {
 				return true
 			}
 		}
@@ -197,7 +199,7 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	//optimizer.OptimizeRecursion(c.Ctx.Now)           // 尝试优化递归函数
 	//optimizer.ConvertRecursionToIteration(c.Ctx.Now) // 实际转换递归为迭代
 
-	name := funcBlock.Name
+	name := funcBlock.Name.String()
 	if name != "main" {
 		name = name + strconv.Itoa(len(funcBlock.Args))
 	}
