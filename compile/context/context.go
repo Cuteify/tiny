@@ -38,6 +38,9 @@ type Context struct {
 	IfCount      int // if 块数量计数，用于生成唯一的if标签
 	ForCount     int // for 块数量计数，用于生成唯一的for标签
 	Parser       *parser.Parser
+
+	// 结构体相关
+	Structs map[string]*parser.StructBlock // 存储结构体定义
 }
 
 // NewContext 创建新的编译器上下文
@@ -57,6 +60,7 @@ func NewContext() *Context {
 		ArgOffset:      0,
 		IfCount:        0,
 		ForCount:       0,
+		Structs:        make(map[string]*parser.StructBlock),
 	}
 }
 
@@ -93,5 +97,33 @@ func (ctx *Context) Clone() *Context {
 		IfCount:        ctx.IfCount,
 		ForCount:       ctx.ForCount,
 		Parser:         ctx.Parser,
+		Structs:        ctx.Structs, // 共享结构体映射
 	}
+}
+
+// AddStruct 添加结构体定义到上下文
+func (ctx *Context) AddStruct(structBlock *parser.StructBlock) {
+	ctx.Structs[structBlock.Name] = structBlock
+}
+
+// GetStruct 获取结构体定义
+func (ctx *Context) GetStruct(name string) (*parser.StructBlock, bool) {
+	structBlock, exists := ctx.Structs[name]
+	return structBlock, exists
+}
+
+// GetStructFieldOffset 获取结构体字段的偏移量
+func (ctx *Context) GetStructFieldOffset(structName, fieldName string) (int, bool) {
+	structBlock, exists := ctx.GetStruct(structName)
+	if !exists {
+		return 0, false
+	}
+
+	for _, field := range structBlock.Fields {
+		if field.Name == fieldName {
+			return field.Offset, true
+		}
+	}
+
+	return 0, false
 }

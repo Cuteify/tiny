@@ -27,6 +27,7 @@ func main() {
 	os.WriteFile(`./_main.asm`, []byte(code), 0644)
 	fmt.Println("\033[32mOK\033[0m:Finish in", time.Now().Sub(startTime))
 }
+
 func pr(block *parser.Node, tabnum int) {
 	if block.Ignore {
 		return

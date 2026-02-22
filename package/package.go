@@ -71,7 +71,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 					switch p.Block.Children[i].Value.(type) {
 					case *parser.FuncBlock:
 						funcBlock := p.Block.Children[i].Value.(*parser.FuncBlock)
-						funcBlock.Name = packageFmt.FixPathName(packagePath) + "." + funcBlock.Name
+						// 构建新的Name，将包路径添加到函数名前
+						newName := append([]string{packageFmt.FixPathName(packagePath)}, funcBlock.Name...)
+						funcBlock.Name = newName
 					}
 				}
 			}

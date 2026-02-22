@@ -23,6 +23,7 @@ type Expression struct {
 	Bool      bool         // 布尔值
 	ConstBool bool         // 常量布尔值
 	Type      typeSys.Type // 类型
+	Field     *Expression  // 字段访问（用于结构体字段访问，如 obj.field）
 	checked   bool
 }
 
@@ -74,6 +75,8 @@ func (exp *Expression) checkOperator(p *Parser) bool {
 	right.Check(p)
 
 	switch exp.Separator {
+	case ".":
+		return exp.checkFieldAccess(p, left, right)
 	case "-", "/", "%", "^", "<<", ">>", "&", "|":
 		return exp.checkArithmeticOp(p, left, right)
 	case "+":
@@ -208,6 +211,28 @@ func (exp *Expression) checkLogicalOp(_ *Parser, left, right *Expression) bool {
 		exp.foldBinaryOpConstants()
 	}
 
+	return false
+}
+
+func (exp *Expression) checkFieldAccess(p *Parser, left, right *Expression) bool {
+	// 检查左边是否为结构体类型
+	left.Check(p)
+	if left.Type == nil {
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "left operand of '.' must be a struct")
+		return false
+	}
+
+	// 检查右边是否为字段名（变量）
+	if right.Var == nil {
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "right operand of '.' must be a field name")
+		return false
+	}
+
+	// 简单设置表达式类型为未知，后续在编译时再确定具体类型
+	exp.Type = typeSys.GetSystemType("int") // 临时设置为int类型，后续会更新
+	exp.Field = right                       // 标记这是一个字段访问
+
+	exp.checked = true
 	return true
 }
 
@@ -432,7 +457,10 @@ end:
 }
 
 func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor int) (finish bool) {
-	name := nameToken.Value
+	// 退回到nameToken位置，使用统一的Name函数解析名称
+	p.Lexer.SetCursor(nameToken.Cursor)
+	name, nameStart := p.Name(false) // 不等待，获取当前位置的名称
+
 	// 检查是否有后续字符来判断是函数调用还是变量引用
 	if p.Lexer.Cursor+2 > stopCursor {
 		exp.handleVar(p, name)
@@ -450,12 +478,14 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 	if token.Type == lexer.SEPARATOR {
 		switch token.Value {
 		case "(":
-			exp.Call = &CallBlock{Name: name}
+			exp.Call = &CallBlock{Name: name} // 直接使用NameParts
 			exp.Call.ParseCall(p)
 			return
 		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 			block := &VarBlock{}
-			block.ParseNameVar(p, nameToken, stopCursor)
+			// 把指针放到name之前
+			p.Lexer.SetCursor(nameStart)
+			block.ParseVar(p)
 			exp.Var = block
 			p.AddChild(&Node{Value: block, Ignore: true})
 			finish = true
@@ -466,7 +496,8 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 	return
 }
 
-func (exp *Expression) handleVar(p *Parser, name string) {
+func (exp *Expression) handleVar(p *Parser, name Name) {
+	// 将字符串名称转换为Name类型
 	varBlock := &VarBlock{
 		Name: name,
 	}

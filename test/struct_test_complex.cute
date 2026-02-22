@@ -1,0 +1,14 @@
+struct Person {
+    pub name: string
+    priv age: int
+    prot address: string
+}
+
+struct Student : Person {
+    pub grade: int
+    pub score: float
+}
+
+fn main() int {
+    ret 0
+}

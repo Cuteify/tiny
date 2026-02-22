@@ -46,7 +46,7 @@ func (a *Stdcall) Call(call *parser.CallBlock) string {
 		code += a.Exp(arg.Value, caldAddrWithLen(arg.Type.Size(), offset), "")
 		offset += arg.Type.Size()
 	}
-	name := fn.Name
+	name := fn.Name.String()
 	if name != "main" {
 		name = name + strconv.Itoa(len(fn.Args))
 	}
@@ -72,7 +72,7 @@ func (a *Stdcall) Func(funcBlock *parser.FuncBlock) string {
 	if funcBlock == nil {
 		return ""
 	}
-	name := funcBlock.Name
+	name := funcBlock.Name.String()
 	if name != "main" {
 		name = name + strconv.Itoa(len(funcBlock.Args))
 	}

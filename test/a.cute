@@ -1,23 +1,17 @@
-fn fib(i:i32) i32 {
-    if (i<=2) {
-       ret 1
-    }
-    ret fib(i-1) + fib(i-2)
+struct Person {
+    pub name: string
+    priv age: int
+    prot address: string
 }
 
-fn fib2(i:i32) i32 {
-    prev := 0
-    cur := 1
-    
-    for (j := 0; j < i; j++) {
-        next := prev + cur
-        prev = cur
-        cur = next
-    }
-    
-    ret prev;
+struct Student : Person {
+    pub grade: int
+    pub score: float
 }
 
-fn main() {
-    fib2(30)
+struct EmptyStruct {
+}
+
+fn main() int {
+    ret 0
 }

@@ -3,11 +3,11 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"errors"
+	"strings"
 )
 
 type CallBlock struct {
-	Name string
+	Name Name
 	Args []*ArgBlock
 	Func *FuncBlock
 	Node *Node
@@ -15,7 +15,7 @@ type CallBlock struct {
 
 func (c *CallBlock) Check(parser *Parser) bool {
 	// 检查函数名
-	if c.Name == "" {
+	if c.Name.IsEmpty() {
 		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "function name is empty")
 		return false
 	}
@@ -27,7 +27,7 @@ func (c *CallBlock) Check(parser *Parser) bool {
 
 	// 检查参数个数是否匹配（考虑默认参数）
 	if len(c.Args) > len(c.Func.Args) {
-		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "too many arguments in call to "+c.Name)
+		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
 		return false
 	}
 
@@ -35,7 +35,7 @@ func (c *CallBlock) Check(parser *Parser) bool {
 	if len(c.Args) < len(c.Func.Args) {
 		for i := len(c.Args); i < len(c.Func.Args); i++ {
 			if c.Func.Args[i].Default == nil {
-				parser.Error.MissError("Call Error", parser.Lexer.Cursor, "not enough arguments in call to "+c.Name)
+				parser.Error.MissError("Call Error", parser.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
 				return false
 			}
 			// 添加默认参数
@@ -58,71 +58,68 @@ func (c *CallBlock) Check(parser *Parser) bool {
 
 		// 类型检查
 		if !typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
+			nameStr := strings.Join(c.Name, ".") // 将Name转换为点分隔的字符串
 			parser.Error.MissError("Type Error", parser.Lexer.Cursor-1,
 				"cannot use "+arg.Value.Type.Type()+" as type "+
-					defArg.Type.Type()+" in argument to "+c.Name)
+					defArg.Type.Type()+" in argument to "+nameStr)
 			return false
 		}
 
 		arg.Type = defArg.Type
 		arg.Name = defArg.Name
 		arg.Offset = defArg.Offset
-
-		arg.Defind = defArg
 	}
 
-	if err := c.ParseArgsDefault(parser); err != nil {
-		parser.Error.MissError("Call Error", 0, err.Error())
-	}
-
-	// 所有检查通过
 	return true
+}
+
+// ParseCall 解析函数调用
+func (c *CallBlock) ParseCall(p *Parser) {
+	// 解析参数列表 (...)
+	p.Lexer.Skip('(')
+	var token lexer.Token
+
+	// 解析参数直到遇到右括号
+	for {
+		oldCursor := p.Lexer.Cursor // 记录当前位置，用于解析参数表达式
+		// 等待参数分割
+		for {
+			token = p.Lexer.Next()
+
+			if token.Value == ")" {
+				stopCursor := token.Cursor   // 记录参数结束位置
+				p.Lexer.SetCursor(oldCursor) // 回退token，让表达式解析器处理
+
+				argExp := p.ParseExpression(stopCursor)
+				if argExp != nil {
+					c.Args = append(c.Args, &ArgBlock{Value: argExp})
+				}
+				// 消耗右括号
+				p.Lexer.Skip(')')
+				// 结束参数列表
+				return
+			}
+
+			if token.Value == "," && len(c.Args) == 0 {
+				p.Error.MissError("Call Error", token.Cursor, "expected argument before ','")
+			}
+
+			if token.Value == "," {
+				break
+			}
+		}
+
+		stopCursor := token.Cursor   // 记录参数结束位置
+		p.Lexer.SetCursor(oldCursor) // 回退token，让表达式解析器处理
+
+		argExp := p.ParseExpression(stopCursor)
+		if argExp != nil {
+			c.Args = append(c.Args, &ArgBlock{Value: argExp})
+		}
+	}
 }
 
 func (c *CallBlock) Parse(p *Parser) {
 	c.ParseCall(p)
-	c.Node.Ignore = false
-}
-
-func (c *CallBlock) ParseCall(p *Parser) {
-	// 解析括号
-	rightBra := p.FindRightBracket(true)
-	for p.Lexer.Cursor < rightBra {
-		sepCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ","}, rightBra)
-		if sepCursor == -1 {
-			exp := p.ParseExpression(rightBra - 1)
-			arg := &ArgBlock{Value: exp}
-			if arg.Value == nil {
-				break
-			}
-			arg.Type = arg.Value.Type
-			c.Args = append(c.Args, arg)
-			break
-		}
-		arg := &ArgBlock{Value: p.ParseExpression(sepCursor - 1)}
-		arg.Type = arg.Value.Type
-		p.Lexer.Skip(',')
-		c.Args = append(c.Args, arg)
-	}
-	// 查找父级内容，找到定义位置
-	p.Lexer.Skip(')')
-
-	node := &Node{Value: c}
-	c.Node = node
-	p.ThisBlock.AddChild(node)
-	c.Node.Ignore = true
-}
-
-func (c *CallBlock) ParseArgsDefault(p *Parser) error {
-	if len(c.Args) == len(c.Func.Args) {
-		return nil
-	}
-	for i := len(c.Args); i < len(c.Func.Args); i++ {
-		if len(c.Args) <= i && c.Func.Args[i].Default == nil {
-			return errors.New("args length error")
-		} else {
-			c.Args = append(c.Args, &ArgBlock{Value: c.Func.Args[i].Default, Defind: c.Func.Args[i]})
-		}
-	}
-	return nil
+	p.ThisBlock.AddChild(&Node{Value: c})
 }

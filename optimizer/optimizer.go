@@ -5,63 +5,28 @@ import (
 	"cuteify/optimizer/recursion"
 	"cuteify/parser"
 	typeSys "cuteify/type"
-	"fmt"
 )
 
-// AnalyzeRecursion 分析递归
-func AnalyzeRecursion(f *parser.Node) {
-	_ = recursion.DetectRecursion(f, nil)
-}
-
-// OptimizeRecursion 优化递归函数
-// 尝试将递归函数转换为迭代版本
-func OptimizeRecursion(funcNode *parser.Node) {
-	if funcNode == nil {
-		return
-	}
-
-	_ = recursion.DetectRecursionPattern(funcNode, nil)
-	_ = recursion.ConvertToIteration(funcNode)
-}
-
-// ConvertRecursionToIteration 直接转换递归为迭代
+// ConvertRecursionToIteration 转换单个递归函数为迭代版本
+// 返回是否成功转换
 func ConvertRecursionToIteration(funcNode *parser.Node) bool {
 	if funcNode == nil {
 		return false
 	}
 
-	result := recursion.ConvertToIteration(funcNode)
+	info := recursion.TransformRecursionToIteration(funcNode)
 
-	// 如果转换成功，替换原函数的 AST
-	if result.CanConvert && result.ModifiedFunc != nil {
-		if _, ok := funcNode.Value.(*parser.FuncBlock); ok {
-			if _, ok := result.ModifiedFunc.Value.(*parser.FuncBlock); ok {
-				funcNode.Children = result.ModifiedFunc.Children
-				// 展开所有复合赋值运算符
-				ExpandCompoundAssignments(funcNode)
-				return true
-			}
-		}
+	// 如果转换成功，展开所有复合赋值运算符
+	if info != nil && info.IsRecursive {
+		ExpandCompoundAssignments(funcNode)
+		return true
 	}
 
-	return result.CanConvert
+	return false
 }
 
-// OptimizeAllRecursions 优化程序中的所有递归函数
-func OptimizeAllRecursions(programNode *parser.Node) {
-	if programNode == nil {
-		return
-	}
-
-	// 收集所有函数
-	funcs := collectFuncNodes(programNode)
-
-	for _, funcNode := range funcs {
-		OptimizeRecursion(funcNode)
-	}
-}
-
-// ConvertAllRecursions 转换所有递归函数
+// ConvertAllRecursions 转换程序中的所有递归函数
+// 返回每个函数的转换结果（true表示成功转换）
 func ConvertAllRecursions(programNode *parser.Node) []bool {
 	if programNode == nil {
 		return nil
@@ -102,10 +67,6 @@ func ExpandCompoundAssignments(node *parser.Node) {
 	// 处理 ForBlock 的 Increment 字段
 	if forBlock, ok := node.Value.(*parser.ForBlock); ok {
 		if forBlock.Increment != nil {
-			// 临时调试输出
-			if forBlock.Increment.Separator == "++" {
-				fmt.Printf("Found ++ in ForBlock.Increment, Left: %v, Left.Var: %v\n", forBlock.Increment.Left, forBlock.Increment.Left != nil && forBlock.Increment.Left.Var)
-			}
 			expandCompoundAssignmentsInExpression(nil, forBlock.Increment)
 		}
 	}
@@ -122,12 +83,10 @@ func ExpandCompoundAssignments(node *parser.Node) {
 	for _, child := range node.Children {
 		if exp, ok := child.Value.(*parser.Expression); ok {
 			if isCompoundAssignment(exp.Separator) && exp.Left != nil && exp.Left.Var != nil {
-				// 将复合赋值表达式转换为 VarBlock
-				varBlock := convertCompoundAssignmentToVarBlock(child, exp)
+				varBlock := convertCompoundAssignmentToVarBlock(exp)
 				if varBlock != nil {
-					// 替换当前节点
 					newNode := &parser.Node{Value: varBlock, Father: node, Parser: child.Parser}
-					newNode.Children = child.Children // 保留子节点
+					newNode.Children = child.Children
 					for _, subChild := range newNode.Children {
 						subChild.Father = newNode
 					}
@@ -135,12 +94,10 @@ func ExpandCompoundAssignments(node *parser.Node) {
 					continue
 				}
 			} else if isIncDec(exp.Separator) && exp.Left != nil && exp.Left.Var != nil {
-				// 将自增自减表达式转换为 VarBlock
-				varBlock := convertIncDecToVarBlock(child, exp)
+				varBlock := convertIncDecToVarBlock(exp)
 				if varBlock != nil {
-					// 替换当前节点
 					newNode := &parser.Node{Value: varBlock, Father: node, Parser: child.Parser}
-					newNode.Children = child.Children // 保留子节点
+					newNode.Children = child.Children
 					for _, subChild := range newNode.Children {
 						subChild.Father = newNode
 					}
@@ -149,7 +106,6 @@ func ExpandCompoundAssignments(node *parser.Node) {
 				}
 			}
 		} else if varBlock, ok := child.Value.(*parser.VarBlock); ok {
-			// 检查 VarBlock 的 Value 是否包含复合赋值或自增自减
 			if varBlock.Value != nil {
 				expandCompoundAssignmentsInExpression(varBlock, varBlock.Value)
 			}
@@ -160,9 +116,8 @@ func ExpandCompoundAssignments(node *parser.Node) {
 		newChildren = append(newChildren, child)
 	}
 
-	// 更新子节点列表（仅在有变化时）
-	if len(newChildren) > 0 && len(newChildren) == len(node.Children) {
-		// 检查是否有替换发生
+	// 更新子节点列表
+	if len(newChildren) == len(node.Children) {
 		hasReplacement := false
 		for i := range newChildren {
 			if newChildren[i] != node.Children[i] {
@@ -177,7 +132,7 @@ func ExpandCompoundAssignments(node *parser.Node) {
 }
 
 // expandCompoundAssignmentsInExpression 在表达式中递归展开复合赋值运算符
-func expandCompoundAssignmentsInExpression(parentVarBlock *parser.VarBlock, exp *parser.Expression) {
+func expandCompoundAssignmentsInExpression(_ *parser.VarBlock, exp *parser.Expression) {
 	if exp == nil {
 		return
 	}
@@ -276,7 +231,7 @@ func expandCompoundAssignmentsInExpression(parentVarBlock *parser.VarBlock, exp 
 
 // convertCompoundAssignmentToVarBlock 将复合赋值表达式转换为 VarBlock
 // 例如: x *= y 转换为 VarBlock{Name: x, Value: x * y}
-func convertCompoundAssignmentToVarBlock(node *parser.Node, exp *parser.Expression) *parser.VarBlock {
+func convertCompoundAssignmentToVarBlock(exp *parser.Expression) *parser.VarBlock {
 	// 检查是否是复合赋值运算符
 	if !isCompoundAssignment(exp.Separator) {
 		return nil
@@ -335,7 +290,7 @@ func convertCompoundAssignmentToVarBlock(node *parser.Node, exp *parser.Expressi
 
 // convertIncDecToVarBlock 将自增自减表达式转换为 VarBlock
 // 例如: x++ 转换为 VarBlock{Name: x, Value: x + 1}
-func convertIncDecToVarBlock(node *parser.Node, exp *parser.Expression) *parser.VarBlock {
+func convertIncDecToVarBlock(exp *parser.Expression) *parser.VarBlock {
 	// 检查是否是自增自减运算符
 	if !isIncDec(exp.Separator) {
 		return nil

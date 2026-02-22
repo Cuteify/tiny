@@ -130,6 +130,9 @@ func (l *Lexer) GetRawString() string {
 }
 
 func (l *Lexer) SkipSep() {
+	if l.Cursor >= l.TextLength {
+		return
+	}
 	if l.Text[l.Cursor] == ' ' {
 		for i := l.Cursor; i < l.TextLength; i++ {
 			if l.Text[i] != ' ' {
