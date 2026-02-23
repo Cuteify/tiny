@@ -115,9 +115,11 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 
 		switch v := child.Value.(type) {
 		case *parser.VarBlock:
-			// 只为定义的变量分配栈空间
 			if v.IsDefine {
 				varSize := v.Type.Size()
+				if varSize == 0 {
+					varSize = 4
+				}
 				*offset -= varSize
 				v.Offset = *offset
 			}

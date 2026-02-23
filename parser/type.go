@@ -33,8 +33,6 @@ func (t *TypeBlock) Parse(p *Parser) {
 }
 
 func (t *TypeBlock) FindDefine(p *Parser, name Name) typeSys.Type {
-	// 寻找定义位置，如果找不到，则报错，int, float, uint, i64, u64, f64, bool, byte
-	// 从当前作用域开始向上寻找
 	nameStr := name.String()
 	switch nameStr {
 	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte", "i32", "u32", "f32", "i16", "u16", "i8", "u8":
@@ -43,20 +41,53 @@ func (t *TypeBlock) FindDefine(p *Parser, name Name) typeSys.Type {
 	if !utils.CheckName(nameStr) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
-	for {
-		if p.ThisBlock.Father == nil && p.ThisBlock.Value == nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+nameStr)
-		}
-		for i := 0; i < len(p.ThisBlock.Children); i++ {
-			switch p.ThisBlock.Children[i].Value.(type) {
-			case *TypeBlock:
-				tmp := p.ThisBlock.Children[i].Value.(*TypeBlock)
-				if tmp.Name.String() == name.String() {
-					return p.ThisBlock.Children[i].Value.(*TypeBlock).Type
-				}
+
+	for i := 0; i < len(p.Block.Children); i++ {
+		switch p.Block.Children[i].Value.(type) {
+		case *TypeBlock:
+			tmp := p.Block.Children[i].Value.(*TypeBlock)
+			if tmp.Name.String() == name.String() {
+				return p.Block.Children[i].Value.(*TypeBlock).Type
+			}
+		case *StructBlock:
+			sb := p.Block.Children[i].Value.(*StructBlock)
+			if sb.Name == nameStr {
+				return createStructTypeFromBlock(sb, p)
 			}
 		}
 	}
+
+	if currentStruct := p.getCurrentStruct(); currentStruct != nil {
+		if currentStruct.Name == nameStr {
+			return createStructTypeFromBlock(currentStruct, p)
+		}
+	}
+
+	p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need define "+nameStr)
+	return nil
+}
+
+func createStructTypeFromBlock(sb *StructBlock, p *Parser) typeSys.Type {
+	sb.Check(p)
+	return &typeSys.StructType{
+		RType: typeSys.RType{
+			TypeName: sb.Name,
+			RSize:    sb.Size,
+		},
+		StructFields: convertFieldsFromBlock(sb.Fields),
+	}
+}
+
+func convertFieldsFromBlock(fields []*StructField) typeSys.StructFileds {
+	var result typeSys.StructFileds
+	for _, f := range fields {
+		result = append(result, &typeSys.StructField{
+			Name:   f.Name,
+			Type:   f.Type,
+			Offset: f.Offset,
+		})
+	}
+	return result
 }
 
 func (t *TypeBlock) ParseStruct(p *Parser) (name Name, Type typeSys.Type, tag string, Default *Expression) {

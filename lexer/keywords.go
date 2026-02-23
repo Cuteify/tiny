@@ -45,6 +45,7 @@ var (
 		"|":         SEPARATOR,
 		"^":         SEPARATOR,
 		"!":         SEPARATOR,
+		"?":         SEPARATOR,
 		"~":         SEPARATOR,
 		"\"":        SEPARATOR,
 		"'":         SEPARATOR,

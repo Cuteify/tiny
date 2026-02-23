@@ -215,23 +215,40 @@ func (exp *Expression) checkLogicalOp(_ *Parser, left, right *Expression) bool {
 }
 
 func (exp *Expression) checkFieldAccess(p *Parser, left, right *Expression) bool {
-	// 检查左边是否为结构体类型
 	left.Check(p)
 	if left.Type == nil {
-		p.Error.MissError("Field access error", p.Lexer.Cursor, "left operand of '.' must be a struct")
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "left operand of '.' must have a type")
 		return false
 	}
 
-	// 检查右边是否为字段名（变量）
+	structName := left.Type.Type()
+	structBlock := p.FindStruct(structName)
+	if structBlock == nil {
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+		return false
+	}
+
+	structBlock.Check(p)
+
 	if right.Var == nil {
 		p.Error.MissError("Field access error", p.Lexer.Cursor, "right operand of '.' must be a field name")
 		return false
 	}
 
-	// 简单设置表达式类型为未知，后续在编译时再确定具体类型
-	exp.Type = typeSys.GetSystemType("int") // 临时设置为int类型，后续会更新
-	exp.Field = right                       // 标记这是一个字段访问
+	fieldName := right.Var.Name.String()
+	field := structBlock.GetFieldByName(fieldName)
+	if field == nil {
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
+		return false
+	}
 
+	if field.IsPrivate() {
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "field '"+fieldName+"' is private")
+		return false
+	}
+
+	exp.Type = field.Type
+	exp.Field = right
 	exp.checked = true
 	return true
 }
@@ -457,11 +474,21 @@ end:
 }
 
 func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor int) (finish bool) {
-	// 退回到nameToken位置，使用统一的Name函数解析名称
 	p.Lexer.SetCursor(nameToken.Cursor)
-	name, nameStart := p.Name(false) // 不等待，获取当前位置的名称
+	name, nameStart := p.Name(false)
 
-	// 检查是否有后续字符来判断是函数调用还是变量引用
+	if len(name) > 1 {
+		token := p.Lexer.Next()
+		if token.Value == "(" {
+			p.Lexer.SetCursor(token.Cursor - 1)
+			exp.handleMethodCall(p, name)
+			return true
+		}
+		p.Lexer.SetCursor(nameToken.Cursor)
+		exp.handleFieldAccess(p, name)
+		return true
+	}
+
 	if p.Lexer.Cursor+2 > stopCursor {
 		exp.handleVar(p, name)
 		return
@@ -474,16 +501,26 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 	}
 	p.Lexer.SetCursor(token.Cursor)
 
-	// 如果是左括号，则解析函数调用；否则解析变量
 	if token.Type == lexer.SEPARATOR {
 		switch token.Value {
 		case "(":
-			exp.Call = &CallBlock{Name: name} // 直接使用NameParts
+			exp.Call = &CallBlock{Name: name}
 			exp.Call.ParseCall(p)
+			return
+		case ".":
+			p.Lexer.SetCursor(nameStart)
+			checkToken := p.Lexer.Next()
+			if checkToken.Value == "(" {
+				p.Lexer.SetCursor(nameStart)
+				fullName, _ := p.Name(false)
+				exp.handleMethodCall(p, fullName)
+				return
+			}
+			p.Lexer.SetCursor(checkToken.Cursor)
+			exp.handleFieldAccess(p, name)
 			return
 		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 			block := &VarBlock{}
-			// 把指针放到name之前
 			p.Lexer.SetCursor(nameStart)
 			block.ParseVar(p)
 			exp.Var = block
@@ -494,6 +531,150 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 	}
 	exp.handleVar(p, name)
 	return
+}
+
+func (exp *Expression) handleMethodCall(p *Parser, name Name) {
+	fmt.Printf("[DEBUG] handleMethodCall called: name=%v\n", name)
+
+	objName := name[0]
+	objVar := &VarBlock{Name: Name([]string{objName})}
+	objVar.ParseDefine(p)
+
+	methodName := name[1]
+	structName := objVar.Type.Type()
+	structBlock := p.FindStruct(structName)
+	if structBlock == nil {
+		p.Error.MissError("Method Error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+		return
+	}
+
+	var method *FuncBlock
+	for _, m := range structBlock.Methods {
+		if m.Name.Last() == methodName {
+			method = m
+			break
+		}
+	}
+
+	if method == nil {
+		p.Error.MissError("Method Error", p.Lexer.Cursor, "struct '"+structName+"' has no method '"+methodName+"'")
+		return
+	}
+
+	exp.Call = &CallBlock{
+		Name:    Name([]string{structName, methodName}),
+		Func:    method,
+		ThisVar: objVar,
+	}
+	exp.Call.ParseCall(p)
+}
+
+func (exp *Expression) handleFieldAccess(p *Parser, name Name) {
+	objName := name[0]
+
+	if objName == "this" && len(name) > 1 {
+		for current := p.ThisBlock; current != nil; current = current.Father {
+			if funcBlock, ok := current.Value.(*FuncBlock); ok {
+				if funcBlock.Class != nil {
+					currentType := funcBlock.Class
+					structName := currentType.Type()
+					structBlock := p.FindStruct(structName)
+					if structBlock == nil {
+						p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+						return
+					}
+
+					fieldName := name[1]
+					field := structBlock.GetFieldByName(fieldName)
+					if field == nil {
+						p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
+						return
+					}
+
+					thisVar := &VarBlock{
+						Name:     Name([]string{"this"}),
+						Type:     funcBlock.Class,
+						IsDefine: true,
+						Define:   &Node{Value: &VarBlock{Name: Name([]string{"this"}), Type: funcBlock.Class, IsDefine: true}},
+					}
+
+					fieldVar := &VarBlock{
+						Name:     name,
+						Type:     field.Type,
+						IsDefine: true,
+						Define:   &Node{Value: thisVar},
+					}
+
+					leftExp := &Expression{
+						Var:  thisVar,
+						Type: funcBlock.Class,
+					}
+
+					fieldExp := &Expression{
+						Var:  fieldVar,
+						Type: field.Type,
+					}
+
+					exp.Separator = "."
+					exp.Left = leftExp
+					exp.Right = fieldExp
+					exp.Type = field.Type
+					return
+				}
+			}
+		}
+		p.Error.MissError("Field access error", p.Lexer.Cursor, "'this' can only be used in member function")
+		return
+	}
+
+	objVar := &VarBlock{Name: Name([]string{objName})}
+	objVar.ParseDefine(p)
+
+	leftExp := &Expression{
+		Var:  objVar,
+		Type: objVar.Type,
+	}
+
+	currentExp := leftExp
+	currentType := objVar.Type
+
+	for i := 1; i < len(name); i++ {
+		fieldName := name[i]
+		structName := currentType.Type()
+		structBlock := p.FindStruct(structName)
+		if structBlock == nil {
+			p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+			return
+		}
+		field := structBlock.GetFieldByName(fieldName)
+		if field == nil {
+			p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
+			return
+		}
+
+		fieldVar := &VarBlock{
+			Name:     Name([]string{objName, fieldName}),
+			Type:     field.Type,
+			IsDefine: true,
+			Define:   objVar.Define,
+		}
+
+		fieldExp := &Expression{
+			Var:  fieldVar,
+			Type: field.Type,
+		}
+
+		newExp := &Expression{
+			Separator: ".",
+			Left:      currentExp,
+			Right:     fieldExp,
+			Type:      field.Type,
+		}
+		currentExp = newExp
+		currentType = field.Type
+	}
+
+	*exp = *currentExp
 }
 
 func (exp *Expression) handleVar(p *Parser, name Name) {

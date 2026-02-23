@@ -65,6 +65,9 @@ func (n *Node) Check() bool {
 	case *ForBlock:
 		forBlock := n.Value.(*ForBlock)
 		return forBlock.Check(n.Parser)
+	case *StructBlock:
+		structBlock := n.Value.(*StructBlock)
+		return structBlock.Check(n.Parser)
 	}
 	return true
 }
@@ -122,6 +125,10 @@ func (n Name) Path() string {
 
 func (n Name) Last() string {
 	return n[len(n)-1]
+}
+
+func (n Name) First() string {
+	return n[0]
 }
 
 func (n Name) IsPrivate() bool {

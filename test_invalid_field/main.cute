@@ -1,7 +1,0 @@
-struct ValidName {
-    pub invalid/name: int
-}
-
-fn main() int {
-    ret 0
-}

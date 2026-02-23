@@ -5,85 +5,21 @@ section .text
 global _start
 
 ; ==============================
-; Struct: Person
-; Size: 24 bytes
-; Alignment: 8 bytes
-; ==============================
-; Field: name (string) - Offset: 0, Size: 8
-; Field: age (int) - Offset: 8, Size: 4
-; Field: address (string) - Offset: 16, Size: 8
-; ======结构体定义完毕=======
-
-; ==============================
-; Struct: Student
-; Size: 32 bytes
-; Alignment: 8 bytes
-; ==============================
-; Field: name (string) - Offset: 0, Size: 8
-; Field: age (int) - Offset: 8, Size: 4
-; Field: address (string) - Offset: 16, Size: 8
-; Field: grade (int) - Offset: 24, Size: 4
-; Field: score (float) - Offset: 28, Size: 4
-; ======结构体定义完毕=======
-
-; ==============================
-; Struct: EmptyStruct
-; Size: 0 bytes
-; Alignment: 1 bytes
-; ==============================
-; ======结构体定义完毕=======
-
-; ==============================
 ; Function: main
 main:
     push ebp; 保存调用者的栈帧基址
     mov ebp, esp; 设置当前栈帧基址
     push EBX; 保存EBX
-    sub esp, 8; 分配栈空间(8字节)
+    sub esp, 24; 分配栈空间(24字节)
     ; ---- 函数开始 ----
+    mov DWORD[ebp-12], 10; 设置变量p.x
+    mov DWORD[ebp-8], 20; 设置变量p.y
+    mov DWORD[ebp-24], 1; 设置变量cp.x
+    mov DWORD[ebp-20], 2; 设置变量cp.y
+    mov DWORD[ebp-16], 255; 设置变量cp.color
     mov EAX, 0; return值存入EAX
     ; ---- 退出函数 ----
-    add esp, 8; 清理局部变量栈空间(8字节)
-    pop EBX; 恢复EBX
-    leave
-    ret
-
-; ======函数完毕=======
-
-
-; ==============================
-; Struct: Person
-; Size: 24 bytes
-; Alignment: 8 bytes
-; ==============================
-; Field: name (string) - Offset: 0, Size: 8
-; Field: age (int) - Offset: 8, Size: 4
-; Field: address (string) - Offset: 16, Size: 8
-; ======结构体定义完毕=======
-
-; ==============================
-; Struct: Student
-; Size: 32 bytes
-; Alignment: 8 bytes
-; ==============================
-; Field: name (string) - Offset: 0, Size: 8
-; Field: age (int) - Offset: 8, Size: 4
-; Field: address (string) - Offset: 16, Size: 8
-; Field: grade (int) - Offset: 24, Size: 4
-; Field: score (float) - Offset: 28, Size: 4
-; ======结构体定义完毕=======
-
-; ==============================
-; Function: main
-main:
-    push ebp; 保存调用者的栈帧基址
-    mov ebp, esp; 设置当前栈帧基址
-    push EBX; 保存EBX
-    sub esp, 8; 分配栈空间(8字节)
-    ; ---- 函数开始 ----
-    mov EAX, 0; return值存入EAX
-    ; ---- 退出函数 ----
-    add esp, 8; 清理局部变量栈空间(8字节)
+    add esp, 24; 清理局部变量栈空间(24字节)
     pop EBX; 恢复EBX
     leave
     ret

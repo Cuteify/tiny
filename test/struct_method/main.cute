@@ -1,0 +1,17 @@
+struct Point {
+    x: int
+    y: int
+}
+
+fn Point.move(self: Point, dx: int, dy: int) void {
+}
+
+fn main() int {
+    var p1: Point
+    p1.x = 10
+    p1.y = 20
+    
+    p1.move(5, 5)
+    
+    ret 0
+}

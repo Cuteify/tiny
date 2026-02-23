@@ -5,18 +5,20 @@ import (
 	errorUtil "cuteify/error"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
+	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strings"
 )
 
 type Parser struct {
-	Block       *Node // block
-	ThisBlock   *Node // 当前block
-	Lexer       *lexer.Lexer
-	BracketsNum int
-	Error       *errorUtil.Error
-	Package     *packageFmt.Info
-	DontBack    int
+	Block         *Node
+	ThisBlock     *Node
+	Lexer         *lexer.Lexer
+	BracketsNum   int
+	Error         *errorUtil.Error
+	Package       *packageFmt.Info
+	DontBack      int
+	CurrentStruct *StructBlock
 }
 
 func (p *Parser) Next() (finish bool) {
@@ -84,15 +86,24 @@ func (p *Parser) processControlToken(code lexer.Token) {
 }
 
 func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
-	// 退回到beforeCursor位置，然后使用统一的Name函数解析名称
 	p.Lexer.SetCursor(beforeCursor)
-	name, _ := p.Name(false) // 不等待，获取当前位置的名称
+	name, _ := p.Name(false)
 
-	// 继续处理后续内容
 	code2 := p.Lexer.Next()
-	if code2.Type != lexer.SEPARATOR {
-		beforeCursor++
-		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+name.String()+"' is not a valid expression")
+
+	if code2.Value == "." {
+		checkToken := p.Lexer.Next()
+		if checkToken.Value == "(" {
+			p.Lexer.SetCursor(code2.Cursor)
+			exp := &Expression{}
+			fullName, _ := p.Name(false)
+			exp.handleMethodCall(p, fullName)
+			return
+		}
+		p.Lexer.SetCursor(code2.Cursor)
+		exp := &Expression{}
+		exp.handleFieldAccess(p, name)
+		return
 	}
 
 	switch code2.Value {
@@ -117,16 +128,17 @@ func (p *Parser) processVarToken(beforeCursor int) {
 }
 
 func (p *Parser) processTypeToken(code lexer.Token) {
-	// 根据类型关键字处理不同的类型定义
 	switch code.Value {
 	case "struct":
 		block := &StructBlock{}
 		block.Parse(p)
+		p.AddChild(&Node{Value: block})
 	case "interface":
 		block := &InterfaceBlock{}
 		block.Parse(p)
+		p.AddChild(&Node{Value: block})
 	default:
-		p.processDefaultToken(code) // 其他类型暂不处理
+		p.processDefaultToken(code)
 	}
 }
 
@@ -329,13 +341,37 @@ func (p *Parser) Parse() *Node {
 }
 
 func (p *Parser) Find(_name Name, dstType any) *Node {
-	// 查找包名
+	if len(_name) == 2 {
+		objName := _name[0]
+		methodName := _name[1]
+
+		var varType typeSys.Type
+		for _, child := range p.Block.Children {
+			if vb, ok := child.Value.(*VarBlock); ok {
+				if vb.Name.First() == objName {
+					varType = vb.Type
+					break
+				}
+			}
+		}
+
+		if varType != nil {
+			structName := varType.Type()
+			structBlock := p.FindStruct(structName)
+			if structBlock != nil && len(structBlock.Methods) > 0 {
+				for _, method := range structBlock.Methods {
+					if method.Name.Last() == methodName {
+						return &Node{Value: method}
+					}
+				}
+			}
+		}
+	}
+
 	var children []*Node
 
-	// 为了不改变原始名称，复制一份
 	name := _name.Fork()
 
-	// 修补包名为路径
 	if name.IsPath() {
 		name.FixPath(p.Package)
 		children = p.Package.AST.(*Node).Children
@@ -366,4 +402,22 @@ func (p *Parser) Find(_name Name, dstType any) *Node {
 	}
 	p.Lexer.Error.MissError("func", p.Lexer.Cursor-1, "not found function '"+name.String()+"'")
 	return nil
+}
+
+func (p *Parser) FindStruct(name string) *StructBlock {
+	if p.CurrentStruct != nil && p.CurrentStruct.Name == name {
+		return p.CurrentStruct
+	}
+	for _, child := range p.Block.Children {
+		if sb, ok := child.Value.(*StructBlock); ok {
+			if sb.Name == name {
+				return sb
+			}
+		}
+	}
+	return nil
+}
+
+func (p *Parser) getCurrentStruct() *StructBlock {
+	return p.CurrentStruct
 }
