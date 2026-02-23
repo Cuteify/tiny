@@ -7,99 +7,110 @@ import (
 	"strings"
 )
 
-// FieldVisibility 字段可见性
-type FieldVisibility int
+type FieldAccess int
 
 const (
-	Public    FieldVisibility = iota // 公共字段
-	Private                          // 私有字段
-	Protected                        // 受保护字段
+	AccessPublic FieldAccess = iota
+	AccessPrivate
+	AccessReadOnly
+	AccessWriteOnly
 )
 
-// StructTag 结构体标签
 type StructTag struct {
 	Key   string
 	Value string
 }
 
-// StructField 结构体字段
 type StructField struct {
-	Name         string          // 字段名称
-	Type         typeSys.Type    // 字段类型
-	DefaultValue *Expression     // 默认值
-	Tags         []StructTag     // 标签
-	Visibility   FieldVisibility // 可见性
-	Offset       int             // 内存偏移
-	Size         int             // 字段大小
-	Alignment    int             // 对齐要求
-	EndCursor    int             // 结束游标
-	StartCursor  int             // 开始游标
+	Name         string
+	Type         typeSys.Type
+	DefaultValue *Expression
+	Tags         []StructTag
+	Offset       int
+	Size         int
+	Alignment    int
+	EndCursor    int
+	StartCursor  int
+	Access       FieldAccess
 }
 
-// StructBlock 结构体定义
 type StructBlock struct {
-	Name        string         // 结构体名称
-	Parents     []string       // 继承列表 : A + B
-	Fields      []*StructField // 字段列表
+	Name        string
+	Parents     []string
+	Fields      []*StructField
+	Methods     []*FuncBlock
 	StartCursor int
 	EndCursor   int
-	Size        int // 结构体总大小
-	Alignment   int // 对齐要求
+	Size        int
+	Alignment   int
+	Checked     bool
 }
 
-// Parse 解析结构体
+func (f *StructField) IsPrivate() bool {
+	return f.Access == AccessPrivate
+}
+
+func (f *StructField) IsReadOnly() bool {
+	return f.Access == AccessReadOnly
+}
+
+func (f *StructField) IsWriteOnly() bool {
+	return f.Access == AccessWriteOnly
+}
+
+func (f *StructField) IsPublic() bool {
+	return f.Access == AccessPublic
+}
+
+func (f *StructField) CanRead() bool {
+	return f.Access == AccessPublic || f.Access == AccessReadOnly
+}
+
+func (f *StructField) CanWrite() bool {
+	return f.Access == AccessPublic || f.Access == AccessWriteOnly
+}
+
 func (s *StructBlock) Parse(p *Parser) {
-	// 解析结构体名称
 	token := p.Lexer.Next()
 	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
 		p.Error.MissError("Struct Error", token.Cursor, "struct name required")
 	}
 	s.Name = token.Value
 
-	// 验证结构体名称
 	if !utils.CheckName(s.Name) {
 		p.Error.MissError("Struct Error", token.Cursor, "invalid struct name: '"+s.Name+"'")
 	}
 
 	s.StartCursor = p.Lexer.Cursor
 
-	// 检查是否有继承关系（冒号 : 表示继承）
-	nextToken := p.Lexer.Next() // 获取下一个token
+	nextToken := p.Lexer.Next()
 	if nextToken.Type == lexer.SEPARATOR && nextToken.Value == ":" {
-		// 有继承关系，解析继承
 		s.Parents = p.parseStructInheritance()
-		// 解析完继承后，应该读取到"{"
 		openBraceToken := p.Lexer.Next()
 		if openBraceToken.Value != "{" {
 			p.Error.MissError("Struct Error", openBraceToken.Cursor, "expected '{'")
 		}
 	} else {
-		// 没有继承关系，检查是否是"{"
 		if nextToken.Value != "{" {
 			p.Error.MissError("Struct Error", nextToken.Cursor, "expected '{'")
 		}
-		// 游标已经在"{"位置，无需回退
 	}
 
-	// 解析字段
+	p.CurrentStruct = s
 	p.parseStructFields(s)
-
-	// 计算内存布局
+	p.CurrentStruct = nil
 	s.CalculateMemoryLayout()
 }
 
-// parseStructInheritance 解析结构体继承关系
 func (p *Parser) parseStructInheritance() []string {
 	var parents []string
 
-	// 解析第一个父类
 	token := p.Lexer.Next()
 	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
 		p.Error.MissError("Struct Error", token.Cursor, "parent struct name required")
 	}
 	parents = append(parents, token.Value)
 
-	// 只允许用 + 分隔多个父类
 	for {
 		token = p.Lexer.Next()
 		if token.Value != "+" {
@@ -117,9 +128,7 @@ func (p *Parser) parseStructInheritance() []string {
 	return parents
 }
 
-// parseStructFields 解析结构体字段
 func (p *Parser) parseStructFields(s *StructBlock) {
-	// 解析字段直到 }
 	for {
 		token := p.Lexer.Next()
 		if token.IsEmpty() {
@@ -131,113 +140,162 @@ func (p *Parser) parseStructFields(s *StructBlock) {
 			break
 		}
 
-		// 跳过分隔符（空格、换行等）
-		if token.Type == lexer.SEPARATOR {
+		if token.Type == lexer.FUNC {
+			method := p.parseStructMethod(s)
+			if method != nil {
+				s.Methods = append(s.Methods, method)
+			}
 			continue
 		}
 
-		// 如果是可见性修饰符
-		var visibility FieldVisibility = Public // 默认公共
-		var fieldStartToken lexer.Token         // 用于存储字段名token
-
-		if token.Type == lexer.NAME {
-			vis := p.parseFieldVisibility(token)
-			if vis != -1 {
-				visibility = vis
-				// 如果是可见性修饰符，获取下一个token作为字段名
-				fieldStartToken = p.Lexer.Next()
-			} else {
-				// 不是可见性修饰符，这个token就是字段名
-				fieldStartToken = token
+		if token.Type == lexer.SEPARATOR {
+			if token.Value == "!" || token.Value == "?" {
+				p.Lexer.SetCursor(token.Cursor)
+				field := p.parseStructField()
+				if field != nil {
+					s.Fields = append(s.Fields, field)
+				}
+				continue
 			}
-		} else {
-			// 不是可见性修饰符，这个token就是字段名
-			fieldStartToken = token
+			continue
 		}
 
-		// 设置游标到字段名位置
-		p.Lexer.SetCursor(fieldStartToken.Cursor)
-		// 解析字段
+		p.Lexer.SetCursor(token.Cursor)
 		field := p.parseStructField()
 		if field != nil {
-			field.Visibility = visibility
 			s.Fields = append(s.Fields, field)
 		}
 	}
 }
 
-// parseStructField 解析单个结构体字段
+func (p *Parser) parseStructMethod(s *StructBlock) *FuncBlock {
+	method := &FuncBlock{
+		Class: createStructType(s),
+	}
+
+	code := p.Lexer.Next()
+	if code.Type != lexer.NAME {
+		p.Error.MissError("Method Error", p.Lexer.Cursor, "method name required")
+		return nil
+	}
+
+	method.Name = Name([]string{s.Name, code.Value})
+
+	method.ParseArgs(p)
+
+	code = p.Lexer.Next()
+	if code.Type == lexer.NAME {
+		method.Return = []typeSys.Type{typeSys.GetSystemType(code.Value)}
+	} else {
+		p.Lexer.SetCursor(code.Cursor)
+		method.Return = []typeSys.Type{}
+	}
+
+	p.Wait("{")
+	nodeTmp := &Node{Value: method}
+	p.ThisBlock.AddChild(nodeTmp)
+	p.ThisBlock = nodeTmp
+
+	p.parseMethodBody()
+
+	return method
+}
+
+func (p *Parser) parseMethodBody() {
+	braceCount := 1
+	for {
+		token := p.Lexer.Next()
+		if token.IsEmpty() {
+			p.Error.MissError("Method Error", p.Lexer.Cursor, "unexpected EOF in method body")
+			return
+		}
+
+		if token.Value == "{" {
+			braceCount++
+		} else if token.Value == "}" {
+			braceCount--
+			if braceCount == 0 {
+				p.ThisBlock = p.ThisBlock.Father
+				return
+			}
+		}
+
+		p.Lexer.SetCursor(token.Cursor)
+		p.Next()
+	}
+}
+
 func (p *Parser) parseStructField() *StructField {
-	field := &StructField{}
+	field := &StructField{Access: AccessPublic}
 	field.StartCursor = p.Lexer.Cursor
 
-	// 解析字段名称
 	token := p.Lexer.Next()
+
+	if token.Type == lexer.SEPARATOR {
+		switch token.Value {
+		case "!":
+			field.Access = AccessReadOnly
+		case "?":
+			field.Access = AccessWriteOnly
+		default:
+			p.Error.MissError("Struct Error", token.Cursor, "invalid field prefix: '"+token.Value+"'")
+		}
+		token = p.Lexer.Next()
+	}
+
 	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
 		p.Error.MissError("Struct Error", token.Cursor, "field name required")
 	}
-	field.Name = token.Value
 
-	// 验证字段名称
-	if !utils.CheckName(field.Name) {
-		p.Error.MissError("Struct Error", token.Cursor, "invalid field name: '"+field.Name+"'")
+	p.Lexer.SetCursor(token.Cursor)
+	name, _ := p.Name(false)
+	fieldName := name.String()
+
+	if !utils.CheckName(fieldName) {
+		p.Error.MissError("Struct Error", token.Cursor, "invalid field name: '"+fieldName+"'")
 	}
 
-	// 期望 :
+	field.Name = fieldName
+
+	if len(fieldName) > 0 && fieldName[0] == '_' {
+		field.Access = AccessPrivate
+	}
+
 	token = p.Lexer.Next()
 	if token.Value != ":" {
 		p.Error.MissError("Struct Error", token.Cursor, "expected ':' after field name")
 	}
 
-	// 解析类型（简单实现：只支持基本类型）
 	typeToken := p.Lexer.Next()
 	if typeToken.Type != lexer.NAME && typeToken.Type != lexer.IDENTIFIER {
 		p.Error.MissError("Struct Error", typeToken.Cursor, "field type required")
 	}
 	field.Type = p.findType(typeToken.Value)
 
-	// 检查是否有标签或默认值
 	nextToken := p.Lexer.Next()
 	switch nextToken.Value {
-	case "`": // 标签
-		p.Lexer.SetCursor(nextToken.Cursor) // 回退，让标签解析函数处理
+	case "`":
+		p.Lexer.SetCursor(nextToken.Cursor)
 		field.Tags = p.parseStructTags()
-
-		// 检查是否有默认值
 		nextToken = p.Lexer.Next()
 		if nextToken.Value == "=" {
 			field.DefaultValue = p.ParseExpression(p.FindEndCursor())
 		} else {
-			p.Lexer.SetCursor(nextToken.Cursor) // 回退
+			p.Lexer.SetCursor(nextToken.Cursor)
 		}
-	case "=": // 默认值
+	case "=":
 		field.DefaultValue = p.ParseExpression(p.FindEndCursor())
-	case ";", "\n", "}": // 字段结束
-		p.Lexer.SetCursor(nextToken.Cursor) // 回退
+	case ";", "\n", "}":
+		p.Lexer.SetCursor(nextToken.Cursor)
 		return field
 	default:
-		p.Lexer.SetCursor(nextToken.Cursor) // 回退
+		p.Lexer.SetCursor(nextToken.Cursor)
 		return field
 	}
 
 	return field
 }
 
-// parseFieldVisibility 解析字段可见性
-func (p *Parser) parseFieldVisibility(token lexer.Token) FieldVisibility {
-	switch token.Value {
-	case "pub":
-		return Public
-	case "priv":
-		return Private
-	case "prot":
-		return Protected
-	default:
-		return -1 // 不是可见性修饰符
-	}
-}
-
-// parseStructTags 解析结构体标签
 func (p *Parser) parseStructTags() []StructTag {
 	var tags []StructTag
 
@@ -251,19 +309,16 @@ func (p *Parser) parseStructTags() []StructTag {
 			break
 		}
 
-		// 解析 key:value
 		if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
 			p.Error.MissError("Struct Error", token.Cursor, "tag key required")
 		}
 		key := token.Value
 
-		// 期望 :
 		token = p.Lexer.Next()
 		if token.Value != ":" {
 			p.Error.MissError("Struct Error", token.Cursor, "expected ':' after tag key")
 		}
 
-		// 解析 value（字符串或标识符）
 		token = p.Lexer.Next()
 		if token.Type == lexer.STRING {
 			value := strings.Trim(token.Value, "\"")
@@ -278,18 +333,79 @@ func (p *Parser) parseStructTags() []StructTag {
 	return tags
 }
 
-// findType 查找类型
 func (p *Parser) findType(typeName string) typeSys.Type {
 	switch typeName {
-	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte":
+	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte",
+		"i32", "u32", "f32", "i16", "u16", "i8", "u8":
 		return typeSys.GetSystemType(typeName)
 	default:
-		// TODO: 支持自定义类型
+		if sb := p.FindStruct(typeName); sb != nil {
+			return createStructType(sb)
+		}
 		return typeSys.GetSystemType("int")
 	}
 }
 
-// CalculateMemoryLayout 计算结构体的内存布局
+func createStructType(sb *StructBlock) typeSys.Type {
+	return &typeSys.StructType{
+		RType: typeSys.RType{
+			TypeName: sb.Name,
+			RSize:    sb.Size,
+		},
+		StructFields: convertStructFields(sb.Fields),
+	}
+}
+
+func convertStructFields(fields []*StructField) typeSys.StructFileds {
+	var result typeSys.StructFileds
+	for _, f := range fields {
+		result = append(result, &typeSys.StructField{
+			Name:   f.Name,
+			Type:   f.Type,
+			Offset: f.Offset,
+		})
+	}
+	return result
+}
+
+func (s *StructBlock) Check(p *Parser) bool {
+	if s.Checked {
+		return true
+	}
+	s.Checked = true
+
+	if len(s.Parents) > 0 {
+		s.processInheritance(p)
+	}
+
+	s.CalculateMemoryLayout()
+	return true
+}
+
+func (s *StructBlock) processInheritance(p *Parser) {
+	var inheritedFields []*StructField
+
+	for _, parentName := range s.Parents {
+		parent := p.FindStruct(parentName)
+		if parent == nil {
+			p.Error.MissError("Struct Error", s.StartCursor,
+				"parent struct '"+parentName+"' not found")
+			continue
+		}
+		parent.Check(p)
+		for _, field := range parent.Fields {
+			newField := &StructField{
+				Name:   field.Name,
+				Type:   field.Type,
+				Tags:   field.Tags,
+				Access: field.Access,
+			}
+			inheritedFields = append(inheritedFields, newField)
+		}
+	}
+	s.Fields = append(inheritedFields, s.Fields...)
+}
+
 func (s *StructBlock) CalculateMemoryLayout() {
 	offset := 0
 	maxAlignment := 1
@@ -299,49 +415,46 @@ func (s *StructBlock) CalculateMemoryLayout() {
 		if field.Type != nil {
 			size := field.Type.Size()
 			if size == 0 {
-				alignment = 1 // 防止除零错误
+				alignment = 1
 			} else {
 				alignment = size
 			}
 		} else {
-			alignment = 1 // 默认对齐
+			alignment = 1
 		}
 		field.Alignment = alignment
 		if field.Alignment > maxAlignment {
 			maxAlignment = field.Alignment
 		}
 
-		// 对齐偏移
 		if field.Alignment > 0 {
 			padding := (field.Alignment - (offset % field.Alignment)) % field.Alignment
 			offset += padding
 		}
 		field.Offset = offset
 
-		// 更新偏移量
 		if field.Type != nil {
 			field.Size = field.Type.Size()
 			if field.Size == 0 {
-				field.Size = 1 // 防止大小为0
+				field.Size = 1
 			}
 		} else {
-			field.Size = 1 // 默认大小
+			field.Size = 1
 		}
 		offset += field.Size
 		typeStr := ""
 		if field.Type != nil {
 			typeStr = field.Type.Type()
 		} else {
-			typeStr = "unknown" // 默认类型字符串
+			typeStr = "unknown"
 		}
-		field.EndCursor = field.StartCursor + len(field.Name) + len(typeStr) + 5 // rough estimation
+		field.EndCursor = field.StartCursor + len(field.Name) + len(typeStr) + 5
 	}
 
 	s.Size = offset
 	s.Alignment = maxAlignment
 }
 
-// GetFieldByName 根据名称获取字段
 func (s *StructBlock) GetFieldByName(name string) *StructField {
 	for _, field := range s.Fields {
 		if field.Name == name {
@@ -351,39 +464,34 @@ func (s *StructBlock) GetFieldByName(name string) *StructField {
 	return nil
 }
 
-// HasField 检查结构体是否包含特定字段
 func (s *StructBlock) HasField(name string) bool {
 	return s.GetFieldByName(name) != nil
 }
 
-// GetPublicFields 获取所有公共字段
 func (s *StructBlock) GetPublicFields() []*StructField {
 	var publicFields []*StructField
 	for _, field := range s.Fields {
-		if field.Visibility == Public {
+		if field.Access == AccessPublic {
 			publicFields = append(publicFields, field)
 		}
 	}
 	return publicFields
 }
 
-// GetPrivateFields 获取所有私有字段
 func (s *StructBlock) GetPrivateFields() []*StructField {
 	var privateFields []*StructField
 	for _, field := range s.Fields {
-		if field.Visibility == Private {
+		if field.Access == AccessPrivate {
 			privateFields = append(privateFields, field)
 		}
 	}
 	return privateFields
 }
 
-// GetSize 获取结构体大小
 func (s *StructBlock) GetSize() int {
 	return s.Size
 }
 
-// GetAlignment 获取对齐要求
 func (s *StructBlock) GetAlignment() int {
 	return s.Alignment
 }

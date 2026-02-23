@@ -7,15 +7,16 @@ import (
 )
 
 type VarBlock struct {
-	Name        Name
-	IsConst     bool
-	Value       *Expression
-	IsDefine    bool
-	Define      *Node
-	Used        bool
-	StartCursor int
-	Offset      int
-	Type        typeSys.Type
+	Name          Name
+	IsConst       bool
+	Value         *Expression
+	IsDefine      bool
+	IsInitialized bool
+	Define        *Node
+	Used          bool
+	StartCursor   int
+	Offset        int
+	Type          typeSys.Type
 }
 
 func (v *VarBlock) Parse(p *Parser) {
@@ -41,10 +42,16 @@ func (v *VarBlock) ParseVar(p *Parser) {
 
 func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 	v.StartCursor = p.Lexer.Cursor
-	v.Name = Name([]string{code.Value})
-	if !utils.CheckName(v.Name.String()) {
+
+	p.Lexer.SetCursor(code.Cursor)
+	name, _ := p.Name(false)
+	v.Name = name
+
+	if !utils.CheckName(v.Name.First()) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
+
+	v.ParseDefine(p)
 
 	code = p.Lexer.Next()
 
@@ -52,10 +59,9 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '=', ':=' or other")
 	}
 
-	// 判断自增/自减
 	if code.Value == "++" || code.Value == "--" {
 		valPart := &Expression{
-			Var: &VarBlock{Name: v.Name},
+			Var: &VarBlock{Name: Name([]string{v.Name.First()})},
 		}
 
 		v.Value = &Expression{
@@ -68,14 +74,11 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 		v.Value.Right.Father = v.Value
 
 		valPart.Var.ParseDefine(p)
-		v.ParseDefine(p)
 		return
 	}
 
-	// 对数据进行解析
 	v.Value = p.ParseExpression(stopCursor)
 
-	// 对数据后处理
 	switch code.Value {
 	case ":=":
 		v.IsDefine = true
@@ -84,7 +87,7 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 		v.removeOldStaticVal(p)
 	case "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=":
 		valPart := &Expression{
-			Var: &VarBlock{Name: v.Name},
+			Var: &VarBlock{Name: Name([]string{v.Name.First()})},
 		}
 
 		v.Value = &Expression{
@@ -138,9 +141,11 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 
 	code = p.Lexer.Next()
 	if code.Type == lexer.SEPARATOR && code.Value == "=" {
+		v.IsInitialized = true
 		v.Value = p.ParseExpression(stopCursor)
 	} else {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
+		v.IsInitialized = false
+		p.Lexer.SetCursor(code.Cursor)
 	}
 }
 
@@ -174,7 +179,15 @@ func (v *VarBlock) parseVarName(p *Parser, code lexer.Token) {
 func (v *VarBlock) ParseDefine(p *Parser) bool {
 	oldThisBlock := p.ThisBlock
 
-	if !utils.CheckName(v.Name.String()) {
+	if len(v.Name) > 1 && v.Name.First() == "this" {
+		return v.handleThisFieldAccess(p)
+	}
+
+	if v.Name.First() == "this" {
+		return v.handleThisKeyword(p)
+	}
+
+	if !utils.CheckName(v.Name.First()) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 
@@ -185,6 +198,65 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	}
 
 	return v.findLocalVar(p, oldThisBlock)
+}
+
+func (v *VarBlock) handleThisFieldAccess(p *Parser) bool {
+	for current := p.ThisBlock; current != nil; current = current.Father {
+		if funcBlock, ok := current.Value.(*FuncBlock); ok {
+			if funcBlock.Class != nil {
+				structName := funcBlock.Class.Type()
+				structBlock := p.FindStruct(structName)
+				if structBlock == nil {
+					p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+					return false
+				}
+
+				currentType := funcBlock.Class
+				for i := 1; i < len(v.Name); i++ {
+					fieldName := v.Name[i]
+					field := structBlock.GetFieldByName(fieldName)
+					if field == nil {
+						p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
+						return false
+					}
+					currentType = field.Type
+				}
+
+				v.Type = currentType
+				v.Offset = 8
+				v.Define = &Node{Value: &VarBlock{
+					Name:     Name([]string{"this"}),
+					Type:     funcBlock.Class,
+					IsDefine: true,
+					Offset:   8,
+				}}
+				return true
+			}
+		}
+	}
+	p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'this' can only be used in member function")
+	return false
+}
+
+func (v *VarBlock) handleThisKeyword(p *Parser) bool {
+	for current := p.ThisBlock; current != nil; current = current.Father {
+		if funcBlock, ok := current.Value.(*FuncBlock); ok {
+			if funcBlock.Class != nil {
+				v.Type = funcBlock.Class
+				v.IsDefine = true
+				v.Offset = 8
+				v.Define = &Node{Value: &VarBlock{
+					Name:     Name([]string{"this"}),
+					Type:     funcBlock.Class,
+					IsDefine: true,
+					Offset:   8,
+				}}
+				return true
+			}
+		}
+	}
+	p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'this' can only be used in member function")
+	return false
 }
 
 func (v *VarBlock) findGlobalVar(p *Parser) bool {
@@ -230,12 +302,16 @@ func (v *VarBlock) searchInBlock(p *Parser) bool {
 }
 
 func (v *VarBlock) searchInChildren(p *Parser) bool {
+	searchName := v.Name.First()
 	for i := 0; i < len(p.ThisBlock.Children); i++ {
 		if tmp, ok := p.ThisBlock.Children[i].Value.(*VarBlock); ok {
-			if tmp.Name.String() == v.Name.String() && tmp.IsDefine {
+			if tmp.Name.String() == searchName && tmp.IsDefine {
 				v.Define = p.ThisBlock.Children[i]
 				v.Type = tmp.Type
 				tmp.Check(p)
+				if len(v.Name) > 1 {
+					v.resolveFieldAccess(p)
+				}
 				return true
 			}
 		}
@@ -243,13 +319,38 @@ func (v *VarBlock) searchInChildren(p *Parser) bool {
 	return false
 }
 
+func (v *VarBlock) resolveFieldAccess(p *Parser) {
+	currentType := v.Type
+	for i := 1; i < len(v.Name); i++ {
+		fieldName := v.Name[i]
+		structName := currentType.Type()
+		structBlock := p.FindStruct(structName)
+		if structBlock == nil {
+			p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
+			return
+		}
+		structBlock.Check(p)
+		field := structBlock.GetFieldByName(fieldName)
+		if field == nil {
+			p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
+			return
+		}
+		currentType = field.Type
+	}
+	v.Type = currentType
+}
+
 func (v *VarBlock) searchInFuncArgs(p *Parser) bool {
+	searchName := v.Name.First()
 	if funcBlock, ok := p.ThisBlock.Value.(*FuncBlock); ok {
 		for j := 0; j < len(funcBlock.Args); j++ {
-			if funcBlock.Args[j].Name.String() == v.Name.String() {
+			if funcBlock.Args[j].Name.String() == searchName {
 				arg := funcBlock.Args[j]
 				v.Define = &Node{Value: arg}
 				v.Type = arg.Type
+				if len(v.Name) > 1 {
+					v.resolveFieldAccess(p)
+				}
 				return true
 			}
 		}
@@ -258,12 +359,16 @@ func (v *VarBlock) searchInFuncArgs(p *Parser) bool {
 }
 
 func (v *VarBlock) searchInGlobal(p *Parser) bool {
+	searchName := v.Name.First()
 	for i := 0; i < len(p.Block.Children); i++ {
 		if tmp, ok := p.Block.Children[i].Value.(*VarBlock); ok {
-			if tmp.Name.String() == v.Name.String() && tmp.IsDefine {
+			if tmp.Name.String() == searchName && tmp.IsDefine {
 				v.Define = p.Block.Children[i]
 				v.Type = tmp.Type
 				tmp.Check(p)
+				if len(v.Name) > 1 {
+					v.resolveFieldAccess(p)
+				}
 				return true
 			}
 		}
@@ -271,7 +376,7 @@ func (v *VarBlock) searchInGlobal(p *Parser) bool {
 	return false
 }
 
-func (v *VarBlock) removeOldStaticVal(p *Parser) { // 多次赋值时，删除旧的静态值，内联优化器
+func (v *VarBlock) removeOldStaticVal(p *Parser) {
 	if v.Define == nil {
 		v.ParseDefine(p)
 	}
@@ -280,9 +385,10 @@ func (v *VarBlock) removeOldStaticVal(p *Parser) { // 多次赋值时，删除�
 	}
 	oldThisBlock := p.ThisBlock
 
-	if !utils.CheckName(v.Name.String()) {
+	if !utils.CheckName(v.Name.First()) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
+	searchName := v.Name.First()
 	for {
 		for i := len(p.ThisBlock.Children) - 1; i >= 0; i-- {
 			if p.ThisBlock.Children[i].Ignore {
@@ -293,7 +399,7 @@ func (v *VarBlock) removeOldStaticVal(p *Parser) { // 多次赋值时，删除�
 				goto end
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
-				if tmp.Name.String() == v.Name.String() && tmp.Value.IsConst() {
+				if tmp.Name.String() == searchName && tmp.Value != nil && tmp.Value.IsConst() {
 					if i == len(p.ThisBlock.Children)-1 {
 						p.ThisBlock.Children = p.ThisBlock.Children[:i]
 					} else {
@@ -310,17 +416,19 @@ end:
 
 func (v *VarBlock) Check(p *Parser) bool {
 	if v.IsDefine {
-		if ok := v.Value.Check(p); !ok {
-			return false
-		}
-		if v.Value.Type == nil {
-			p.Error.MissError("Type Error", p.Lexer.Cursor, "need type")
-		}
-		if v.Type == nil {
-			v.Type = v.Value.Type
-		}
-		if !typeSys.AutoType(v.Value.Type, v.Type, true) {
-			p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
+		if v.Value != nil {
+			if ok := v.Value.Check(p); !ok {
+				return false
+			}
+			if v.Value.Type == nil {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type")
+			}
+			if v.Type == nil {
+				v.Type = v.Value.Type
+			}
+			if !typeSys.AutoType(v.Value.Type, v.Type, true) {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
+			}
 		}
 	} else {
 		if v.Define == nil {
@@ -329,53 +437,19 @@ func (v *VarBlock) Check(p *Parser) bool {
 		if v.Define == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name.String())
 		}
-		// 检查是否为全局变量，如果是则进行类型检查
-		if v.Define.Father != nil && v.Define.Father.Father == nil {
-			// 全局变量定义
-			if v.Value == nil {
-				if _, ok := v.Define.Value.(*VarBlock); ok {
-					v.Value = v.Define.Value.(*VarBlock).Value
-				} else {
-					v.Value = v.Define.Value.(*ArgBlock).Value
-				}
-			} else {
-				// 修改全局变量，需要进行类型检查
-				if ok := v.Value.Check(p); !ok {
-					return false
-				}
-			}
-		} else {
-			// 局部变量
-			if v.Value == nil {
-				if _, ok := v.Define.Value.(*VarBlock); ok {
-					v.Value = v.Define.Value.(*VarBlock).Value
-				} else {
-					v.Value = v.Define.Value.(*ArgBlock).Value
-				}
-			} else {
-				if ok := v.Value.Check(p); !ok {
-					return false
-				}
-			}
+		if v.Value == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value for "+v.Name.String())
 		}
-		if varDef, ok := v.Define.Value.(*VarBlock); ok {
-			v.Type = varDef.Type
-			if varDef.IsConst {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, v.Name.String()+":const can not be redefined")
+		if ok := v.Value.Check(p); !ok {
+			return false
+		}
+		if v.Type == nil && len(v.Name) > 1 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "field type not resolved for "+v.Name.String())
+		}
+		if v.Type != nil && v.Value.Type != nil {
+			if !typeSys.AutoType(v.Value.Type, v.Type, v.Value.IsConst()) {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
-			if !typeSys.AutoType(v.Value.Type, varDef.Type, v.Value.IsConst()) {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+varDef.Type.Type())
-			}
-			v.Type = varDef.Type
-			v.Offset = varDef.Offset
-		} else {
-			argDef := v.Define.Value.(*ArgBlock)
-			v.Type = argDef.Type
-			if !typeSys.AutoType(v.Value.Type, argDef.Type, v.Value.IsConst()) {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+argDef.Type.Type())
-			}
-			v.Type = argDef.Type
-			v.Offset = argDef.Offset
 		}
 	}
 	return true

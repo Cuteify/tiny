@@ -202,7 +202,11 @@ func ToRType(t Type) *RType {
 
 func AutoType(before, after Type, IsConst bool) (ok bool) {
 	if before != nil && after != nil {
-		if CheckType(before, after) {
+		beforeType := before.Type()
+		afterType := after.Type()
+		beforePtr := before.IsPointer()
+		afterPtr := after.IsPointer()
+		if beforeType == afterType && beforePtr == afterPtr {
 			return true
 		}
 		if GetTypeType(before) == GetTypeType(after) && before.IsPointer() == after.IsPointer() {
@@ -252,19 +256,10 @@ func CheckType(t Type, allows ...Type) (ok bool) {
 		if t == nil || allows[i] == nil {
 			continue
 		}
-		if t.Type() == allows[i].Type() && t.IsPointer() == allows[i].IsPointer() {
-			if t.Type() == "struct" {
-				for j := 0; j < len(t.Fields()); j++ {
-					if CheckType(t.Fields()[j].Type, allows[i].Fields()[j].Type) {
-						ok = true
-					}
-				}
-				if ok {
-					return true
-				}
-			} else if t.Size() == allows[i].Size() {
-				return true
-			}
+		tType := t.Type()
+		aType := allows[i].Type()
+		if tType == aType && t.IsPointer() == allows[i].IsPointer() {
+			return true
 		}
 	}
 	return false

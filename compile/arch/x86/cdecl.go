@@ -30,38 +30,37 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 	}
 	fn := call.Func
 
-	// 1. 溢出caller-saved寄存器到栈（除了已经在EBX中的中间值）
-	// 在函数调用前，需要将caller-saved寄存器中的值保存到内存
-	// 注意：如果中间值已经通过 containsCall 检测保存到 EBX，这里不再溢出
 	savedRegs := a.ctx.Reg.SaveAll(false)
 	for _, regCode := range savedRegs {
 		code += regCode
 	}
-	// 2. cdecl约定：参数从右到左压栈
+
+	if call.ThisVar != nil {
+		thisAddr := genVarAddr(a.ctx, call.ThisVar)
+		code += utils.Format("push " + thisAddr + "; push this pointer")
+	}
+
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		arg := call.Args[i]
 		if arg == nil {
 			continue
 		}
-		// 参数直接push到栈上
 		code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
 	}
 
-	// 3. 生成call指令
-	name := fn.Name.String() // 将Name转换为字符串
+	name := fn.Name.String()
 	if name != "main" {
 		name = name + strconv.Itoa(len(fn.Args))
 	}
 	code += utils.Format("call " + name)
 
-	// 4. cdecl约定：调用者清理参数栈
 	argSize := arch.CalcArgsSize(call.Func)
+	if call.ThisVar != nil {
+		argSize += 4
+	}
 	if argSize > 0 {
 		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; 清理参数栈(cdecl)")
 	}
-
-	// 注意：caller-saved寄存器会在后续表达式中被重新加载
-	// 因此不需要在这里显式恢复，SaveAll已经溢出到栈了
 
 	return code
 }
@@ -109,21 +108,20 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 		return ""
 	}
 
-	// cdecl约定：参数通过栈传递
-	// 栈布局：[ebp+8] = 第一个参数, [ebp+12] = 第二个参数, ...
-	// 注意：[ebp+4] = 返回地址, [ebp] = 保存的ebp
-	argOffset := 8 // 第一个参数起始偏移
+	argOffset := 8
+	if funcBlock.Class != nil {
+		argOffset += 4
+	}
+
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]
 		arg.Offset = argOffset
 		argOffset += arg.Type.Size()
 	}
 
-	// 函数序言
 	code += utils.Format("push ebp; 保存调用者的栈帧基址")
 	code += utils.Format("mov ebp, esp; 设置当前栈帧基址")
 
-	// 保存callee-saved寄存器
 	csCount := 0
 	for i := 0; i < len(regs); i++ {
 		r := regs[i]
@@ -133,11 +131,8 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 		}
 	}
 
-	// 设置变量偏移量并计算栈大小
-	// StackSize 会包含局部变量空间，后续再加上 callee-saved 寄存器空间
 	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*csCount)
 
-	// 为局部变量和callee-saved寄存器分配栈空间
 	if a.ctx.StackSize > 0 {
 		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
 	}

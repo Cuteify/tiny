@@ -26,6 +26,7 @@ type ArgBlock struct {
 
 // Parse 解析函数定义
 // 语法格式: funcName(arg1 type1, arg2 type2) returnType { ... }
+// 或者: fn Type.methodName(arg1 type1, arg2 type2) returnType { ... }
 func (f *FuncBlock) Parse(p *Parser) {
 	// 检查函数是否嵌套定义（不支持）
 	if p.ThisBlock.Father != nil {
@@ -38,13 +39,24 @@ func (f *FuncBlock) Parse(p *Parser) {
 	if code.Type == lexer.NAME {
 		// 退格到函数名开始位置
 		p.Lexer.SetCursor(oldCursor)
-		// 匹配函数名
 		f.Name, _ = p.Name(false)
-		// 匹配参数列表
+
+		if len(f.Name) == 2 {
+			structName := f.Name[0]
+			methodName := f.Name[1]
+			structBlock := p.FindStruct(structName)
+			if structBlock != nil {
+				f.Name = Name([]string{structName, methodName})
+				f.Class = createStructType(structBlock)
+				structBlock.Methods = append(structBlock.Methods, f)
+			}
+		}
+
 		code := p.Lexer.Next()
 		if code.Value != "(" {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need (")
 		}
+		p.Lexer.SetCursor(code.Cursor)
 		f.ParseArgs(p)
 		// 获取返回值类型
 		f.Return = []typeSys.Type{}
@@ -78,7 +90,7 @@ func (f *FuncBlock) Parse(p *Parser) {
 // ParseArgs 解析函数参数列表
 // 语法格式: (arg1 type1, arg2 type2 = default, ...)
 func (f *FuncBlock) ParseArgs(p *Parser) {
-	brackets := p.Brackets(false)
+	brackets := p.Brackets(true)
 	oldCursor := p.Lexer.Cursor
 	isPtr := false
 	lastVal := ""

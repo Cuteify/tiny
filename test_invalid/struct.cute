@@ -1,7 +1,0 @@
-struct Invalid/Name {
-    pub field: int
-}
-
-fn main() int {
-    ret 0
-}

@@ -159,6 +159,12 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 	return code
 }
 
+func (c *Compiler) compileStructBlock(n *parser.Node) string {
+	structBlock := n.Value.(*parser.StructBlock)
+	c.Ctx.AddStruct(structBlock)
+	return ""
+}
+
 func (c *Compiler) compileRootTail(node *parser.Node) string {
 	if node.Father == nil {
 		if c.hasMainFunction(node) {
