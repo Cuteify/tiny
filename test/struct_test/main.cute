@@ -1,21 +1,9 @@
-struct Point {
-    x: int
-    y: int
-}
-
-struct ColorPoint : Point {
-    color: int
+struct Test {
+    !readonlyField: int
+    ?writeonlyField: int
+    normalField: int
 }
 
 fn main() int {
-    var p: Point
-    p.x = 10
-    p.y = 20
-    
-    var cp: ColorPoint
-    cp.x = 1
-    cp.y = 2
-    cp.color = 255
-    
     ret 0
 }

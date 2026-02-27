@@ -367,7 +367,7 @@ func createReturnNode(varName string, retType typeSys.Type) *parser.Node {
 		},
 	}
 	returnCall := &parser.CallBlock{
-		Name: "return",,
+		Name: "return",
 		Args: []*parser.ArgBlock{argBlock},
 	}
 	return &parser.Node{Value: &parser.Expression{Call: returnCall}}

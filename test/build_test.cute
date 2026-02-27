@@ -1,0 +1,11 @@
+build os "linux"
+
+fn test_extern() i32 {
+    build extern("test_func")
+    ret 0
+}
+
+fn test_link() i32 {
+    build link("my_export")
+    ret 1
+}

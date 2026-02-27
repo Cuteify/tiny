@@ -1,17 +1,11 @@
-struct Point {
-    x: int
-    y: int
-}
-
-fn Point.move(self: Point, dx: int, dy: int) void {
+struct Test {
+    !readonlyField: int
+    ?writeonlyField: int
+    normalField: int
+    fieldWithDefault: int = 100
+    taggedField: string `json:"name"`
 }
 
 fn main() int {
-    var p1: Point
-    p1.x = 10
-    p1.y = 20
-    
-    p1.move(5, 5)
-    
     ret 0
 }
