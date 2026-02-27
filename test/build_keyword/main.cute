@@ -1,0 +1,9 @@
+build os "linux"
+
+fn test_fn(x: u64) u64 {
+    ret x
+}
+
+fn main() u64 {
+    ret test_fn(10)
+}
