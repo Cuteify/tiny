@@ -121,11 +121,16 @@ func (l *Lexer) GetChar() string {
 func (l *Lexer) GetRawString() string {
 	startCursor := l.Cursor
 	for {
+		if l.Cursor >= l.TextLength-1 { // 安全检查，防止越界
+			l.Error.MissError("Lexer Error", startCursor, "expected '`' to close raw string")
+			return l.Text[startCursor:l.Cursor]
+		}
 		l.AddCursor(1)
 		if l.Text[l.Cursor] == '`' {
 			break
 		}
 	}
+	l.AddCursor(1)
 	return l.Text[startCursor : l.Cursor-1]
 }
 
@@ -186,24 +191,26 @@ func (l *Lexer) handleSep(word string) (Token, error) {
 		return Token{
 			Type:      STRING,
 			Value:     token,
-			EndCursor: l.Cursor,
-			Cursor:    l.Cursor - len(token),
+			EndCursor: l.Cursor - 1, // more
+			Cursor:    l.Cursor - len(token) - 1,
 		}, nil
 	case "`":
 		token := Token{
 			Type:      RAW,
 			Value:     l.GetRawString(),
-			EndCursor: l.Cursor,
+			Cursor:    l.Cursor - 1,
+			EndCursor: l.Cursor - 1,
 		}
-		token.Cursor = l.Cursor - token.Len()
+		token.Cursor = l.Cursor - token.Len() - 1
 		return token, nil
 	case "'":
 		token := Token{
 			Type:      CHAR,
 			Value:     l.GetChar(),
-			EndCursor: l.Cursor,
+			Cursor:    l.Cursor - 1,
+			EndCursor: l.Cursor - 1,
 		}
-		token.Cursor = l.Cursor - token.Len()
+		token.Cursor = l.Cursor - token.Len() - 1
 		return token, nil
 	case "//":
 		// 找到行末
@@ -230,6 +237,7 @@ func (l *Lexer) GetToken() (Token, error) {
 	}
 	// 直接操作光标，获取Token
 	word, isSep := l.GetWord()
+
 	if isSep {
 		return l.handleSep(word)
 	}
@@ -281,6 +289,7 @@ other:
 
 func (l *Lexer) Next() Token {
 	code, err := l.GetToken()
+	//fmt.Println(l.Text[code.Cursor:code.EndCursor], code.Value)
 	if l.Text[code.Cursor:code.EndCursor] != code.Value {
 		panic("Lexer: Next Token Value Error")
 	}

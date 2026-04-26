@@ -1,0 +1,97 @@
+build os("linux")
+
+fn sys_exit(code: i32) {
+    build asm {
+        mov EAX, 1
+        mov EBX, $code
+        int 0x80
+    }
+}
+
+fn sys_write(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov EAX, 4
+        mov EBX, $fd
+        mov ECX, $buf
+        mov EDX, $count
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_read(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov EAX, 3
+        mov EBX, $fd
+        mov ECX, $buf
+        mov EDX, $count
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_open(filename: u64, flags: i32, mode: u64) i32 {
+    build asm {
+        mov EAX, 5
+        mov EBX, $filename
+        mov ECX, $flags
+        mov EDX, $mode
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_close(fd: i32) i32 {
+    build asm {
+        mov EAX, 6
+        mov EBX, $fd
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_mmap(addr: u64, length: u64, prot: i32, flags: i32, fd: i32, offset: u64) u64 {
+    build asm {
+        mov EAX, 9
+        mov EBX, $addr
+        mov ECX, $length
+        mov EDX, $prot
+        mov ESI, $flags
+        mov EDI, $fd
+        mov EBP, $offset
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_munmap(addr: u64, length: u64) i32 {
+    build asm {
+        mov EAX, 91
+        mov EBX, $addr
+        mov ECX, $length
+        int 0x80
+    }
+    ret 0
+}
+
+fn sys_brk(addr: u64) u64 {
+    build asm {
+        mov EAX, 45
+        mov EBX, $addr
+        int 0x80
+    }
+    ret 0
+}
+
+fn malloc(size: u64) u64 {
+    ret sys_mmap(0, size, 3, 34, -1, 0)
+}
+
+fn free(ptr: u64) i32 {
+    ret sys_munmap(ptr, 0)
+}
+
+fn main() i32 {
+    sys_exit(0)
+    ret 0
+}

@@ -3,6 +3,7 @@ package parser
 import (
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
+	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strings"
 )
@@ -25,6 +26,8 @@ type Node struct {
 	Children []*Node
 	Ignore   bool
 
+	//CFG []CFGNode // 存储与该节点相关的CFG
+	// Code string
 	//CFG []CFGNode // 存储与该节点相关的CFG
 	// Code string
 
@@ -65,9 +68,9 @@ func (n *Node) Check() bool {
 	case *ForBlock:
 		forBlock := n.Value.(*ForBlock)
 		return forBlock.Check(n.Parser)
-	case *StructBlock:
-		structBlock := n.Value.(*StructBlock)
-		return structBlock.Check(n.Parser)
+	// TODO: case *StructBlock:
+	// TODO: 	structBlock := n.Value.(*StructBlock)
+	// TODO: 	return structBlock.Check(n.Parser)
 	}
 	return true
 }
@@ -182,16 +185,77 @@ func (n Name) Fork() Name {
 	return nn
 }
 
+func (n Name) MatchN(name Name) int {
+	// 模糊匹配，匹配前n个部分
+	for i := 0; i < len(n); i++ {
+		if len(name) > i || n[i] != name[i] {
+			return i
+		}
+	}
+	return len(name)
+
+}
+
+func (n Name) MatchT(name Name, valType typeSys.Type) bool {
+	// 模糊匹配，匹配前n个部分
+	nowType := valType
+	for i := 0; i < len(n); i++ {
+		if len(name) <= i {
+			// 查看对应类型是否存在
+			ok := false
+			for _, field := range nowType.Fields() {
+				if field.Name == name[i] {
+					nowType = field.Type
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return false
+			}
+		}
+		if n[i] != name[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (n Name) FixPath(pkg *packageFmt.Info) bool {
 	if !n.IsPath() {
 		return false
 	}
 	importName := n[0]
-	pkgRealPath := packageFmt.FixPathName(pkg.Import[importName])
+	pkgRealPath := packageFmt.FixPathName(pkg.Imports[importName])
 	n[0] = pkgRealPath
 	return true
 }
 
 func (n Name) SetPkgPath(pkgPath string) {
 	n = append([]string{packageFmt.FixPathName(pkgPath)}, n...)
+}
+
+func (n *Name) Join(other ...string) {
+	*n = append(*n, other...)
+}
+
+func (n Name) ForkJoin(other ...string) Name {
+	nn := n.Fork()
+	nn.Join(other...)
+	return nn
+}
+
+// 裁切匹配路径部分
+func (n *Name) Slice(other Name) {
+	*n = (*n)[:n.MatchN(other)]
+}
+
+func (n Name) ForkSlice(other Name) Name {
+	nn := n.Fork()
+	nn.Slice(other)
+	return nn
+}
+
+func NewName(parts ...string) Name {
+	return Name(parts)
 }

@@ -1,5 +1,6 @@
 package parser
 
+/*
 import (
 	"cuteify/lexer"
 )
@@ -89,3 +90,4 @@ func (b *Brackets) AddChild(value *BracketsValue) {
 		value.Brackets.Father = b
 	}
 }
+*/

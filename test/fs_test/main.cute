@@ -1,0 +1,7 @@
+fn main() i32 {
+    var fd: i32
+    fd = fs.open(0, 1, 420)
+    fs.write(fd, 0, 5)
+    fs.close(fd)
+    ret 0
+}

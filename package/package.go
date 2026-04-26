@@ -5,6 +5,7 @@ import (
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 )
@@ -44,9 +45,18 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
-	for _, ppath := range packageInfo.Import {
+	for _, ppath := range packageInfo.Imports {
 		if _, ok := packages[ppath]; !ok {
-			ppath = path.Join(packagePath, ppath)
+			if ppath[:4] == "std:" {
+				stdPath, err := os.Getwd()
+				if err != nil {
+					return nil, err
+				}
+				ppath = path.Join(stdPath, "pkg", ppath[4:])
+			} else {
+				ppath = path.Join(packagePath, ppath)
+			}
+			fmt.Println(ppath)
 			info, err := GetPackage(ppath, false)
 			if err != nil {
 				return nil, err

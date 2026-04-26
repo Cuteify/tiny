@@ -18,40 +18,40 @@ type Type interface {
 	// Size returns the RSize of the type.
 	Size() int
 	// RFather returns the RFather of the type.
-	Father() Type
+	Parent() Type
 	// IsPointer returns true if the type is a pointer.
 	IsPointer() bool
+
+	Alignment() int
 }
 
 type StructFileds []*StructField
 
-type StructField struct {
-	Name   string
-	Type   Type
-	Tag    string
-	Offset int
-}
-
 type RType struct {
 	TypeName string
 	RSize    int
-	RFather  Type
+	RParent  Type
 	IsPtr    bool
+	RAlignment int
 }
 
-func (r *RType) Father() Type {
-	return r.RFather
+func (r RType) Alignment() int {
+	return r.RAlignment
+}
+
+func (r *RType) Parent() Type {
+	return r.RParent
 }
 
 func (r *RType) IsPointer() bool {
 	return r.IsPtr
 }
 
-func (r *RType) Type() string {
+func (r RType) Type() string {
 	return r.TypeName
 }
 
-func (r *RType) Size() int {
+func (r RType) Size() int {
 	if r.RSize == 0 {
 		switch r.TypeName {
 		case "int", "uint":
@@ -77,7 +77,7 @@ func (r *RType) Set(name any) {
 	r.TypeName = name.(string)
 }
 
-func (r *RType) String() string {
+func (r RType) String() string {
 	return r.TypeName
 }
 
@@ -86,28 +86,6 @@ func (r *RType) Fields() StructFileds {
 		return nil
 	}
 	return (*StructType)(unsafe.Pointer(r)).StructFields
-}
-
-type StructType struct {
-	RType
-	StructFields StructFileds
-}
-
-func NewStructField(father Type, name string, typ Type) (sf *StructField) {
-	if father != nil {
-		if father.Type() != "struct" {
-			panic("RFather is not struct")
-		}
-		sf = &StructField{
-			Name:   name,
-			Type:   typ,
-			Offset: typ.Size() + father.Size(),
-		}
-		father.(*RType).RSize += typ.Size()
-	} else {
-		panic("RFather is nil")
-	}
-	return
 }
 
 type (

@@ -21,10 +21,8 @@ func (c *CallBlock) Check(parser *Parser) bool {
 	}
 
 	if c.Func == nil {
-		funcNode := parser.Find(c.Name, c.Func)
-		if funcNode != nil {
-			c.Func = funcNode.Value.(*FuncBlock)
-		}
+		_, funcBlock := parser.FindFunc(c.Name)
+		c.Func = funcBlock
 	}
 
 	if c.Func == nil {
@@ -94,7 +92,7 @@ func (c *CallBlock) ParseCall(p *Parser) {
 				stopCursor := token.Cursor
 				p.Lexer.SetCursor(oldCursor)
 
-				argExp := p.ParseExpression(stopCursor)
+				argExp := p.ParseExp(stopCursor)
 				if argExp != nil {
 					c.Args = append(c.Args, &ArgBlock{Value: argExp})
 				}
@@ -106,7 +104,7 @@ func (c *CallBlock) ParseCall(p *Parser) {
 				stopCursor := token.Cursor
 				p.Lexer.SetCursor(oldCursor)
 
-				argExp := p.ParseExpression(stopCursor)
+				argExp := p.ParseExp(stopCursor)
 				if argExp != nil {
 					c.Args = append(c.Args, &ArgBlock{Value: argExp})
 				}

@@ -6,7 +6,7 @@ import (
 
 type Info struct {
 	Version string            `json:"version"`
-	Import  map[string]string `json:"import"`
+	Imports map[string]string `json:"imports"`
 	Action  map[string]string `json:"action"`
 	Path    string
 	AST     any

@@ -5,7 +5,6 @@ import (
 	errorUtil "cuteify/error"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
-	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strings"
 )
@@ -18,7 +17,6 @@ type Parser struct {
 	Error         *errorUtil.Error
 	Package       *packageFmt.Info
 	DontBack      int
-	CurrentStruct *StructBlock
 }
 
 func (p *Parser) Next() (finish bool) {
@@ -34,6 +32,8 @@ func (p *Parser) Next() (finish bool) {
 		return
 	}
 
+	//fmt.Println(code.Type)
+
 	switch code.Type {
 	case lexer.FUNC:
 		p.processFuncToken(code)
@@ -44,9 +44,9 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.VAR:
 		p.processVarToken(beforeCursor)
 	case lexer.TYPE:
-		p.processTypeToken(code)
+		//TODO: p.processTypeToken(code)
 	case lexer.BUILD:
-		p.processBuildToken()
+		p.processBuildToken(code)
 	default:
 		p.processDefaultToken(code)
 	}
@@ -127,25 +127,22 @@ func (p *Parser) processVarToken(beforeCursor int) {
 	block.Parse(p)
 }
 
-func (p *Parser) processTypeToken(code lexer.Token) {
-	switch code.Value {
-	case "struct":
-		block := &StructBlock{}
-		block.Parse(p)
-		p.AddChild(&Node{Value: block})
-	case "interface":
-		block := &InterfaceBlock{}
-		block.Parse(p)
-		p.AddChild(&Node{Value: block})
-	default:
-		p.processDefaultToken(code)
-	}
-}
+// TODO: func (p *Parser) processTypeToken(code lexer.Token) {
+// TODO: 	switch code.Value {
+// TODO: 	case "struct":
+// TODO: 		block := &StructBlock{}
+// TODO: 		block.Parse(p)
+// TODO: 		p.AddChild(&Node{Value: block})
+// TODO: 	case "interface":
+// TODO: 		block := &InterfaceBlock{}
+// TODO: 		block.Parse(p)
+// TODO: 		p.AddChild(&Node{Value: block})
+// TODO: 	default:
+// TODO: 		p.processDefaultToken(code)
+// TODO: 	}
+// TODO: }
 
-func (p *Parser) processBuildToken() {
-	// 回退到"build"开始位置
-	cursor := p.Lexer.Cursor - len("build")
-	p.Lexer.SetCursor(cursor)
+func (p *Parser) processBuildToken(token lexer.Token) {
 	block := &Build{}
 	block.Parse(p)
 }
@@ -338,86 +335,4 @@ func (p *Parser) Parse() *Node {
 		}
 	}
 	return p.Block
-}
-
-func (p *Parser) Find(_name Name, dstType any) *Node {
-	if len(_name) == 2 {
-		objName := _name[0]
-		methodName := _name[1]
-
-		var varType typeSys.Type
-		for _, child := range p.Block.Children {
-			if vb, ok := child.Value.(*VarBlock); ok {
-				if vb.Name.First() == objName {
-					varType = vb.Type
-					break
-				}
-			}
-		}
-
-		if varType != nil {
-			structName := varType.Type()
-			structBlock := p.FindStruct(structName)
-			if structBlock != nil && len(structBlock.Methods) > 0 {
-				for _, method := range structBlock.Methods {
-					if method.Name.Last() == methodName {
-						return &Node{Value: method}
-					}
-				}
-			}
-		}
-	}
-
-	var children []*Node
-
-	name := _name.Fork()
-
-	if name.IsPath() {
-		name.FixPath(p.Package)
-		children = p.Package.AST.(*Node).Children
-	} else {
-		children = p.Block.Children
-	}
-
-	for i := 0; i < len(children); i++ {
-		value := children[i].Value
-		switch dstType.(type) {
-		case *VarBlock:
-			v, ok := value.(*VarBlock)
-			if !ok {
-				continue
-			}
-			if name.Eq(v.Name) {
-				return children[i]
-			}
-		case *FuncBlock:
-			f, ok := value.(*FuncBlock)
-			if !ok {
-				continue
-			}
-			if name.Eq(f.Name) {
-				return children[i]
-			}
-		}
-	}
-	p.Lexer.Error.MissError("func", p.Lexer.Cursor-1, "not found function '"+name.String()+"'")
-	return nil
-}
-
-func (p *Parser) FindStruct(name string) *StructBlock {
-	if p.CurrentStruct != nil && p.CurrentStruct.Name == name {
-		return p.CurrentStruct
-	}
-	for _, child := range p.Block.Children {
-		if sb, ok := child.Value.(*StructBlock); ok {
-			if sb.Name == name {
-				return sb
-			}
-		}
-	}
-	return nil
-}
-
-func (p *Parser) getCurrentStruct() *StructBlock {
-	return p.CurrentStruct
 }

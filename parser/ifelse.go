@@ -17,15 +17,25 @@ type ElseBlock struct {
 }
 
 func (i *IfBlock) Parse(p *Parser) {
-	// 解析括号
-	brackets := p.Brackets(true)
-	p.Lexer.SetCursor(brackets.Children[0].Value.Cursor)
-	i.Condition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
-	p.Wait("{")
-	nodeTmp := &Node{Value: i}
-	p.ThisBlock.AddChild(nodeTmp)
-	p.ThisBlock = nodeTmp
+	bracketsCount := 0
+	oldCursor := p.Lexer.Cursor
 
+	// 找到末尾的{
+	for p.FindEndCursor() > p.Lexer.Cursor {
+		code := p.Lexer.Next()
+		if code.Value == "(" {
+			bracketsCount++
+		} else if code.Value == ")" {
+			bracketsCount--
+		}
+		if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {
+			break
+		}
+	}
+	stopCursor := p.Lexer.Cursor
+	p.Lexer.SetCursor(oldCursor)
+	i.Condition = p.ParseExp(stopCursor)
+	p.Wait("{")
 }
 
 func (i *IfBlock) Check(p *Parser) bool {
@@ -49,9 +59,24 @@ func (i *IfBlock) Check(p *Parser) bool {
 func (e *ElseBlock) Parse(p *Parser) {
 	tmp := p.Lexer.Next()
 	if tmp.Value == "IF" && tmp.Type == lexer.PROCESSCONTROL {
-		brackets := p.Brackets(true)
-		p.Lexer.SetCursor(brackets.Children[0].Value.Cursor)
-		e.IfCondition = p.ParseExpression(brackets.Children[len(brackets.Children)-1].Value.EndCursor)
+		bracketsCount := 0
+		oldCursor := p.Lexer.Cursor
+
+		// 找到末尾的{
+		for p.FindEndCursor() > p.Lexer.Cursor {
+			code := p.Lexer.Next()
+			if code.Value == "(" {
+				bracketsCount++
+			} else if code.Value == ")" {
+				bracketsCount--
+			}
+			if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {
+				break
+			}
+		}
+		stopCursor := p.Lexer.Cursor
+		p.Lexer.SetCursor(oldCursor)
+		e.IfCondition = p.ParseExp(stopCursor)
 		p.Wait("{")
 	} else if !(tmp.Value == "{" && tmp.Type == lexer.SEPARATOR) {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need {")

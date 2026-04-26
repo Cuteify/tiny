@@ -51,7 +51,7 @@ func (f *ForBlock) parseInit(p *Parser) {
 		return
 	}
 	// 使用VarBlock解析变量定义
-	f.Init = p.ParseExpression(sepCursor)
+	f.Init = p.ParseExp(sepCursor)
 	p.Lexer.Skip(';')
 }
 
@@ -64,7 +64,7 @@ func (f *ForBlock) parseCondition(p *Parser) {
 		p.Error.MissError("For Loop Error", p.Lexer.Cursor, "for loop must end by ')'")
 	}
 	if sepCursor == -1 {
-		f.Condition = p.ParseExpression(endCursor)
+		f.Condition = p.ParseExp(endCursor)
 		p.Lexer.Skip(')')
 	} else if sepCursor == p.Lexer.Cursor && endCursor == p.Lexer.Cursor {
 		f.Condition = &Expression{
@@ -77,7 +77,7 @@ func (f *ForBlock) parseCondition(p *Parser) {
 			p.Lexer.Skip(')')
 		}
 	} else {
-		f.Condition = p.ParseExpression(sepCursor)
+		f.Condition = p.ParseExp(sepCursor)
 		p.Lexer.Skip(';')
 	}
 }
@@ -99,7 +99,7 @@ func (f *ForBlock) parseIncrement(p *Parser) {
 
 	// 有增量表达式
 	p.Lexer.SetCursor(incToken.Cursor)
-	f.Increment = p.ParseExpression(endCursor)
+	f.Increment = p.ParseExp(endCursor)
 	p.ThisBlock.Children = p.ThisBlock.Children[:len(p.ThisBlock.Children)-1]
 }
 

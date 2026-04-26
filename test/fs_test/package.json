@@ -1,6 +1,6 @@
 {
+    "name": "fs_test",
     "version": "1.0.0",
-    "description": "Build keyword test",
     "imports": {
         "fs": "std:fs"
     }

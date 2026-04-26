@@ -1,0 +1,4 @@
+fn main() int {
+    build link("test")
+    ret 0
+}

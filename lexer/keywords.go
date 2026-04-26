@@ -91,14 +91,13 @@ var (
 
 	// LexToken类型
 	LexTokenType = map[string]int{
-		"FUNC":           0x1,
-		"VAR":            0x2,
-		"PROCESSCONTROL": 0x3,
-		"PACKAGE":        0x4,
-		"SEPARATOR":      0x5,
-		"STRING":         0x6,
-		"NUMBER":         0x7,
-		"IDENTIFIER":     IDENTIFIER,
+		"FUNC":           FUNC,
+		"VAR":            VAR,
+		"PROCESSCONTROL": PROCESSCONTROL,
+		"PACKAGE":        PACKAGE,
+		"SEPARATOR":      SEPARATOR,
+		"STRING":         STRING,
+		"NUMBER":         NUMBER,
 		"NAME":           NAME,
 		"CHAR":           CHAR,
 		"TYPE":           TYPE,
@@ -117,7 +116,6 @@ const (
 	SEPARATOR
 	STRING
 	NUMBER
-	IDENTIFIER
 	NAME
 	CHAR
 	TYPE

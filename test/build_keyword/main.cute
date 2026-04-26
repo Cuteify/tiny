@@ -1,9 +1,21 @@
-build os "linux"
+build os(windows)
 
-fn test_fn(x: u64) u64 {
-    ret x
+fn windowsFunc() int {
+    ret 1
 }
 
-fn main() u64 {
-    ret test_fn(10)
+build os(linux)
+
+fn linuxFunc() int {
+    ret 2
+}
+
+build os(darwin, linux)
+
+fn multiOSFunc() int {
+    ret 3
+}
+
+fn main() int {
+    ret 0
 }

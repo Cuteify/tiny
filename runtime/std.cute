@@ -1,0 +1,123 @@
+// runtime/std.cute - 标准库包装
+// 提供常用的高级功能
+
+// 内存相关
+fn new[T]() *T {
+    var ptr: u64 = malloc(sizeof(T))
+    if (ptr == 0) {
+        panic("Out of memory")
+    }
+    ret ptr as *T
+}
+
+fn make_slice[T](len: u64, cap: u64) []T {
+    if (cap < len) {
+        panic("make_slice: cap < len")
+    }
+    var size: u64 = sizeof(T) * cap
+    var ptr: u64 = malloc(size)
+    if (ptr == 0) {
+        panic("Out of memory")
+    }
+    
+    // 初始化为零值
+    var i: u64 = 0
+    while (i < len * sizeof(T)) {
+        *(u8*)(ptr + i) = 0
+        i = i + 1
+    }
+    
+    // 返回切片结构 (这里简化处理)
+    ret ptr as []T
+}
+
+// 字符串相关
+fn str_eq(a: *u8, b: *u8) bool {
+    ret strcmp(a, b) == 0
+}
+
+fn str_len(s: *u8) u64 {
+    ret strlen(s)
+}
+
+// 转换函数
+fn itoa(value: i32, buffer: *u8, base: u32) *u8 {
+    if (base < 2 || base > 36) {
+        ret 0
+    }
+    
+    var tmp_buffer: [32]u8
+    var pos: u64 = 0
+    var n: u32 = abs(value as i32) as u32
+    
+    if (n == 0) {
+        tmp_buffer[0] = '0' as u8
+        pos = 1
+    } else {
+        while (n != 0) {
+            var remainder: u8 = (n % base) as u8
+            if (remainder < 10) {
+                tmp_buffer[pos] = remainder + '0' as u8
+            } else {
+                tmp_buffer[pos] = remainder - 10 + 'A' as u8
+            }
+            n = n / base
+            pos = pos + 1
+        }
+    }
+    
+    if (value < 0) {
+        *(buffer) = '-' as u8
+        var i: u64 = 0
+        while (i < pos) {
+            *(buffer + i + 1) = tmp_buffer[pos - 1 - i]
+            i = i + 1
+        }
+        *(buffer + pos + 1) = 0
+        ret buffer
+    } else {
+        var i: u64 = 0
+        while (i < pos) {
+            *(buffer + i) = tmp_buffer[pos - 1 - i]
+            i = i + 1
+        }
+        *(buffer + pos) = 0
+        ret buffer
+    }
+}
+
+// 数学函数
+fn abs(x: i32) u32 {
+    if (x < 0) {
+        ret (0 - x) as u32
+    }
+    ret x as u32
+}
+
+fn min_int(a: i32, b: i32) i32 {
+    if (a < b) {
+        ret a
+    }
+    ret b
+}
+
+fn max_int(a: i32, b: i32) i32 {
+    if (a > b) {
+        ret a
+    }
+    ret b
+}
+
+fn min_uint(a: u32, b: u32) u32 {
+    if (a < b) {
+        ret a
+    }
+    ret b
+}
+
+fn max_uint(a: u32, b: u32) u32 {
+    if (a > b) {
+        ret a
+    }
+    ret b
+}

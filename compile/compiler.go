@@ -71,8 +71,13 @@ func (c *Compiler) compileChildren(node *parser.Node, code string) string {
 
 func (c *Compiler) compileChild(n *parser.Node) string {
 	n.Check()
-	switch n.Value.(type) {
+	switch v := n.Value.(type) {
 	case *parser.FuncBlock:
+		for _, buildFlag := range v.BuildFlags {
+			if buildFlag.Type == "os" && buildFlag.Ignore {
+				return ""
+			}
+		}
 		return c.compileFuncBlock(n)
 	case *parser.IfBlock:
 		return c.compileIfBlock(n)
@@ -84,8 +89,8 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		return c.compileCallBlock(n)
 	case *parser.ForBlock:
 		return c.compileForBlock(n)
-	case *parser.StructBlock:
-		return c.compileStructBlock(n)
+	// TODO: case *parser.StructBlock:
+	// TODO: 	return c.compileStructBlock(n)
 	case *parser.Build:
 		return c.CompileBuild(n)
 	default:
@@ -159,11 +164,11 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 	return code
 }
 
-func (c *Compiler) compileStructBlock(n *parser.Node) string {
-	structBlock := n.Value.(*parser.StructBlock)
-	c.Ctx.AddStruct(structBlock)
-	return ""
-}
+// TODO: func (c *Compiler) compileStructBlock(n *parser.Node) string {
+// TODO: 	structBlock := n.Value.(*parser.StructBlock)
+// TODO: 	c.Ctx.AddStruct(structBlock)
+// TODO: 	return ""
+// TODO: }
 
 func (c *Compiler) compileRootTail(node *parser.Node) string {
 	if node.Father == nil {

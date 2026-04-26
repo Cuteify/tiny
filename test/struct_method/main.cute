@@ -1,9 +1,10 @@
-struct Test {
-    !readonlyField: int
-    ?writeonlyField: int
-    normalField: int
-    fieldWithDefault: int = 100
-    taggedField: string `json:"name"`
+struct Point {
+    x: int
+    y: int
+}
+
+fn Point.GetX() int {
+    ret 42
 }
 
 fn main() int {

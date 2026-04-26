@@ -34,7 +34,7 @@ func pr(block *parser.Node, tabnum int) {
 		return
 	}
 	fmt.Println(strings.Repeat("\t", tabnum), reflect.TypeOf(block.Value), block.Value)
-	
+
 	if sb, ok := block.Value.(*parser.StructBlock); ok {
 		fmt.Printf("\n=== Struct: %s ===\n", sb.Name)
 		fmt.Println("Fields:")
@@ -67,7 +67,7 @@ func pr(block *parser.Node, tabnum int) {
 		}
 		fmt.Println("=====================\n")
 	}
-	
+
 	for _, k := range block.Children {
 		pr(k, tabnum+1)
 	}

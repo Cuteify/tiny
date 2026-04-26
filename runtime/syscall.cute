@@ -1,0 +1,29 @@
+// runtime/syscall.cute - 系统调用运行时库 (简化版)
+// 提供对操作系统底层功能的访问
+
+// Linux x86系统调用
+build os "linux"
+
+// 系统调用号定义
+var SYS_WRITE: u64 = 4
+var SYS_EXIT: u64 = 1
+
+// 通用系统调用接口
+fn syscall1(num: u64, arg1: u64) u64 {
+    build extern("syscall1")
+}
+
+fn syscall3(num: u64, arg1: u64, arg2: u64, arg3: u64) u64 {
+    build extern("syscall3")
+}
+
+// 写入系统调用
+fn sys_write(fd: u64, buf: u64, count: u64) u64 {
+    ret syscall3(SYS_WRITE, fd, buf, count)
+}
+
+// 程序退出
+fn sys_exit(status: u64) {
+    syscall1(SYS_EXIT, status)
+    // 正常情况下不会返回到这里
+}

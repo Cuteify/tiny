@@ -1,7 +1,19 @@
-struct Test {
-    !readonlyField: int
-    ?writeonlyField: int
-    normalField: int
+struct Point {
+    x: int
+    y: int
+}
+
+struct User {
+    name: string
+    age: int
+}
+
+struct Config {
+    _secret: string
+    !readonly: bool
+    ?writeonly: i32
+    data: int = 10
+    meta: string `json:"config_meta"`
 }
 
 fn main() int {

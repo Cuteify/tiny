@@ -1,7 +1,7 @@
-build os "linux"
+build os("linux")
 
 fn test_extern() i32 {
-    build extern("test_func")
+    build ext("test_func")
     ret 0
 }
 
