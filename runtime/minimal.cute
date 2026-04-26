@@ -1,0 +1,39 @@
+// runtime/minimal.cute - 最小化运行时库
+// 使用当前编译器支持的语法
+
+// 系统调用
+build os "linux"
+
+// 外部系统调用函数
+fn write(fd: u32, buf: u64, count: u64) u64 {
+    build extern("write")
+}
+
+fn exit(status: u32) {
+    build extern("exit")
+}
+
+// 基础打印功能
+fn print(msg: u64, len: u64) {
+    write(1, msg, len)
+}
+
+fn println(msg: u64, len: u64) {
+    print(msg, len)
+    var newline: u8 = 10
+    write(1, &newline as u64, 1)
+}
+
+// 基础内存管理（使用外部malloc/free）
+fn malloc(size: u64) u64 {
+    build extern("malloc")
+}
+
+fn free(ptr: u64) {
+    build extern("free")
+}
+
+// 基础运行时初始化
+fn rt_init() {
+    // 任何初始化代码
+}

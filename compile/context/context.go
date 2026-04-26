@@ -40,7 +40,7 @@ type Context struct {
 	Parser       *parser.Parser
 
 	// 结构体相关
-	Structs map[string]*parser.StructBlock // 存储结构体定义
+	// TODO: Structs map[string]*parser.StructBlock // 存储结构体定义
 }
 
 // NewContext 创建新的编译器上下文
@@ -60,7 +60,7 @@ func NewContext() *Context {
 		ArgOffset:      0,
 		IfCount:        0,
 		ForCount:       0,
-		Structs:        make(map[string]*parser.StructBlock),
+		// TODO: Structs:        make(map[string]*parser.StructBlock),
 	}
 }
 
@@ -97,33 +97,33 @@ func (ctx *Context) Clone() *Context {
 		IfCount:        ctx.IfCount,
 		ForCount:       ctx.ForCount,
 		Parser:         ctx.Parser,
-		Structs:        ctx.Structs, // 共享结构体映射
+		// TODO: Structs:        ctx.Structs, // 共享结构体映射
 	}
 }
 
-// AddStruct 添加结构体定义到上下文
-func (ctx *Context) AddStruct(structBlock *parser.StructBlock) {
-	ctx.Structs[structBlock.Name] = structBlock
-}
-
-// GetStruct 获取结构体定义
-func (ctx *Context) GetStruct(name string) (*parser.StructBlock, bool) {
-	structBlock, exists := ctx.Structs[name]
-	return structBlock, exists
-}
-
-// GetStructFieldOffset 获取结构体字段的偏移量
-func (ctx *Context) GetStructFieldOffset(structName, fieldName string) (int, bool) {
-	structBlock, exists := ctx.GetStruct(structName)
-	if !exists {
-		return 0, false
-	}
-
-	for _, field := range structBlock.Fields {
-		if field.Name == fieldName {
-			return field.Offset, true
-		}
-	}
-
-	return 0, false
-}
+// TODO: // AddStruct 添加结构体定义到上下文
+// TODO: func (ctx *Context) AddStruct(structBlock *parser.StructBlock) {
+// TODO: 	ctx.Structs[structBlock.Name] = structBlock
+// TODO: }
+// TODO:
+// TODO: // GetStruct 获取结构体定义
+// TODO: func (ctx *Context) GetStruct(name string) (*parser.StructBlock, bool) {
+// TODO: 	structBlock, exists := ctx.Structs[name]
+// TODO: 	return structBlock, exists
+// TODO: }
+// TODO:
+// TODO: // GetStructFieldOffset 获取结构体字段的偏移量
+// TODO: func (ctx *Context) GetStructFieldOffset(structName, fieldName string) (int, bool) {
+// TODO: 	structBlock, exists := ctx.GetStruct(structName)
+// TODO: 	if !exists {
+// TODO: 		return 0, false
+// TODO: 	}
+// TODO:
+// TODO: 	for _, field := range structBlock.Fields {
+// TODO: 		if field.Name == fieldName {
+// TODO: 			return field.Offset, true
+// TODO: 		}
+// TODO: 	}
+// TODO:
+// TODO: 	return 0, false
+// TODO: }

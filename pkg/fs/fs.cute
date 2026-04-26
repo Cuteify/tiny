@@ -1,0 +1,17 @@
+build os("linux")
+
+fn Open(pathname: u64, flags: i32, mode: u64) i32 {
+    ret syscall.Syscall(5, pathname, flags, mode)
+}
+
+fn Close(fd: i32) i32 {
+    ret syscall.Syscall(6, fd, 0, 0)
+}
+
+fn Read(fd: i32, buf: u64, count: u64) i32 {
+    ret syscall.Syscall(3, fd, buf, count)
+}
+
+fn Write(fd: i32, buf: u64, count: u64) i32 {
+    ret syscall.Syscall(4, fd, buf, count)
+}

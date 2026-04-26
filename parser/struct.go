@@ -1,497 +1,344 @@
 package parser
 
 import (
-	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"cuteify/utils"
-	"strings"
+	"unsafe"
 )
 
-type FieldAccess int
-
-const (
-	AccessPublic FieldAccess = iota
-	AccessPrivate
-	AccessReadOnly
-	AccessWriteOnly
-)
-
-type StructTag struct {
-	Key   string
-	Value string
+type StructType struct {
+	typeSys.RType
+	Name         Name
+	StructFields typeSys.StructFileds
+	Methods      []any
 }
 
-type StructField struct {
-	Name         string
-	Type         typeSys.Type
-	DefaultValue *Expression
-	Tags         []StructTag
-	Offset       int
-	Size         int
-	Alignment    int
-	EndCursor    int
-	StartCursor  int
-	Access       FieldAccess
+func (s *StructType) ToType() *typeSys.StructType {
+	return (*typeSys.StructType)(unsafe.Pointer(s))
+}
+
+func (s *StructType) FromType(st *typeSys.StructType) {
+	*s = *(*StructType)(unsafe.Pointer(st) )
 }
 
 type StructBlock struct {
-	Name        string
-	Parents     []string
-	Fields      []*StructField
-	Methods     []*FuncBlock
-	StartCursor int
-	EndCursor   int
-	Size        int
-	Alignment   int
+	StructType
 	Checked     bool
+	StartCursor int
 }
 
-func (f *StructField) IsPrivate() bool {
-	return f.Access == AccessPrivate
-}
-
-func (f *StructField) IsReadOnly() bool {
-	return f.Access == AccessReadOnly
-}
-
-func (f *StructField) IsWriteOnly() bool {
-	return f.Access == AccessWriteOnly
-}
-
-func (f *StructField) IsPublic() bool {
-	return f.Access == AccessPublic
-}
-
-func (f *StructField) CanRead() bool {
-	return f.Access == AccessPublic || f.Access == AccessReadOnly
-}
-
-func (f *StructField) CanWrite() bool {
-	return f.Access == AccessPublic || f.Access == AccessWriteOnly
-}
-
-func (s *StructBlock) Parse(p *Parser) {
-	token := p.Lexer.Next()
-	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
-		p.Error.MissError("Struct Error", token.Cursor, "struct name required")
-	}
-	s.Name = token.Value
-
-	if !utils.CheckName(s.Name) {
-		p.Error.MissError("Struct Error", token.Cursor, "invalid struct name: '"+s.Name+"'")
-	}
-
-	s.StartCursor = p.Lexer.Cursor
-
-	nextToken := p.Lexer.Next()
-	if nextToken.Type == lexer.SEPARATOR && nextToken.Value == ":" {
-		s.Parents = p.parseStructInheritance()
-		openBraceToken := p.Lexer.Next()
-		if openBraceToken.Value != "{" {
-			p.Error.MissError("Struct Error", openBraceToken.Cursor, "expected '{'")
-		}
-	} else {
-		if nextToken.Value != "{" {
-			p.Error.MissError("Struct Error", nextToken.Cursor, "expected '{'")
-		}
-	}
-
-	p.CurrentStruct = s
-	p.parseStructFields(s)
-	p.CurrentStruct = nil
-	s.CalculateMemoryLayout()
-}
-
-func (p *Parser) parseStructInheritance() []string {
-	var parents []string
-
-	token := p.Lexer.Next()
-	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
-		p.Error.MissError("Struct Error", token.Cursor, "parent struct name required")
-	}
-	parents = append(parents, token.Value)
-
-	for {
-		token = p.Lexer.Next()
-		if token.Value != "+" {
-			p.Lexer.SetCursor(token.Cursor)
-			break
-		}
-
-		token = p.Lexer.Next()
-		if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
-			p.Error.MissError("Struct Error", token.Cursor, "parent struct name required")
-		}
-		parents = append(parents, token.Value)
-	}
-
-	return parents
-}
-
-func (p *Parser) parseStructFields(s *StructBlock) {
-	for {
-		token := p.Lexer.Next()
-		if token.IsEmpty() {
-			p.Error.MissError("Struct Error", p.Lexer.Cursor, "unexpected EOF in struct")
-		}
-
-		if token.Value == "}" {
-			s.EndCursor = token.Cursor
-			break
-		}
-
-		if token.Type == lexer.FUNC {
-			method := p.parseStructMethod(s)
-			if method != nil {
-				s.Methods = append(s.Methods, method)
-			}
-			continue
-		}
-
-		if token.Type == lexer.SEPARATOR {
-			if token.Value == "!" || token.Value == "?" {
-				p.Lexer.SetCursor(token.Cursor)
-				field := p.parseStructField()
-				if field != nil {
-					s.Fields = append(s.Fields, field)
-				}
-				continue
-			}
-			continue
-		}
-
-		p.Lexer.SetCursor(token.Cursor)
-		field := p.parseStructField()
-		if field != nil {
-			s.Fields = append(s.Fields, field)
-		}
-	}
-}
-
-func (p *Parser) parseStructMethod(s *StructBlock) *FuncBlock {
-	method := &FuncBlock{
-		Class: createStructType(s),
-	}
-
-	code := p.Lexer.Next()
-	if code.Type != lexer.NAME {
-		p.Error.MissError("Method Error", p.Lexer.Cursor, "method name required")
-		return nil
-	}
-
-	method.Name = Name([]string{s.Name, code.Value})
-
-	method.ParseArgs(p)
-
-	code = p.Lexer.Next()
-	if code.Type == lexer.NAME {
-		method.Return = []typeSys.Type{typeSys.GetSystemType(code.Value)}
-	} else {
-		p.Lexer.SetCursor(code.Cursor)
-		method.Return = []typeSys.Type{}
-	}
-
-	p.Wait("{")
-	nodeTmp := &Node{Value: method}
-	p.ThisBlock.AddChild(nodeTmp)
-	p.ThisBlock = nodeTmp
-
-	p.parseMethodBody()
-
-	return method
-}
-
-func (p *Parser) parseMethodBody() {
-	braceCount := 1
-	for {
-		token := p.Lexer.Next()
-		if token.IsEmpty() {
-			p.Error.MissError("Method Error", p.Lexer.Cursor, "unexpected EOF in method body")
-			return
-		}
-
-		if token.Value == "{" {
-			braceCount++
-		} else if token.Value == "}" {
-			braceCount--
-			if braceCount == 0 {
-				p.ThisBlock = p.ThisBlock.Father
-				return
-			}
-		}
-
-		p.Lexer.SetCursor(token.Cursor)
-		p.Next()
-	}
-}
-
-func (p *Parser) parseStructField() *StructField {
-	field := &StructField{Access: AccessPublic}
-	field.StartCursor = p.Lexer.Cursor
-
-	token := p.Lexer.Next()
-
-	if token.Type == lexer.SEPARATOR {
-		switch token.Value {
-		case "!":
-			field.Access = AccessReadOnly
-		case "?":
-			field.Access = AccessWriteOnly
-		default:
-			p.Error.MissError("Struct Error", token.Cursor, "invalid field prefix: '"+token.Value+"'")
-		}
-		token = p.Lexer.Next()
-	}
-
-	if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
-		p.Error.MissError("Struct Error", token.Cursor, "field name required")
-	}
-
-	p.Lexer.SetCursor(token.Cursor)
-	name, _ := p.Name(false)
-	fieldName := name.String()
-
-	if !utils.CheckName(fieldName) {
-		p.Error.MissError("Struct Error", token.Cursor, "invalid field name: '"+fieldName+"'")
-	}
-
-	field.Name = fieldName
-
-	if len(fieldName) > 0 && fieldName[0] == '_' {
-		field.Access = AccessPrivate
-	}
-
-	token = p.Lexer.Next()
-	if token.Value != ":" {
-		p.Error.MissError("Struct Error", token.Cursor, "expected ':' after field name")
-	}
-
-	typeToken := p.Lexer.Next()
-	if typeToken.Type != lexer.NAME && typeToken.Type != lexer.IDENTIFIER {
-		p.Error.MissError("Struct Error", typeToken.Cursor, "field type required")
-	}
-	field.Type = p.findType(typeToken.Value)
-
-	nextToken := p.Lexer.Next()
-	switch nextToken.Value {
-	case "`":
-		p.Lexer.SetCursor(nextToken.Cursor)
-		field.Tags = p.parseStructTags()
-		nextToken = p.Lexer.Next()
-		if nextToken.Value == "=" {
-			field.DefaultValue = p.ParseExpression(p.FindEndCursor())
-		} else {
-			p.Lexer.SetCursor(nextToken.Cursor)
-		}
-	case "=":
-		field.DefaultValue = p.ParseExpression(p.FindEndCursor())
-	case ";", "\n", "}":
-		p.Lexer.SetCursor(nextToken.Cursor)
-		return field
-	default:
-		p.Lexer.SetCursor(nextToken.Cursor)
-		return field
-	}
-
-	return field
-}
-
-func (p *Parser) parseStructTags() []StructTag {
-	var tags []StructTag
-
-	for {
-		token := p.Lexer.Next()
-		if token.IsEmpty() {
-			p.Error.MissError("Struct Error", p.Lexer.Cursor, "expected '`' to close tags")
-		}
-
-		if token.Value == "`" {
-			break
-		}
-
-		if token.Type != lexer.NAME && token.Type != lexer.IDENTIFIER {
-			p.Error.MissError("Struct Error", token.Cursor, "tag key required")
-		}
-		key := token.Value
-
-		token = p.Lexer.Next()
-		if token.Value != ":" {
-			p.Error.MissError("Struct Error", token.Cursor, "expected ':' after tag key")
-		}
-
-		token = p.Lexer.Next()
-		if token.Type == lexer.STRING {
-			value := strings.Trim(token.Value, "\"")
-			tags = append(tags, StructTag{Key: key, Value: value})
-		} else if token.Type == lexer.NAME || token.Type == lexer.IDENTIFIER {
-			tags = append(tags, StructTag{Key: key, Value: token.Value})
-		} else {
-			p.Error.MissError("Struct Error", token.Cursor, "tag value required")
-		}
-	}
-
-	return tags
-}
-
-func (p *Parser) findType(typeName string) typeSys.Type {
-	switch typeName {
-	case "int", "float", "uint", "i64", "u64", "f64", "bool", "byte",
-		"i32", "u32", "f32", "i16", "u16", "i8", "u8":
-		return typeSys.GetSystemType(typeName)
-	default:
-		if sb := p.FindStruct(typeName); sb != nil {
-			return createStructType(sb)
-		}
-		return typeSys.GetSystemType("int")
-	}
-}
-
-func createStructType(sb *StructBlock) typeSys.Type {
-	return &typeSys.StructType{
-		RType: typeSys.RType{
-			TypeName: sb.Name,
-			RSize:    sb.Size,
-		},
-		StructFields: convertStructFields(sb.Fields),
-	}
-}
-
-func convertStructFields(fields []*StructField) typeSys.StructFileds {
-	var result typeSys.StructFileds
-	for _, f := range fields {
-		result = append(result, &typeSys.StructField{
-			Name:   f.Name,
-			Type:   f.Type,
-			Offset: f.Offset,
-		})
-	}
-	return result
-}
-
-func (s *StructBlock) Check(p *Parser) bool {
-	if s.Checked {
-		return true
-	}
-	s.Checked = true
-
-	if len(s.Parents) > 0 {
-		s.processInheritance(p)
-	}
-
-	s.CalculateMemoryLayout()
-	return true
-}
-
-func (s *StructBlock) processInheritance(p *Parser) {
-	var inheritedFields []*StructField
-
-	for _, parentName := range s.Parents {
-		parent := p.FindStruct(parentName)
-		if parent == nil {
-			p.Error.MissError("Struct Error", s.StartCursor,
-				"parent struct '"+parentName+"' not found")
-			continue
-		}
-		parent.Check(p)
-		for _, field := range parent.Fields {
-			newField := &StructField{
-				Name:   field.Name,
-				Type:   field.Type,
-				Tags:   field.Tags,
-				Access: field.Access,
-			}
-			inheritedFields = append(inheritedFields, newField)
-		}
-	}
-	s.Fields = append(inheritedFields, s.Fields...)
-}
-
-func (s *StructBlock) CalculateMemoryLayout() {
-	offset := 0
-	maxAlignment := 1
-
-	for _, field := range s.Fields {
-		var alignment int
-		if field.Type != nil {
-			size := field.Type.Size()
-			if size == 0 {
-				alignment = 1
-			} else {
-				alignment = size
-			}
-		} else {
-			alignment = 1
-		}
-		field.Alignment = alignment
-		if field.Alignment > maxAlignment {
-			maxAlignment = field.Alignment
-		}
-
-		if field.Alignment > 0 {
-			padding := (field.Alignment - (offset % field.Alignment)) % field.Alignment
-			offset += padding
-		}
-		field.Offset = offset
-
-		if field.Type != nil {
-			field.Size = field.Type.Size()
-			if field.Size == 0 {
-				field.Size = 1
-			}
-		} else {
-			field.Size = 1
-		}
-		offset += field.Size
-		typeStr := ""
-		if field.Type != nil {
-			typeStr = field.Type.Type()
-		} else {
-			typeStr = "unknown"
-		}
-		field.EndCursor = field.StartCursor + len(field.Name) + len(typeStr) + 5
-	}
-
-	s.Size = offset
-	s.Alignment = maxAlignment
-}
-
-func (s *StructBlock) GetFieldByName(name string) *StructField {
-	for _, field := range s.Fields {
-		if field.Name == name {
-			return field
-		}
-	}
-	return nil
-}
-
-func (s *StructBlock) HasField(name string) bool {
-	return s.GetFieldByName(name) != nil
-}
-
-func (s *StructBlock) GetPublicFields() []*StructField {
-	var publicFields []*StructField
-	for _, field := range s.Fields {
-		if field.Access == AccessPublic {
-			publicFields = append(publicFields, field)
-		}
-	}
-	return publicFields
-}
-
-func (s *StructBlock) GetPrivateFields() []*StructField {
-	var privateFields []*StructField
-	for _, field := range s.Fields {
-		if field.Access == AccessPrivate {
-			privateFields = append(privateFields, field)
-		}
-	}
-	return privateFields
-}
-
-func (s *StructBlock) GetSize() int {
-	return s.Size
-}
-
-func (s *StructBlock) GetAlignment() int {
-	return s.Alignment
-}
+// TODO: func (s *StructBlock) Parse(p *Parser) {
+// TODO: 	token := p.Lexer.Next()
+// TODO: 	if token.Type != lexer.NAME {
+// TODO: 		p.Error.MissError("Struct Error", token.Cursor, "struct name required")
+// TODO: 	}
+// TODO: 	s.Name = Name([]string{token.Value})
+// TODO:
+// TODO: 	if !utils.CheckName(s.Name.String()) {
+// TODO: 		p.Error.MissError("Struct Error", token.Cursor, "invalid struct name: '"+s.Name.String()+"'")
+// TODO: 	}
+// TODO:
+// TODO: 	nextToken := p.Lexer.Next()
+// TODO: 	if nextToken.Type == lexer.SEPARATOR && nextToken.Value == ":" {
+// TODO: 		s.RParents = s.parseInheritance(p)
+// TODO: 		openBraceToken := p.Lexer.Next()
+// TODO: 		if openBraceToken.Value != "{" {
+// TODO: 			p.Error.MissError("Struct Error", openBraceToken.Cursor, "expected '{'")
+// TODO: 		}
+// TODO: 	} else {
+// TODO: 		if nextToken.Value != "{" {
+// TODO: 			p.Error.MissError("Struct Error", nextToken.Cursor, "expected '{'")
+// TODO: 		}
+// TODO: 	}
+// TODO:
+// TODO: 	p.CurrentStruct = s
+// TODO: 	s.parseFields(p)
+// TODO: 	p.CurrentStruct = nil
+// TODO: 	s.CalculateMemoryLayout()
+// TODO: }
+
+// TODO: func (s *StructBlock) parseInheritance(p *Parser) []string {
+// TODO: 	var parents []string
+// TODO:
+// TODO: 	token := p.Lexer.Next()
+// TODO: 	if token.Type != lexer.NAME {
+// TODO: 		p.Error.MissError("Struct Error", token.Cursor, "parent struct name required")
+// TODO: 	}
+// TODO: 	parents = append(parents, token.Value)
+// TODO:
+// TODO: 	for {
+// TODO: 		token = p.Lexer.Next()
+// TODO: 		if token.Value != "+" {
+// TODO: 			p.Lexer.SetCursor(token.Cursor)
+// TODO: 			break
+// TODO: 		}
+// TODO:
+// TODO: 		token = p.Lexer.Next()
+// TODO: 		if token.Type != lexer.NAME {
+// TODO: 			p.Error.MissError("Struct Error", token.Cursor, "parent struct name required")
+// TODO: 		}
+// TODO: 		parents = append(parents, token.Value)
+// TODO: 	}
+// TODO:
+// TODO: 	return parents
+// TODO: }
+
+// TODO: func (s *StructBlock) parseFields(p *Parser) {
+// TODO: 	for {
+// TODO: 		token := p.Lexer.Next()
+// TODO: 		fmt.Println(token)
+// TODO: 		if token.IsEmpty() {
+// TODO: 			p.Error.MissError("Struct Error", p.Lexer.Cursor, "unexpected EOF in struct")
+// TODO: 		}
+// TODO:
+// TODO: 		if token.Value == "}" {
+// TODO: 			break
+// TODO: 		}
+// TODO:
+// TODO: 		s.parseField(p)
+// TODO: 	}
+// TODO: }
+
+// TODO: func (p *Parser) parseStructMethod(s *StructBlock) *FuncBlock {
+// TODO: 	method := &FuncBlock{
+// TODO: 		Class: createStructType(s),
+// TODO: 	}
+// TODO:
+// TODO: 	code := p.Lexer.Next()
+// TODO: 	if code.Type != lexer.NAME {
+// TODO: 		p.Error.MissError("Method Error", p.Lexer.Cursor, "method name required")
+// TODO: 		return nil
+// TODO: 	}
+// TODO:
+// TODO: 	method.Name = append(s.Name, code.Value)
+// TODO:
+// TODO: 	method.ParseArgs(p)
+// TODO:
+// TODO: 	code = p.Lexer.Next()
+// TODO: 	if code.Type == lexer.NAME {
+// TODO: 		method.Return = []typeSys.Type{typeSys.GetSystemType(code.Value)}
+// TODO: 	} else {
+// TODO: 		p.Lexer.SetCursor(code.Cursor)
+// TODO: 		method.Return = []typeSys.Type{}
+// TODO: 	}
+// TODO:
+// TODO: 	p.Wait("{")
+// TODO: 	nodeTmp := &Node{Value: method}
+// TODO: 	p.ThisBlock.AddChild(nodeTmp)
+// TODO: 	p.ThisBlock = nodeTmp
+// TODO:
+// TODO: 	p.parseMethodBody()
+// TODO:
+// TODO: 	return method
+// TODO: }
+
+// TODO: func (p *Parser) parseMethodBody() {
+// TODO: 	braceCount := 1
+// TODO: 	for {
+// TODO: 		token := p.Lexer.Next()
+// TODO: 		if token.IsEmpty() {
+// TODO: 			p.Error.MissError("Method Error", p.Lexer.Cursor, "unexpected EOF in method body")
+// TODO: 			return
+// TODO: 		}
+// TODO:
+// TODO: 		if token.Value == "{" {
+// TODO: 			braceCount++
+// TODO: 		} else if token.Value == "}" {
+// TODO: 			braceCount--
+// TODO: 			if braceCount == 0 {
+// TODO: 				p.ThisBlock = p.ThisBlock.Father
+// TODO: 				return
+// TODO: 			}
+// TODO: 		}
+// TODO:
+// TODO: 		p.Lexer.SetCursor(token.Cursor)
+// TODO: 		p.Next()
+// TODO: 	}
+// TODO: }
+
+// TODO: func (s *StructBlock) parseField(p *Parser) {
+// TODO: 	field := &StructField{Access: AccessPublic}
+// TODO: 	field.StartCursor = p.Lexer.Cursor
+// TODO:
+// TODO: 	// 解析字段标识
+// TODO: 	token := p.Lexer.Next()
+// TODO:
+// TODO: 	if token.Type == lexer.SEPARATOR {
+// TODO: 		switch token.Value {
+// TODO: 		case "!":
+// TODO: 			field.Access = AccessReadOnly
+// TODO: 		case "?":
+// TODO: 			field.Access = AccessWriteOnly
+// TODO: 		default:
+// TODO: 			p.Error.MissError("Struct Error", token.Cursor, "invalid field prefix: '"+token.Value+"'")
+// TODO: 		}
+// TODO: 	} else {
+// TODO: 		p.Lexer.SetCursor(token.Cursor)
+// TODO: 	}
+// TODO:
+// TODO: 	// 解析字段名
+// TODO: 	s.parseFieldName(p, field)
+// TODO:
+// TODO: 	// 解析字段类型
+// TODO: 	s.parseFieldType(p, field)
+// TODO:
+// TODO: 	// 其他数据
+// TODO: 	stopCursor := p.Lexer.Cursor
+// TODO: 	for p.Lexer.Cursor < stopCursor {
+// TODO: 		s.parseFieldOthers(p, field)
+// TODO: 	}
+// TODO: }
+
+// TODO: func (s *StructBlock) parseFieldType(p *Parser, field *StructField) {
+// TODO: 	// 跳过：
+// TODO: 	p.Lexer.Skip(':')
+// TODO:
+// TODO: 	name, _ := p.Name(false)
+// TODO:
+// TODO: 	field.Type = typeSys.GetSystemType(name.String())
+// TODO: }
+
+// TODO: func (s *StructBlock) parseFieldName(p *Parser, field *StructField) {
+// TODO: 	name, _ := p.Name(false)
+// TODO:
+// TODO: 	field.Name = name.Last()
+// TODO:
+// TODO: 	if len(name) > 0 && name.Last()[0] == '_' {
+// TODO: 		field.Access = AccessPrivate
+// TODO: 	}
+// TODO: }
+
+// TODO: func (s *StructBlock) parseFieldOthers(p *Parser, field *StructField) {
+// TODO: 	// 其他数据
+// TODO: 	nextToken := p.Lexer.Next()
+// TODO: 	if nextToken.Type == lexer.RAW {
+// TODO: 		field.parseTags(nextToken.Value)
+// TODO: 	}
+// TODO: 	switch nextToken.Value {
+// TODO: 	case "=":
+// TODO: 		field.DefaultValue = p.ParseExp(p.FindEndCursor())
+// TODO: 	case ";", "\n", "\r", "}":
+// TODO: 		s.Fields = append(s.Fields, field)
+// TODO: 	}
+// TODO: }
+
+// TODO: func convertStructFields(fields []*StructField) typeSys.StructFileds {
+// TODO: 	var result typeSys.StructFileds
+// TODO: 	for _, f := range fields {
+// TODO: 		result = append(result, &typeSys.StructField{
+// TODO: 			Name:   f.Name,
+// TODO: 			Type:   f.Type,
+// TODO: 			Offset: f.Offset,
+// TODO: 		})
+// TODO: 	}
+// TODO: 	return result
+// TODO: }
+
+// TODO: func (s *StructBlock) Check(p *Parser) bool {
+// TODO: 	if s.Checked {
+// TODO: 		return true
+// TODO: 	}
+// TODO: 	s.Checked = true
+// TODO:
+// TODO: 	if len(s.Parents) > 0 {
+// TODO: 		s.processInheritance(p)
+// TODO: 	}
+// TODO:
+// TODO: 	s.CalculateMemoryLayout()
+// TODO: 	return true
+// TODO: }
+
+// TODO: func (s *StructBlock) processInheritance(p *Parser) {
+// TODO: 	var inheritedFields []*StructField
+// TODO:
+// TODO: 	for _, parentName := range s.Parents {
+// TODO: 		parent := p.FindStruct(parentName)
+// TODO: 		if parent == nil {
+// TODO: 			p.Error.MissError("Struct Error", s.StartCursor,
+// TODO: 				"parent struct '"+parentName+"' not found")
+// TODO: 			continue
+// TODO: 		}
+// TODO: 		parent.Check(p)
+// TODO: 		for _, field := range parent.Fields {
+// TODO: 			newField := &StructField{
+// TODO: 				Name:   field.Name,
+// TODO: 				Type:   field.Type,
+// TODO: 				Tags:   field.Tags,
+// TODO: 				Access: field.Access,
+// TODO: 			}
+// TODO: 			inheritedFields = append(inheritedFields, newField)
+// TODO: 		}
+// TODO: 	}
+// TODO: 	s.Fields = append(inheritedFields, s.Fields...)
+// TODO: }
+
+// TODO: func (s *StructBlock) CalculateMemoryLayout() {
+// TODO: 	offset := 0
+// TODO: 	maxAlignment := 1
+// TODO:
+// TODO: 	for _, field := range s.Fields {
+// TODO: 		var alignment int
+// TODO: 		if field.Type != nil {
+// TODO: 			size := field.Type.Size()
+// TODO: 			if size == 0 {
+// TODO: 				alignment = 1
+// TODO: 			} else {
+// TODO: 				alignment = size
+// TODO: 			}
+// TODO: 		} else {
+// TODO: 			alignment = 1
+// TODO: 		}
+// TODO: 		field.Alignment = alignment
+// TODO: 		if field.Alignment > maxAlignment {
+// TODO: 			maxAlignment = field.Alignment
+// TODO: 		}
+// TODO:
+// TODO: 		if field.Alignment > 0 {
+// TODO: 			padding := (field.Alignment - (offset % field.Alignment)) % field.Alignment
+// TODO: 			offset += padding
+// TODO: 		}
+// TODO: 		field.Offset = offset
+// TODO:
+// TODO: 		if field.Type != nil {
+// TODO: 			field.Size = field.Type.Size()
+// TODO: 			if field.Size == 0 {
+// TODO: 				field.Size = 1
+// TODO: 			}
+// TODO: 		} else {
+// TODO: 			field.Size = 1
+// TODO: 		}
+// TODO: 		offset += field.Size
+// TODO: 		typeStr := ""
+// TODO: 		if field.Type != nil {
+// TODO: 			typeStr = field.Type.Type()
+// TODO: 		} else {
+// TODO: 			typeStr = "unknown"
+// TODO: 		}
+// TODO: 		field.EndCursor = field.StartCursor + len(field.Name) + len(typeStr) + 5
+// TODO: 	}
+// TODO:
+// TODO: 	s.Size = offset
+// TODO: 	s.Alignment = maxAlignment
+// TODO: }
+
+// TODO: func (s *StructBlock) GetFieldByName(fieldName any) *StructField {
+// TODO: 	var searchName string
+// TODO: 	switch n := fieldName.(type) {
+// TODO: 	case Name:
+// TODO: 		searchName = n.String()
+// TODO: 	case string:
+// TODO: 		searchName = n
+// TODO: 	default:
+// TODO: 		return nil
+// TODO: 	}
+// TODO:
+// TODO: 	for _, field := range s.Fields {
+// TODO: 		if field.Name == searchName {
+// TODO: 			return field
+// TODO: 		}
+// TODO: 	}
+// TODO: 	return nil
+// TODO: }
+
+// TODO: func (s *StructBlock) Type() typeSys.Type {
+// TODO: 	return s.ToType()
+// TODO: }

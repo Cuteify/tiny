@@ -24,6 +24,24 @@ type ArgBlock struct {
 	Offset  int          // 参数在栈中的偏移量（用于代码生成）
 }
 
+// Check 检查参数的有效性
+func (f *ArgBlock) Check(p *Parser) bool {
+	if f.Default != nil {
+		return f.Default.Check(p)
+	}
+	if f.Value != nil {
+		return f.Value.Check(p)
+	}
+	if f.Defind != nil {
+		if !f.Defind.Check(p) {
+			return false
+		}
+		// 检测类型
+		return typeSys.CheckType(f.Type, f.Defind.Type)
+	}
+	return true
+}
+
 // Parse 解析函数定义
 // 语法格式: funcName(arg1 type1, arg2 type2) returnType { ... }
 // 或者: fn Type.methodName(arg1 type1, arg2 type2) returnType { ... }
@@ -41,81 +59,135 @@ func (f *FuncBlock) Parse(p *Parser) {
 		p.Lexer.SetCursor(oldCursor)
 		f.Name, _ = p.Name(false)
 
-		if len(f.Name) == 2 {
-			structName := f.Name[0]
-			methodName := f.Name[1]
-			structBlock := p.FindStruct(structName)
-			if structBlock != nil {
-				f.Name = Name([]string{structName, methodName})
-				f.Class = createStructType(structBlock)
-				structBlock.Methods = append(structBlock.Methods, f)
-			}
+		if len(f.Name) == 0 {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need Function name")
+			return
 		}
 
-		code := p.Lexer.Next()
-		if code.Value != "(" {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need (")
+		if len(f.Name) > 2 {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Function name can't be more than 2 parts")
+			return
 		}
-		p.Lexer.SetCursor(code.Cursor)
-		f.ParseArgs(p)
-		// 获取返回值类型
-		f.Return = []typeSys.Type{}
-		// 开始获取返回值类型
-		code = p.Lexer.Next()
-		if code.Type == lexer.NAME {
-			f.Return = append(f.Return, typeSys.GetSystemType(code.Value))
-		} else {
-			p.Lexer.SetCursor(code.Cursor)
-		}
-		// 等待函数体开始
-		p.Wait("{")
-		nodeTmp := &Node{Value: f}
-		// 将函数添加到当前作用域
-		p.ThisBlock.AddChild(nodeTmp)
-		// 进入函数作用域
-		p.ThisBlock = nodeTmp
-	} else if code.Value == "(" {
-		// 匿名函数/闭包支持
-		tmp := p.Brackets(true)
-		for _, v := range tmp.Children {
-			if v.Brackets != nil {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss (")
+
+		//TODO：解析成员函数
+		/*if len(f.Name) == 2 {
+			structName := NewName(f.Name[0])
+			_, structBlock := p.FindStruct(structName)
+			if structBlock == nil {
+				p.Error.MissError("Struct Error", p.Lexer.Cursor, "struct '"+structName.String()+"' not found")
 			}
-		}
+			f.Class = structBlock.Type()
+			structBlock.Methods = append(structBlock.Methods, f)
+		}*/
+	} else if code.Value == "(" { // 匿名函数/闭包支持
+		p.Lexer.SetCursor(code.Cursor)
 	} else {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need Function name")
 	}
+
+	// 解析参数
+	f.ParseArgs(p)
+
+	// 返回类型
+	f.ParseRetType(p)
+
+	p.Wait("{")
+
+	if code.Type == lexer.NAME {
+		nodeTmp := &Node{Value: f}
+		// 将函数添加到当前作用域
+		p.ThisBlock.AddChild(nodeTmp)
+
+		// 进入函数作用域
+		p.ThisBlock = nodeTmp
+	}
+
+	// TODO: 处理编译标志
 }
 
 // ParseArgs 解析函数参数列表
 // 语法格式: (arg1 type1, arg2 type2 = default, ...)
 func (f *FuncBlock) ParseArgs(p *Parser) {
-	brackets := p.Brackets(true)
-	oldCursor := p.Lexer.Cursor
-	isPtr := false
-	lastVal := ""
+	// 跳过开始的(
+	p.Lexer.Skip('(')
 
-	for i := 0; i < len(brackets.Children); i++ {
-		v := brackets.Children[i]
+	// 自动机，找到分割符号 = 或者 )
+	token := p.Lexer.Next()
 
-		if v.Brackets != nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss )")
+	// 状态
+	bracketCount := 0
+	argTmp := &ArgBlock{}
+
+	for !token.IsEmpty() {
+		if token.Type != lexer.SEPARATOR { // 遇到非分割符，跳过
+			token = p.Lexer.Next()
+			continue
 		}
 
-		if v.Value.Value == "=" {
-			i = f.parseArgDefault(p, brackets, i)
-		} else if v.Value.Type == lexer.NAME {
-			f.parseArgToken(p, v, lastVal, &isPtr, &oldCursor)
+		if token.Value == "\n" || token.Value == "\r" {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
 		}
 
-		f.validateDefaultOrder(p)
+		// 处理括号
+		if token.Value == "(" {
+			bracketCount++
+			continue
+		}
+		if token.Value == ")" {
+			bracketCount--
+			continue
+		}
+		if bracketCount == -1 { // 找到参数结束的)
+			break
+		}
 
-		lastVal = v.Value.Value
+		// 处理其他部分
+		if bracketCount == 0 {
+			if token.Value == ":" {
+				// 先后解析一个Name作为参数类型
+				n, _ := p.Name(false)
+				_, argTmp.Type = p.FindType(n)
+				if argTmp.Type == nil {
+					p.Lexer.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
+					continue
+				}
+			}
+
+			if token.Value == "*" {
+				// TODO: 处理指针类型
+				//argTmp.Type = true
+			}
+
+			if token.Value == "=" {
+				oldCursor := token.Cursor
+				p.Wait(",")
+				stopCursor := token.Cursor
+				p.Lexer.SetCursor(oldCursor)
+				// 处理默认值
+				argTmp.Default = p.ParseExp(stopCursor - 1)
+			}
+
+			if token.Value == "," {
+				f.Args = append(f.Args, argTmp)
+				argTmp = &ArgBlock{}
+				// 获取下一参数的名称
+				n, _ := p.Name(false)
+				argTmp.Name = n
+				continue
+			}
+		}
+		token = p.Lexer.Next()
 	}
-
-	f.validateAllArgTypes(p)
 }
 
+func (f *FuncBlock) ParseRetType(p *Parser) {
+	// TODO:多参数支持
+	typName, _ := p.Name(false)
+	_, typ := p.FindType(typName)
+	f.Return = append(f.Return, typ)
+}
+
+/*
 func (f *FuncBlock) parseArgToken(p *Parser, v *BracketsValue, lastVal string, isPtr *bool, oldCursor *int) {
 	switch lastVal {
 	case "":
@@ -176,7 +248,7 @@ func (f *FuncBlock) parseArgDefault(p *Parser, brackets *Brackets, i int) int {
 		}
 	}
 	p.Lexer.SetCursor(brackets.Children[i].Value.EndCursor)
-	f.Args[len(f.Args)-1].Default = p.ParseExpression(tmp[len(tmp)-1].EndCursor)
+	f.Args[len(f.Args)-1].Default = p.ParseExp(tmp[len(tmp)-1].EndCursor)
 	return i
 }
 
@@ -192,25 +264,7 @@ func (f *FuncBlock) validateAllArgTypes(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss type")
 		}
 	}
-}
-
-// Check 检查参数的有效性
-func (f *ArgBlock) Check(p *Parser) bool {
-	if f.Default != nil {
-		return f.Default.Check(p)
-	}
-	if f.Value != nil {
-		return f.Value.Check(p)
-	}
-	if f.Defind != nil {
-		if !f.Defind.Check(p) {
-			return false
-		}
-		// 检测类型
-		return typeSys.CheckType(f.Type, f.Defind.Type)
-	}
-	return true
-}
+}*/
 
 // Check 检查函数定义的有效性，并计算参数的栈偏移量
 // 在 cdecl 调用约定中，参数从右到左压栈

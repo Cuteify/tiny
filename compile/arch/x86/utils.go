@@ -3,9 +3,9 @@ package x86
 import (
 	"cuteify/compile/context"
 	"cuteify/parser"
-	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
+	// TODO: typeSys "cuteify/type"
 )
 
 // caldAddrWithLen 生成带长度前缀的内存地址表达式
@@ -76,36 +76,37 @@ func calculateThisFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
 		return 0
 	}
 
-	var currentType typeSys.Type
-	for current := ctx.Parser.ThisBlock; current != nil; current = current.Father {
-		if funcBlock, ok := current.Value.(*parser.FuncBlock); ok {
-			if funcBlock.Class != nil {
-				currentType = funcBlock.Class
-				break
-			}
-		}
-	}
-
-	if currentType == nil {
-		return 0
-	}
-
-	totalOffset := 0
-	for i := 1; i < len(v.Name); i++ {
-		fieldName := v.Name[i]
-		structName := currentType.Type()
-		structBlock, exists := ctx.GetStruct(structName)
-		if !exists {
-			return 0
-		}
-		field := structBlock.GetFieldByName(fieldName)
-		if field == nil {
-			return 0
-		}
-		totalOffset += field.Offset
-		currentType = field.Type
-	}
-	return totalOffset
+	// TODO: var currentType typeSys.Type
+	// TODO: for current := ctx.Parser.ThisBlock; current != nil; current = current.Father {
+	// TODO: 	if funcBlock, ok := current.Value.(*parser.FuncBlock); ok {
+	// TODO: 		if funcBlock.Class != nil {
+	// TODO: 			currentType = funcBlock.Class
+	// TODO: 			break
+	// TODO: 		}
+	// TODO: 	}
+	// TODO: }
+	// TODO:
+	// TODO: if currentType == nil {
+	// TODO: 	return 0
+	// TODO: }
+	// TODO:
+	// TODO: totalOffset := 0
+	// TODO: for i := 1; i < len(v.Name); i++ {
+	// TODO: 	fieldName := v.Name[i]
+	// TODO: 	structName := currentType.Type()
+	// TODO: 	structBlock, exists := ctx.GetStruct(structName)
+	// TODO: 	if !exists {
+	// TODO: 		return 0
+	// TODO: 	}
+	// TODO: 	field := structBlock.GetFieldByName(fieldName)
+	// TODO: 	if field == nil {
+	// TODO: 		return 0
+	// TODO: 	}
+	// TODO: 	totalOffset += field.Offset
+	// TODO: 	currentType = field.Type
+	// TODO: }
+	// TODO: return totalOffset
+	return 0
 }
 
 func calculateFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
@@ -113,30 +114,31 @@ func calculateFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
 		return 0
 	}
 
-	var currentType typeSys.Type
-	if v.Define != nil {
-		switch def := v.Define.Value.(type) {
-		case *parser.VarBlock:
-			currentType = def.Type
-		case *parser.ArgBlock:
-			currentType = def.Type
-		}
-	}
-
-	totalOffset := 0
-	for i := 1; i < len(v.Name); i++ {
-		fieldName := v.Name[i]
-		structName := currentType.Type()
-		structBlock, exists := ctx.GetStruct(structName)
-		if !exists {
-			return 0
-		}
-		field := structBlock.GetFieldByName(fieldName)
-		if field == nil {
-			return 0
-		}
-		totalOffset += field.Offset
-		currentType = field.Type
-	}
-	return totalOffset
+	// TODO: var currentType typeSys.Type
+	// TODO: if v.Define != nil {
+	// TODO: 	switch def := v.Define.Value.(type) {
+	// TODO: 	case *parser.VarBlock:
+	// TODO: 		currentType = def.Type
+	// TODO: 	case *parser.ArgBlock:
+	// TODO: 		currentType = def.Type
+	// TODO: 	}
+	// TODO: }
+	// TODO:
+	// TODO: totalOffset := 0
+	// TODO: for i := 1; i < len(v.Name); i++ {
+	// TODO: 	fieldName := v.Name[i]
+	// TODO: 	structName := currentType.Type()
+	// TODO: 	structBlock, exists := ctx.GetStruct(structName)
+	// TODO: 	if !exists {
+	// TODO: 		return 0
+	// TODO: 	}
+	// TODO: 	field := structBlock.GetFieldByName(fieldName)
+	// TODO: 	if field == nil {
+	// TODO: 		return 0
+	// TODO: 	}
+	// TODO: 	totalOffset += field.Offset
+	// TODO: 	currentType = field.Type
+	// TODO: }
+	// TODO: return totalOffset
+	return 0
 }

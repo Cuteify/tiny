@@ -25,7 +25,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 			if brecket == 0 {
 				cursor := code.Cursor // 到终止符
 				p.Lexer.SetCursor(oldCursor)
-				r.Value = append(r.Value, p.ParseExpression(cursor))
+				r.Value = append(r.Value, p.ParseExp(cursor))
 				break
 			} else {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss )")
@@ -34,7 +34,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 		if brecket == 0 && code.Type == lexer.SEPARATOR && code.Value == "," {
 			cursor := code.Cursor // 到终止符
 			p.Lexer.SetCursor(oldCursor)
-			r.Value = append(r.Value, p.ParseExpression(cursor))
+			r.Value = append(r.Value, p.ParseExp(cursor))
 			tmp := p.Lexer.Next()
 			oldCursor = tmp.EndCursor
 		}

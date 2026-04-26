@@ -1,0 +1,7 @@
+{
+    "name": "fs_test",
+    "version": "1.0.0",
+    "imports": {
+        "fs": "std:fs"
+    }
+}

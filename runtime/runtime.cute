@@ -1,0 +1,40 @@
+// runtime/runtime.cute - 运行时库主入口 (简化版)
+// 提供运行时初始化和基础服务
+
+// 运行时配置
+var RT_HEAP_SIZE: u64 = 1024 * 1024 * 16  // 16MB堆空间
+var RT_HEAP_START: u64 = 0x10000000        // 256MB处开始
+
+// 运行时初始化
+fn rt_init() {
+    // 初始化堆
+    init_heap(RT_HEAP_START, RT_HEAP_SIZE)
+}
+
+// 内存分配包装函数
+fn alloc(size: u64) u64 {
+    ret malloc(size)
+}
+
+fn dealloc(ptr: u64) {
+    free(ptr)
+}
+
+// 打印函数（使用系统调用）
+fn print(s: u64) {
+    var len: u64 = strlen(s)
+    sys_write(1, s, len)  // stdout
+}
+
+fn println(s: u64) {
+    print(s)
+    var newline: [2]u8 = [10, 0]  // '\n' + null terminator
+    sys_write(1, newline as u64, 1)
+}
+
+// 运行时错误处理
+fn panic(msg: u64) {
+    print(134217728)  // "Runtime Panic: " 字符串的地址，实际使用时需要具体实现
+    print(msg)
+    sys_exit(1)
+}

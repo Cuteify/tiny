@@ -1,0 +1,64 @@
+// runtime/string.cute - 字符串处理运行时库 (简化版)
+
+// 字符串长度
+fn strlen(str: u64) u64 {
+    var len: u64 = 0
+    while (*(u8*)(str + len) != 0) {
+        len = len + 1
+    }
+    ret len
+}
+
+// 字符串拷贝
+fn strcpy(dest: u64, src: u64) u64 {
+    var i: u64 = 0
+    while (*(u8*)(src + i) != 0) {
+        *(u8*)(dest + i) = *(u8*)(src + i)
+        i = i + 1
+    }
+    *(u8*)(dest + i) = 0
+    ret dest
+}
+
+// 字符串比较
+fn strcmp(s1: u64, s2: u64) i32 {
+    var i: u64 = 0
+    while (*(u8*)(s1 + i) != 0 && *(u8*)(s2 + i) != 0) {
+        if (*(u8*)(s1 + i) != *(u8*)(s2 + i)) {
+            if (*(u8*)(s1 + i) > *(u8*)(s2 + i)) {
+                ret 1
+            } else {
+                ret -1
+            }
+        }
+        i = i + 1
+    }
+    
+    if (*(u8*)(s1 + i) == 0 && *(u8*)(s2 + i) == 0) {
+        ret 0
+    } else if (*(u8*)(s1 + i) == 0) {
+        ret -1
+    } else {
+        ret 1
+    }
+}
+
+// 内存拷贝
+fn memcpy(dest: u64, src: u64, n: u64) u64 {
+    var i: u64 = 0
+    while (i < n) {
+        *(u8*)(dest + i) = *(u8*)(src + i)
+        i = i + 1
+    }
+    ret dest
+}
+
+// 内存设置
+fn memset(s: u64, c: u8, n: u64) u64 {
+    var i: u64 = 0
+    while (i < n) {
+        *(u8*)(s + i) = c
+        i = i + 1
+    }
+    ret s
+}

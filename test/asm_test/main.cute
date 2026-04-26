@@ -1,0 +1,11 @@
+fn main() int {
+    var x: int
+    var y: int
+    build asm {
+        mov EAX, EBX
+        mov [$x], 100
+        mov [$y], EAX
+        add [$x], [$y]
+    }
+    ret 0
+}

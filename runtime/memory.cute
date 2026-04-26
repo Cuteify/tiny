@@ -1,0 +1,99 @@
+// runtime/memory.cute - 内存管理运行时库 (简化版)
+
+// 内存池的起始地址和大小
+var heap_start: u64 = 0
+var heap_end: u64 = 0
+var current_brk: u64 = 0
+
+// 初始化堆
+fn init_heap(start_addr: u64, size: u64) {
+    heap_start = start_addr
+    heap_end = start_addr + size
+    current_brk = start_addr
+}
+
+// 简单的brk系统调用模拟
+fn sbrk(increment: i32) u64 {
+    var old_brk: u64 = current_brk
+    
+    if (increment > 0) {
+        if (current_brk + increment > heap_end) {
+            // 内存不足
+            ret 0xFFFFFFFFFFFFFFFF  // 返回错误码
+        }
+        current_brk = current_brk + increment
+    } else if (increment < 0) {
+        if (current_brk + increment < heap_start) {
+            // 地址太小
+            ret 0xFFFFFFFFFFFFFFFF  // 返回错误码
+        }
+        current_brk = current_brk + increment
+    }
+    
+    ret old_brk
+}
+
+// 简单的内存分配器
+var free_list_head: u64 = 0
+
+// 内存块结构体 (大小 + 指向下一个空闲块的指针)
+struct MemBlock {
+    size: u32
+    next: u64
+}
+
+// 分配指定大小的内存
+fn malloc(size: u64) u64 {
+    // 需要额外空间存储块元数据
+    var alloc_size: u64 = size + 8  // 8字节用于存储大小信息
+    if (alloc_size < 16) {
+        alloc_size = 16  // 最小块大小
+    }
+    
+    // 尝试从空闲列表中分配
+    var prev_ptr: u64 = 0
+    var current_ptr: u64 = free_list_head
+    
+    while (current_ptr != 0) {
+        var block: MemBlock = *(MemBlock*)current_ptr
+        if (block.size >= alloc_size) {
+            // 找到合适的块
+            if (prev_ptr == 0) {
+                free_list_head = block.next
+            } else {
+                *(u64*)(prev_ptr + 4) = block.next
+            }
+            
+            // 返回数据区域的指针
+            ret current_ptr + 8
+        }
+        prev_ptr = current_ptr
+        current_ptr = block.next
+    }
+    
+    // 从堆中分配新内存
+    var ptr: u64 = sbrk(alloc_size as i32)
+    if (ptr == 0xFFFFFFFFFFFFFFFF) {
+        ret 0  // 分配失败
+    }
+    
+    // 存储块大小信息
+    *(u64*)ptr = alloc_size
+    ret ptr + 8
+}
+
+// 释放内存
+fn free(ptr: u64) {
+    if (ptr == 0) {
+        ret
+    }
+    
+    // 获取块头部位置
+    var header_ptr: u64 = ptr - 8
+    var block_size: u64 = *(u64*)header_ptr
+    
+    // 将块添加到空闲列表头部
+    *(u64*)ptr = free_list_head
+    *(u64*)(ptr + 4) = 0  // next指针
+    free_list_head = header_ptr
+}
