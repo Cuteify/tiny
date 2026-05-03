@@ -1,6 +1,6 @@
 build os("linux")
 
-fn Syscall(trap: u64, a1: u64, a2: u64, a3: u64) u64 {
+fn syscall(trap: u32, a1: u32, a2: u32, a3: u32) u32 {
     build asm {
         mov EAX, $trap
         mov EBX, $a1
@@ -11,7 +11,7 @@ fn Syscall(trap: u64, a1: u64, a2: u64, a3: u64) u64 {
     ret 0
 }
 
-fn Syscall6(trap: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) u64 {
+fn syscall6(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) u32 {
     build asm {
         mov EAX, $trap
         mov EBX, $a1

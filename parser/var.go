@@ -10,16 +10,16 @@ import (
 // VarBlock 描述一个变量的声明或定义
 // 包含变量的名称、类型、值、作用域信息等
 type VarBlock struct {
-	Name          Name            // 变量名（支持路径形式，如 "obj.field"）
-	IsConst       bool            // 是否为常量（const关键字）
-	Value         *Expression     // 变量的值表达式（如初始化表达式）
-	IsDefine      bool            // 是否为定义（:=）而非声明（=）
-	IsInitialized  bool            // 是否已初始化
-	Define        *Node           // 指向定义该变量的AST节点
-	Used          bool            // 变量是否已被使用（用于优化/警告）
-	StartCursor   int             // 变量名在源代码中的起始位置
-	Offset        int             // 变量在栈帧中的偏移量（编译时使用）
-	Type          typeSys.Type    // 变量的数据类型
+	Name          Name         // 变量名（支持路径形式，如 "obj.field"）
+	IsConst       bool         // 是否为常量（const关键字）
+	Value         *Expression  // 变量的值表达式（如初始化表达式）
+	IsDefine      bool         // 是否为定义（:=）而非声明（=）
+	IsInitialized bool         // 是否已初始化
+	Define        *Node        // 指向定义该变量的AST节点
+	Used          bool         // 变量是否已被使用（用于优化/警告）
+	StartCursor   int          // 变量名在源代码中的起始位置
+	Offset        int          // 变量在栈帧中的偏移量（编译时使用）
+	Type          typeSys.Type // 变量的数据类型
 }
 
 // Parse 解析变量声明/定义并添加到当前作用域
@@ -231,7 +231,7 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	oldThisBlock := p.ThisBlock
 
 	// 检查变量名是否合法
-	if !utils.CheckName(v.Name.First()) {
+	if !v.Name.Check() {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "name is not valid")
 	}
 
@@ -240,10 +240,16 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	// 使用 Finder 中的 FindVar 函数查找变量
 	if !v.IsDefine && v.Define == nil {
 		node, vb := p.FindVar(v.Name)
-		if node != nil && vb != nil {
+		if vb != nil {
+			switch vbt := vb.(type) {
+			case *ArgBlock:
+				v.Type = vbt.Type
+				v.Offset = vbt.Offset
+			case *VarBlock:
+				v.Type = vbt.Type
+				v.Offset = vbt.Offset
+			}
 			v.Define = node
-			v.Type = vb.Type
-			v.Offset = vb.Offset
 			p.ThisBlock = oldThisBlock
 			return true
 		}

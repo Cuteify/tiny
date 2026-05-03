@@ -143,7 +143,6 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 
 func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) (code string) {
 	expc := expCom{ctx: a.ctx}
-	exp.Check(a.ctx.Parser)
 	return expc.CompileExpr(exp, result, desc)
 }
 

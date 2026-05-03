@@ -14,6 +14,10 @@ type CFGNode struct {
 	Condition *Expression
 }
 
+type Checker interface {
+	Check(p *Parser) bool
+}
+
 type Block interface {
 	//Parse(p *Parser)
 }
@@ -38,40 +42,23 @@ type Node struct {
 func (n *Node) Check() bool {
 	if n.Checked && n.Father != nil {
 		return true
+
 	}
-	n.Checked = true
+
 	for _, child := range n.Children {
 		if !child.Check() {
 			return false
 		}
 	}
-	switch n.Value.(type) {
-	case *CallBlock:
-		callBlock := n.Value.(*CallBlock)
-		return callBlock.Check(n.Parser)
-	case *VarBlock:
-		varBlock := n.Value.(*VarBlock)
-		return varBlock.Check(n.Parser)
-	case *Expression:
-		expression := n.Value.(*Expression)
-		return expression.Check(n.Parser)
-	case *FuncBlock:
-		funcBlock := n.Value.(*FuncBlock)
-		for _, arg := range funcBlock.Args {
-			if !arg.Check(n.Parser) {
-				return false
-			}
+
+	if checker, ok := n.Value.(Checker); ok {
+		if !checker.Check(n.Parser) {
+			return false
 		}
-	case *IfBlock:
-		ifBlock := n.Value.(*IfBlock)
-		return ifBlock.Check(n.Parser)
-	case *ForBlock:
-		forBlock := n.Value.(*ForBlock)
-		return forBlock.Check(n.Parser)
-	// TODO: case *StructBlock:
-	// TODO: 	structBlock := n.Value.(*StructBlock)
-	// TODO: 	return structBlock.Check(n.Parser)
 	}
+
+	n.Checked = true
+
 	return true
 }
 
@@ -79,6 +66,9 @@ func (n *Node) AddChild(node *Node) {
 	n.Children = append(n.Children, node)
 	node.Parser = n.Parser
 	node.Father = n
+	if checker, ok := node.Value.(Checker); ok {
+		checker.Check(n.Parser)
+	}
 	// 判断是否为转移或跳转节点，包括添加的子节点和目标父节点，如果不是将CFG的Before指向前一个节点，并将前一个的CFG的After指向该节点，都设为无条件转移
 	/*if len(n.Children) == 1 {
 		switch n.Value.(type) {
@@ -119,11 +109,11 @@ func (n *Node) AddChild(node *Node) {
 }
 
 func (n Name) String() string {
-	return strings.Join(n, ".")
+	return utils.ToNASMName(strings.Join(n, "."))
 }
 
 func (n Name) Path() string {
-	return strings.Join(n[:len(n)-1], ".")
+	return utils.ToNASMName(strings.Join(n[:len(n)-1], "."))
 }
 
 func (n Name) Last() string {

@@ -70,7 +70,6 @@ func (c *Compiler) compileChildren(node *parser.Node, code string) string {
 }
 
 func (c *Compiler) compileChild(n *parser.Node) string {
-	n.Check()
 	switch v := n.Value.(type) {
 	case *parser.FuncBlock:
 		for _, buildFlag := range v.BuildFlags {
@@ -100,6 +99,9 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 
 func (c *Compiler) compileFuncBlock(n *parser.Node) string {
 	funcBlock := n.Value.(*parser.FuncBlock)
+	if !funcBlock.Useful && funcBlock.Name.String() != "main" {
+		return ""
+	}
 	// 变量栈设置和栈大小计算现在由 arch.Func 调用 arch.SetupVarOffsets 处理
 	return c.funcHandle(funcBlock, n)
 }
@@ -147,6 +149,9 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 
 func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	varBlock := n.Value.(*parser.VarBlock)
+	if varBlock.IsDefine && varBlock.Value == nil {
+		return ""
+	}
 	return c.Ctx.Arch.Var(varBlock)
 }
 
@@ -209,6 +214,10 @@ func (c *Compiler) generateStartEntry() string {
 func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (code string) {
 	//optimizer.OptimizeRecursion(c.Ctx.Now)           // 尝试优化递归函数
 	//optimizer.ConvertRecursionToIteration(c.Ctx.Now) // 实际转换递归为迭代
+
+	// 设置当前函数上下文
+	c.Ctx.CurrentFunc = funcBlock
+	defer func() { c.Ctx.CurrentFunc = nil }()
 
 	name := funcBlock.Name.String()
 	if name != "main" {

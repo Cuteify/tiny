@@ -1,11 +1,15 @@
 // Package parser 实现了名称查找功能
 package parser
 
-import typeSys "cuteify/type"
+import (
+	typeSys "cuteify/type"
+)
 
 // FindVar 查找变量，使用迭代自动机方式
-func (p *Parser) FindVar(name Name) (*Node, *VarBlock) {
-	if p.Block == p.ThisBlock {
+func (p *Parser) FindVar(name Name) (*Node, any) {
+	// fmt.Println("FIND", p.Block == p.ThisBlock || p.ThisBlock.Father == nil, p.ThisBlock.Value, "FATHER=", p.ThisBlock.Father)
+	if p.Block == p.ThisBlock || p.ThisBlock.Father == nil {
+		// fmt.Println("GLOOOOOBAL", name)
 		n := p.FindGlobal(name)
 		if n == nil {
 			return nil, nil
@@ -16,12 +20,16 @@ func (p *Parser) FindVar(name Name) (*Node, *VarBlock) {
 		}
 	}
 
+	oldThisBlock := p.ThisBlock
+
 	for p.ThisBlock != nil {
+		// fmt.Println("LOOP", p.ThisBlock.Value)
 		// 查找函数参数
 		if funcBlock, ok := p.ThisBlock.Value.(*FuncBlock); ok {
 			for _, arg := range funcBlock.Args {
-				if arg.Name.String() == name.First() {
-					return nil, p.varFromArg(arg)
+				if arg.Name.Eq(name) {
+					p.ThisBlock = oldThisBlock
+					return nil, arg
 				}
 			}
 		}
@@ -33,7 +41,9 @@ func (p *Parser) FindVar(name Name) (*Node, *VarBlock) {
 			}
 
 			if vb, ok := child.Value.(*VarBlock); ok {
+				//fmt.Println(vb.Name, name)
 				if vb.Name.MatchT(name, vb.Type) && vb.IsDefine {
+					p.ThisBlock = oldThisBlock
 					if len(name) == 1 {
 						return child, vb
 					}
@@ -43,8 +53,11 @@ func (p *Parser) FindVar(name Name) (*Node, *VarBlock) {
 		}
 
 		// 返回上一层
+		// fmt.Println("GOING UP FROM", p.ThisBlock.Value, "FATHER=", p.ThisBlock.Father)
 		p.ThisBlock = p.ThisBlock.Father
 	}
+
+	p.ThisBlock = oldThisBlock
 
 	return nil, nil
 }
@@ -87,34 +100,34 @@ func (p *Parser) FindFunc(name Name) (*Node, *FuncBlock) {
 	return nil, nil
 }
 
-// TODO: // FindStruct 查找结构体
-// TODO: func (p *Parser) FindStruct(name Name) (*Node, *StructBlock) {
-// TODO: 	if p.Block == p.ThisBlock {
-// TODO: 		n := p.FindGlobal(name)
-// TODO: 		if n == nil {
-// TODO: 			return nil, nil
-// TODO: 		}
-// TODO:
-// TODO: 		if sb, ok := n.Value.(*StructBlock); ok {
-// TODO: 			return n, sb
-// TODO: 		}
-// TODO: 	}
-// TODO:
-// TODO: 	for i := len(p.Block.Children) - 1; i >= 0; i-- { // 从后往前查找，确保先找到最近的结构体
-// TODO: 		child := p.Block.Children[i]
-// TODO: 		if child.Value == nil {
-// TODO: 			continue
-// TODO: 		}
-// TODO:
-// TODO: 		if sb, ok := child.Value.(*StructBlock); ok {
-// TODO: 			if sb.Name.Eq(name) {
-// TODO: 				return child, sb
-// TODO: 			}
-// TODO: 		}
-// TODO: 	}
-// TODO:
-// TODO: 	return nil, nil
-// TODO: }
+// FindStruct 查找结构体
+func (p *Parser) FindStruct(name Name) (*Node, *StructBlock) {
+	if p.Block == p.ThisBlock {
+		n := p.FindGlobal(name)
+		if n == nil {
+			return nil, nil
+		}
+
+		if sb, ok := n.Value.(*StructBlock); ok {
+			return n, sb
+		}
+	}
+
+	for i := len(p.Block.Children) - 1; i >= 0; i-- {
+		child := p.Block.Children[i]
+		if child.Value == nil {
+			continue
+		}
+
+		if sb, ok := child.Value.(*StructBlock); ok {
+			if sb.Name.Eq(name) {
+				return child, sb
+			}
+		}
+	}
+
+	return nil, nil
+}
 
 // FindGlobalVar 查找全局变量
 func (p *Parser) FindGlobal(_name Name) *Node {
@@ -154,6 +167,10 @@ func (p *Parser) FindGlobal(_name Name) *Node {
 }
 
 func (p *Parser) FindType(name Name) (*Node, typeSys.Type) {
+	if t := typeSys.GetSystemType(name.String()); t != nil {
+		return nil, t
+	}
+
 	if p.Block == p.ThisBlock {
 		n := p.FindGlobal(name)
 		if n == nil {

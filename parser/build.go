@@ -15,6 +15,7 @@ type Build struct {
 	OS           []string
 	Ignore       bool
 	Link         string
+	VarMap       map[string]*VarBlock // 变量名 -> 临时VarBlock（已填充Offset）
 }
 
 func (b *Build) Parse(p *Parser) {
@@ -34,8 +35,12 @@ func (b *Build) Parse(p *Parser) {
 				break
 			}
 		}
-		b.Asm = p.Lexer.Text[oldCurser : p.Lexer.Cursor-1]
+		rawAsm := p.Lexer.Text[oldCurser : p.Lexer.Cursor-1]
+		b.Asm = b.stripLeadingWhitespace(rawAsm)
 		b.Type = "asm"
+
+		// 自动向前查找 FuncBlock 并展开变量替换
+		b.expandAsmWithFuncArgs(p)
 	case "ext":
 		if p.FindEndCursor() <= p.Lexer.Cursor {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
@@ -113,4 +118,103 @@ func (b *Build) checkOSMatch() {
 		}
 	}
 	b.Ignore = true
+}
+
+// expandAsmWithFuncArgs 自动查找变量，存储 VarBlock
+func (b *Build) expandAsmWithFuncArgs(p *Parser) {
+	// 提取所有 $变量名
+	variables := b.extractVariables()
+
+	// 存储变量映射
+	b.VarMap = make(map[string]*VarBlock)
+	for _, varName := range variables {
+		name := NewName(varName)
+
+		// 创建临时 VarBlock
+		tmpVar := &VarBlock{Name: name, IsDefine: false}
+
+		// 让 VarBlock 自己查找 Define
+		tmpVar.ParseDefine(p)
+
+		// 检查是否找到了变量（Offset 被设置）
+		if tmpVar.Define != nil || tmpVar.Offset != 0 {
+			b.VarMap[varName] = tmpVar
+		}
+	}
+}
+
+// extractVariables 从汇编代码中提取所有 $变量名
+func (b *Build) extractVariables() []string {
+	var variables []string
+	lines := strings.Split(b.Asm, "\n")
+	for _, line := range lines {
+		// 查找 $ 开头的变量名
+		for i := 0; i < len(line); i++ {
+			if line[i] == '$' && i+1 < len(line) {
+				// 提取变量名
+				start := i + 1
+				end := start
+				for end < len(line) && (isAlphaNum(line[end]) || line[end] == '_') {
+					end++
+				}
+				if end > start {
+					varName := line[start:end]
+					// 检查是否已存在
+					found := false
+					for _, v := range variables {
+						if v == varName {
+							found = true
+							break
+						}
+					}
+					if !found {
+						variables = append(variables, varName)
+					}
+				}
+			}
+		}
+	}
+	return variables
+}
+
+// isAlphaNum 检查字符是否是字母或数字
+func isAlphaNum(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// stripLeadingWhitespace 去除每行前导空白，找到最小缩进并统一去除
+func (b *Build) stripLeadingWhitespace(asm string) string {
+	lines := strings.Split(asm, "\n")
+
+	// 找到最小缩进
+	minIndent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		indent := 0
+		for _, ch := range line {
+			if ch == ' ' || ch == '\t' {
+				indent++
+			} else {
+				break
+			}
+		}
+		if minIndent == -1 || indent < minIndent {
+			minIndent = indent
+		}
+	}
+
+	if minIndent <= 0 {
+		return asm
+	}
+
+	// 去除最小缩进
+	for i, line := range lines {
+		if len(line) >= minIndent {
+			lines[i] = line[minIndent:]
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }

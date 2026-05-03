@@ -12,6 +12,7 @@ type FuncBlock struct {
 	Return     []typeSys.Type // 返回值类型列表（支持多返回值）
 	Name       Name           // 函数名
 	BuildFlags []*Build       // 编译标志
+	Useful     bool           // 是否有用（用于优化）
 }
 
 // ArgBlock 函数参数结构体
@@ -118,6 +119,18 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	bracketCount := 0
 	argTmp := &ArgBlock{}
 
+	// 存入第一个参数的名字
+	if token.Type != lexer.NAME {
+		if token.Value != ")" || token.Type != lexer.SEPARATOR {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
+		}
+		return
+	}
+
+	p.Lexer.SetCursor(token.Cursor)
+	n, _ := p.Name(false)
+	argTmp.Name = n
+
 	for !token.IsEmpty() {
 		if token.Type != lexer.SEPARATOR { // 遇到非分割符，跳过
 			token = p.Lexer.Next()
@@ -126,6 +139,13 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 
 		if token.Value == "\n" || token.Value == "\r" {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
+		}
+
+		if bracketCount <= -1 { // 找到参数结束的)
+			if !argTmp.Name.IsEmpty() {
+				f.Args = append(f.Args, argTmp)
+			}
+			break
 		}
 
 		// 处理括号
@@ -137,9 +157,6 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			bracketCount--
 			continue
 		}
-		if bracketCount == -1 { // 找到参数结束的)
-			break
-		}
 
 		// 处理其他部分
 		if bracketCount == 0 {
@@ -149,6 +166,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 				_, argTmp.Type = p.FindType(n)
 				if argTmp.Type == nil {
 					p.Lexer.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
+					token = p.Lexer.Next()
 					continue
 				}
 			}
@@ -173,7 +191,6 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 				// 获取下一参数的名称
 				n, _ := p.Name(false)
 				argTmp.Name = n
-				continue
 			}
 		}
 		token = p.Lexer.Next()
