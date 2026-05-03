@@ -5,7 +5,6 @@ import (
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 )
@@ -45,22 +44,24 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
-	for _, ppath := range packageInfo.Imports {
+	for k, ppath := range packageInfo.Imports {
 		if _, ok := packages[ppath]; !ok {
 			if ppath[:4] == "std:" {
 				stdPath, err := os.Getwd()
 				if err != nil {
 					return nil, err
 				}
+
 				ppath = path.Join(stdPath, "pkg", ppath[4:])
 			} else {
 				ppath = path.Join(packagePath, ppath)
 			}
-			fmt.Println(ppath)
 			info, err := GetPackage(ppath, false)
 			if err != nil {
 				return nil, err
 			}
+			// 回写import
+			packageInfo.Imports[k] = ppath
 			packages[ppath] = info
 		}
 	}
@@ -95,6 +96,10 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		for _, info := range packages {
 			tmp := info.AST.(*parser.Node)
 			packageInfo.AST.(*parser.Node).Children = append(packageInfo.AST.(*parser.Node).Children, tmp.Children...)
+		}
+		// 将所有包的AST都设置成合并后的全局AST
+		for _, info := range packages {
+			info.AST = packageInfo.AST
 		}
 		packageInfo.AST.(*parser.Node).Check()
 	}

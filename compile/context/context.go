@@ -11,6 +11,9 @@ type Context struct {
 	// AST 相关
 	Now *parser.Node // 当前正在编译的 AST 节点
 
+	// 当前函数上下文
+	CurrentFunc *parser.FuncBlock // 当前正在编译的函数
+
 	// 寄存器管理
 	Reg  *regmgr.RegMgr // 寄存器管理器
 	Arch arch.Arch      // 编译器架构接口
@@ -37,7 +40,6 @@ type Context struct {
 	ArgOffset    int // 参数偏移量，用于跟踪函数参数在栈中的位置
 	IfCount      int // if 块数量计数，用于生成唯一的if标签
 	ForCount     int // for 块数量计数，用于生成唯一的for标签
-	Parser       *parser.Parser
 
 	// 结构体相关
 	// TODO: Structs map[string]*parser.StructBlock // 存储结构体定义
@@ -96,7 +98,6 @@ func (ctx *Context) Clone() *Context {
 		ArgOffset:      ctx.ArgOffset,
 		IfCount:        ctx.IfCount,
 		ForCount:       ctx.ForCount,
-		Parser:         ctx.Parser,
 		// TODO: Structs:        ctx.Structs, // 共享结构体映射
 	}
 }

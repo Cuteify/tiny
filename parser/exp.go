@@ -41,11 +41,15 @@ func (exp *Expression) Check(p *Parser) bool {
 	exp.CheckVar(p)
 
 	if exp.Call != nil {
-		return exp.checkCall(p)
+		if !exp.checkCall(p) {
+			return false
+		}
 	}
 
 	if exp.Separator != "" {
-		return exp.checkOperator(p)
+		if !exp.checkOperator(p) {
+			return false
+		}
 	}
 
 	exp.checked = true
@@ -342,6 +346,11 @@ func (exp *Expression) CheckVar(p *Parser) bool {
 		exp.Var.ParseDefine(p)
 	}
 
+	if exp.Var.Type != nil {
+		exp.Type = exp.Var.Type
+		return true
+	}
+
 	if exp.Var.Define == nil {
 		return false
 	}
@@ -351,6 +360,11 @@ func (exp *Expression) CheckVar(p *Parser) bool {
 }
 
 func (exp *Expression) setVarInfo(varBlock *VarBlock) {
+	if varBlock.Define == nil {
+		exp.Type = varBlock.Type
+		varBlock.Type = exp.Type
+		return
+	}
 	switch varBlock.Define.Value.(type) {
 	case *VarBlock:
 		varDef := varBlock.Define.Value.(*VarBlock)
@@ -480,7 +494,7 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 	if len(name) > 1 {
 		token := p.Lexer.Next()
 		if token.Value == "(" {
-			p.Lexer.SetCursor(token.Cursor - 1)
+			p.Lexer.SetCursor(token.Cursor)
 			exp.handleMethodCall(p, name)
 			return true
 		}
@@ -534,39 +548,10 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 }
 
 func (exp *Expression) handleMethodCall(p *Parser, name Name) {
-	fmt.Printf("[DEBUG] handleMethodCall called: name=%v\n", name)
-
-	objName := name[0]
-	objVar := &VarBlock{Name: Name([]string{objName})}
-	objVar.ParseDefine(p)
-
-	// TODO: methodName := name[1]
-	// TODO: structName := objVar.Type.Type()
-	// TODO: structBlock := p.FindStruct(structName)
-	// TODO: if structBlock == nil {
-	// TODO: 	p.Error.MissError("Method Error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
-	// TODO: 	return
-	// TODO: }
-	// TODO:
-	// TODO: var method *FuncBlock
-	// TODO: for _, m := range structBlock.Methods {
-	// TODO: 	if m.Name.Last() == methodName {
-	// TODO: 		method = m
-	// TODO: 		break
-	// TODO: 	}
-	// TODO: }
-	// TODO:
-	// TODO: if method == nil {
-	// TODO: 	p.Error.MissError("Method Error", p.Lexer.Cursor, "struct '"+structName+"' has no method '"+methodName+"'")
-	// TODO: 	return
-	// TODO: }
-	// TODO:
-	// TODO: exp.Call = &CallBlock{
-	// TODO: 	Name:    Name([]string{structName, methodName}),
-	// TODO: 	Func:    method,
-	// TODO: 	ThisVar: objVar,
-	// TODO: }
-	// TODO: exp.Call.ParseCall(p)
+	exp.Call = &CallBlock{
+		Name: name,
+	}
+	exp.Call.ParseCall(p)
 }
 
 func (exp *Expression) handleFieldAccess(p *Parser, name Name) {
@@ -685,8 +670,9 @@ func (exp *Expression) handleVar(p *Parser, name Name) {
 		Name: name,
 	}
 	exp.Var = varBlock
-	exp.Var.ParseDefine(p)
-	exp.setVarInfo(varBlock)
+	if exp.Var.ParseDefine(p) {
+		exp.setVarInfo(varBlock)
+	}
 }
 
 func (exp *Expression) handleNum(_ *Parser, isNegative bool) {
@@ -865,7 +851,6 @@ func (exp *Expression) valueString() string {
 
 func (exp *Expression) Print() {
 	if exp.Father == nil {
-		fmt.Println(exp)
 	}
 }
 

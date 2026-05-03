@@ -3,7 +3,6 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"strings"
 )
 
 type CallBlock struct {
@@ -14,25 +13,29 @@ type CallBlock struct {
 	ThisVar *VarBlock
 }
 
-func (c *CallBlock) Check(parser *Parser) bool {
+func (c *CallBlock) Check(p *Parser) bool {
 	if c.Name.IsEmpty() {
-		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "function name is empty")
+		p.Error.MissError("Call Error", p.Lexer.Cursor, "function name is empty")
 		return false
 	}
 
 	if c.Func == nil {
-		_, funcBlock := parser.FindFunc(c.Name)
+		_, funcBlock := p.FindFunc(c.Name)
 		c.Func = funcBlock
 	}
 
 	if c.Func == nil {
-		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
+		if p.Block == p.ThisBlock {
+			p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
+		}
 		return false
 	}
 
+	c.Func.Useful = true
+
 	// 检查参数个数是否匹配（考虑默认参数）
 	if len(c.Args) > len(c.Func.Args) {
-		parser.Error.MissError("Call Error", parser.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
+		p.Error.MissError("Call Error", p.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
 		return false
 	}
 
@@ -40,7 +43,7 @@ func (c *CallBlock) Check(parser *Parser) bool {
 	if len(c.Args) < len(c.Func.Args) {
 		for i := len(c.Args); i < len(c.Func.Args); i++ {
 			if c.Func.Args[i].Default == nil {
-				parser.Error.MissError("Call Error", parser.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
+				p.Error.MissError("Call Error", p.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
 				return false
 			}
 			// 添加默认参数
@@ -59,14 +62,13 @@ func (c *CallBlock) Check(parser *Parser) bool {
 		// 获取对应的函数定义参数
 		defArg := c.Func.Args[i]
 
-		arg.Value.Check(parser)
+		arg.Value.Check(p)
 
 		// 类型检查
 		if !typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
-			nameStr := strings.Join(c.Name, ".") // 将Name转换为点分隔的字符串
-			parser.Error.MissError("Type Error", parser.Lexer.Cursor-1,
+			p.Error.MissError("Type Error", p.Lexer.Cursor-1,
 				"cannot use "+arg.Value.Type.Type()+" as type "+
-					defArg.Type.Type()+" in argument to "+nameStr)
+					defArg.Type.Type()+" in argument to "+c.Name.String())
 			return false
 		}
 

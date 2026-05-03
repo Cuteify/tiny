@@ -10,13 +10,13 @@ import (
 )
 
 type Parser struct {
-	Block         *Node
-	ThisBlock     *Node
-	Lexer         *lexer.Lexer
-	BracketsNum   int
-	Error         *errorUtil.Error
-	Package       *packageFmt.Info
-	DontBack      int
+	Block       *Node
+	ThisBlock   *Node
+	Lexer       *lexer.Lexer
+	BracketsNum int
+	Error       *errorUtil.Error
+	Package     *packageFmt.Info
+	DontBack    int
 }
 
 func (p *Parser) Next() (finish bool) {
@@ -331,6 +331,9 @@ func NewParser(lexer *lexer.Lexer) *Parser {
 func (p *Parser) Parse() *Node {
 	for {
 		if p.Next() {
+			if p.Block != p.ThisBlock {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '}'")
+			}
 			break
 		}
 	}

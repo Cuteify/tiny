@@ -28,10 +28,10 @@ type Type interface {
 type StructFileds []*StructField
 
 type RType struct {
-	TypeName string
-	RSize    int
-	RParent  Type
-	IsPtr    bool
+	TypeName   string
+	RSize      int
+	RParent    Type
+	IsPtr      bool
 	RAlignment int
 }
 

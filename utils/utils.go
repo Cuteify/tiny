@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,71 @@ func CheckName(name string) bool {
 		}
 	}
 	return true
+}
+
+// ToNASMName 将函数名转换为 NASM 兼容的标签名称
+// 转换规则：
+//   - main → main（保持不变）
+//   - 系统包（/pkg/ 路径下）→ std_ 开头，如 std_fs_open
+//   - 外部包 → pkg_ 开头
+//   - 本地包 → 使用相对路径
+//   - 中文/特殊字符 → _u{Unicode码点} 格式
+func ToNASMName(name string) string {
+	if name == "main" {
+		return name
+	}
+
+	// 判断是否是系统包（路径中包含 /pkg/）
+	isSystemPkg := strings.Contains(name, "/pkg/") || strings.Contains(name, "\\pkg\\")
+
+	var result string
+	if isSystemPkg {
+		// 系统包：提取 pkg 后面的部分
+		pkgIndex := strings.LastIndex(name, "/pkg/")
+		if pkgIndex == -1 {
+			pkgIndex = strings.LastIndex(name, "\\pkg\\")
+		}
+		if pkgIndex != -1 {
+			result = "std_" + name[pkgIndex+len("/pkg/"):]
+		}
+	} else {
+		// 外部包或本地包：使用相对路径
+		// 尝试找到项目根目录后的部分
+		result = name
+	}
+
+	// 清理非法字符
+	result = sanitizeNASMName(result)
+
+	return result
+}
+
+// sanitizeNASMName 清理 NASM 标签中的非法字符
+func sanitizeNASMName(name string) string {
+	var result strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			result.WriteRune(r)
+		} else if r == '/' || r == '\\' || r == '.' || r == '-' {
+			result.WriteRune('_')
+		} else {
+			// 中文或其他特殊字符 → _u{Unicode码点}
+			result.WriteString("_u" + strconv.Itoa(int(r)))
+		}
+	}
+
+	// 清理连续的下划线
+	cleaned := result.String()
+	for strings.Contains(cleaned, "__") {
+		cleaned = strings.ReplaceAll(cleaned, "__", "_")
+	}
+
+	// 确保不以数字开头
+	if len(cleaned) > 0 && cleaned[0] >= '0' && cleaned[0] <= '9' {
+		cleaned = "_" + cleaned
+	}
+
+	return cleaned
 }
 
 // Format 格式化汇编代码行（带缩进）

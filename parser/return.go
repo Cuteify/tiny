@@ -2,6 +2,7 @@ package parser
 
 import (
 	"cuteify/lexer"
+	"fmt"
 )
 
 type ReturnBlock struct {
@@ -34,6 +35,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 		if brecket == 0 && code.Type == lexer.SEPARATOR && code.Value == "," {
 			cursor := code.Cursor // 到终止符
 			p.Lexer.SetCursor(oldCursor)
+			fmt.Println(p.Lexer.Text[oldCursor:cursor])
 			r.Value = append(r.Value, p.ParseExp(cursor))
 			tmp := p.Lexer.Next()
 			oldCursor = tmp.EndCursor

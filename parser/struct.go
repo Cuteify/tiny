@@ -17,7 +17,7 @@ func (s *StructType) ToType() *typeSys.StructType {
 }
 
 func (s *StructType) FromType(st *typeSys.StructType) {
-	*s = *(*StructType)(unsafe.Pointer(st) )
+	*s = *(*StructType)(unsafe.Pointer(st))
 }
 
 type StructBlock struct {
