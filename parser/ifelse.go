@@ -6,16 +6,19 @@ import (
 	"reflect"
 )
 
+// IfBlock if 条件块结构体
 type IfBlock struct {
 	ElseBlock *Node
 	Else      bool // 是否有else
 	Condition *Expression
 }
 
+// ElseBlock else 块结构体
 type ElseBlock struct {
 	IfCondition *Expression
 }
 
+// Parse 解析 if 条件块
 func (i *IfBlock) Parse(p *Parser) {
 	bracketsCount := 0
 	oldCursor := p.Lexer.Cursor
@@ -23,9 +26,10 @@ func (i *IfBlock) Parse(p *Parser) {
 	// 找到末尾的{
 	for p.FindEndCursor() > p.Lexer.Cursor {
 		code := p.Lexer.Next()
-		if code.Value == "(" {
+		switch code.Value {
+		case "(":
 			bracketsCount++
-		} else if code.Value == ")" {
+		case ")":
 			bracketsCount--
 		}
 		if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {
@@ -38,6 +42,7 @@ func (i *IfBlock) Parse(p *Parser) {
 	p.Wait("{")
 }
 
+// Check 检查 if 条件块的有效性
 func (i *IfBlock) Check(p *Parser) bool {
 	if !i.Condition.Check(p) {
 		return false
@@ -56,6 +61,7 @@ func (i *IfBlock) Check(p *Parser) bool {
 	return true
 }
 
+// Parse 解析 else 块
 func (e *ElseBlock) Parse(p *Parser) {
 	tmp := p.Lexer.Next()
 	if tmp.Value == "IF" && tmp.Type == lexer.PROCESSCONTROL {
@@ -65,9 +71,10 @@ func (e *ElseBlock) Parse(p *Parser) {
 		// 找到末尾的{
 		for p.FindEndCursor() > p.Lexer.Cursor {
 			code := p.Lexer.Next()
-			if code.Value == "(" {
+			switch code.Value {
+			case "(":
 				bracketsCount++
-			} else if code.Value == ")" {
+			case ")":
 				bracketsCount--
 			}
 			if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {

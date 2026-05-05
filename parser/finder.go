@@ -62,15 +62,6 @@ func (p *Parser) FindVar(name Name) (*Node, any) {
 	return nil, nil
 }
 
-// varFromArg 将ArgBlock转换为VarBlock
-func (p *Parser) varFromArg(arg *ArgBlock) *VarBlock {
-	return &VarBlock{
-		Name:   arg.Name,
-		Type:   arg.Type,
-		Offset: arg.Offset,
-	}
-}
-
 // FindFunc 查找函数
 func (p *Parser) FindFunc(name Name) (*Node, *FuncBlock) {
 	if p.Block == p.ThisBlock {
@@ -129,7 +120,7 @@ func (p *Parser) FindStruct(name Name) (*Node, *StructBlock) {
 	return nil, nil
 }
 
-// FindGlobalVar 查找全局变量
+// FindGlobal 查找全局变量
 func (p *Parser) FindGlobal(_name Name) *Node {
 	var children = []*Node{}
 	name := _name.Fork()
@@ -166,6 +157,7 @@ func (p *Parser) FindGlobal(_name Name) *Node {
 	return nil
 }
 
+// FindType 查找类型定义
 func (p *Parser) FindType(name Name) (*Node, typeSys.Type) {
 	if t := typeSys.GetSystemType(name.String()); t != nil {
 		return nil, t

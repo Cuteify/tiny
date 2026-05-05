@@ -5,6 +5,7 @@ import (
 	typeSys "cuteify/type"
 )
 
+// CallBlock 函数调用结构体
 type CallBlock struct {
 	Name    Name
 	Args    []*ArgBlock
@@ -13,6 +14,7 @@ type CallBlock struct {
 	ThisVar *VarBlock
 }
 
+// Check 检查函数调用的参数数量和类型是否匹配
 func (c *CallBlock) Check(p *Parser) bool {
 	if c.Name.IsEmpty() {
 		p.Error.MissError("Call Error", p.Lexer.Cursor, "function name is empty")

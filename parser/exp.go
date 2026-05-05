@@ -329,6 +329,7 @@ func (exp *Expression) foldNumericConstants(value float64) {
 	exp.Left, exp.Right = nil, nil
 }
 
+// CheckVar 检查表达式中的变量引用是否有效
 func (exp *Expression) CheckVar(p *Parser) bool {
 	if exp.Var == nil {
 		return true
@@ -689,6 +690,7 @@ func (exp *Expression) handleNum(_ *Parser, isNegative bool) {
 	}
 }
 
+// SetOperator 设置表达式的左右子表达式和操作符关系
 func (exp *Expression) SetOperator(left *Expression, right *Expression) {
 	exp.Left = left
 	exp.Right = right
@@ -696,6 +698,7 @@ func (exp *Expression) SetOperator(left *Expression, right *Expression) {
 	right.Father = exp
 }
 
+// handleWe 处理操作符优先级栈的归约
 func handleWe(stackNum, stackSep []*Expression) ([]*Expression, []*Expression) {
 	// 处理右括号
 	if stackSep[len(stackSep)-1].Separator == ")" {
@@ -746,6 +749,7 @@ func handleWe(stackNum, stackSep []*Expression) ([]*Expression, []*Expression) {
 	return stackNum, stackSep
 }
 
+// afterHandle 将表达式栈归约为最终表达式树
 func afterHandle(stackNum, stackSep []*Expression) *Expression {
 	for len(stackNum) >= 2 && len(stackSep) >= 1 {
 		lastTokenWe := 0
@@ -779,6 +783,7 @@ func afterHandle(stackNum, stackSep []*Expression) *Expression {
 //
 // 返回:
 //   - bool: 是否找到该变量
+// FindVar 在表达式树中查找指定的变量块
 func (exp *Expression) FindVar(v Block) bool {
 	// 在当前表达式的变量中查找
 	var vd Block
@@ -849,8 +854,10 @@ func (exp *Expression) valueString() string {
 	return fmt.Sprint(exp.Num)
 }
 
+// Print 打印表达式的字符串表示（仅根节点）
 func (exp *Expression) Print() {
 	if exp.Father == nil {
+		fmt.Println(exp.String())
 	}
 }
 

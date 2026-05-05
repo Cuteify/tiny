@@ -5,10 +5,12 @@ import (
 	"fmt"
 )
 
+// ReturnBlock return 语句结构体
 type ReturnBlock struct {
 	Value []*Expression
 }
 
+// Parse 解析 return 语句
 func (r *ReturnBlock) Parse(p *Parser) {
 	p.Lexer.Skip(' ')           // 跳过空格
 	oldCursor := p.Lexer.Cursor // 记录初始位置
@@ -16,9 +18,10 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	for {
 		code := p.Lexer.Next()
 		if code.Type == lexer.SEPARATOR {
-			if code.Value == "(" {
+			switch code.Value {
+			case "(":
 				brecket++
-			} else if code.Value == ")" {
+			case ")":
 				brecket--
 			}
 		}
@@ -45,6 +48,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	p.ThisBlock.AddChild(node)
 }
 
+// Check 检查 return 语句的有效性
 func (r *ReturnBlock) Check(p *Parser) bool {
 	for _, v := range r.Value {
 		if !v.Check(p) {
