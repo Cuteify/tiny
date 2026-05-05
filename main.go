@@ -25,7 +25,7 @@ func main() {
 	//pr(tmp.AST.(*parser.Node), 0)
 	code := co.Compile(tmp.AST.(*parser.Node))
 	os.WriteFile(`./_main.asm`, []byte(code), 0644)
-	fmt.Println("\033[32mOK\033[0m:Finish in", time.Now().Sub(startTime))
+	fmt.Println("\033[32mOK\033[0m:Finish in", time.Since(startTime))
 }
 
 func pr(block *parser.Node, tabnum int) {

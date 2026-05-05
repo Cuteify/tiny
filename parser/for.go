@@ -13,7 +13,7 @@ type ForBlock struct {
 	Offset    int
 }
 
-// ParseFor 解析 for 循环
+// Parse 解析 for 循环
 func (f *ForBlock) Parse(p *Parser) {
 	// 跳过 '('
 	p.Lexer.Skip('(')
@@ -45,9 +45,10 @@ func (f *ForBlock) Parse(p *Parser) {
 // parseInit 解析 for 循环的初始化部分
 func (f *ForBlock) parseInit(p *Parser) {
 	sepCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ";"}, p.FindEndCursor())
-	if sepCursor == -1 { // 只有条件
+	switch sepCursor {
+	case -1: // 只有条件部分
 		return
-	} else if sepCursor == p.Lexer.Cursor { // 没有初始化部分
+	case p.Lexer.Cursor: // 没有初始化部分
 		return
 	}
 	// 使用VarBlock解析变量定义

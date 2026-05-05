@@ -171,10 +171,10 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 				}
 			}
 
-			if token.Value == "*" {
-				// TODO: 处理指针类型
-				//argTmp.Type = true
-			}
+			// TODO: 处理指针类型（token.Value == "*"）
+			// if token.Value == "*" {
+			// 	argTmp.Type = typeSys.NewPointerType(argTmp.Type)
+			// }
 
 			if token.Value == "=" {
 				oldCursor := token.Cursor
@@ -197,6 +197,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	}
 }
 
+// ParseRetType 解析函数返回类型
 func (f *FuncBlock) ParseRetType(p *Parser) {
 	// TODO:多参数支持
 	typName, _ := p.Name(false)

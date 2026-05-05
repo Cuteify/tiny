@@ -19,6 +19,7 @@ type Parser struct {
 	DontBack    int
 }
 
+// Next 解析下一个语法单元，返回是否结束
 func (p *Parser) Next() (finish bool) {
 	beforeCursor := p.Lexer.Cursor
 	code := p.Lexer.Next()
@@ -153,10 +154,12 @@ func (p *Parser) processDefaultToken(code lexer.Token) {
 	}
 }
 
+// AddChild 向当前作用域添加子节点
 func (p *Parser) AddChild(node *Node) {
 	p.ThisBlock.AddChild(node)
 }
 
+// Back 从当前作用域回退 num 层
 func (p *Parser) Back(num int) error {
 	if num == 0 {
 		return nil
@@ -175,6 +178,7 @@ func (p *Parser) Back(num int) error {
 	return p.Back(num - 1)
 }
 
+// Need 持续读取 Token 直到遇到指定值，返回所有经过的 Token
 func (p *Parser) Need(value string) []lexer.Token {
 	tmp2 := []lexer.Token{}
 	for {
@@ -192,6 +196,7 @@ func (p *Parser) Need(value string) []lexer.Token {
 	}
 }
 
+// FindEndCursor 查找当前行末尾的光标位置
 func (p *Parser) FindEndCursor() int {
 	tmp := strings.Index(p.Lexer.Text[p.Lexer.Cursor:], p.Lexer.LineFeed)
 	if tmp == -1 {
@@ -200,10 +205,12 @@ func (p *Parser) FindEndCursor() int {
 	return tmp + p.Lexer.Cursor
 }
 
+// Wait 等待并跳过直到遇到指定值，返回经过的 Token 数量
 func (p *Parser) Wait(value string) int {
 	return len(p.Need(value))
 }
 
+// Has 在指定范围内查找匹配的 Token，返回其结束位置
 func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 	startCursor := p.Lexer.Cursor
 	for stopCursor > p.Lexer.Cursor {
@@ -221,6 +228,7 @@ func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 	return -1
 }
 
+// Name 解析完整的标识符名称（支持点分路径如 pkg.Func）
 func (p *Parser) Name(wait bool) (name Name, cursor int) {
 	if wait {
 		// 等待名称
@@ -248,31 +256,24 @@ func (p *Parser) Name(wait bool) (name Name, cursor int) {
 
 	buf := ""
 
-	lastCursor := p.Lexer.Cursor
-
-	// 开始获取完整名称
 	for {
-		// 记录当前位置
-		lastCursor = p.Lexer.Cursor
 		code := p.Lexer.Next()
 		switch code.Type {
 		case lexer.NAME:
 			buf += code.Value
 		case lexer.SEPARATOR:
-			// 必须是一个字符的分隔符
-			// 检查是否是可用于名称的符号
 			if len(code.Value) != 1 || bytes.IndexByte([]byte{'.', '_'}, code.Value[0]) == -1 {
+				p.Lexer.SetCursor(code.Cursor)
 				goto nameFindEnd
 			}
 			buf += code.Value
 		default:
+			p.Lexer.SetCursor(code.Cursor)
 			goto nameFindEnd
 		}
 	}
 
 nameFindEnd:
-	// 还原到名称结束位置
-	p.Lexer.SetCursor(lastCursor)
 
 	// 对名称完整性检查
 	if len(buf) > 0 && (buf[len(buf)-1] == '.' || buf[len(buf)-1] == '_') {
@@ -301,6 +302,7 @@ nameFindEnd:
 	return
 }
 
+// CheckUnusedVar 递归检查未使用的变量定义
 func (p *Parser) CheckUnusedVar(node *Node) {
 	for i := 0; i < len(node.Children); i++ {
 		/*if node.Children[i].CFG == nil {
@@ -318,6 +320,7 @@ func (p *Parser) CheckUnusedVar(node *Node) {
 	}
 }
 
+// NewParser 创建新的语法分析器
 func NewParser(lexer *lexer.Lexer) *Parser {
 	p := &Parser{
 		Lexer: lexer,
@@ -328,6 +331,7 @@ func NewParser(lexer *lexer.Lexer) *Parser {
 	return p
 }
 
+// Parse 执行完整的语法分析，返回 AST 根节点
 func (p *Parser) Parse() *Node {
 	for {
 		if p.Next() {
