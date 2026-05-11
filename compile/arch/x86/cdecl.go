@@ -36,8 +36,25 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 	}
 
 	if call.ThisVar != nil {
-		thisAddr := genVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("push " + thisAddr + "; push this pointer")
+		fields := call.ThisVar.Type.Fields()
+		if fields != nil && len(fields) > 0 {
+			baseAddr := genVarAddrBase(a.ctx, call.ThisVar)
+			for i := len(fields) - 1; i >= 0; i-- {
+				field := fields[i]
+				offset := field.Offset
+				sizePrefix := utils.GetLengthName(field.Type.Size())
+				var fieldAddr string
+				if offset > 0 {
+					fieldAddr = sizePrefix + baseAddr + "+" + strconv.Itoa(offset)
+				} else {
+					fieldAddr = sizePrefix + baseAddr
+				}
+				code += utils.Format("push " + fieldAddr + "; push self." + field.Name)
+			}
+		} else {
+			thisAddr := genVarAddr(a.ctx, call.ThisVar)
+			code += utils.Format("push " + thisAddr + "; push this")
+		}
 	}
 
 	for i := len(call.Args) - 1; i >= 0; i-- {
@@ -56,7 +73,7 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 
 	argSize := arch.CalcArgsSize(call.Func)
 	if call.ThisVar != nil {
-		argSize += 4
+		argSize += call.ThisVar.Type.Size()
 	}
 	if argSize > 0 {
 		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; 清理参数栈(cdecl)")
@@ -109,9 +126,6 @@ func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
 	}
 
 	argOffset := 8
-	if funcBlock.Class != nil {
-		argOffset += 4
-	}
 
 	for i := 0; i < len(funcBlock.Args); i++ {
 		arg := funcBlock.Args[i]

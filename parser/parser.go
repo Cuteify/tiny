@@ -45,7 +45,7 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.VAR:
 		p.processVarToken(beforeCursor)
 	case lexer.TYPE:
-		//TODO: p.processTypeToken(code)
+		p.processTypeToken(code)
 	case lexer.BUILD:
 		p.processBuildToken(code)
 	default:
@@ -128,20 +128,13 @@ func (p *Parser) processVarToken(beforeCursor int) {
 	block.Parse(p)
 }
 
-// TODO: func (p *Parser) processTypeToken(code lexer.Token) {
-// TODO: 	switch code.Value {
-// TODO: 	case "struct":
-// TODO: 		block := &StructBlock{}
-// TODO: 		block.Parse(p)
-// TODO: 		p.AddChild(&Node{Value: block})
-// TODO: 	case "interface":
-// TODO: 		block := &InterfaceBlock{}
-// TODO: 		block.Parse(p)
-// TODO: 		p.AddChild(&Node{Value: block})
-// TODO: 	default:
-// TODO: 		p.processDefaultToken(code)
-// TODO: 	}
-// TODO: }
+func (p *Parser) processTypeToken(code lexer.Token) {
+	switch code.Value {
+	case "type":
+		block := &TypeBlock{}
+		block.Parse(p)
+	}
+}
 
 func (p *Parser) processBuildToken(token lexer.Token) {
 	block := &Build{}

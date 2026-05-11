@@ -1,7 +1,8 @@
 build os("linux")
 
-fn open(pathname: u32, flags: i32, mode: u32) i32 {
-    ret syscall.syscall(5, pathname, flags, mode)
+fn open(pathname: string, flags: i32, mode: u32) i32 {
+    var c_str: u64 = pathname.to_c()
+    ret syscall.syscall(5, c_str, flags, mode)
 }
 
 fn close(fd: i32) i32 {

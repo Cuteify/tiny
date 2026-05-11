@@ -1,0 +1,6 @@
+fn main() int {
+    var s: string = "hello"
+    var c_str: u64 = s.to_c()
+    var data: u64 = strings.from_c(c_str)
+    ret 0
+}

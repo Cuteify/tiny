@@ -1,0 +1,9 @@
+fn test() u64 {
+    var i: u64 = 0
+    ret i
+}
+
+fn main() int {
+    var x: u64 = test()
+    ret 0
+}

@@ -81,7 +81,19 @@ func (r RType) String() string {
 	return r.TypeName
 }
 
+var registeredTypes map[string]Type
+
+func RegisterType(name string, t Type) {
+	if registeredTypes == nil {
+		registeredTypes = make(map[string]Type)
+	}
+	registeredTypes[strings.ToLower(name)] = t
+}
+
 func (r *RType) Fields() StructFileds {
+	if st, ok := registeredTypes[r.TypeName]; ok {
+		return st.Fields()
+	}
 	if r.TypeName != "struct" {
 		return nil
 	}
@@ -138,6 +150,11 @@ type (
 
 func GetSystemType(name string) Type {
 	name = strings.ToLower(name)
+	if registeredTypes != nil {
+		if t, ok := registeredTypes[name]; ok {
+			return t
+		}
+	}
 	switch name {
 	case "int":
 		return &IntType{RType: RType{TypeName: "int"}}
@@ -169,6 +186,8 @@ func GetSystemType(name string) Type {
 		return &Float64Type{RType: RType{TypeName: "f64"}}
 	case "string":
 		return &StringType{RType: RType{TypeName: "string"}}
+	case "ptr":
+		return &Uint32Type{RType: RType{TypeName: "ptr", RSize: 4}}
 	default:
 		return nil
 	}

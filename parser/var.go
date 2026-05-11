@@ -20,6 +20,7 @@ type VarBlock struct {
 	StartCursor   int          // 变量名在源代码中的起始位置
 	Offset        int          // 变量在栈帧中的偏移量（编译时使用）
 	Type          typeSys.Type // 变量的数据类型
+	BaseType      typeSys.Type // 基础变量的类型（用于字段访问，如 self.len 的 BaseType 是 string）
 }
 
 // Parse 解析变量声明/定义并添加到当前作用域
@@ -241,15 +242,44 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	if !v.IsDefine && v.Define == nil {
 		node, vb := p.FindVar(v.Name)
 		if vb != nil {
+			var baseType typeSys.Type
 			switch vbt := vb.(type) {
 			case *ArgBlock:
-				v.Type = vbt.Type
+				baseType = vbt.Type
 				v.Offset = vbt.Offset
+				if node == nil {
+					node = &Node{Value: vbt}
+				}
 			case *VarBlock:
-				v.Type = vbt.Type
+				baseType = vbt.Type
 				v.Offset = vbt.Offset
 			}
 			v.Define = node
+			v.BaseType = baseType
+
+			if len(v.Name) > 1 && baseType != nil {
+				currentType := baseType
+				for i := 1; i < len(v.Name); i++ {
+					fieldName := v.Name[i]
+					found := false
+					for _, field := range currentType.Fields() {
+						if field.Name == fieldName {
+							currentType = field.Type
+							found = true
+							break
+						}
+					}
+					if !found {
+						p.Error.MissError("Type Error", p.Lexer.Cursor, "field '"+fieldName+"' not found in type "+currentType.Type())
+						p.ThisBlock = oldThisBlock
+						return false
+					}
+				}
+				v.Type = currentType
+			} else {
+				v.Type = baseType
+			}
+
 			p.ThisBlock = oldThisBlock
 			return true
 		}

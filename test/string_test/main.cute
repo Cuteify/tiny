@@ -1,0 +1,9 @@
+fn test_string() int {
+    var s: string = "hello"
+    ret 0
+}
+
+fn main() int {
+    test_string()
+    ret 0
+}

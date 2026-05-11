@@ -1,0 +1,8 @@
+{
+    "name": "strings",
+    "version": "1.0.0",
+    "description": "String manipulation package",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

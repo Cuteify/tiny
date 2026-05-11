@@ -1,0 +1,220 @@
+build os("linux")
+
+type string struct{
+    _ptr: ptr
+    !len: int
+    !cap: int
+}
+
+fn string.ptr() u32 {
+    ret self._ptr
+}
+
+fn read_byte(ptr: u64) u8 {
+    build asm {
+        mov EBX, DWORD[ebp+8]
+        movzx EAX, BYTE[EBX]
+    }
+}
+
+fn write_byte(ptr: u64, val: u8) u8 {
+    build asm {
+        mov EAX, DWORD[ebp+8]
+        mov CL, BYTE[ebp+12]
+        mov BYTE[EAX], CL
+        movzx EAX, CL
+    }
+}
+
+fn strlen(s: u64) u64 {
+    var i: u64 = 0
+    while true {
+        var c: u8 = read_byte(s + i)
+        if c == 0 {
+            ret i
+        }
+        i = i + 1
+    }
+    ret i
+}
+
+fn string.len(self: string) int {
+    ret self.len
+}
+
+fn string.eq(self: string, other: u64) bool {
+    var i: u64 = 0
+    while true {
+        var ca: u8 = read_byte(self._ptr + i)
+        var cb: u8 = read_byte(other + i)
+        if ca != cb {
+            ret false
+        }
+        if ca == 0 {
+            ret true
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+fn string.copy(self: string, dest: u64) u64 {
+    var i: u64 = 0
+    while true {
+        var c: u8 = read_byte(self._ptr + i)
+        write_byte(dest + i, c)
+        if c == 0 {
+            break
+        }
+        i = i + 1
+    }
+    ret dest
+}
+
+fn string.concat(self: string, other: u64) u64 {
+    var la: u64 = self.len()
+    var lb: u64 = strlen(other)
+    var result: u64 = memory.malloc(la + lb + 1)
+    var i: u64 = 0
+    while i < la {
+        var c: u8 = read_byte(self._ptr + i)
+        write_byte(result + i, c)
+        i = i + 1
+    }
+    i = 0
+    while i < lb {
+        var c: u8 = read_byte(other + i)
+        write_byte(result + la + i, c)
+        i = i + 1
+    }
+    write_byte(result + la + lb, 0)
+    ret result
+}
+
+fn string.substr(self: string, start: u64, end: u64) u64 {
+    var ls: u64 = 0
+    if end > start {
+        ls = end - start
+    }
+    var result: u64 = memory.malloc(ls + 1)
+    var i: u64 = 0
+    while i < ls {
+        var c: u8 = read_byte(self._ptr + start + i)
+        write_byte(result + i, c)
+        i = i + 1
+    }
+    write_byte(result + ls, 0)
+    ret result
+}
+
+fn string.index(self: string, sub: u64) u64 {
+    var ls: u64 = self.len()
+    var lsub: u64 = strlen(sub)
+    if lsub == 0 {
+        ret 0
+    }
+    if lsub > ls {
+        ret 0xFFFFFFFFFFFFFFFF
+    }
+    var i: u64 = 0
+    while i <= ls - lsub {
+        var j: u64 = 0
+        var found: bool = true
+        while j < lsub {
+            var ca: u8 = read_byte(self._ptr + i + j)
+            var cb: u8 = read_byte(sub + j)
+            if ca != cb {
+                found = false
+                break
+            }
+            j = j + 1
+        }
+        if found {
+            ret i
+        }
+        i = i + 1
+    }
+    ret 0xFFFFFFFFFFFFFFFF
+}
+
+fn string.to_upper(self: string) u64 {
+    var ls: u64 = self.len()
+    var result: u64 = memory.malloc(ls + 1)
+    var i: u64 = 0
+    while i < ls {
+        var c: u8 = read_byte(self._ptr + i)
+        if c >= 97 && c <= 122 {
+            c = c - 32
+        }
+        write_byte(result + i, c)
+        i = i + 1
+    }
+    write_byte(result + ls, 0)
+    ret result
+}
+
+fn string.to_lower(self: string) u64 {
+    var ls: u64 = self.len()
+    var result: u64 = memory.malloc(ls + 1)
+    var i: u64 = 0
+    while i < ls {
+        var c: u8 = read_byte(self._ptr + i)
+        if c >= 65 && c <= 90 {
+            c = c + 32
+        }
+        write_byte(result + i, c)
+        i = i + 1
+    }
+    write_byte(result + ls, 0)
+    ret result
+}
+
+fn string.trim(self: string) u64 {
+    var ls: u64 = self.len()
+    var start: u64 = 0
+    var end: u64 = 0
+    if ls > 0 {
+        end = ls - 1
+    }
+    while start < ls {
+        var c: u8 = read_byte(self._ptr + start)
+        if c != 9 && c != 10 && c != 13 && c != 32 {
+            break
+        }
+        start = start + 1
+    }
+    while end >= start && end < ls {
+        var c: u8 = read_byte(self._ptr + end)
+        if c != 9 && c != 10 && c != 13 && c != 32 {
+            break
+        }
+        if end == 0 {
+            break
+        }
+        end = end - 1
+    }
+    ret self.substr(start, end + 1)
+}
+
+func string.cstring(self: sting) u64 {
+    var len: u64 = self.len
+    var ptr: u64 = memory.malloc(len + 1)
+    var i: u64 = 0
+    while i < len {
+        write_byte(ptr + i, read_byte(self._ptr + i))
+        i = i + 1
+    }
+    write_byte(ptr + len, 0)
+    ret ptr
+}
+
+fn string.fromCString(ptr: u64) string {
+    var len: u64 = strlen(ptr)
+    var data: u64 = memory.malloc(len)
+    var i: u64 = 0
+    while i < len {
+        write_byte(data + i, read_byte(ptr + i))
+        i = i + 1
+    }
+    ret data
+}

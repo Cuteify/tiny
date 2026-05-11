@@ -70,16 +70,18 @@ func (f *FuncBlock) Parse(p *Parser) {
 			return
 		}
 
-		//TODO：解析成员函数
-		/*if len(f.Name) == 2 {
-			structName := NewName(f.Name[0])
-			_, structBlock := p.FindStruct(structName)
-			if structBlock == nil {
-				p.Error.MissError("Struct Error", p.Lexer.Cursor, "struct '"+structName.String()+"' not found")
+		if len(f.Name) == 2 {
+			className := NewName(f.Name[0])
+			classType := typeSys.GetSystemType(className.String())
+			if classType != nil {
+				f.Class = classType
+				// 添加隐式 this 参数
+				f.Args = append(f.Args, &ArgBlock{
+					Name: NewName("this"),
+					Type: classType,
+				})
 			}
-			f.Class = structBlock.Type()
-			structBlock.Methods = append(structBlock.Methods, f)
-		}*/
+		}
 	} else if code.Value == "(" { // 匿名函数/闭包支持
 		p.Lexer.SetCursor(code.Cursor)
 	} else {

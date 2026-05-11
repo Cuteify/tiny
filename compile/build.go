@@ -4,6 +4,7 @@ import (
 	"cuteify/parser"
 	"cuteify/utils"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,21 @@ func (c *Compiler) CompileBuild(n *parser.Node) (code string) {
 				code += utils.Format(line)
 			}
 		}
+	case "system_call":
+		syscallNum := block.Ext
+		code += utils.Format("mov EAX, " + syscallNum + "; syscall number")
+
+		// 从父函数获取参数偏移量
+		funcNode := n.Father
+		if funcBlock, ok := funcNode.Value.(*parser.FuncBlock); ok {
+			regs := []string{"EBX", "ECX", "EDX", "ESI", "EDI", "EBP"}
+			for i := 0; i < len(funcBlock.Args) && i < len(regs); i++ {
+				arg := funcBlock.Args[i]
+				offset := arg.Offset
+				code += utils.Format("mov " + regs[i] + ", DWORD[ebp+" + strconv.Itoa(offset) + "]; arg" + strconv.Itoa(i+1))
+			}
+		}
+		code += utils.Format("int 0x80")
 	}
 	return
 }

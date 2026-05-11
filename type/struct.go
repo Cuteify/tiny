@@ -7,6 +7,10 @@ type StructType struct {
 	Methods      []any
 }
 
+func (s *StructType) Fields() StructFileds {
+	return s.StructFields
+}
+
 type FieldAccess int
 
 const (
@@ -105,18 +109,19 @@ func splitTagKeyValue(s string) []string {
 }
 
 func NewStructField(father Type, name string, typ Type) (sf *StructField) {
-	if father != nil {
-		if father.Type() != "struct" {
-			panic("RFather is not struct")
-		}
-		sf = &StructField{
-			Name:   name,
-			Type:   typ,
-			Offset: typ.Size() + father.Size(),
-		}
-		father.(*RType).RSize += typ.Size()
-	} else {
+	if father == nil {
 		panic("RFather is nil")
+	}
+	sf = &StructField{
+		Name: name,
+		Type: typ,
+	}
+	if st, ok := father.(*StructType); ok {
+		sf.Offset = st.RSize
+		st.RSize += typ.Size()
+		st.StructFields = append(st.StructFields, sf)
+	} else {
+		sf.Offset = father.Size()
 	}
 	return
 }

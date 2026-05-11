@@ -26,6 +26,33 @@ func (c *CallBlock) Check(p *Parser) bool {
 		c.Func = funcBlock
 	}
 
+	if c.Func == nil && len(c.Name) == 2 {
+		_, rawVar := p.FindVar(NewName(c.Name[0]))
+		if rawVar != nil {
+			var thisVar *VarBlock
+			switch v := rawVar.(type) {
+			case *VarBlock:
+				thisVar = v
+			case *ArgBlock:
+				if v.Type != nil {
+					thisVar = &VarBlock{
+						Name:   v.Name,
+						Type:   v.Type,
+						Offset: v.Offset,
+					}
+				}
+			}
+			if thisVar != nil && thisVar.Type != nil {
+				methodName := Name{thisVar.Type.Type(), c.Name[1]}
+				_, funcBlock := p.FindFunc(methodName)
+				if funcBlock != nil {
+					c.Func = funcBlock
+					c.ThisVar = thisVar
+				}
+			}
+		}
+	}
+
 	if c.Func == nil {
 		if p.Block == p.ThisBlock {
 			p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
@@ -35,38 +62,36 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	c.Func.Useful = true
 
-	// 检查参数个数是否匹配（考虑默认参数）
-	if len(c.Args) > len(c.Func.Args) {
+	selfOffset := 0
+	if c.ThisVar != nil {
+		selfOffset = 1
+	}
+
+	if len(c.Args) > len(c.Func.Args)-selfOffset {
 		p.Error.MissError("Call Error", p.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
 		return false
 	}
 
-	// 处理默认参数
-	if len(c.Args) < len(c.Func.Args) {
-		for i := len(c.Args); i < len(c.Func.Args); i++ {
-			if c.Func.Args[i].Default == nil {
+	if len(c.Args) < len(c.Func.Args)-selfOffset {
+		for i := len(c.Args); i < len(c.Func.Args)-selfOffset; i++ {
+			if c.Func.Args[i+selfOffset].Default == nil {
 				p.Error.MissError("Call Error", p.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
 				return false
 			}
-			// 添加默认参数
 			c.Args = append(c.Args, &ArgBlock{
-				Value:  c.Func.Args[i].Default,
-				Defind: c.Func.Args[i],
-				Name:   c.Func.Args[i].Name,
-				Type:   c.Func.Args[i].Type,
+				Value:  c.Func.Args[i+selfOffset].Default,
+				Defind: c.Func.Args[i+selfOffset],
+				Name:   c.Func.Args[i+selfOffset].Name,
+				Type:   c.Func.Args[i+selfOffset].Type,
 			})
 		}
 	}
 
-	// 检查每个参数
 	for i, arg := range c.Args {
-		// 检查参数表达式
-		// 获取对应的函数定义参数
-		defArg := c.Func.Args[i]
+		defArg := c.Func.Args[i+selfOffset]
 
 		arg.Value.Check(p)
 
-		// 类型检查
 		if !typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
 			p.Error.MissError("Type Error", p.Lexer.Cursor-1,
 				"cannot use "+arg.Value.Type.Type()+" as type "+

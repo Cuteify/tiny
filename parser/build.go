@@ -86,6 +86,16 @@ func (b *Build) Parse(p *Parser) {
 		}
 		b.Type = "os"
 		b.checkOSMatch()
+		if b.Ignore {
+			// OS 不匹配：文件级则跳过后续所有内容，函数级则标记
+			if p.ThisBlock.Father == nil {
+				p.buildOSMatch = false
+				p.skipMode = 1
+				return
+			}
+		} else {
+			p.buildOSMatch = true
+		}
 		switch p.ThisBlock.Value.(type) {
 		case *FuncBlock:
 			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
@@ -103,6 +113,14 @@ func (b *Build) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need link name")
 		}
 		p.Lexer.SetCursor(stopToken)
+	case "system_call":
+		p.Lexer.Skip('(')
+		code := p.Lexer.Next()
+		if code.Type == lexer.NUMBER {
+			b.Ext = code.Value
+		}
+		p.Lexer.Skip(')')
+		b.Type = "system_call"
 	default:
 		return
 	}

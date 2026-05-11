@@ -79,7 +79,7 @@ var (
 		"type":      TYPE,
 		"struct":    TYPE,
 		"interface": TYPE,
-		"self":      NAME,
+		"this":      NAME,
 		"true":      BOOL,
 		"false":     BOOL,
 		"fn":        FUNC,

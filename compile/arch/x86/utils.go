@@ -3,9 +3,9 @@ package x86
 import (
 	"cuteify/compile/context"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
-	// TODO: typeSys "cuteify/type"
 )
 
 // caldAddrWithLen 生成带长度前缀的内存地址表达式
@@ -18,20 +18,21 @@ func caldAddrWithLen(size int, offset int) (code string) {
 }
 
 func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
+	baseAddr := genVarAddrBase(ctx, v)
+	sizePrefix := utils.GetLengthName(v.Type.Size())
+	return sizePrefix + baseAddr
+}
+
+func genVarAddrBase(ctx *context.Context, v *parser.VarBlock) string {
 	if v.Name.First() == "this" {
 		if len(v.Name) > 1 {
-			thisAddr := "[ebp+8]"
 			fieldOffset := calculateThisFieldOffset(ctx, v)
-			var addr string
 			if fieldOffset > 0 {
-				addr = "[ebp+8+" + strconv.FormatInt(int64(fieldOffset), 10) + "]"
-			} else {
-				addr = thisAddr
+				return "[ebp+8+" + strconv.FormatInt(int64(fieldOffset), 10) + "]"
 			}
-			sizePrefix := utils.GetLengthName(v.Type.Size())
-			return sizePrefix + addr
+			return "[ebp+8]"
 		}
-		return "DWORD[ebp+8]"
+		return "[ebp+8]"
 	}
 
 	var isDefineInArg bool
@@ -58,17 +59,13 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 		totalOffset += ctx.BpOffset
 	}
 
-	var addr string
 	offsetStr := strconv.FormatInt(int64(totalOffset), 10)
 	if totalOffset < 0 {
-		addr = "[ebp" + offsetStr + "]"
+		return "[ebp" + offsetStr + "]"
 	} else if totalOffset == 0 {
-		addr = "[ebp]"
-	} else {
-		addr = "[ebp+" + offsetStr + "]"
+		return "[ebp]"
 	}
-	sizePrefix := utils.GetLengthName(v.Type.Size())
-	return sizePrefix + addr
+	return "[ebp+" + offsetStr + "]"
 }
 
 func calculateThisFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
@@ -76,37 +73,32 @@ func calculateThisFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
 		return 0
 	}
 
-	// TODO: var currentType typeSys.Type
-	// TODO: for current := ctx.Parser.ThisBlock; current != nil; current = current.Father {
-	// TODO: 	if funcBlock, ok := current.Value.(*parser.FuncBlock); ok {
-	// TODO: 		if funcBlock.Class != nil {
-	// TODO: 			currentType = funcBlock.Class
-	// TODO: 			break
-	// TODO: 		}
-	// TODO: 	}
-	// TODO: }
-	// TODO:
-	// TODO: if currentType == nil {
-	// TODO: 	return 0
-	// TODO: }
-	// TODO:
-	// TODO: totalOffset := 0
-	// TODO: for i := 1; i < len(v.Name); i++ {
-	// TODO: 	fieldName := v.Name[i]
-	// TODO: 	structName := currentType.Type()
-	// TODO: 	structBlock, exists := ctx.GetStruct(structName)
-	// TODO: 	if !exists {
-	// TODO: 		return 0
-	// TODO: 	}
-	// TODO: 	field := structBlock.GetFieldByName(fieldName)
-	// TODO: 	if field == nil {
-	// TODO: 		return 0
-	// TODO: 	}
-	// TODO: 	totalOffset += field.Offset
-	// TODO: 	currentType = field.Type
-	// TODO: }
-	// TODO: return totalOffset
-	return 0
+	var currentType typeSys.Type
+	if ctx.CurrentFunc != nil && ctx.CurrentFunc.Class != nil {
+		currentType = ctx.CurrentFunc.Class
+	}
+
+	if currentType == nil {
+		return 0
+	}
+
+	totalOffset := 0
+	for i := 1; i < len(v.Name); i++ {
+		fieldName := v.Name[i]
+		found := false
+		for _, field := range currentType.Fields() {
+			if field.Name == fieldName {
+				totalOffset += field.Offset
+				currentType = field.Type
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0
+		}
+	}
+	return totalOffset
 }
 
 func calculateFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
@@ -114,31 +106,37 @@ func calculateFieldOffset(ctx *context.Context, v *parser.VarBlock) int {
 		return 0
 	}
 
-	// TODO: var currentType typeSys.Type
-	// TODO: if v.Define != nil {
-	// TODO: 	switch def := v.Define.Value.(type) {
-	// TODO: 	case *parser.VarBlock:
-	// TODO: 		currentType = def.Type
-	// TODO: 	case *parser.ArgBlock:
-	// TODO: 		currentType = def.Type
-	// TODO: 	}
-	// TODO: }
-	// TODO:
-	// TODO: totalOffset := 0
-	// TODO: for i := 1; i < len(v.Name); i++ {
-	// TODO: 	fieldName := v.Name[i]
-	// TODO: 	structName := currentType.Type()
-	// TODO: 	structBlock, exists := ctx.GetStruct(structName)
-	// TODO: 	if !exists {
-	// TODO: 		return 0
-	// TODO: 	}
-	// TODO: 	field := structBlock.GetFieldByName(fieldName)
-	// TODO: 	if field == nil {
-	// TODO: 		return 0
-	// TODO: 	}
-	// TODO: 	totalOffset += field.Offset
-	// TODO: 	currentType = field.Type
-	// TODO: }
-	// TODO: return totalOffset
-	return 0
+	var currentType typeSys.Type
+	if v.BaseType != nil {
+		currentType = v.BaseType
+	} else if v.Define != nil {
+		switch def := v.Define.Value.(type) {
+		case *parser.VarBlock:
+			currentType = def.Type
+		case *parser.ArgBlock:
+			currentType = def.Type
+		}
+	}
+
+	if currentType == nil {
+		return 0
+	}
+
+	totalOffset := 0
+	for i := 1; i < len(v.Name); i++ {
+		fieldName := v.Name[i]
+		found := false
+		for _, field := range currentType.Fields() {
+			if field.Name == fieldName {
+				totalOffset += field.Offset
+				currentType = field.Type
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0
+		}
+	}
+	return totalOffset
 }

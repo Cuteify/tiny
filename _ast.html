@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>AST 节点树</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+.tree { list-style: none; padding-left: 20px; border-left: 1px solid #45475a; margin-left: 10px; }
+.node { margin: 4px 0; }
+.node-header { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 10px; border-radius: 6px; background: #313244; transition: 0.15s; }
+.node-header:hover { background: #45475a; }
+.toggle { color: #89b4fa; font-size: 12px; width: 16px; text-align: center; user-select: none; }
+.type-badge { font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 600; }
+.badge-func { background: #a6e3a1; color: #1e1e2e; }
+.badge-var { background: #89b4fa; color: #1e1e2e; }
+.badge-type { background: #f9e2af; color: #1e1e2e; }
+.badge-call { background: #fab387; color: #1e1e2e; }
+.badge-if { background: #cba6f7; color: #1e1e2e; }
+.badge-while { background: #94e2d5; color: #1e1e2e; }
+.badge-for { background: #74c7ec; color: #1e1e2e; }
+.badge-return { background: #f38ba8; color: #1e1e2e; }
+.badge-break { background: #eba0ac; color: #1e1e2e; }
+.badge-build { background: #585b70; color: #cdd6f4; }
+.badge-brackets { background: #6c7086; color: #cdd6f6; }
+.badge-default { background: #585b70; color: #cdd6f4; }
+.node-value { color: #a6adc8; font-size: 13px; margin-left: 4px; }
+.node-value .key { color: #89b4fa; }
+.node-value .str { color: #a6e3a1; }
+.node-value .num { color: #fab387; }
+.node-value .nil { color: #6c7086; font-style: italic; }
+.collapsed > .tree { display: none; }
+.code-block { display: block; background: #11111b; color: #a6e3a1; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 12px; padding: 8px 12px; border-radius: 6px; margin-top: 4px; white-space: pre; overflow-x: auto; }
+.exp-inline { color: #a6adc8; font-size: 12px; margin-left: 4px; }
+.exp-inline .key { color: #89b4fa; }
+.exp-inline .str { color: #a6e3a1; }
+.exp-inline .num { color: #fab387; }
+.exp-inline .nil { color: #6c7086; font-style: italic; }
+.arg-item { display: inline-block; background: #45475a; padding: 0 6px; border-radius: 4px; margin: 0 2px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2 style="margin-bottom:16px;color:#89b4fa;">📦 AST 节点树</h2>
+<div class="node"><div class="node-header"><span class="toggle">▼</span><span class="type-badge badge-default"></span><span class="node-value"><span class="nil">nil</span></span></div><ul class="tree"><li><div class="node"><div class="node-header"><span class="toggle">▼</span><span class="type-badge badge-func">fn test_string</span><span class="node-value"><span class="key">ret:</span> <span class="str">int</span></span></div><ul class="tree"><li><div class="node"><div class="node-header"><span class="toggle" style="color:#45475a;">·</span><span class="type-badge badge-var">var s</span><span class="node-value"><span class="key">name:</span> <span class="str">s</span> <span class="key">type:</span> <span class="str">string</span> <span class="key">offset:</span> <span class="num">0</span></span></div></div></li><li><div class="node"><div class="node-header"><span class="toggle" style="color:#45475a;">·</span><span class="type-badge badge-return">return</span><span class="node-value"><span class="key">ret:</span> <span class="exp-inline"><span class="key">type:</span> <span class="str">int</span></span></span></div></div></li></ul></div></li><li><div class="node"><div class="node-header"><span class="toggle">▼</span><span class="type-badge badge-func">fn main</span><span class="node-value"><span class="key">ret:</span> <span class="str">int</span></span></div><ul class="tree"><li><div class="node"><div class="node-header"><span class="toggle" style="color:#45475a;">·</span><span class="type-badge badge-call">call test_string</span><span class="node-value"><span class="key">name:</span> <span class="str">test_string</span> <span class="key">func:</span> <span class="str">test_string</span></span></div></div></li><li><div class="node"><div class="node-header"><span class="toggle" style="color:#45475a;">·</span><span class="type-badge badge-return">return</span><span class="node-value"><span class="key">ret:</span> <span class="exp-inline"><span class="key">type:</span> <span class="str">int</span></span></span></div></div></li></ul></div></li></ul></div><script>
+document.querySelectorAll('.node-header').forEach(h => {
+	h.addEventListener('click', () => {
+		h.parentElement.classList.toggle('collapsed');
+	});
+});
+</script>
+</body>
+</html>

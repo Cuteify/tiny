@@ -499,8 +499,10 @@ func (exp *Expression) parseName(p *Parser, nameToken lexer.Token, stopCursor in
 			exp.handleMethodCall(p, name)
 			return true
 		}
+		afterName := p.Lexer.Cursor
 		p.Lexer.SetCursor(nameToken.Cursor)
 		exp.handleFieldAccess(p, name)
+		p.Lexer.SetCursor(afterName)
 		return true
 	}
 
@@ -559,110 +561,23 @@ func (exp *Expression) handleFieldAccess(p *Parser, name Name) {
 	objName := name[0]
 
 	if objName == "this" && len(name) > 1 {
-		// TODO: for current := p.ThisBlock; current != nil; current = current.Father {
-		// TODO: 	if funcBlock, ok := current.Value.(*FuncBlock); ok {
-		// TODO: 		if funcBlock.Class != nil {
-		// TODO: 			currentType := funcBlock.Class
-		// TODO: 			structName := currentType.Type()
-		// TODO: 			structBlock := p.FindStruct(structName)
-		// TODO: 			if structBlock == nil {
-		// TODO: 				p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
-		// TODO: 				return
-		// TODO: 			}
-		// TODO:
-		// TODO: 			fieldName := name[1]
-		// TODO: 			field := structBlock.GetFieldByName(fieldName)
-		// TODO: 			if field == nil {
-		// TODO: 				p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
-		// TODO: 				return
-		// TODO: 			}
-		// TODO:
-		// TODO: 			thisVar := &VarBlock{
-		// TODO: 				Name:     Name([]string{"this"}),
-		// TODO: 				Type:     funcBlock.Class,
-		// TODO: 				IsDefine: true,
-		// TODO: 				Define:   &Node{Value: &VarBlock{Name: Name([]string{"this"}), Type: funcBlock.Class, IsDefine: true}},
-		// TODO: 			}
-		// TODO:
-		// TODO: 			fieldVar := &VarBlock{
-		// TODO: 				Name:     name,
-		// TODO: 				Type:     field.Type,
-		// TODO: 				IsDefine: true,
-		// TODO: 				Define:   &Node{Value: thisVar},
-		// TODO: 			}
-		// TODO:
-		// TODO: 			leftExp := &Expression{
-		// TODO: 				Var:  thisVar,
-		// TODO: 				Type: funcBlock.Class,
-		// TODO: 			}
-		// TODO:
-		// TODO: 			fieldExp := &Expression{
-		// TODO: 				Var:  fieldVar,
-		// TODO: 				Type: field.Type,
-		// TODO: 			}
-		// TODO:
-		// TODO: 			exp.Separator = "."
-		// TODO: 			exp.Left = leftExp
-		// TODO: 			exp.Right = fieldExp
-		// TODO: 			exp.Type = field.Type
-		// TODO: 			return
-		// TODO: 		}
-		// TODO: 	}
-		// TODO: }
-		p.Error.MissError("Field access error", p.Lexer.Cursor, "'this' can only be used in member function")
+		thisVar := &VarBlock{
+			Name:     name,
+			IsDefine: true,
+		}
+		thisVar.ParseDefine(p)
+		exp.Var = thisVar
+		exp.Type = thisVar.Type
 		return
 	}
 
-	objVar := &VarBlock{Name: Name([]string{objName})}
-	objVar.ParseDefine(p)
-
-	leftExp := &Expression{
-		Var:  objVar,
-		Type: objVar.Type,
+	varBlock := &VarBlock{
+		Name: name,
 	}
-
-	currentExp := leftExp
-	currentType := objVar.Type
-
-	for i := 1; i < len(name); i++ {
-		fieldName := name[i]
-		// TODO: structName := currentType.Type()
-		// TODO: structBlock := p.FindStruct(structName)
-		// TODO: if structBlock == nil {
-		// TODO: 	p.Error.MissError("Field access error", p.Lexer.Cursor, "type '"+structName+"' is not a struct")
-		// TODO: 	return
-		// TODO: }
-		// TODO: field := structBlock.GetFieldByName(fieldName)
-		// TODO: if field == nil {
-		// TODO: 	p.Error.MissError("Field access error", p.Lexer.Cursor, "struct '"+structName+"' has no field '"+fieldName+"'")
-		// TODO: 	return
-		// TODO: }
-		// TODO:
-		// TODO: fieldVar := &VarBlock{
-		// TODO: 	Name:     Name([]string{objName, fieldName}),
-		// TODO: 	Type:     field.Type,
-		// TODO: 	IsDefine: true,
-		// TODO: 	Define:   objVar.Define,
-		// TODO: }
-		// TODO:
-		// TODO: fieldExp := &Expression{
-		// TODO: 	Var:  fieldVar,
-		// TODO: 	Type: field.Type,
-		// TODO: }
-		// TODO:
-		// TODO: newExp := &Expression{
-		// TODO: 	Separator: ".",
-		// TODO: 	Left:      currentExp,
-		// TODO: 	Right:     fieldExp,
-		// TODO: 	Type:      field.Type,
-		// TODO: }
-		// TODO: currentExp = newExp
-		// TODO: currentType = field.Type
-		_ = fieldName
-		_ = currentType
+	if varBlock.ParseDefine(p) {
+		exp.Var = varBlock
+		exp.Type = varBlock.Type
 	}
-
-	*exp = *currentExp
 }
 
 func (exp *Expression) handleVar(p *Parser, name Name) {
@@ -783,6 +698,7 @@ func afterHandle(stackNum, stackSep []*Expression) *Expression {
 //
 // 返回:
 //   - bool: 是否找到该变量
+//
 // FindVar 在表达式树中查找指定的变量块
 func (exp *Expression) FindVar(v Block) bool {
 	// 在当前表达式的变量中查找
