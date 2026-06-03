@@ -1,17 +1,11 @@
 package typeSys
 
-type StructType struct {
-	RType
-	Name         []string
-	StructFields StructFileds
-	Methods      []any
-}
-
 type FieldAccess int
 
 const (
 	AccessPublic FieldAccess = iota
 	AccessPrivate
+	AccessProtected
 	AccessReadOnly
 	AccessWriteOnly
 )
@@ -22,14 +16,17 @@ type StructTag struct {
 }
 
 type StructField struct {
-	Name      string
-	Type      Type
-	Default   any
-	Tags      []StructTag
-	Offset    int
-	Size      int
-	Alignment int
-	Access    FieldAccess
+	Name       string
+	Type       Type
+	Default    any
+	Tags       []StructTag
+	Offset     int
+	Size       int
+	Alignment  int
+	Access     FieldAccess
+	Alias      string
+	ParentName string
+	IsAnon     bool
 }
 
 func (f *StructField) IsPrivate() bool {
@@ -56,67 +53,133 @@ func (f *StructField) CanWrite() bool {
 	return f.Access == AccessPublic || f.Access == AccessWriteOnly
 }
 
-func (s *StructField) parseTags(tags string) {
-	// 状态机变量
+func (f *StructField) ParseTags(tags string) {
 	isString := false
 	isName := true
+	f.Tags = append(f.Tags, StructTag{})
 
-	// 解析标签
 	for _, tag := range tags[:] {
 		switch tag {
 		case '"':
 			isString = !isString
 			if !isString {
 				isName = true
-				s.Tags = append(s.Tags, StructTag{})
+				f.Tags = append(f.Tags, StructTag{})
 			}
 		case ':':
 			if isString {
-				s.Tags[len(s.Tags)-1].Value += string(tag)
+				f.Tags[len(f.Tags)-1].Value += string(tag)
 				continue
 			}
 			isName = false
 		case ' ':
 			isName = true
-			s.Tags = append(s.Tags, StructTag{})
+			f.Tags = append(f.Tags, StructTag{})
 		default:
 			if isString {
-				s.Tags[len(s.Tags)-1].Value += string(tag)
+				f.Tags[len(f.Tags)-1].Value += string(tag)
 			} else if isName {
-				s.Tags[len(s.Tags)-1].Key += string(tag)
+				f.Tags[len(f.Tags)-1].Key += string(tag)
 			}
 		}
 	}
 }
 
-func splitTagKeyValue(s string) []string {
-	for i, r := range s {
-		if r == ':' {
-			key := s[:i]
-			value := s[i+1:]
-			// 安全地去除首尾引号
-			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-				value = value[1 : len(value)-1]
-			}
-			return []string{key, value}
-		}
-	}
-	return []string{s, ""}
+type StructType struct {
+	RType
+	StructFields StructFileds
 }
 
-func NewStructField(father Type, name string, typ Type) (sf *StructField) {
-	if father != nil {
-		if father.Type() != "struct" {
-			panic("RFather is not struct")
+func (s *StructType) Size() int {
+	// 计算结构体的大小
+	s.Layout()
+	return s.RSize
+}
+
+func (s *StructType) Fields() StructFileds {
+	return s.StructFields
+}
+
+func (s *StructType) Layout() {
+	offset := 0
+	maxAlignment := 1
+
+	for _, field := range s.StructFields {
+		alignment := 1
+		if field.Type != nil {
+			size := field.Type.Size()
+			if size > 0 {
+				alignment = size
+			}
 		}
-		sf = &StructField{
-			Name:   name,
-			Type:   typ,
-			Offset: typ.Size() + father.Size(),
+		field.Alignment = alignment
+		if alignment > maxAlignment {
+			maxAlignment = alignment
 		}
-		father.(*RType).RSize += typ.Size()
-	} else {
-		panic("RFather is nil")
+
+		padding := (alignment - (offset % alignment)) % alignment
+		offset += padding
+		field.Offset = offset
+
+		if field.Type != nil && field.Type.Size() > 0 {
+			field.Size = field.Type.Size()
+		} else {
+			field.Size = 1
+		}
+		offset += field.Size
 	}
-	return
+
+	s.RSize = offset
+	s.RAlignment = maxAlignment
+}
+
+func (s *StructType) Field(name string) *StructField {
+	for _, field := range s.StructFields {
+		if field.Name == name {
+			return field
+		}
+	}
+	return nil
+}
+
+func (s *StructType) Kind() string {
+	return "struct"
+}
+
+func (s *StructType) Inherit(find func(string) *StructType) {
+	var inherited StructFileds
+	var rest StructFileds
+
+	for _, field := range s.StructFields {
+		if field.ParentName == "" {
+			rest = append(rest, field)
+			continue
+		}
+
+		parentStruct := find(field.ParentName)
+		if parentStruct == nil {
+			rest = append(rest, field)
+			continue
+		}
+		parentStruct.Inherit(find)
+		parentStruct.Layout()
+	
+		if field.IsAnon {
+			for _, pf := range parentStruct.StructFields {
+				inherited = append(inherited, &StructField{
+					Name:   pf.Name,
+					Type:   pf.Type,
+					Tags:   pf.Tags,
+					Access: pf.Access,
+				})
+			}
+		} else {
+			inherited = append(inherited, &StructField{
+				Name: field.Alias,
+				Type: parentStruct,
+			})
+		}
+	}
+
+	s.StructFields = append(inherited, rest...)
 }

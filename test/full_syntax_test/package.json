@@ -1,0 +1,6 @@
+{
+    "name": "full_syntax_test",
+    "version": "1.0.0",
+    "main": "main.cute",
+    "target": "x86_64-linux"
+}

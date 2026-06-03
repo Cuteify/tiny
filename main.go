@@ -13,16 +13,31 @@ import (
 
 func main() {
 	startTime := time.Now()
+	genHTML := false
 	path := "./test"
-	if len(os.Args) != 1 {
-		path = os.Args[1]
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--ast" || args[i] == "-ast" {
+			genHTML = true
+		} else {
+			path = args[i]
+		}
 	}
 	tmp, err := packageSys.GetPackage(path, true)
 	if err != nil {
 		panic(err)
 	}
+	if genHTML {
+		f, err := os.Create("./ast.html")
+		if err != nil {
+			panic(err)
+		}
+		generateASTHTML(tmp.AST.(*parser.Node), f)
+		f.Close()
+		fmt.Println("\033[32mOK\033[0m:AST HTML written to ./ast.html")
+		return
+	}
 	co := &compile.Compiler{}
-	//pr(tmp.AST.(*parser.Node), 0)
 	code := co.Compile(tmp.AST.(*parser.Node))
 	os.WriteFile(`./_main.asm`, []byte(code), 0644)
 	fmt.Println("\033[32mOK\033[0m:Finish in", time.Since(startTime))

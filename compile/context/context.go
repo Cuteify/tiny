@@ -43,6 +43,15 @@ type Context struct {
 
 	// 结构体相关
 	// TODO: Structs map[string]*parser.StructBlock // 存储结构体定义
+
+	// 字符串常量池
+	StringConsts map[string]string // 字面值 → 标签名
+	StrCount     int               // 字符串标签计数
+
+	ListDataCount int // list数据段标签计数
+
+	PointerSize int
+	Is64Bit     bool
 }
 
 // NewContext 创建新的编译器上下文
@@ -62,6 +71,10 @@ func NewContext() *Context {
 		ArgOffset:      0,
 		IfCount:        0,
 		ForCount:       0,
+		StringConsts:   make(map[string]string),
+		StrCount:       0,
+		PointerSize:    4,
+		Is64Bit:        false,
 		// TODO: Structs:        make(map[string]*parser.StructBlock),
 	}
 }
@@ -77,6 +90,8 @@ func (ctx *Context) Reset() {
 	ctx.EbxOccupied = false
 	ctx.ExpType = 0
 	ctx.VarStackSize = 0
+	ctx.PointerSize = 4
+	ctx.Is64Bit = false
 }
 
 // Clone 克隆当前上下文（用于保存和恢复状态）
@@ -98,6 +113,8 @@ func (ctx *Context) Clone() *Context {
 		ArgOffset:      ctx.ArgOffset,
 		IfCount:        ctx.IfCount,
 		ForCount:       ctx.ForCount,
+		PointerSize:    ctx.PointerSize,
+		Is64Bit:        ctx.Is64Bit,
 		// TODO: Structs:        ctx.Structs, // 共享结构体映射
 	}
 }

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"cuteify/lexer"
+	"cuteify/utils"
 	"fmt"
 )
 
@@ -27,9 +28,11 @@ func (r *ReturnBlock) Parse(p *Parser) {
 		}
 		if code.Type == lexer.SEPARATOR && (code.Value == "\n" || code.Value == "\r") {
 			if brecket == 0 {
-				cursor := code.Cursor // 到终止符
+				cursor := code.Cursor
 				p.Lexer.SetCursor(oldCursor)
-				r.Value = append(r.Value, p.ParseExp(cursor))
+							fmt.Println(utils.MakeVisible(p.Lexer.Text[oldCursor:cursor]))
+				r.Value = append(r.Value, p.ParseExp(cursor-1))
+				p.Lexer.SetCursor(code.EndCursor)
 				break
 			} else {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "miss )")
@@ -39,7 +42,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 			cursor := code.Cursor // 到终止符
 			p.Lexer.SetCursor(oldCursor)
 			fmt.Println(p.Lexer.Text[oldCursor:cursor])
-			r.Value = append(r.Value, p.ParseExp(cursor))
+			r.Value = append(r.Value, p.ParseExp(cursor-1))
 			tmp := p.Lexer.Next()
 			oldCursor = tmp.EndCursor
 		}

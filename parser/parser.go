@@ -1,11 +1,10 @@
 package parser
 
 import (
-	"bytes"
 	errorUtil "cuteify/error"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
-	"cuteify/utils"
+	typeSys "cuteify/type"
 	"strings"
 )
 
@@ -45,7 +44,13 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.VAR:
 		p.processVarToken(beforeCursor)
 	case lexer.TYPE:
-		//TODO: p.processTypeToken(code)
+		if code.Value != "type" {
+			p.processDefaultToken(code)
+		} else {
+			block := &TypeBlock{}
+			block.Parse(p)
+			p.AddChild(&Node{Value: block})
+		}
 	case lexer.BUILD:
 		p.processBuildToken(code)
 	default:
@@ -55,9 +60,53 @@ func (p *Parser) Next() (finish bool) {
 	return
 }
 
+// parseTypeRef 解析类型引用，支持 []Type 语法
+func (p *Parser) parseTypeRef() typeSys.Type {
+	token := p.Lexer.Next()
+
+	// 检查是否是 []Type 语法
+	if token.Type == lexer.SEPARATOR && token.Value == "[" {
+		nextToken := p.Lexer.Next()
+		if nextToken.Type == lexer.SEPARATOR && nextToken.Value == "]" {
+			// 解析元素类型
+			elemType := p.parseTypeRef()
+			if elemType == nil {
+				return nil
+			}
+			return typeSys.NewList(elemType)
+		}
+		// 不是 []，退格
+		p.Lexer.SetCursor(token.Cursor)
+	} else {
+		// 退格，使用 Name 解析
+		p.Lexer.SetCursor(token.Cursor)
+	}
+
+	// 解析类型名称
+	typeName, _ := p.ParseName(false)
+	if typeName.String() == "" {
+		return nil
+	}
+
+	// 先检查内置类型
+	if sysType := typeSys.GetSystemType(typeName.String()); sysType != nil {
+		return sysType
+	}
+
+	// 再查找用户定义类型
+	results := p.Find(Name(typeName), FindTypeType)
+	if len(results) > 0 {
+		if tb, ok := results[0].Value.(*TypeBlock); ok {
+			return tb.Type()
+		}
+	}
+
+	return nil
+}
+
 func (p *Parser) handleEmptyToken(beforeCursor int) bool {
 	if p.ThisBlock.Father != nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need }")
+		p.Error.MissErrors("Syntax Error", beforeCursor,p.Lexer.Cursor, "Need }")
 	}
 	return true
 }
@@ -88,7 +137,7 @@ func (p *Parser) processControlToken(code lexer.Token) {
 
 func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 	p.Lexer.SetCursor(beforeCursor)
-	name, _ := p.Name(false)
+	name, _ := p.ParseName(false)
 
 	code2 := p.Lexer.Next()
 
@@ -96,14 +145,14 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		checkToken := p.Lexer.Next()
 		if checkToken.Value == "(" {
 			p.Lexer.SetCursor(code2.Cursor)
-			exp := &Expression{}
-			fullName, _ := p.Name(false)
-			exp.handleMethodCall(p, fullName)
+			fullName, _ := p.ParseName(false)
+			call := &CallBlock{Name: fullName}
+			call.Parse(p)
 			return
 		}
 		p.Lexer.SetCursor(code2.Cursor)
-		exp := &Expression{}
-		exp.handleFieldAccess(p, name)
+		exp := p.fieldExpr(name)
+		p.AddChild(&Node{Value: exp})
 		return
 	}
 
@@ -116,10 +165,90 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
+	case "[":
+		p.Lexer.SetCursor(beforeCursor)
+		stopCursor := p.FindEndCursor()
+		exp := p.ParseExp(stopCursor)
+		if exp != nil {
+			p.AddChild(&Node{Value: exp})
+		}
 	default:
 		beforeCursor++
 		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+name.String()+"' is not a valid expression")
 	}
+}
+
+// fieldExpr 解析字段访问表达式（如 a.b.c），返回表达式节点。
+// 将多级字段访问构建为左嵌套的 Expression 树：Separator="."，Left=左侧表达式，Right=字段名变量。
+func (p *Parser) fieldExpr(name Name) *Expression {
+	p.Lexer.Next() // 跳过 "."
+	fieldName, _ := p.ParseName(false)
+	if len(fieldName) == 0 {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "expected field name after '.'")
+		return nil
+	}
+
+	// 构建左侧变量表达式
+	left := &Expression{
+		Var: &VarBlock{Name: name},
+	}
+
+	// 构建右侧字段名表达式
+	right := &Expression{
+		Var: &VarBlock{Name: fieldName},
+	}
+
+	// 构建 "." 运算表达式
+	exp := &Expression{
+		Separator: ".",
+		Left:      left,
+		Right:     right,
+	}
+	left.Father = exp
+	right.Father = exp
+
+	// 如果后面还有 "."，继续递归解析
+	nextToken := p.Lexer.Next()
+	if nextToken.Type == lexer.SEPARATOR && nextToken.Value == "." {
+		p.Lexer.SetCursor(nextToken.Cursor)
+		// 将当前表达式作为左侧，继续解析右侧字段
+		return p.fieldExprFromExp(exp)
+	}
+
+	p.Lexer.SetCursor(nextToken.Cursor)
+	return exp
+}
+
+// fieldExprFromExp 从已有的表达式继续解析字段访问（用于处理 a.b.c 的多级链式访问）。
+func (p *Parser) fieldExprFromExp(left *Expression) *Expression {
+	p.Lexer.Next() // 跳过 "."
+	fieldName, _ := p.ParseName(false)
+	if len(fieldName) == 0 {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "expected field name after '.'")
+		return nil
+	}
+
+	right := &Expression{
+		Var: &VarBlock{Name: fieldName},
+	}
+
+	exp := &Expression{
+		Separator: ".",
+		Left:      left,
+		Right:     right,
+	}
+	left.Father = exp
+	right.Father = exp
+
+	// 如果后面还有 "."，继续递归
+	nextToken := p.Lexer.Next()
+	if nextToken.Type == lexer.SEPARATOR && nextToken.Value == "." {
+		p.Lexer.SetCursor(nextToken.Cursor)
+		return p.fieldExprFromExp(exp)
+	}
+
+	p.Lexer.SetCursor(nextToken.Cursor)
+	return exp
 }
 
 func (p *Parser) processVarToken(beforeCursor int) {
@@ -226,80 +355,6 @@ func (p *Parser) Has(token lexer.Token, stopCursor int) int {
 	}
 	p.Lexer.SetCursor(startCursor)
 	return -1
-}
-
-// Name 解析完整的标识符名称（支持点分路径如 pkg.Func）
-func (p *Parser) Name(wait bool) (name Name, cursor int) {
-	if wait {
-		// 等待名称
-		for {
-			oldCursor := p.Lexer.Cursor
-			code := p.Lexer.Next()
-			if code.IsEmpty() {
-				// 语法错误：需要名称
-				p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
-			}
-			if code.Value == "\n" || code.Value == "\r" || code.Value == ";" {
-				// 语法错误：需要名称
-				p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name")
-			}
-			if code.Type == lexer.NAME {
-				// 退格，获取完整名称
-				p.Lexer.SetCursor(oldCursor)
-				break
-			}
-		}
-	}
-
-	// 记录名称起始位置
-	cursor = p.Lexer.Cursor
-
-	buf := ""
-
-	for {
-		code := p.Lexer.Next()
-		switch code.Type {
-		case lexer.NAME:
-			buf += code.Value
-		case lexer.SEPARATOR:
-			if len(code.Value) != 1 || bytes.IndexByte([]byte{'.', '_'}, code.Value[0]) == -1 {
-				p.Lexer.SetCursor(code.Cursor)
-				goto nameFindEnd
-			}
-			buf += code.Value
-		default:
-			p.Lexer.SetCursor(code.Cursor)
-			goto nameFindEnd
-		}
-	}
-
-nameFindEnd:
-
-	// 对名称完整性检查
-	if len(buf) > 0 && (buf[len(buf)-1] == '.' || buf[len(buf)-1] == '_') {
-		// 语法错误：名称不能以 '.' 或 '_' 结尾
-		p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "name cannot end with '.' or '_'")
-	}
-
-	// 使用.解析路径
-	if buf == "" {
-		// 如果缓冲区为空，这是错误情况
-		p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "empty name is not allowed")
-		name = []string{""} // 返回一个占位符，但实际上不会继续执行
-	} else if strings.Contains(buf, ".") {
-		name = strings.Split(buf, ".")
-	} else {
-		name = []string{buf}
-	}
-
-	// 检查路径中的每个元素是否为有效名称
-	for _, part := range name {
-		if part == "" || !utils.CheckName(part) {
-			p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "invalid name part: "+part)
-		}
-	}
-
-	return
 }
 
 // CheckUnusedVar 递归检查未使用的变量定义

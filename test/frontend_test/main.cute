@@ -1,0 +1,118 @@
+type Point struct {
+    x: int
+    y: int
+}
+
+type Config struct {
+    _secret: string
+    !id: int
+    ?password: string
+    name: string = "default"
+    meta: string `json:"config_meta"`
+}
+
+type Person struct {
+    name: string
+    age: int
+}
+
+type Student struct {
+    @Person
+    grade: int
+}
+
+type Teacher struct {
+    info @Person
+    subject: string
+}
+
+type Printable interface {
+    print()
+    toString() string
+}
+
+type Reader interface {
+    read(buf: string) int
+    write(data: string) bool
+}
+
+fn add(a: int, b: int) int {
+    ret a + b
+}
+
+fn sub(a: int, b: int) int {
+    ret a - b
+}
+
+fn mul(a: int, b: int) int {
+    ret a * b
+}
+
+fn div(a: int, b: int) int {
+    ret a / b
+}
+
+fn mod(a: int, b: int) int {
+    ret a % b
+}
+
+fn compare(a: int, b: int) bool {
+    ret a > b
+}
+
+fn bitops(a: int, b: int) int {
+    ret a & b
+}
+
+fn neg(a: int) int {
+    ret -a
+}
+
+fn Point.add(other: Point) int {
+    ret this.x + other.x
+}
+
+fn Point.sub(other: Point) int {
+    ret this.x - other.x
+}
+
+fn Point.eq(other: Point) bool {
+    ret this.x == other.x
+}
+
+fn Point.getX() int {
+    ret this.x
+}
+
+fn main() i32 {
+    var x: i32
+    x = 42
+    var y: i32
+    y = x + 10
+    var z: i32
+    z = x * 2
+    z = (x + 10) * 2
+
+    x += 5
+    x -= 3
+    x *= 2
+    x /= 4
+    x %= 3
+    x++
+    x--
+
+    var s: string
+    s = "hello" + " world"
+
+    var result: int
+    result = add(1, 2)
+    result = add(x, y)
+    result = sub(x, y)
+    result = mul(x, y)
+    result = div(x, y)
+    result = mod(x, y)
+    result = bitops(x, y)
+    result = neg(x)
+
+    ret 0
+}

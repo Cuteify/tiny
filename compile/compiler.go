@@ -86,10 +86,12 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		return c.compileVarBlock(n)
 	case *parser.CallBlock:
 		return c.compileCallBlock(n)
+	case *parser.Expression:
+		return c.compileExprBlock(n)
 	case *parser.ForBlock:
 		return c.compileForBlock(n)
-	// TODO: case *parser.StructBlock:
-	// TODO: 	return c.compileStructBlock(n)
+	case *parser.TypeBlock:
+		return c.compileTypeBlock(n)
 	case *parser.Build:
 		return c.CompileBuild(n)
 	default:
@@ -160,6 +162,14 @@ func (c *Compiler) compileCallBlock(n *parser.Node) string {
 	return c.Ctx.Arch.Call(callBlock)
 }
 
+func (c *Compiler) compileExprBlock(n *parser.Node) string {
+	exp := n.Value.(*parser.Expression)
+	if exp.Separator == "[]=" {
+		return c.Ctx.Arch.Exp(exp, "", "list index assignment")
+	}
+	return c.Ctx.Arch.Exp(exp, "", "expression statement")
+}
+
 func (c *Compiler) compileForBlock(n *parser.Node) string {
 	forBlock := n.Value.(*parser.ForBlock)
 	var code string
@@ -169,19 +179,37 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 	return code
 }
 
-// TODO: func (c *Compiler) compileStructBlock(n *parser.Node) string {
-// TODO: 	structBlock := n.Value.(*parser.StructBlock)
-// TODO: 	c.Ctx.AddStruct(structBlock)
-// TODO: 	return ""
-// TODO: }
+func (c *Compiler) compileTypeBlock(n *parser.Node) string {
+	return ""
+}
 
 func (c *Compiler) compileRootTail(node *parser.Node) string {
 	if node.Father == nil {
+		var code string
 		if c.hasMainFunction(node) {
-			return c.generateStartEntry()
+			code += c.generateStartEntry()
 		}
+		code += c.generateDataSection()
+		return code
 	}
 	return ""
+}
+
+func (c *Compiler) generateDataSection() string {
+	if len(c.Ctx.StringConsts) == 0 {
+		return ""
+	}
+	code := "\nsection .data\n"
+	for val, label := range c.Ctx.StringConsts {
+		escaped := strings.ReplaceAll(val, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
+		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+		code += fmt.Sprintf("    %s db \"%s\", 0\n", label, escaped)
+		code += fmt.Sprintf("    %s_len equ $ - %s\n", label, label)
+	}
+	return code
 }
 
 func (c *Compiler) hasMainFunction(node *parser.Node) bool {
@@ -201,13 +229,16 @@ func (c *Compiler) generateStartEntry() string {
 	code += utils.Format("; 程序入口点 (ELF入口)")
 	code += utils.Format("_start:")
 	utils.Count++
-	code += utils.Format("; 调用main函数")
 	code += utils.Format("call main")
-	code += utils.Format("; 使用系统调用退出程序 (sys_exit = 1)")
-	code += utils.Format("; 返回值在EAX中")
-	code += utils.Format("mov ebx, eax; 返回码")
-	code += utils.Format("mov eax, 1; sys_exit")
-	code += utils.Format("int 0x80; 调用内核\n")
+	if c.Ctx.Is64Bit {
+		code += utils.Format("mov rdi, rax")
+		code += utils.Format("mov rax, 60")
+		code += utils.Format("syscall\n")
+	} else {
+		code += utils.Format("mov ebx, eax")
+		code += utils.Format("mov eax, 1")
+		code += utils.Format("int 0x80\n")
+	}
 	return code
 }
 

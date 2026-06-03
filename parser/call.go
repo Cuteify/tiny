@@ -21,9 +21,41 @@ func (c *CallBlock) Check(p *Parser) bool {
 		return false
 	}
 
+	if c.checkBuiltin(p) {
+		return true
+	}
+
 	if c.Func == nil {
-		_, funcBlock := p.FindFunc(c.Name)
-		c.Func = funcBlock
+		results := p.Find(c.Name, FindTypeFunc)
+		if len(results) > 0 {
+			if fb, ok := results[0].Value.(*FuncBlock); ok {
+				c.Func = fb
+			}
+		}
+	}
+
+	if c.Func == nil && c.ThisVar != nil {
+		results := p.Find(c.ThisVar.Name, FindTypeVar|FindTypeItem)
+		if len(results) > 0 {
+			if vb, ok := results[0].Value.(*VarBlock); ok {
+				c.ThisVar = vb
+			} else if arg, ok := results[0].Value.(*ArgBlock); ok {
+				c.ThisVar = &VarBlock{
+					Name: arg.Name,
+					Type: arg.Type,
+				}
+			}
+		}
+		if c.ThisVar.Type != nil && c.ThisVar.Type.Kind() == "list" {
+			methodName := c.Name.Last()
+			switch methodName {
+			case "len", "cap", "ptr":
+				c.Func = &FuncBlock{
+					Return: []typeSys.Type{typeSys.GetSystemType("int")},
+					Name:   NewName("__list_" + methodName),
+				}
+			}
+		}
 	}
 
 	if c.Func == nil {
@@ -122,4 +154,33 @@ func (c *CallBlock) ParseCall(p *Parser) {
 func (c *CallBlock) Parse(p *Parser) {
 	c.ParseCall(p)
 	p.ThisBlock.AddChild(&Node{Value: c})
+}
+
+func (c *CallBlock) checkBuiltin(p *Parser) bool {
+	name := c.Name.String()
+	switch name {
+	case "len", "lists_len":
+		if len(c.Args) == 1 {
+			c.Args[0].Value.Check(p)
+			argType := c.Args[0].Value.Type
+			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
+				c.Func = &FuncBlock{
+					Return: []typeSys.Type{typeSys.GetSystemType("int")},
+				}
+				return true
+			}
+		}
+	case "cap", "lists_cap":
+		if len(c.Args) == 1 {
+			c.Args[0].Value.Check(p)
+			argType := c.Args[0].Value.Type
+			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
+				c.Func = &FuncBlock{
+					Return: []typeSys.Type{typeSys.GetSystemType("int")},
+				}
+				return true
+			}
+		}
+	}
+	return false
 }

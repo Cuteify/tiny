@@ -3,10 +3,6 @@ package lexer
 // 关键字
 var (
 	keywords = map[string]int{
-		"export":    PACKAGE,
-		"import":    PACKAGE,
-		"from":      PACKAGE,
-		"as":        PACKAGE,
 		"if":        PROCESSCONTROL,
 		"while":     PROCESSCONTROL,
 		"for":       PROCESSCONTROL,
@@ -14,13 +10,11 @@ var (
 		"break":     PROCESSCONTROL,
 		"continue":  PROCESSCONTROL,
 		"else":      PROCESSCONTROL,
-		"elif":      PROCESSCONTROL,
 		"switch":    PROCESSCONTROL,
 		"case":      PROCESSCONTROL,
 		"try":       PROCESSCONTROL,
 		"except":    PROCESSCONTROL,
 		"finally":   PROCESSCONTROL,
-		"exit":      PROCESSCONTROL,
 		"//":        SEPARATOR,
 		";":         SEPARATOR,
 		"{":         SEPARATOR,
@@ -94,7 +88,6 @@ var (
 		"FUNC":           FUNC,
 		"VAR":            VAR,
 		"PROCESSCONTROL": PROCESSCONTROL,
-		"PACKAGE":        PACKAGE,
 		"SEPARATOR":      SEPARATOR,
 		"STRING":         STRING,
 		"NUMBER":         NUMBER,
@@ -112,7 +105,6 @@ const (
 	FUNC
 	VAR
 	PROCESSCONTROL
-	PACKAGE
 	SEPARATOR
 	STRING
 	NUMBER
@@ -128,7 +120,6 @@ var SepListLength = 32
 var FuncListLength = 1
 var VarListLength = 3
 var ProcessControlListLength = 14
-var PackageListLength = 4
 var TypeListLength = 2
 var BoolListLength = 2
 var BuildListLength = 1

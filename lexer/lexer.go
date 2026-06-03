@@ -2,6 +2,7 @@ package lexer
 
 import (
 	errorUtil "cuteify/error"
+	"cuteify/utils"
 	"io"
 	"os"
 	"strings"
@@ -27,14 +28,6 @@ type Token struct {
 	EndCursor int
 }
 
-// 不可见字符表
-var invisibleChar = map[string]string{
-	" ":  "[SPACE]",
-	"\t": "\\t",
-	"\n": "\\n",
-	"\r": "\\r",
-}
-
 func (t Token) String() string {
 	typeName := ""
 	for i, v := range LexTokenType {
@@ -43,7 +36,7 @@ func (t Token) String() string {
 		}
 	}
 	val := t.Value
-	val = makeVisible(val)
+	val = utils.MakeVisible(val)
 	return "[" + typeName + "]" + val
 }
 
@@ -185,32 +178,31 @@ func (l *Lexer) GetWord() (string, bool) {
 }
 
 func (l *Lexer) handleSep(word string) (Token, error) {
+	startCursor := l.Cursor - len(word)
 	switch word {
 	case "\"":
 		token := l.GetString()
 		return Token{
 			Type:      STRING,
 			Value:     token,
-			EndCursor: l.Cursor - 1, // more
-			Cursor:    l.Cursor - len(token) - 1,
+			EndCursor: l.Cursor, // more
+			Cursor:    startCursor,
 		}, nil
 	case "`":
 		token := Token{
 			Type:      RAW,
 			Value:     l.GetRawString(),
-			Cursor:    l.Cursor - 1,
-			EndCursor: l.Cursor - 1,
+			Cursor:    startCursor,
+			EndCursor: l.Cursor,
 		}
-		token.Cursor = l.Cursor - token.Len() - 1
 		return token, nil
 	case "'":
 		token := Token{
 			Type:      CHAR,
 			Value:     l.GetChar(),
-			Cursor:    l.Cursor - 1,
-			EndCursor: l.Cursor - 1,
+			Cursor:    startCursor,
+			EndCursor: l.Cursor,
 		}
-		token.Cursor = l.Cursor - token.Len() - 1
 		return token, nil
 	case "//":
 		// 找到行末
@@ -226,7 +218,7 @@ func (l *Lexer) handleSep(word string) (Token, error) {
 			Type:      SEPARATOR,
 			Value:     word,
 			EndCursor: l.Cursor,
-			Cursor:    l.Cursor - len(word),
+			Cursor:    startCursor,
 		}, nil
 	}
 }
@@ -291,7 +283,14 @@ func (l *Lexer) Next() Token {
 	code, err := l.GetToken()
 	//fmt.Println(l.Text[code.Cursor:code.EndCursor], code.Value)
 	if l.Text[code.Cursor:code.EndCursor] != code.Value {
-		panic("Lexer: Next Token Value Error")
+		switch code.Type {
+		case STRING, RAW, CHAR:
+			if code.Cursor+1 > code.EndCursor-1 && l.Text[code.Cursor+1:code.EndCursor-1] != code.Value {
+				l.Error.MissError("Syntax Error", code.Cursor, "need "+utils.MakeVisible(code.Value))
+			}
+		default:
+			l.Error.MissError("Syntax Error", code.Cursor, "need "+utils.MakeVisible(code.Value))
+		}
 	}
 	if err == io.EOF {
 		return Token{}
@@ -307,7 +306,7 @@ func (l *Lexer) Skip(s ...byte) {
 		l.SkipSep()
 	}
 	if l.Text[l.Cursor:l.Cursor+len(s)] != string(s) {
-		l.Error.MissError("Syntax Error", l.Cursor, "need "+makeVisible(string(s)))
+		l.Error.MissError("Syntax Error", l.Cursor, "need "+utils.MakeVisible(string(s)))
 	}
 	l.AddCursor(len(s))
 }
@@ -334,12 +333,4 @@ func isDigit(str string) bool {
 		}
 	}
 	return true
-}
-
-func makeVisible(str string) string {
-	// 转换不可见字符，使用map表
-	for k, v := range invisibleChar {
-		str = strings.ReplaceAll(str, k, v)
-	}
-	return str
 }

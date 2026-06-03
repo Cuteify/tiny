@@ -28,6 +28,27 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 	if call == nil || call.Func == nil {
 		return ""
 	}
+
+	if call.ThisVar != nil && call.ThisVar.Type != nil &&
+		call.ThisVar.Type.Kind() == "list" && len(call.Args) == 0 {
+		methodName := call.Name.Last()
+		var fieldOffset int
+		switch methodName {
+		case "len":
+			fieldOffset = 4
+		case "cap":
+			fieldOffset = 8
+		case "ptr":
+			fieldOffset = 0
+		default:
+			goto normalCall
+		}
+		addr := listFieldAddr(a.ctx, call.ThisVar, fieldOffset)
+		code += utils.Format("mov eax, dword " + addr + "; " + methodName + "()")
+		return
+	}
+
+normalCall:
 	fn := call.Func
 
 	savedRegs := a.ctx.Reg.SaveAll(false)
@@ -45,7 +66,11 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 		if arg == nil {
 			continue
 		}
-		code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		if arg.Value != nil && is64Type(arg.Value.Type) {
+			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		} else {
+			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		}
 	}
 
 	name := fn.Name.String()
@@ -66,20 +91,21 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 }
 
 func (a *Cdecl) Return(ret *parser.ReturnBlock) (code string) {
-	// 处理返回值：将值放入EAX寄存器
 	if ret != nil && len(ret.Value) != 0 {
-		// 强制使用EAX作为返回值寄存器
-		eaxReg := &regmgr.Reg{Name: "EAX", RegIndex: 0}
-		a.ctx.Reg.Force(eaxReg, a.ctx.Now, ret.Value[0])
+		if is64Type(ret.Value[0].Type) {
+			code += a.Exp(ret.Value[0], "EDX:EAX", "return值存入EDX:EAX")
+			a.ctx.Reg.Free(ret.Value[0])
+		} else {
+			eaxReg := &regmgr.Reg{Name: "EAX", RegIndex: 0}
+			a.ctx.Reg.Force(eaxReg, a.ctx.Now, ret.Value[0])
 
-		if eaxReg.StoreCode != "" {
-			code += utils.Format(eaxReg.StoreCode)
+			if eaxReg.StoreCode != "" {
+				code += utils.Format(eaxReg.StoreCode)
+			}
+
+			code += a.Exp(ret.Value[0], "EAX", "return值存入EAX")
+			a.ctx.Reg.Free(ret.Value[0])
 		}
-
-		// 编译返回表达式到EAX
-		code += a.Exp(ret.Value[0], "EAX", "return值存入EAX")
-		// 释放表达式使用的寄存器
-		a.ctx.Reg.Free(ret.Value[0])
 	}
 
 	code += utils.Format("; ---- 退出函数 ----")
@@ -194,10 +220,19 @@ func (a *Cdecl) EndFor(forBlock *parser.ForBlock) (code string) {
 }
 
 func (a *Cdecl) Var(varBlock *parser.VarBlock) (code string) {
-	addr := genVarAddr(a.ctx, varBlock)
 	if varBlock.Value == nil {
 		return
 	}
+	if is64Type(varBlock.Type) {
+		loAddr := genLoAddr(a.ctx, varBlock)
+		hiAddr := genHiAddr(a.ctx, varBlock)
+		code += a.Exp(varBlock.Value, loAddr, "设置变量"+varBlock.Name.String())
+		if !isRegName(loAddr) {
+			code += utils.Format("mov dword " + hiAddr + ", edx; 设置变量high")
+		}
+		return
+	}
+	addr := genVarAddr(a.ctx, varBlock)
 	code += a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
 	return
 }

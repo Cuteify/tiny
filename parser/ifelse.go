@@ -47,14 +47,14 @@ func (i *IfBlock) Check(p *Parser) bool {
 	if !i.Condition.Check(p) {
 		return false
 	}
-	if !typeSys.CheckTypeType(i.Condition.Type, "bool") {
+	if !typeSys.CheckKind(i.Condition.Type, "bool") {
 		return false
 	}
 	if i.Else {
 		if !i.ElseBlock.Value.(*ElseBlock).IfCondition.Check(p) {
 			return false
 		}
-		if !typeSys.CheckTypeType(i.ElseBlock.Value.(*ElseBlock).IfCondition.Type, "bool") {
+		if !typeSys.CheckKind(i.ElseBlock.Value.(*ElseBlock).IfCondition.Type, "bool") {
 			return false
 		}
 	}

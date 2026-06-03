@@ -1,0 +1,105 @@
+fn len(s: string) int {
+    build asm {
+        push $s
+        call strlen
+        add esp, 4
+    }
+}
+
+fn concat(a: string, b: string) string {
+    build asm {
+        push $b
+        push $a
+        call __string_concat
+        add esp, 8
+    }
+}
+
+fn eq(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        test eax, eax
+        sete al
+        movzx eax, al
+    }
+}
+
+fn ne(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        test eax, eax
+        setne al
+        movzx eax, al
+    }
+}
+
+fn cmp(a: string, b: string) int {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+    }
+}
+
+fn lt(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        cmp eax, 0
+        setl al
+        movzx eax, al
+    }
+}
+
+fn gt(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        cmp eax, 0
+        setg al
+        movzx eax, al
+    }
+}
+
+fn le(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        cmp eax, 0
+        setle al
+        movzx eax, al
+    }
+}
+
+fn ge(a: string, b: string) bool {
+    build asm {
+        push $b
+        push $a
+        call strcmp
+        add esp, 8
+        cmp eax, 0
+        setge al
+        movzx eax, al
+    }
+}
+
+fn char_at(s: string, index: int) u8 {
+    build asm {
+        mov eax, $s
+        add eax, $index
+        movzx eax, byte[eax]
+    }
+}

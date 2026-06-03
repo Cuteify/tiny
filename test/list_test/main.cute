@@ -1,0 +1,23 @@
+fn main() i32 {
+    a := []int{1, 2, 3}
+
+    var first: int
+    first = a[0]
+
+    a[1] = 10
+
+    var n: int
+    n = a.len()
+
+    var c: int
+    c = a.cap()
+
+    var slice: []int
+    slice = a[1:3]
+
+    names := []string{"hello", "world"}
+
+    empty := []int{}
+
+    ret 0
+}

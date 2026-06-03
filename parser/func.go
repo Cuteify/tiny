@@ -3,6 +3,7 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
+	"fmt"
 )
 
 // FuncBlock 函数定义结构体
@@ -27,6 +28,10 @@ type ArgBlock struct {
 
 // Check 检查参数的有效性
 func (f *ArgBlock) Check(p *Parser) bool {
+	if f.Type == nil {
+		fmt.Println(f.Name)
+		return false
+	}
 	if f.Default != nil {
 		return f.Default.Check(p)
 	}
@@ -58,7 +63,7 @@ func (f *FuncBlock) Parse(p *Parser) {
 	if code.Type == lexer.NAME {
 		// 退格到函数名开始位置
 		p.Lexer.SetCursor(oldCursor)
-		f.Name, _ = p.Name(false)
+		f.Name, _ = p.ParseName(false)
 
 		if len(f.Name) == 0 {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need Function name")
@@ -70,16 +75,18 @@ func (f *FuncBlock) Parse(p *Parser) {
 			return
 		}
 
-		//TODO：解析成员函数
-		/*if len(f.Name) == 2 {
-			structName := NewName(f.Name[0])
-			_, structBlock := p.FindStruct(structName)
-			if structBlock == nil {
-				p.Error.MissError("Struct Error", p.Lexer.Cursor, "struct '"+structName.String()+"' not found")
+		if len(f.Name) == 2 {
+			structName := NewName(f.Name[0].Name)
+			results := p.Find(structName, FindTypeType)
+			if len(results) > 0 {
+				if typeBlock, ok := results[0].Value.(*TypeBlock); ok {
+					if typeBlock.Struct != nil {
+						f.Class = typeBlock.Type()
+						typeBlock.Struct.Type.AddMethod(f)
+					}
+				}
 			}
-			f.Class = structBlock.Type()
-			structBlock.Methods = append(structBlock.Methods, f)
-		}*/
+		}
 	} else if code.Value == "(" { // 匿名函数/闭包支持
 		p.Lexer.SetCursor(code.Cursor)
 	} else {
@@ -128,7 +135,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	}
 
 	p.Lexer.SetCursor(token.Cursor)
-	n, _ := p.Name(false)
+	n, _ := p.ParseName(false)
 	argTmp.Name = n
 
 	for !token.IsEmpty() {
@@ -162,8 +169,13 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		if bracketCount == 0 {
 			if token.Value == ":" {
 				// 先后解析一个Name作为参数类型
-				n, _ := p.Name(false)
-				_, argTmp.Type = p.FindType(n)
+				n, _ := p.ParseName(false)
+				results := p.Find(n, FindTypeType)
+				if len(results) > 0 {
+					if tb, ok := results[0].Value.(*TypeBlock); ok {
+						argTmp.Type = tb.Type()
+					}
+				}
 				if argTmp.Type == nil {
 					p.Lexer.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
 					token = p.Lexer.Next()
@@ -186,10 +198,15 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			}
 
 			if token.Value == "," {
+				if argTmp.Type == nil {
+					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+					token = p.Lexer.Next()
+					continue
+				}
 				f.Args = append(f.Args, argTmp)
 				argTmp = &ArgBlock{}
 				// 获取下一参数的名称
-				n, _ := p.Name(false)
+				n, _ := p.ParseName(false)
 				argTmp.Name = n
 			}
 		}
@@ -199,10 +216,22 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 
 // ParseRetType 解析函数返回类型
 func (f *FuncBlock) ParseRetType(p *Parser) {
-	// TODO:多参数支持
-	typName, _ := p.Name(false)
-	_, typ := p.FindType(typName)
-	f.Return = append(f.Return, typ)
+	token := p.Lexer.Next()
+	if token.Value == "{" {
+		p.Lexer.SetCursor(token.Cursor)
+		return
+	}
+	p.Lexer.SetCursor(token.Cursor)
+	typName, _ := p.ParseName(false)
+	if typName.IsEmpty() {
+		return
+	}
+	results := p.Find(typName, FindTypeType)
+	if len(results) > 0 {
+		if tb, ok := results[0].Value.(*TypeBlock); ok {
+			f.Return = append(f.Return, tb.Type())
+		}
+	}
 }
 
 /*

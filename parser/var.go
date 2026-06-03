@@ -22,6 +22,71 @@ type VarBlock struct {
 	Type          typeSys.Type // 变量的数据类型
 }
 
+func (p *Parser) parseTypeAnnotation() typeSys.Type {
+	code := p.Lexer.Next()
+	if code.Type == lexer.SEPARATOR && code.Value == "[" {
+		next := p.Lexer.Next()
+		if next.Type == lexer.SEPARATOR && next.Value == "]" {
+			elemType := p.parseTypeAnnotation()
+			if elemType != nil {
+				return typeSys.NewList(elemType)
+			}
+			return nil
+		}
+		p.Lexer.SetCursor(code.Cursor)
+		return nil
+	}
+	if code.Type == lexer.SEPARATOR && code.Value == "*" {
+		elemType := p.parseTypeAnnotation()
+		if rType, ok := elemType.(*typeSys.RType); ok {
+			rType.IsPtr = true
+			return rType
+		}
+		if elemType != nil {
+			return elemType
+		}
+		return nil
+	}
+	if code.Type == lexer.NAME {
+		nameStr := code.Value
+		next := p.Lexer.Next()
+		if next.Type == lexer.SEPARATOR && next.Value == "." {
+			if nameStr == "lists" {
+				innerType := p.parseTypeAnnotation()
+				if innerType != nil {
+					if _, ok := innerType.(*typeSys.ListType); ok {
+						return innerType
+					}
+					return typeSys.NewList(innerType)
+				}
+				return nil
+			}
+			subType := p.parseTypeAnnotation()
+			if subType != nil {
+				fullName := nameStr + "." + subType.Type()
+				results := p.Find(NewName(fullName), FindTypeType)
+				if len(results) > 0 {
+					if tb, ok := results[0].Value.(*TypeBlock); ok {
+						return tb.Type()
+					}
+				}
+				return nil
+			}
+			return nil
+		}
+		p.Lexer.SetCursor(next.Cursor)
+		results := p.Find(NewName(nameStr), FindTypeType)
+		if len(results) > 0 {
+			if tb, ok := results[0].Value.(*TypeBlock); ok {
+				return tb.Type()
+			}
+		}
+		return nil
+	}
+	p.Lexer.SetCursor(code.Cursor)
+	return nil
+}
+
 // Parse 解析变量声明/定义并添加到当前作用域
 // 这是入口函数，会调用ParseVar然后将自身添加到语法树
 func (v *VarBlock) Parse(p *Parser) {
@@ -63,7 +128,7 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 
 	// 回退词法分析器到变量名开始位置，以正确解析名称
 	p.Lexer.SetCursor(code.Cursor)
-	name, _ := p.Name(false)
+	name, _ := p.ParseName(false)
 	v.Name = name
 
 	// 检查变量名是否合法（不能是路径形式用于定义）
@@ -84,7 +149,7 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 	// 处理自增/自减操作 (x++ 或 x--)
 	if code.Value == "++" || code.Value == "--" {
 		valPart := &Expression{
-			Var: &VarBlock{Name: Name([]string{v.Name.First()})},
+			Var: &VarBlock{Name: NewName(v.Name.First())},
 		}
 
 		// 将 x++ 转换为表达式: x = x + 1
@@ -105,12 +170,17 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 
 	// 解析赋值表达式（右侧部分）
 	v.Value = p.ParseExp(stopCursor)
+	if v.Value != nil {
+		v.Value.Check(p)
+	}
 
 	// 根据操作符类型处理
 	switch code.Value {
 	case ":=":
-		// 定义并初始化：x := 5
 		v.IsDefine = true
+		if v.Type == nil && v.Value != nil && v.Value.Type != nil {
+			v.Type = v.Value.Type
+		}
 		return
 	case "=":
 		// 普通赋值：x = 5，需要移除旧的常量值
@@ -156,24 +226,8 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 	// 解析类型注解
 	code = p.Lexer.Next()
 	if code.Type == lexer.SEPARATOR && code.Value == ":" {
-		code = p.Lexer.Next()
-		if code.Type == lexer.NAME {
-			// 基本类型：如 "var x int"
-			_, tmpType := p.FindType(Name([]string{code.Value}))
-			v.Type = tmpType
-		} else if code.Type == lexer.SEPARATOR && code.Value == "*" {
-			// 指针类型：如 "var x *int"
-			code = p.Lexer.Next()
-			if code.Type == lexer.NAME {
-				_, tmpType := p.FindType(Name([]string{code.Value}))
-				if rType, ok := tmpType.(*typeSys.RType); ok {
-					rType.IsPtr = true // 标记为指针类型
-					v.Type = rType
-				}
-			} else {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
-			}
-		} else {
+		v.Type = p.parseTypeAnnotation()
+		if v.Type == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 		}
 	} else {
@@ -185,6 +239,9 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 	if code.Type == lexer.SEPARATOR && code.Value == "=" {
 		v.IsInitialized = true
 		v.Value = p.ParseExp(stopCursor)
+		if v.Value != nil {
+			v.Value.Check(p)
+		}
 	} else {
 		v.IsInitialized = false
 		// 回退词法分析器到"="之后的位置
@@ -214,7 +271,7 @@ func (v *VarBlock) parseVarName(p *Parser, code lexer.Token) {
 	// 先退格到名称开始位置
 	p.Lexer.SetCursor(code.Cursor)
 	v.StartCursor = code.Cursor
-	name, _ := p.Name(false)
+	name, _ := p.ParseName(false)
 
 	// 如果是定义，那就不能是path
 	if v.IsDefine && name.IsPath() {
@@ -237,11 +294,11 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 
 	v.Used = true
 
-	// 使用 Finder 中的 FindVar 函数查找变量
+	// 使用 Find 查找变量定义
 	if !v.IsDefine && v.Define == nil {
-		node, vb := p.FindVar(v.Name)
-		if vb != nil {
-			switch vbt := vb.(type) {
+		results := p.Find(v.Name, FindTypeVar|FindTypeItem|FindTypeSelf|FindTypeField|FindTypeArg)
+		if len(results) > 0 {
+			switch vbt := results[0].Value.(type) {
 			case *ArgBlock:
 				v.Type = vbt.Type
 				v.Offset = vbt.Offset
@@ -249,7 +306,7 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 				v.Type = vbt.Type
 				v.Offset = vbt.Offset
 			}
-			v.Define = node
+			v.Define = results[0].Node
 			p.ThisBlock = oldThisBlock
 			return true
 		}

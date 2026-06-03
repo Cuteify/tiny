@@ -4,7 +4,9 @@ package compile
 import (
 	"cuteify/compile/arch"
 	"cuteify/compile/arch/x86"
+	"cuteify/compile/arch/x86_64"
 	"cuteify/compile/context"
+	typeSys "cuteify/type"
 )
 
 // NewArch 根据架构名称创建对应的架构处理器
@@ -20,15 +22,34 @@ func NewArch(archName string, ctx *context.Context) arch.Arch {
 	switch archName {
 	case "x86":
 		archHandle = x86.NewCdecl(ctx)
+		typeSys.SetTargetPointerSize(4)
 	case "x86.cdecl":
 		archHandle = x86.NewCdecl(ctx)
+		typeSys.SetTargetPointerSize(4)
 	case "x86.stdcall":
 		archHandle = x86.NewStdcall(ctx)
-	/*case "x86.fastcall":
-	return &x86FastcallArch{}*/
+		typeSys.SetTargetPointerSize(4)
+	case "x86.fastcall":
+		archHandle = x86.NewFastcall(ctx)
+		typeSys.SetTargetPointerSize(4)
+	case "x86.sysv":
+		archHandle = x86.NewSysV(ctx)
+		typeSys.SetTargetPointerSize(8)
+	case "x86.win64":
+		archHandle = x86.NewWin64(ctx)
+		typeSys.SetTargetPointerSize(8)
+	case "x86_64":
+		archHandle = x86_64.NewSysV(ctx)
+		typeSys.SetTargetPointerSize(8)
+	case "x86_64.sysv":
+		archHandle = x86_64.NewSysV(ctx)
+		typeSys.SetTargetPointerSize(8)
+	case "x86_64.win64":
+		archHandle = x86_64.NewWin64(ctx)
+		typeSys.SetTargetPointerSize(8)
 	default:
-		// 默认使用 cdecl 调用约定
 		archHandle = x86.NewCdecl(ctx)
+		typeSys.SetTargetPointerSize(4)
 	}
 
 	ctx.Arch = archHandle

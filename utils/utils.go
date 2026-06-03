@@ -112,3 +112,19 @@ func GetLengthName(size int) string {
 		return ""
 	}
 }
+
+// 不可见字符表
+var invisibleChar = map[string]string{
+	" ":  "[SPACE]",
+	"\t": "[TAB]",
+	"\n": "[NEWLINE]",
+	"\r": "[RETURN]",
+}
+
+func MakeVisible(str string) string {
+	// 转换不可见字符，使用map表
+	for k, v := range invisibleChar {
+		str = strings.ReplaceAll(str, k, v)
+	}
+	return str
+}
