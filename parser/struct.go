@@ -115,16 +115,9 @@ func (s *StructBlock) parseFieldType(p *Parser, fieldName string, access typeSys
 		access = typeSys.AccessPrivate
 	}
 
-	typeName, _ := p.ParseName(false)
-	var fieldType typeSys.Type
-	results := p.Find(typeName, FindTypeType)
-	if len(results) > 0 {
-		if tb, ok := results[0].Value.(*TypeBlock); ok {
-			fieldType = tb.Type()
-		}
-	}
+	fieldType := p.parseTypeAnnotation()
 	if fieldType == nil {
-		p.Error.MissError("Type Error", p.Lexer.Cursor, "type '"+typeName.String()+"' not found")
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "type expected")
 	}
 
 	field := &typeSys.StructField{

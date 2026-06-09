@@ -3,7 +3,6 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"reflect"
 )
 
 // IfBlock if 条件块结构体
@@ -36,10 +35,13 @@ func (i *IfBlock) Parse(p *Parser) {
 			break
 		}
 	}
-	stopCursor := p.Lexer.Cursor
+	stopCursor := p.Lexer.Cursor - 1
 	p.Lexer.SetCursor(oldCursor)
 	i.Condition = p.ParseExp(stopCursor)
 	p.Wait("{")
+	n := &Node{Value: i}
+	p.AddChild(n)
+	p.ThisBlock = n
 }
 
 // Check 检查 if 条件块的有效性
@@ -51,12 +53,15 @@ func (i *IfBlock) Check(p *Parser) bool {
 		return false
 	}
 	if i.Else {
-		if !i.ElseBlock.Value.(*ElseBlock).IfCondition.Check(p) {
-			return false
+		if i.ElseBlock.Value.(*ElseBlock).IfCondition != nil {
+			if !i.ElseBlock.Value.(*ElseBlock).IfCondition.Check(p) {
+				return false
+			}
+			if !typeSys.CheckKind(i.ElseBlock.Value.(*ElseBlock).IfCondition.Type, "bool") {
+				return false
+			}
 		}
-		if !typeSys.CheckKind(i.ElseBlock.Value.(*ElseBlock).IfCondition.Type, "bool") {
-			return false
-		}
+		i.ElseBlock.Check()
 	}
 	return true
 }
@@ -91,13 +96,12 @@ func (e *ElseBlock) Parse(p *Parser) {
 	if len(p.ThisBlock.Children) == 0 {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "else before if")
 	}
-	if reflect.TypeOf(p.ThisBlock.Children[len(p.ThisBlock.Children)-1].Value) == reflect.TypeOf(&IfBlock{}) {
+	if ib, ok := p.ThisBlock.Children[len(p.ThisBlock.Children)-1].Value.(*IfBlock); ok {
 		nodeTmp := &Node{Value: e, Father: p.ThisBlock}
-		p.ThisBlock.Children[len(p.ThisBlock.Children)-1].Value.(*IfBlock).Else = true
-		p.ThisBlock.Children[len(p.ThisBlock.Children)-1].Value.(*IfBlock).ElseBlock = nodeTmp
+		ib.Else = true
+		ib.ElseBlock = nodeTmp
 		p.ThisBlock = nodeTmp
 	} else {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "else before if")
 	}
-
 }

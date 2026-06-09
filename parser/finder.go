@@ -2,6 +2,7 @@ package parser
 
 import (
 	typeSys "cuteify/type"
+	"fmt"
 )
 
 /*
@@ -200,6 +201,12 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		return []FindResult{findSelf(p, name, typ)}
 	}
 
+	if (typ & FindTypeType) != 0 {
+		if t := typeSys.GetSystemType(name.String()); t != nil {
+			res = append(res, FindResult{Value: t, Path: []any{t}, Type: FindTypeType})
+		}
+	}
+
 	nowBlock := p.ThisBlock
 	for nowBlock != nil {
 		if nowBlock == p.Block || nowBlock.Father == nil {
@@ -216,21 +223,42 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		}
 		for i := 0; i < len(nowBlock.Children); i++ {
 			child := nowBlock.Children[i]
-			if child.Value == nil {
+			if child.Value == nil || child.Ignore == true {
 				continue
 			}
 
 			switch v := child.Value.(type) {
 			case *TypeBlock:
 				if (typ&FindTypeType) != 0 && v.Name.Eq(name) {
-					res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeType})
+					res = append(res, FindResult{Node: child, Value: v.Type(), Path: []any{v.Type()}, Type: FindTypeType})
 				}
 			case *FuncBlock:
 				if (typ&FindTypeFunc) != 0 && v.Name.Eq(name) {
 					res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeFunc})
 				}
+			case *ForBlock:
+				var tmp *VarBlock
+				if v.Init != nil && v.Init.Var != nil && v.Init.Var.IsDefine {
+					tmp = v.Init.Var
+				}
+				if v.Increment != nil && v.Increment.Var != nil && v.Increment.Var.IsDefine {
+					tmp = v.Increment.Var
+				}
+				if name.IsPath() {
+					if n := name.Match(tmp.Name); n > 0 {
+						ok, r := enterTypeFind(name[n:], tmp.Type)
+						if ok && (r.Type&typ) != 0 {
+							r.Node = child
+							res = append(res, r)
+						}
+					}
+				} else {
+					if tmp.Name.Eq(name) && (typ&FindTypeVar) != 0 {
+						res = append(res, FindResult{Node: child, Value: tmp, Path: []any{v, tmp}, Type: FindTypeVar})
+					}
+				}
 			case *VarBlock:
-				if (typ&FindTypeVar) != 0 && v.IsDefine {
+				if v.IsDefine {
 					if name.IsPath() {
 						if n := name.Match(v.Name); n > 0 {
 							ok, r := enterTypeFind(name[n:], v.Type)
@@ -240,7 +268,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 							}
 						}
 					} else {
-						if v.Name.Eq(name) {
+						if v.Name.Eq(name) && (typ&FindTypeVar) != 0 {
 							res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeVar})
 						}
 					}
@@ -261,47 +289,82 @@ func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {
 	nowType := t
 	findPath := []any{}
 	for nowType != nil && n.Length() > 0 {
-
 		switch nowType.Kind() {
 		case "list":
 			if n[0].Slice == nil {
+				// 检查是否是len字段
+				if n[0].Name == "len" && n.Length() == 1 {
+					findPath = append(findPath, nowType)
+					res.Type = FindTypeField
+					res.Value = genVLen()
+					res.Path = findPath
+					ok = true
+					return
+				}
 				ok = false
 				return
 			}
-			// 找到List类型
-			nowType = nowType.Elem()
+
+			// 检查NamePart是否为切片还是索引
+			if n[0].Slice.End == nil {
+				nowType = nowType.Elem() // 找到List里类型
+			} else {
+				// 类型应该和nowType一样，因为是切片
+				nowType = nowType
+			}
 			n = n[1:]
 			findPath = append(findPath, nowType)
 			res.Type = FindTypeItem
+			res.Value = nowType
 		case "struct":
 			// 找到Struct类型
 			if n[0].Name == "" {
 				ok = false
 				return
 			}
+
+			// 查找Method
+			methods := nowType.Methods()
+			for _, method := range methods {
+				if method.(*FuncBlock).Name.Last() == n.Last() {
+					ok = true
+					res.Type = FindTypeFunc
+					res.Value = method
+					findPath = append(findPath, nowType)
+					res.Path = findPath
+					return
+				}
+			}
+
 			// 找到Struct字段
 			fields := nowType.Fields()
-			for _, field := range fields {
-				if field.Name == n[0].Name {
+			findField := false
+			var field *typeSys.StructField
+			for _, field = range fields {
+				if field.Name == n.First() {
+					findField = true
 					nowType = field.Type
 					break
 				}
 			}
-			if nowType == nil {
+			// 啥也找不到
+			if !findField {
+				fmt.Println("not find field", n[0].Name)
 				ok = false
 				return
 			}
 			n = n[1:]
 			findPath = append(findPath, nowType)
 			res.Type = FindTypeField
+			res.Value = field
 		default:
 			// 继续查找
-			nowType = nowType.Elem()
+			ok = false
+			return
 		}
 	}
 	ok = true
 	res.Path = findPath
-	res.Value = nowType
 	return ok, res
 }
 
@@ -318,7 +381,7 @@ func findArg(fb *FuncBlock, name Name, nowBlock *Node) (res FindResult, ok bool)
 			}
 		} else {
 			if arg.Name.Eq(name) {
-				res = FindResult{Node: nowBlock, Value: arg, Path: []any{arg}, Type: FindTypeArg}
+				return FindResult{Node: nowBlock, Value: arg, Path: []any{arg}, Type: FindTypeArg}, true
 			}
 		}
 	}
@@ -346,7 +409,7 @@ func findSelf(p *Parser, name Name, typ FindType) FindResult {
 		return FindResult{}
 	}
 
-	if name.String() == "self" {
+	if name.Length() == 1 && name.First() == "self" {
 		return FindResult{Node: nowBlock, Value: fn.Class, Path: []any{fn}, Type: FindTypeSelf}
 	} else {
 		ok, r := enterTypeFind(name[1:], fn.Class)
@@ -357,4 +420,17 @@ func findSelf(p *Parser, name Name, typ FindType) FindResult {
 	}
 
 	return FindResult{}
+}
+
+func genVLen() *typeSys.StructField {
+	sf := &typeSys.StructField{
+		Name:   "len",
+		Type:   typeSys.GetSystemType("int"),
+		Offset: 0,
+	}
+	sf.Size = sf.Type.Size()
+	sf.Alignment = sf.Type.Alignment()
+	sf.Access = typeSys.AccessProtected
+	sf.ParseTags("json:\"len\"")
+	return sf
 }

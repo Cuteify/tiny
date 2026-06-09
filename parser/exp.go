@@ -181,7 +181,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 
 	// 迭代解析表达式
 	for p.Lexer.Cursor < stopCursor {
-		exp := p.getExp()
+		exp := p.getExp(stopCursor)
 
 		if exp == nil {
 			break
@@ -214,8 +214,17 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 
 		if root == nil {
 			if exp.Separator == "[" {
-				p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected left operand")
-				return nil
+				// Check if this is a Go-style list literal []type{...}
+				if p.isListLitAfterBracket() {
+					exp = p.handleListLit()
+					if exp == nil {
+						return nil
+					}
+				} else {
+					// Bare '[' at start of expression is invalid
+					p.Error.MissError("Expression Error", p.Lexer.Cursor, "unexpected '['")
+					return nil
+				}
 			}
 			root = exp
 			current = root
@@ -225,12 +234,26 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 		isRoot := current == root
 
 		if exp.Separator == "[" {
+			// Check if this is a list literal (when current needs a right operand)
+			if current.Separator != "" && current.Right == nil {
+				if p.isListLitAfterBracket() {
+					exp = p.handleListLit()
+					if exp == nil {
+						return nil
+					}
+					current.Insert(exp)
+					continue
+				}
+			}
 			exp = p.handleIndex()
 			// 插入
 			if current.Separator == "" || current.Separator == "[]" {
 				// 当前节点不是运算符，需要把当前节点插入到exp的右子节点，然后把exp作为当前节点
 				// 相当于BeParent反过来的操作
 				exp.Insert(current)
+				if isRoot {
+					root = exp
+				}
 				current = exp
 			} else {
 				if current.Right == nil {
@@ -267,6 +290,16 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			// TODO：错误返回导致ROOT被覆盖
 			current = exp
 		} else if current.Separator == "" && exp.Separator != "" {
+			// ++ and -- after a value are postfix operators (no right operand needed)
+			if exp.Separator == "++" || exp.Separator == "--" {
+				exp.SetLeft(current)
+				current = exp
+				// Don't expect right operand, continue to next token
+				if isRoot && current.Father == root {
+					root = current
+				}
+				continue
+			}
 			exp.SetLeft(current)     // 把当前节点插入到exp的左子节点
 			current = exp            // 把exp作为当前节点
 			justEnterBracket = false // 增加进入括号的计数
@@ -277,8 +310,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			p.Error.MissError("Expression Error", p.Lexer.Cursor, "unexpected token: "+utils.MakeVisible(exp.Separator))
 			return nil
 		}
-
-		if isRoot && current.Father == root {
+		if current.Right == root || current.Left == root {
 			root = current
 		}
 	}
@@ -288,18 +320,26 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected ')'")
 		return nil
 	}
-	if current.Separator != "" && current.Right == nil {
-		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected right operand")
-		return nil
+
+	if current != nil && current.Separator != "" && current.Right == nil {
+		// ++, -- can be postfix; list_lit is a complete literal
+		if current.Separator != "++" && current.Separator != "--" && current.Separator != "list_lit" {
+			p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected right operand")
+			return nil
+		}
 	}
 
-	// 返回根表达式
 	return root
 }
 
-func (p *Parser) getExp() *Expression {
+func (p *Parser) getExp(stopCursor int) *Expression {
 	code := p.Lexer.Next()
 	if code.IsEmpty() {
+		return nil
+	}
+
+	if p.Lexer.Cursor > stopCursor {
+		p.Lexer.SetCursor(code.Cursor)
 		return nil
 	}
 
@@ -333,8 +373,17 @@ func (p *Parser) getExp() *Expression {
 
 	case lexer.NAME:
 		p.Lexer.SetCursor(code.Cursor)
-		return p.handleName()
+		exp := p.handleName()
+		if p.Lexer.Cursor > stopCursor {
+			p.Lexer.SetCursor(code.Cursor)
+			return nil
+		}
+		return exp
 	case lexer.SEPARATOR:
+		if code.Value == "\n" || code.Value == ";" || code.Value == "\r" {
+			p.Lexer.SetCursor(code.Cursor)
+			return nil
+		}
 		return &Expression{Separator: code.Value}
 	}
 
@@ -343,21 +392,34 @@ func (p *Parser) getExp() *Expression {
 }
 
 func (p *Parser) handleName() *Expression {
+	nameStart := p.Lexer.Cursor
 	name, _ := p.ParseName(false)
 	exp := &Expression{}
 
 	// 尝试匹配(
 	token := p.Lexer.Next()
 	p.Lexer.SetCursor(token.Cursor)
-	if token.Type == lexer.SEPARATOR && token.Value == "(" {
-		callBlock := &CallBlock{Name: Name(name)}
-		callBlock.ParseCall(p)
-		exp.Call = callBlock
-		return exp
+	if token.Type == lexer.SEPARATOR {
+		switch token.Value {
+		case "(":
+			callBlock := &CallBlock{Name: name}
+			callBlock.ParseCall(p)
+			exp.Call = callBlock
+			return exp
+		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
+			block := &VarBlock{}
+			// 把指针放到name之前
+			p.Lexer.SetCursor(nameStart)
+			block.ParseVar(p)
+			exp.Var = block
+			p.AddChild(&Node{Value: block, Ignore: true})
+			return exp
+		}
 	}
 
 	// 写入变量引用
-	exp.Var = &VarBlock{Name: Name(name)}
+	exp.Var = &VarBlock{Name: name}
+	exp.Var.ParseDefine(p)
 	return exp
 }
 
@@ -366,7 +428,9 @@ func (p *Parser) handleIndex() *Expression {
 	index := [3]*Expression{}
 	state := 0 // 0=start, 1=end, 2=step
 	bracketDepth := 1
-	startCursor := p.Lexer.Cursor // 记录当前表达式起始位置
+	// startCursor tracks the start of the current expression within brackets
+	// Cursor is already past '[' when handleIndex is called
+	startCursor := p.Lexer.Cursor
 
 	for bracketDepth > 0 {
 		token := p.Lexer.Next()
@@ -385,11 +449,14 @@ func (p *Parser) handleIndex() *Expression {
 				if bracketDepth == 0 {
 					// 解析最后一个表达式（如果有）
 					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
 						if exp != nil {
 							index[state] = exp
 						}
 					}
+					// Advance cursor past the closing ']'
+					p.Lexer.SetCursor(token.Cursor + 1)
 					return &Expression{
 						Separator: "[]",
 						Index:     index,
@@ -400,6 +467,7 @@ func (p *Parser) handleIndex() *Expression {
 				if bracketDepth == 1 {
 					// 解析 : 之前的表达式
 					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
 						if exp != nil {
 							index[state] = exp
@@ -421,4 +489,125 @@ func (p *Parser) handleIndex() *Expression {
 		Separator: "[]",
 		Index:     index,
 	}
+}
+
+// isListLitAfterBracket checks if we're at a Go-style list literal `[]type{...}`.
+// Assumes cursor is positioned AFTER the opening `[` (already consumed).
+// Returns true if next tokens are `]` then a type name then `{`.
+func (p *Parser) isListLitAfterBracket() bool {
+	savedCursor := p.Lexer.Cursor
+
+	// Must be `]`
+	next := p.Lexer.Next()
+	if next.Type != lexer.SEPARATOR || next.Value != "]" {
+		p.Lexer.SetCursor(savedCursor)
+		return false
+	}
+
+	// Must be followed by a type name
+	peek := p.Lexer.Next()
+	if peek.Type != lexer.NAME && !(peek.Type == lexer.SEPARATOR && peek.Value == "*") {
+		p.Lexer.SetCursor(savedCursor)
+		return false
+	}
+
+	// Must be followed by `{`
+	after := p.Lexer.Next()
+	if after.Type != lexer.SEPARATOR || after.Value != "{" {
+		p.Lexer.SetCursor(savedCursor)
+		return false
+	}
+
+	p.Lexer.SetCursor(savedCursor)
+	return true
+}
+
+func (p *Parser) handleListLit() *Expression {
+	// Parse []type{elem1, elem2, ...}
+	// Cursor is positioned after the opening '[' (already consumed by getExp)
+
+	// Consume "]"
+	token := p.Lexer.Next()
+	if token.Type != lexer.SEPARATOR || token.Value != "]" {
+		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected ']'")
+		return nil
+	}
+
+	// Parse type annotation
+	elemType := p.parseTypeAnnotation()
+	if elemType == nil {
+		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected type after ']'")
+		return nil
+	}
+
+	// Consume "{"
+	token = p.Lexer.Next()
+	if token.Type != lexer.SEPARATOR || token.Value != "{" {
+		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected '{'")
+		return nil
+	}
+
+	// Parse {elem1, elem2, ...}
+	elems := p.parseBraceList()
+	if elems == nil {
+		return nil
+	}
+
+	return &Expression{
+		Separator: "list_lit",
+		ListElems: elems,
+		Type:      typeSys.NewList(elemType),
+	}
+}
+
+// parseBraceList parses {elem1, elem2, ...} and returns the list of expressions
+func (p *Parser) parseBraceList() []*Expression {
+	elems := []*Expression{}
+	braceDepth := 1
+	startCursor := p.Lexer.Cursor
+
+	for braceDepth > 0 {
+		token := p.Lexer.Next()
+		if token.IsEmpty() {
+			p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected '}'")
+			return nil
+		}
+
+		if token.Type == lexer.SEPARATOR {
+			switch token.Value {
+			case "{":
+				braceDepth++
+				continue
+			case "}":
+				braceDepth--
+				if braceDepth == 0 {
+					// Parse last element if any
+					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
+						exp := p.ParseExp(token.Cursor)
+						if exp != nil {
+							elems = append(elems, exp)
+						}
+					}
+					p.Lexer.SetCursor(token.Cursor + 1)
+					return elems
+				}
+				continue
+			case ",":
+				if braceDepth == 1 {
+					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
+						exp := p.ParseExp(token.Cursor)
+						if exp != nil {
+							elems = append(elems, exp)
+						}
+					}
+					startCursor = p.Lexer.Cursor
+					continue
+				}
+			}
+		}
+	}
+
+	return elems
 }

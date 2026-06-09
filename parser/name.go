@@ -35,7 +35,11 @@ func (n Name) String() string {
 			parts[i] = part.Name
 		}
 	}
-	return utils.ToNASMName(strings.Join(parts, "."))
+	return strings.Join(parts, ".")
+}
+
+func (n Name) NASM() string {
+	return utils.ToNASMName(n.String())
 }
 
 func (n Name) Length() int {
@@ -148,10 +152,13 @@ func (n Name) Match(other Name) int {
 	}
 	for i := 0; i < len(n) && i < len(other); i++ {
 		if n[i].Name != other[i].Name {
-			return i
+			return i - 1
 		}
 	}
-	return len(n)
+	if len(n) == len(other) {
+		return len(n)
+	}
+	return len(other)
 }
 
 // // IsEmpty 判断名称是否为空
@@ -198,13 +205,15 @@ func (n *Name) SetSlice(index int, start, end, step *Expression) {
 func (n Name) Check() bool {
 	ok := !n.IsEmpty()
 	for _, part := range n {
+		if part.Name != "" {
+			ok = ok && utils.CheckName(part.Name)
+		}
 		if part.Name == "" {
-			ok = part.Slice != nil
+			ok = ok && part.Slice != nil
 		}
 		if part.Slice != nil {
-			ok = part.Name == ""
+			ok = ok && part.Name == ""
 		}
-		ok = ok && utils.CheckName(part.Name)
 	}
 	return ok
 }
@@ -316,12 +325,22 @@ func (p *Parser) ParseName(wait bool) (name Name, cursor int) {
 			switch code.Value {
 			case ".":
 			case "[":
+				// Peek ahead: if next is "]", this is list type syntax, not a slice
+				peek := p.Lexer.Next()
+				if peek.Type == lexer.SEPARATOR && peek.Value == "]" {
+					// This is []type (list type), not a name slice
+					// Set cursor back to "[" so parseTypeAnnotation can handle it
+					p.Lexer.SetCursor(code.Cursor)
+					goto end
+				}
+				// For expression indices (like list[0], list[len(list)-1]), stop parsing name
+				// and let ParseExp handle the index
+				p.Lexer.SetCursor(code.Cursor)
 				slice := p.parseNameSlice()
 				if slice != nil {
 					name = append(name, NamePart{Slice: slice})
-				} else {
-					p.Lexer.Error.MissError("Syntax Error", p.Lexer.Cursor, "invalid index")
 				}
+				goto end
 			case "_":
 				name[len(name)-1].Name += "_"
 			default:
@@ -372,6 +391,7 @@ func (p *Parser) parseNameSlice() *NameSlice {
 				if bracketDepth == 0 {
 					// 解析最后一个表达式（如果有）
 					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
 						if exp != nil {
 							switch state {
@@ -383,6 +403,7 @@ func (p *Parser) parseNameSlice() *NameSlice {
 								slice.Step = exp
 							}
 						}
+						p.Lexer.SetCursor(token.EndCursor)
 					}
 					return slice
 				}
@@ -391,6 +412,7 @@ func (p *Parser) parseNameSlice() *NameSlice {
 				if bracketDepth == 1 {
 					// 解析 : 之前的表达式
 					if startCursor < token.Cursor {
+						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
 						if exp != nil {
 							switch state {
@@ -402,6 +424,7 @@ func (p *Parser) parseNameSlice() *NameSlice {
 								slice.Step = exp
 							}
 						}
+						p.Lexer.SetCursor(token.EndCursor)
 					}
 					state++
 					if state > 2 {
@@ -416,4 +439,29 @@ func (p *Parser) parseNameSlice() *NameSlice {
 	}
 
 	return slice
+}
+
+// SetFirst 设置名称的第一个部分
+func (n *Name) SetFirst(name Name) {
+	// 设置名称的第一个部分, 如果是PkgPath就继续知道第一个不是PkgPath的部分
+	if len(name) == 0 {
+		return
+	}
+
+	// 分别找到两者First的截止位置
+	firstEnd := 0
+	for i := 0; i < len(*n); i++ {
+		if !(*n)[i].IsPkgPath {
+			firstEnd = i
+			break
+		}
+	}
+	newFirstEnd := 0
+	for i := 0; i < len(name); i++ {
+		if !name[i].IsPkgPath {
+			newFirstEnd = i
+			break
+		}
+	}
+	*n = append((*n)[:firstEnd], name[:newFirstEnd]...)
 }

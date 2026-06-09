@@ -5,6 +5,8 @@ import (
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
+	"fmt"
+	"os"
 	"strings"
 )
 
@@ -84,20 +86,15 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 
 	// 解析类型名称
 	typeName, _ := p.ParseName(false)
-	if typeName.String() == "" {
+	if typeName.IsEmpty() {
 		return nil
-	}
-
-	// 先检查内置类型
-	if sysType := typeSys.GetSystemType(typeName.String()); sysType != nil {
-		return sysType
 	}
 
 	// 再查找用户定义类型
 	results := p.Find(Name(typeName), FindTypeType)
 	if len(results) > 0 {
-		if tb, ok := results[0].Value.(*TypeBlock); ok {
-			return tb.Type()
+		if tb, ok := results[0].Value.(typeSys.Type); ok {
+			return tb
 		}
 	}
 
@@ -106,7 +103,7 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 
 func (p *Parser) handleEmptyToken(beforeCursor int) bool {
 	if p.ThisBlock.Father != nil {
-		p.Error.MissErrors("Syntax Error", beforeCursor,p.Lexer.Cursor, "Need }")
+		p.Error.MissErrors("Syntax Error", beforeCursor, p.Lexer.Cursor, "Need }")
 	}
 	return true
 }
@@ -150,8 +147,33 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 			call.Parse(p)
 			return
 		}
+		// Check if after the field name there's an assignment operator
+		// We need to parse the full field access first, then check for assignment
 		p.Lexer.SetCursor(code2.Cursor)
 		exp := p.fieldExpr(name)
+		if exp == nil {
+			return
+		}
+		// Check if next token is an assignment operator
+		assignOp := p.Lexer.Next()
+		fmt.Printf("DEBUG fieldExpr: assignOp.Value=%q, cursor=%d\n", assignOp.Value, assignOp.Cursor)
+		assignOps := []string{"=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>="}
+		isAssign := false
+		for _, op := range assignOps {
+			if assignOp.Value == op {
+				isAssign = true
+				break
+			}
+		}
+		if isAssign {
+			// This is a field assignment like container.count = 5
+			p.Lexer.SetCursor(beforeCursor)
+			block := &VarBlock{}
+			block.Parse(p)
+			return
+		}
+		// Not an assignment, just field access
+		p.Lexer.SetCursor(assignOp.Cursor)
 		p.AddChild(&Node{Value: exp})
 		return
 	}
@@ -162,6 +184,17 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		block := &CallBlock{Name: name}
 		block.Parse(p)
 	case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
+		// If name has multiple parts (field access), handle as expression assignment
+		if len(name) > 1 {
+			p.Lexer.SetCursor(beforeCursor)
+			stopCursor := p.FindEndCursor()
+			exp := p.ParseExp(stopCursor)
+			if exp != nil {
+				exp.Check(p)
+				p.AddChild(&Node{Value: exp})
+			}
+			return
+		}
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
@@ -393,6 +426,10 @@ func (p *Parser) Parse() *Node {
 			if p.Block != p.ThisBlock {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '}'")
 			}
+			file, _ := os.OpenFile("ast.html", os.O_CREATE|os.O_WRONLY, 0644)
+			file.Truncate(0)
+			defer file.Close()
+			generateASTHTML(p.Block, file)
 			break
 		}
 	}

@@ -15,7 +15,7 @@ type VarBlock struct {
 	Value         *Expression  // 变量的值表达式（如初始化表达式）
 	IsDefine      bool         // 是否为定义（:=）而非声明（=）
 	IsInitialized bool         // 是否已初始化
-	Define        *Node        // 指向定义该变量的AST节点
+	Define        FindResult   // 查找结果（Value 是真正的定义对象）
 	Used          bool         // 变量是否已被使用（用于优化/警告）
 	StartCursor   int          // 变量名在源代码中的起始位置
 	Offset        int          // 变量在栈帧中的偏移量（编译时使用）
@@ -75,6 +75,10 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 			return nil
 		}
 		p.Lexer.SetCursor(next.Cursor)
+		// 先检查系统类型
+		if sysType := typeSys.GetSystemType(nameStr); sysType != nil {
+			return sysType
+		}
 		results := p.Find(NewName(nameStr), FindTypeType)
 		if len(results) > 0 {
 			if tb, ok := results[0].Value.(*TypeBlock); ok {
@@ -223,14 +227,10 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 	}
 	v.parseVarName(p, code)
 
-	// 解析类型注解
-	code = p.Lexer.Next()
-	if code.Type == lexer.SEPARATOR && code.Value == ":" {
-		v.Type = p.parseTypeAnnotation()
-		if v.Type == nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
-		}
-	} else {
+	// 解析类型注解（支持 :Type）
+	p.Lexer.Skip(':')
+	v.Type = p.parseTypeRef()
+	if v.Type == nil {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 	}
 
@@ -295,20 +295,42 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	v.Used = true
 
 	// 使用 Find 查找变量定义
-	if !v.IsDefine && v.Define == nil {
+	if !v.IsDefine && v.Define.Node == nil {
 		results := p.Find(v.Name, FindTypeVar|FindTypeItem|FindTypeSelf|FindTypeField|FindTypeArg)
-		if len(results) > 0 {
-			switch vbt := results[0].Value.(type) {
-			case *ArgBlock:
-				v.Type = vbt.Type
-				v.Offset = vbt.Offset
-			case *VarBlock:
-				v.Type = vbt.Type
-				v.Offset = vbt.Offset
+		for _, result := range results {
+			switch result.Type {
+			case FindTypeVar:
+				if vb, ok := result.Value.(*VarBlock); ok {
+					v.Type = vb.Type
+					v.Offset = vb.Offset
+					v.Define = result
+				}
+			case FindTypeArg:
+				if ab, ok := result.Value.(*ArgBlock); ok {
+					v.Type = ab.Type
+					v.Offset = ab.Offset
+					v.Define = result
+				}
+			case FindTypeSelf:
+				if fn, ok := result.Value.(*FuncBlock); ok {
+					v.Type = fn.Class
+					v.Define = result
+				}
+			case FindTypeField:
+				if field, ok := result.Value.(*typeSys.StructField); ok {
+					v.Type = field.Type
+					v.Define = result
+				}
+			case FindTypeItem:
+				if t, ok := result.Value.(typeSys.Type); ok {
+					v.Type = t
+					v.Define = result
+				}
 			}
-			v.Define = results[0].Node
-			p.ThisBlock = oldThisBlock
-			return true
+			if v.Define.Node != nil {
+				p.ThisBlock = oldThisBlock
+				return true
+			}
 		}
 		p.ThisBlock = oldThisBlock
 		return false
@@ -322,10 +344,10 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 // 当执行 "x = 5" 赋值时，如果之前x有常量值，需要先移除旧值
 // 这是为了确保常量折叠等优化能正确处理
 func (v *VarBlock) removeOldStaticVal(p *Parser) {
-	if v.Define == nil {
+	if v.Define.Node == nil {
 		v.ParseDefine(p)
 	}
-	if v.Define == nil {
+	if v.Define.Node == nil {
 		return
 	}
 	oldThisBlock := p.ThisBlock
@@ -386,10 +408,10 @@ func (v *VarBlock) Check(p *Parser) bool {
 		}
 	} else {
 		// 使用分支：x = 5（使用已定义的变量）
-		if v.Define == nil {
+		if v.Define.Value == nil {
 			v.ParseDefine(p)
 		}
-		if v.Define == nil {
+		if v.Define.Value == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name.String())
 		}
 		if v.Value == nil {

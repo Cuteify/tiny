@@ -34,6 +34,14 @@ func (c *CallBlock) Check(p *Parser) bool {
 		}
 	}
 
+	// If still not found and name is a path (e.g. a.len), try method call
+	if c.Func == nil && c.Name.IsPath() && c.ThisVar == nil {
+		receiverName := c.Name.Fork()
+		receiverName = receiverName[:len(receiverName)-1]
+		c.ThisVar = &VarBlock{Name: receiverName}
+		c.ThisVar.ParseDefine(p)
+	}
+
 	if c.Func == nil && c.ThisVar != nil {
 		results := p.Find(c.ThisVar.Name, FindTypeVar|FindTypeItem)
 		if len(results) > 0 {
@@ -133,6 +141,7 @@ func (c *CallBlock) ParseCall(p *Parser) {
 					c.Args = append(c.Args, &ArgBlock{Value: argExp})
 				}
 				p.Lexer.Skip(')')
+				c.Check(p)
 				return
 			}
 
@@ -149,6 +158,7 @@ func (c *CallBlock) ParseCall(p *Parser) {
 			}
 		}
 	}
+	c.Check(p)
 }
 
 func (c *CallBlock) Parse(p *Parser) {

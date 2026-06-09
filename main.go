@@ -35,6 +35,8 @@ func main() {
 		generateASTHTML(tmp.AST.(*parser.Node), f)
 		f.Close()
 		fmt.Println("\033[32mOK\033[0m:AST HTML written to ./ast.html")
+		fmt.Println("\n=== Text AST ===")
+		pr(tmp.AST.(*parser.Node), 0)
 		return
 	}
 	co := &compile.Compiler{}
@@ -44,9 +46,9 @@ func main() {
 }
 
 func pr(block *parser.Node, tabnum int) {
-	if block.Ignore {
+	/*if block.Ignore {
 		return
-	}
+	}*/
 	fmt.Println(strings.Repeat("\t", tabnum), reflect.TypeOf(block.Value), block.Value)
 	/*TODO：
 	if sb, ok := block.Value.(*parser.StructBlock); ok {

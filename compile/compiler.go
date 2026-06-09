@@ -250,7 +250,7 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	c.Ctx.CurrentFunc = funcBlock
 	defer func() { c.Ctx.CurrentFunc = nil }()
 
-	name := funcBlock.Name.String()
+	name := funcBlock.Name.NASM()
 	if name != "main" {
 		name = name + strconv.Itoa(len(funcBlock.Args))
 	}

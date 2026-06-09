@@ -3,7 +3,6 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"fmt"
 )
 
 // FuncBlock 函数定义结构体
@@ -29,7 +28,6 @@ type ArgBlock struct {
 // Check 检查参数的有效性
 func (f *ArgBlock) Check(p *Parser) bool {
 	if f.Type == nil {
-		fmt.Println(f.Name)
 		return false
 	}
 	if f.Default != nil {
@@ -79,11 +77,9 @@ func (f *FuncBlock) Parse(p *Parser) {
 			structName := NewName(f.Name[0].Name)
 			results := p.Find(structName, FindTypeType)
 			if len(results) > 0 {
-				if typeBlock, ok := results[0].Value.(*TypeBlock); ok {
-					if typeBlock.Struct != nil {
-						f.Class = typeBlock.Type()
-						typeBlock.Struct.Type.AddMethod(f)
-					}
+				if typeBlock, ok := results[0].Value.(typeSys.Type); ok {
+					f.Class = typeBlock
+					typeSys.ToRType(typeBlock).AddMethod(f)
 				}
 			}
 		}
@@ -138,7 +134,18 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	n, _ := p.ParseName(false)
 	argTmp.Name = n
 
+	token = p.Lexer.Next()
 	for !token.IsEmpty() {
+		if token.Type == lexer.NAME {
+			// 遇到名称，解析为参数类型
+			p.Lexer.SetCursor(token.Cursor)
+			argTmp.Type = p.parseTypeAnnotation()
+			if argTmp.Type == nil {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+			}
+			token = p.Lexer.Next()
+			continue
+		}
 		if token.Type != lexer.SEPARATOR { // 遇到非分割符，跳过
 			token = p.Lexer.Next()
 			continue
@@ -228,9 +235,13 @@ func (f *FuncBlock) ParseRetType(p *Parser) {
 	}
 	results := p.Find(typName, FindTypeType)
 	if len(results) > 0 {
-		if tb, ok := results[0].Value.(*TypeBlock); ok {
-			f.Return = append(f.Return, tb.Type())
+		if tb, ok := results[0].Value.(typeSys.Type); ok {
+			f.Return = append(f.Return, tb)
+		} else {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
 		}
+	} else {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
 	}
 }
 

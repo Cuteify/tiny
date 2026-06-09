@@ -163,7 +163,7 @@ func (s *StructType) Inherit(find func(string) *StructType) {
 		}
 		parentStruct.Inherit(find)
 		parentStruct.Layout()
-	
+
 		if field.IsAnon {
 			for _, pf := range parentStruct.StructFields {
 				inherited = append(inherited, &StructField{

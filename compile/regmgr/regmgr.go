@@ -215,11 +215,11 @@ func (rm *RegMgr) genSpill(reg *Reg) string {
 		// x86 32位平台所有寄存器都是32位，溢出时只能存储32位
 		// 强制使用dword避免类型不匹配问题
 		sizePrefix := "dword"
-	name := reg.Name
-	if len(name) == 3 && name[0] == 'R' || (len(name) >= 2 && name[0] == 'R' && name[1] >= '0' && name[1] <= '9') {
-		sizePrefix = "QWORD"
-	}
-	code := utils.Format("mov "+sizePrefix+" "+addr+", "+reg.Name+"; spill")
+		name := reg.Name
+		if len(name) == 3 && name[0] == 'R' || (len(name) >= 2 && name[0] == 'R' && name[1] >= '0' && name[1] <= '9') {
+			sizePrefix = "QWORD"
+		}
+		code := utils.Format("mov " + sizePrefix + " " + addr + ", " + reg.Name + "; spill")
 		reg.StoreCode = code
 		return code
 	}

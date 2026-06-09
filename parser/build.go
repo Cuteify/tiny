@@ -137,7 +137,7 @@ func (b *Build) expandAsmWithFuncArgs(p *Parser) {
 		tmpVar.ParseDefine(p)
 
 		// 检查是否找到了变量（Offset 被设置）
-		if tmpVar.Define != nil || tmpVar.Offset != 0 {
+		if tmpVar.Define.Node != nil || tmpVar.Offset != 0 {
 			b.VarMap[varName] = tmpVar
 		}
 	}

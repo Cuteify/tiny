@@ -2,6 +2,7 @@ package parser
 
 import (
 	typeSys "cuteify/type"
+
 	"math"
 	"strings"
 )
@@ -182,23 +183,26 @@ func (exp *Expression) checkAssign(p *Parser) bool {
 
 // checkIndexAssign 检查索引赋值 list[index] = value。
 func (exp *Expression) checkIndexAssign(p *Parser) bool {
+	// The indexed variable is stored in exp.Right (due to Insert logic)
+	indexed := exp.Right
+	if indexed != nil {
+		if !indexed.Check(p) {
+			return false
+		}
+	}
+	// The value being assigned is in exp.Left
 	if exp.Left != nil {
 		if !exp.Left.Check(p) {
 			return false
 		}
 	}
-	if exp.Right != nil {
-		if !exp.Right.Check(p) {
-			return false
-		}
-	}
 
-	if exp.Left.Type != nil && exp.Left.Type.Kind() == "list" {
-		listType := exp.Left.Type.(*typeSys.ListType)
+	if indexed.Type != nil && indexed.Type.Kind() == "list" {
+		listType := indexed.Type.(*typeSys.ListType)
 		elemType := listType.Elem()
-		if exp.Right.Type != nil && !typeSys.AutoType(exp.Right.Type, elemType, exp.Right.IsConst()) {
+		if exp.Left.Type != nil && !typeSys.AutoType(exp.Left.Type, elemType, exp.Left.IsConst()) {
 			p.Error.MissError("Type Error", p.Lexer.Cursor,
-				"cannot use "+exp.Right.Type.Type()+" as type "+elemType.Type()+" in index assignment")
+				"cannot use "+exp.Left.Type.Type()+" as type "+elemType.Type()+" in index assignment")
 			return false
 		}
 	}
@@ -266,8 +270,10 @@ func (exp *Expression) checkOverload(p *Parser) bool {
 
 // checkIndex 检查列表索引/切片，推导元素类型或列表类型。
 func (exp *Expression) checkIndex(p *Parser) bool {
-	if exp.Left.Type == nil {
-		p.Error.MissError("Type Error", p.Lexer.Cursor, "left operand of '[]' has no type")
+	// The indexed variable is stored in exp.Right (due to Insert logic)
+	indexed := exp.Right
+	if indexed == nil || indexed.Type == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "index operand has no type")
 		return false
 	}
 
@@ -280,15 +286,15 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 		}
 	}
 
-	kind := exp.Left.Type.Kind()
+	kind := indexed.Type.Kind()
 
 	switch kind {
 	case "list":
-		listType := exp.Left.Type.(*typeSys.ListType)
+		listType := indexed.Type.(*typeSys.ListType)
 		// 切片判断：end 或 step 非 nil
 		if exp.Index[1] != nil || exp.Index[2] != nil {
 			// 切片操作，返回相同列表类型
-			exp.Type = exp.Left.Type
+			exp.Type = indexed.Type
 		} else {
 			// 索引操作，返回元素类型
 			if listType.Elem() != nil {
@@ -315,9 +321,21 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 
 // checkListLiteral 检查列表字面量元素类型。
 func (exp *Expression) checkListLiteral(p *Parser) bool {
+	// If type is not set, infer from first element
 	if exp.Type == nil {
-		p.Error.MissError("Type Error", p.Lexer.Cursor, "list literal has no type")
-		return false
+		if len(exp.ListElems) == 0 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "empty list literal has no type")
+			return false
+		}
+		if !exp.ListElems[0].Check(p) {
+			return false
+		}
+		elemType := exp.ListElems[0].Type
+		if elemType == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot infer type of list element")
+			return false
+		}
+		exp.Type = typeSys.NewList(elemType)
 	}
 
 	listType, ok := exp.Type.(*typeSys.ListType)

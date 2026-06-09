@@ -20,16 +20,16 @@ func TestAliasType(t *testing.T) {
 	if alias.Type() != "MyInt" {
 		t.Errorf("AliasType.Type() = %s, want MyInt", alias.Type())
 	}
-	
+
 	// New type (not true alias)
 	newType := typeSys.NewAlias("MyInt2", typeSys.GetSystemType("int"), false)
 	if newType.Kind() != "int" {
 		t.Errorf("NewType.Kind() = %s, want int", newType.Kind())
 	}
-	
+
 	// Methods inheritance for true alias
 	// (methods would be inherited from underlying type)
-	
+
 	// Methods merge for new type
 	// (methods would be merged from self and underlying)
 }
@@ -37,7 +37,7 @@ func TestAliasType(t *testing.T) {
 func TestAliasTypeWithList(t *testing.T) {
 	listType := typeSys.NewList(typeSys.GetSystemType("int"))
 	alias := typeSys.NewAlias("MyList", listType, true)
-	
+
 	if alias.Kind() != "list" {
 		t.Errorf("AliasType.Kind() = %s, want list", alias.Kind())
 	}
@@ -52,7 +52,7 @@ func TestAliasTypeWithStruct(t *testing.T) {
 		{Name: "y", Type: typeSys.GetSystemType("int")},
 	})
 	alias := typeSys.NewAlias("MyPoint", structType, true)
-	
+
 	if alias.Kind() != "struct" {
 		t.Errorf("AliasType.Kind() = %s, want struct", alias.Kind())
 	}
@@ -66,12 +66,12 @@ func TestFullSyntaxParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Verify AST was parsed
 	if tmp.AST == nil {
 		t.Fatal("AST is nil")
 	}
-	
+
 	node := tmp.AST.(*parser.Node)
 	if len(node.Children) == 0 {
 		t.Fatal("No children in AST")
@@ -83,13 +83,13 @@ func TestFullSyntaxCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	co := &compile.Compiler{}
 	code := co.Compile(tmp.AST.(*parser.Node))
 	if code == "" {
 		t.Error("Compile returned empty code")
 	}
-	
+
 	// Print generated code for inspection
 	t.Logf("Generated code:\n%s", code)
 }
@@ -106,12 +106,12 @@ func TestAllTypeMethods(t *testing.T) {
 		// Should return empty slice, not nil
 		t.Log("intType.Methods() is nil (acceptable)")
 	}
-	
+
 	listType := typeSys.NewList(typeSys.GetSystemType("int"))
 	if listType.Methods() == nil {
 		t.Log("listType.Methods() is nil (acceptable)")
 	}
-	
+
 	structType := typeSys.NewStruct("Test", typeSys.StructFileds{})
 	if structType.Methods() == nil {
 		t.Log("structType.Methods() is nil (acceptable)")

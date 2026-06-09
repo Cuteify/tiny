@@ -25,13 +25,21 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 	}
 
 	var isDefineInArg bool
-	if v.Define != nil {
-		switch def := v.Define.Value.(type) {
-		case *parser.VarBlock:
-			v.Offset = def.Offset
-		case *parser.ArgBlock:
+	if v.Define.Node != nil {
+		switch v.Define.Type {
+		case parser.FindTypeVar:
+			if vb, ok := v.Define.Value.(*parser.VarBlock); ok {
+				v.Offset = vb.Offset
+			}
+		case parser.FindTypeArg:
 			isDefineInArg = true
-			v.Offset = def.Offset
+			if ab, ok := v.Define.Value.(*parser.ArgBlock); ok {
+				v.Offset = ab.Offset
+			}
+		case parser.FindTypeField:
+			// 字段偏移在 calcFieldOffset 中计算
+		case parser.FindTypeSelf:
+			// self 指向 this 指针
 		}
 	}
 
@@ -79,13 +87,17 @@ func GenListFieldAddr(ctx *context.Context, v *parser.VarBlock, fieldOffset int)
 	var baseOffset int
 	var isArg bool
 
-	if v.Define != nil {
-		switch def := v.Define.Value.(type) {
-		case *parser.VarBlock:
-			baseOffset = def.Offset
-		case *parser.ArgBlock:
-			baseOffset = def.Offset
-			isArg = true
+	if v.Define.Node != nil {
+		switch v.Define.Type {
+		case parser.FindTypeVar:
+			if vb, ok := v.Define.Value.(*parser.VarBlock); ok {
+				baseOffset = vb.Offset
+			}
+		case parser.FindTypeArg:
+			if ab, ok := v.Define.Value.(*parser.ArgBlock); ok {
+				baseOffset = ab.Offset
+				isArg = true
+			}
 		}
 	} else {
 		baseOffset = v.Offset

@@ -207,6 +207,9 @@ func GetSystemType(name string) Type {
 	case "string":
 		return &StringType{RType: RType{TypeName: "string"}}
 	default:
+		if strings.HasPrefix(name, "[]") {
+			return NewList(GetSystemType(name[2:]))
+		}
 		return nil
 	}
 }
@@ -224,7 +227,7 @@ func NewList(elem Type) *ListType {
 
 func NewStruct(name string, fields StructFileds) *StructType {
 	return &StructType{
-		RType: RType{TypeName: name},
+		RType:        RType{TypeName: name},
 		StructFields: fields,
 	}
 }
@@ -271,7 +274,7 @@ func getSystemKind(t Type) string {
 	if _, ok := t.(*ListType); ok {
 		return "list"
 	}
-	
+
 	switch typeName {
 	case "int", "i64", "i32", "i16", "i8":
 		return "int"
@@ -327,5 +330,5 @@ func TypeEqual(t Type, t2 Type) bool {
 }
 
 func IsNum(t Type) bool {
-	return  CheckKind(t, "int", "uint", "float")
+	return CheckKind(t, "int", "uint", "float")
 }

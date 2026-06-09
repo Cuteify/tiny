@@ -508,7 +508,7 @@ func (c *ExpCom) CompileExprVal(exp *parser.Expression) (code, result string) {
 			c.varWithSetVal = true
 			return
 		}
-		if rInfo := c.ctx.Reg.Reuse(exp.Var.Define); rInfo != nil {
+		if rInfo := c.ctx.Reg.Reuse(exp.Var.Define.Node); rInfo != nil {
 			result = rInfo.Name
 		} else {
 			result = GenVarAddr(c.ctx, exp.Var)
@@ -859,38 +859,40 @@ func (c *ExpCom) compileListLiteral(exp *parser.Expression) (code string, reg *r
 }
 
 func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *regmgr.Reg) {
-	lt := exp.Left.Type.(*typeSys.ListType)
+	// exp.Right is the list being indexed, exp.Index[0] is the index
+	lt := exp.Right.Type.(*typeSys.ListType)
 	elemSize := lt.Elem().Size()
 
-	var leftCode, leftResult string
-	var leftReg *regmgr.Reg
-	if exp.Left.IsConst() {
-		leftCode, leftResult = c.CompileExprVal(exp.Left)
+	var listCode, listResult string
+	var listReg *regmgr.Reg
+	if exp.Right.IsConst() {
+		listCode, listResult = c.CompileExprVal(exp.Right)
 	} else {
-		leftCode, leftReg = c.CompileExprChildren(exp.Left)
-		if leftReg != nil {
-			leftResult = leftReg.Name
+		listCode, listReg = c.CompileExprChildren(exp.Right)
+		if listReg != nil {
+			listResult = listReg.Name
 		} else {
-			leftCode2, leftResult2 := c.CompileExprVal(exp.Left)
-			leftCode += leftCode2
-			leftResult = leftResult2
+			listCode2, listResult2 := c.CompileExprVal(exp.Right)
+			listCode += listCode2
+			listResult = listResult2
 		}
 	}
-	code += leftCode
+	code += listCode
 
 	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
 	if reg.StoreCode != "" {
 		code += reg.StoreCode
 	}
 
-	if leftReg != nil && reg.Name == leftReg.Name {
+	if listReg != nil && reg.Name == listReg.Name {
 		code += utils.Format("; load list ptr (already in " + reg.Name + ")")
 	} else {
-		code += utils.Format("mov " + reg.Name + ", " + leftResult + "; load list ptr")
+		code += utils.Format("mov " + reg.Name + ", " + listResult + "; load list ptr")
 	}
 
-	if exp.Right.IsConst() {
-		idx := int(exp.Right.Num)
+	idxExpr := exp.Index[0]
+	if idxExpr.IsConst() {
+		idx := int(idxExpr.Num)
 		byteOffset := idx * elemSize
 		if byteOffset != 0 {
 			code += utils.Format("add " + reg.Name + ", " + strconv.Itoa(byteOffset) + "; ptr += index*elemSize")
@@ -898,11 +900,11 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 	} else {
 		var indexCode, indexResult string
 		var indexReg *regmgr.Reg
-		indexCode, indexReg = c.CompileExprChildren(exp.Right)
+		indexCode, indexReg = c.CompileExprChildren(idxExpr)
 		if indexReg != nil {
 			indexResult = indexReg.Name
 		} else {
-			indexCode2, indexResult2 := c.CompileExprVal(exp.Right)
+			indexCode2, indexResult2 := c.CompileExprVal(idxExpr)
 			indexCode += indexCode2
 			indexResult = indexResult2
 		}
@@ -910,7 +912,7 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 		code += utils.Format("imul " + indexResult + ", " + strconv.Itoa(elemSize))
 		code += utils.Format("add " + reg.Name + ", " + indexResult)
 		if indexReg != nil {
-			c.ctx.Reg.Free(exp.Right)
+			c.ctx.Reg.Free(idxExpr)
 		}
 	}
 
@@ -921,35 +923,38 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 }
 
 func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regmgr.Reg) {
-	lt := exp.Left.Type.(*typeSys.ListType)
+	// exp.Left is the index expression (list[idx]), exp.Right is the value
+	indexExpr := exp.Left
+	lt := indexExpr.Right.Type.(*typeSys.ListType)
 	elemSize := lt.Elem().Size()
 
-	var leftCode, leftResult string
-	if exp.Left.IsConst() {
-		leftCode, leftResult = c.CompileExprVal(exp.Left)
+	var listCode, listResult string
+	if indexExpr.Right.IsConst() {
+		listCode, listResult = c.CompileExprVal(indexExpr.Right)
 	} else {
-		var leftReg *regmgr.Reg
-		leftCode, leftReg = c.CompileExprChildren(exp.Left)
-		if leftReg != nil {
-			leftResult = leftReg.Name
-			c.ctx.Reg.Free(exp.Left)
+		var listReg *regmgr.Reg
+		listCode, listReg = c.CompileExprChildren(indexExpr.Right)
+		if listReg != nil {
+			listResult = listReg.Name
+			c.ctx.Reg.Free(indexExpr.Right)
 		} else {
-			leftCode2, leftResult2 := c.CompileExprVal(exp.Left)
-			leftCode += leftCode2
-			leftResult = leftResult2
+			listCode2, listResult2 := c.CompileExprVal(indexExpr.Right)
+			listCode += listCode2
+			listResult = listResult2
 		}
 	}
-	code += leftCode
+	code += listCode
 
 	addrReg := c.ctx.Reg.Get(c.ctx.Now, exp, false)
 	if addrReg.StoreCode != "" {
 		code += addrReg.StoreCode
 	}
 
-	code += utils.Format("mov " + addrReg.Name + ", " + leftResult + "; load list ptr")
+	code += utils.Format("mov " + addrReg.Name + ", " + listResult + "; load list ptr")
 
-	if exp.Right.Left.IsConst() {
-		idx := int(exp.Right.Left.Num)
+	idxExpr := indexExpr.Index[0]
+	if idxExpr.IsConst() {
+		idx := int(idxExpr.Num)
 		byteOffset := idx * elemSize
 		if byteOffset != 0 {
 			code += utils.Format("add " + addrReg.Name + ", " + strconv.Itoa(byteOffset) + "; ptr += index*elemSize")
@@ -957,12 +962,12 @@ func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regm
 	} else {
 		var indexCode, indexResult string
 		var indexReg *regmgr.Reg
-		indexCode, indexReg = c.CompileExprChildren(exp.Right.Left)
+		indexCode, indexReg = c.CompileExprChildren(idxExpr)
 		if indexReg != nil {
 			indexResult = indexReg.Name
-			c.ctx.Reg.Free(exp.Right.Left)
+			c.ctx.Reg.Free(idxExpr)
 		} else {
-			indexCode2, indexResult2 := c.CompileExprVal(exp.Right.Left)
+			indexCode2, indexResult2 := c.CompileExprVal(idxExpr)
 			indexCode += indexCode2
 			indexResult = indexResult2
 		}
@@ -972,15 +977,15 @@ func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regm
 	}
 
 	var valCode, valResult string
-	if exp.Right.Right.IsConst() {
-		valCode, valResult = c.CompileExprVal(exp.Right.Right)
+	if exp.Right.IsConst() {
+		valCode, valResult = c.CompileExprVal(exp.Right)
 	} else {
 		var valReg *regmgr.Reg
-		valCode, valReg = c.CompileExprChildren(exp.Right.Right)
+		valCode, valReg = c.CompileExprChildren(exp.Right)
 		if valReg != nil {
 			valResult = valReg.Name
 		} else {
-			valCode2, valResult2 := c.CompileExprVal(exp.Right.Right)
+			valCode2, valResult2 := c.CompileExprVal(exp.Right)
 			valCode += valCode2
 			valResult = valResult2
 		}

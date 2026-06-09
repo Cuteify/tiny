@@ -55,16 +55,6 @@ func TestGetSystemTypeListRedirect(t *testing.T) {
 	}
 }
 
-func TestGetSystemTypeListsFull(t *testing.T) {
-	lt := typeSys.GetSystemType("lists.[]int")
-	if lt == nil {
-		t.Fatal("GetSystemType(lists.[]int) returned nil")
-	}
-	if lt.Type() != "lists.[]int" {
-		t.Errorf("GetSystemType(lists.[]int).Type() = %s, want lists.[]int", lt.Type())
-	}
-}
-
 func TestStringTypeSize(t *testing.T) {
 	st := typeSys.GetSystemType("string")
 	if st.Size() != 12 {

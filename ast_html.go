@@ -122,9 +122,9 @@ search.addEventListener('input',()=>{
 }
 
 func emitNodeHTML(n *parser.Node, w io.Writer, stats *struct{ nodes, funcs, vars int }) {
-	if n.Ignore {
+	/*if n.Ignore {
 		return
-	}
+	}*/
 	stats.nodes++
 	id := nodeIDCounter
 	nodeIDCounter++
