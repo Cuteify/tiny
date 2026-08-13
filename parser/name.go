@@ -252,10 +252,10 @@ func (n Name) FixPath(pkg *packageFmt.Info) bool {
 }
 
 // SetPkgPath 在名称前添加包路径前缀
-func (n Name) SetPkgPath(pkgPath string) {
+func (n *Name) SetPkgPath(pkgPath string) {
 	newPart := NamePart{Name: packageFmt.FixPathName(pkgPath)}
 	newPart.IsPkgPath = true
-	n = append([]NamePart{newPart}, n...)
+	*n = append([]NamePart{newPart}, (*n)...)
 }
 
 // Join 向名称追加更多段

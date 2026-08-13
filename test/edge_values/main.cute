@@ -1,0 +1,92 @@
+// 边界值测试
+
+fn test_zero() int {
+    ret 0
+}
+
+fn test_negative() int {
+    ret -100
+}
+
+fn test_large_positive() int {
+    ret 1000000
+}
+
+fn test_large_negative() int {
+    ret -1000000
+}
+
+fn test_max_int_operations() int {
+    var a: int = 1000000
+    var b: int = 1000000
+    ret a + b
+}
+
+fn test_division_by_one() int {
+    ret 42 / 1
+}
+
+fn test_modulo_edge() int {
+    var a: int = 10
+    var b: int = 3
+    ret a % b
+}
+
+fn test_zero_operations() int {
+    var a: int = 0
+    var b: int = 5
+    ret a + b * a - a / 1
+}
+
+fn test_comparison_equal() int {
+    var a: int = 5
+    var b: int = 5
+    if a == b {
+        ret 1
+    }
+    ret 0
+}
+
+fn test_comparison_not_equal() int {
+    var a: int = 5
+    var b: int = 10
+    if a != b {
+        ret 1
+    }
+    ret 0
+}
+
+fn test_comparison_less() int {
+    var a: int = 3
+    var b: int = 5
+    if a < b {
+        ret 1
+    }
+    ret 0
+}
+
+fn test_comparison_greater() int {
+    var a: int = 10
+    var b: int = 5
+    if a > b {
+        ret 1
+    }
+    ret 0
+}
+
+fn main() int {
+    var sum: int = 0
+    sum += test_zero()
+    sum += test_negative()
+    sum += test_large_positive()
+    sum += test_large_negative()
+    sum += test_max_int_operations()
+    sum += test_division_by_one()
+    sum += test_modulo_edge()
+    sum += test_zero_operations()
+    sum += test_comparison_equal()
+    sum += test_comparison_not_equal()
+    sum += test_comparison_less()
+    sum += test_comparison_greater()
+    ret sum
+}

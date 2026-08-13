@@ -27,9 +27,26 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	if c.Func == nil {
 		results := p.Find(c.Name, FindTypeFunc)
-		if len(results) > 0 {
-			if fb, ok := results[0].Value.(*FuncBlock); ok {
+		for _, node := range results {
+			fb, ok := node.Value.(*FuncBlock)
+			if !ok {
+				continue
+			}
+			ignored := false
+			for _, buildFlag := range fb.BuildFlags {
+				if buildFlag.Ignore {
+					ignored = true
+					break
+				}
+			}
+			if ignored {
+				continue
+			}
+			fb.Useful = true
+			if c.Func == nil {
 				c.Func = fb
+				// 包名被方法分支误判为接收者时，清除伪 ThisVar
+				c.ThisVar = nil
 			}
 		}
 	}
@@ -67,6 +84,11 @@ func (c *CallBlock) Check(p *Parser) bool {
 	}
 
 	if c.Func == nil {
+		if c.Name.IsPath() {
+			// 跨包调用：包函数在全部包解析完成合并后才可见，
+			// 此处静默返回，由合并后的 rootNode.Check() 重试解析
+			return true
+		}
 		if p.Block == p.ThisBlock {
 			p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
 		}

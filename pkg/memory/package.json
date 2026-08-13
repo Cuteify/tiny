@@ -1,5 +1,8 @@
 {
-    "name": "memory",
-    "version": "1.0.0",
-    "description": "Memory management package"
+  "name": "memory",
+  "version": "1.0.0",
+  "description": "Memory management package",
+  "imports": {
+    "syscall": "std:syscall"
+  }
 }

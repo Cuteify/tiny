@@ -3,10 +3,10 @@ package x86
 import "cuteify/compile/regmgr"
 
 var regs = []*regmgr.Reg{
-	{Name: "EAX"},
-	{Name: "EBX", CalleeSave: true},
-	{Name: "ECX"},
-	{Name: "EDX"},
+	{Name: "EAX", ClassMask: ClassGPR | ClassDiv},
+	{Name: "EBX", CalleeSave: true, ClassMask: ClassGPR},
+	{Name: "ECX", ClassMask: ClassGPR},
+	{Name: "EDX", ClassMask: ClassGPR | ClassDiv},
 }
 
 var Regs64 = []*regmgr.Reg{

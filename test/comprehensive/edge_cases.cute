@@ -1,0 +1,216 @@
+// 边界情况测试
+
+// 空列表
+fn emptyList() int {
+    var list: []int
+    ret len(list)
+}
+
+// 负数索引（应该处理）
+fn negativeIndex() int {
+    var list: []int = []int{1, 2, 3, 4, 5}
+    // 负数索引在某些语言中表示从末尾开始
+    ret list[0]
+}
+
+// 极大值测试
+fn largeValues() int {
+    var max: int = 2147483647
+    var min: int = -2147483648
+    ret max + min
+}
+
+// 零值测试
+fn zeroValues() int {
+    var zero: int = 0
+    var list: []int = []int{0, 0, 0}
+    ret zero + list[0] + list[1] + list[2]
+}
+
+// 嵌套结构体
+type Point struct {
+    x: int
+    y: int
+}
+
+type Line struct {
+    start: Point
+    end: Point
+}
+
+fn nestedStruct() int {
+    var line: Line
+    line.start.x = 1
+    line.start.y = 2
+    line.end.x = 3
+    line.end.y = 4
+    ret line.start.x + line.end.y
+}
+
+// 多重指针（如果支持）
+fn pointerTest() int {
+    var a: int = 10
+    var p: *int = &a
+    ret *p
+}
+
+// 除零测试
+fn divideByZero() int {
+    var a: int = 10
+    var b: int = 0
+    if b != 0 {
+        ret a / b
+    }
+    ret -1
+}
+
+// 溢出测试
+fn overflowTest() int {
+    var max: int = 2147483647
+    var overflow: int = max + 1
+    ret overflow
+}
+
+// 空字符串
+fn emptyString() int {
+    var s: string = ""
+    ret len(s)
+}
+
+// 字符串拼接
+fn stringConcat() int {
+    var s1: string = "a"
+    var s2: string = "b"
+    var s3: string = s1 + s2
+    ret len(s3)
+}
+
+// 布尔值测试
+fn boolTest() int {
+    var t: bool = true
+    var f: bool = false
+    if t && !f {
+        ret 1
+    }
+    ret 0
+}
+
+// 复杂条件
+fn complexCondition() int {
+    var a: int = 5
+    var b: int = 10
+    var c: int = 15
+    if (a < b && b < c) || (a == 5 && c == 15) {
+        ret 1
+    }
+    ret 0
+}
+
+// 多层嵌套循环
+fn deepNesting() int {
+    var sum: int = 0
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 3; j++ {
+            for k := 0; k < 3; k++ {
+                sum += i + j + k
+            }
+        }
+    }
+    ret sum
+}
+
+// 递归深度测试
+fn deepRecursion(n int) int {
+    if n <= 0 {
+        ret 0
+    }
+    ret 1 + deepRecursion(n - 1)
+}
+
+// 列表切片
+fn listSlice() int {
+    var list: []int = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    var slice1: []int = list[2:5]
+    ret len(slice1)
+}
+
+// 列表修改
+fn listModify() int {
+    var list: []int = []int{1, 2, 3}
+    list[0] = 100
+    list[1] = 200
+    list[2] = 300
+    ret list[0] + list[1] + list[2]
+}
+
+// 结构体方法链
+type Counter struct {
+    value: int
+}
+
+fn Counter.increment() {
+    self.value += 1
+}
+
+fn Counter.add(n int) {
+    self.value += n
+}
+
+fn methodChain() int {
+    var c: Counter
+    c.value = 0
+    c.increment()
+    c.increment()
+    c.add(5)
+    ret c.value
+}
+
+// 位运算边界
+fn bitwiseEdge() int {
+    var a: int = 0
+    var b: int = -1
+    var c: int = a & b
+    var d: int = a | b
+    var e: int = a ^ b
+    ret c + d + e
+}
+
+// 移位运算
+fn shiftOps() int {
+    var a: int = 1
+    var b: int = a << 31
+    var c: int = b >> 31
+    ret c
+}
+
+// 模运算
+fn modOps() int {
+    var a: int = 17
+    var b: int = 5
+    var c: int = a % b
+    ret c
+}
+
+// 主函数
+fn main() int {
+    var result: int = 0
+    result += emptyList()
+    result += largeValues()
+    result += zeroValues()
+    result += nestedStruct()
+    result += divideByZero()
+    result += overflowTest()
+    result += emptyString()
+    result += stringConcat()
+    result += boolTest()
+    result += complexCondition()
+    result += deepNesting()
+    result += deepRecursion(10)
+    result += listSlice()
+    result += listModify()
+    result += methodChain()
+    result += bitwiseEdge()
+    result += shiftOps()
+    result += modOps()
+    ret result
+}

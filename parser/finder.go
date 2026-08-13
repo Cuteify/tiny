@@ -245,15 +245,17 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 					tmp = v.Increment.Var
 				}
 				if name.IsPath() {
-					if n := name.Match(tmp.Name); n > 0 {
-						ok, r := enterTypeFind(name[n:], tmp.Type)
-						if ok && (r.Type&typ) != 0 {
-							r.Node = child
-							res = append(res, r)
+					if tmp != nil {
+						if n := name.Match(tmp.Name); n > 0 {
+							ok, r := enterTypeFind(name[n:], tmp.Type)
+							if ok && (r.Type&typ) != 0 {
+								r.Node = child
+								res = append(res, r)
+							}
 						}
 					}
 				} else {
-					if tmp.Name.Eq(name) && (typ&FindTypeVar) != 0 {
+					if tmp != nil && tmp.Name.Eq(name) && (typ&FindTypeVar) != 0 {
 						res = append(res, FindResult{Node: child, Value: tmp, Path: []any{v, tmp}, Type: FindTypeVar})
 					}
 				}

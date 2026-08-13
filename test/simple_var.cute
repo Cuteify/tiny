@@ -1,0 +1,7 @@
+fn test(n int) int {
+    ret n
+}
+
+fn main() int {
+    ret test(42)
+}

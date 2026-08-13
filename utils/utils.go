@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -94,7 +96,15 @@ func sanitizeNASMName(name string) string {
 // Format 格式化汇编代码行（带缩进）
 func Format(text string) string {
 	LineNum++
-	return strings.Repeat("    ", Count) + text + "\n"
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lines[i] = strings.Repeat("    ", Count) + line
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // GetLengthName 返回大小对应的汇编长度前缀
@@ -127,4 +137,16 @@ func MakeVisible(str string) string {
 		str = strings.ReplaceAll(str, k, v)
 	}
 	return str
+}
+
+func PrintCallStack() {
+	var ok = true
+	for i := 1; ok; i++ {
+		pc, file, line, ok := runtime.Caller(i)
+		if ok {
+			fmt.Printf("%s:%d\n\t%s(%d)\n", file, line, runtime.FuncForPC(pc).Name(), pc)
+		} else {
+			break
+		}
+	}
 }

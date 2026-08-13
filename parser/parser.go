@@ -5,7 +5,6 @@ import (
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
-	"fmt"
 	"os"
 	"strings"
 )
@@ -46,13 +45,7 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.VAR:
 		p.processVarToken(beforeCursor)
 	case lexer.TYPE:
-		if code.Value != "type" {
-			p.processDefaultToken(code)
-		} else {
-			block := &TypeBlock{}
-			block.Parse(p)
-			p.AddChild(&Node{Value: block})
-		}
+		p.processTypeToken(code)
 	case lexer.BUILD:
 		p.processBuildToken(code)
 	default:
@@ -156,7 +149,6 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		}
 		// Check if next token is an assignment operator
 		assignOp := p.Lexer.Next()
-		fmt.Printf("DEBUG fieldExpr: assignOp.Value=%q, cursor=%d\n", assignOp.Value, assignOp.Cursor)
 		assignOps := []string{"=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>="}
 		isAssign := false
 		for _, op := range assignOps {
@@ -290,20 +282,24 @@ func (p *Parser) processVarToken(beforeCursor int) {
 	block.Parse(p)
 }
 
-// TODO: func (p *Parser) processTypeToken(code lexer.Token) {
-// TODO: 	switch code.Value {
-// TODO: 	case "struct":
-// TODO: 		block := &StructBlock{}
-// TODO: 		block.Parse(p)
-// TODO: 		p.AddChild(&Node{Value: block})
-// TODO: 	case "interface":
-// TODO: 		block := &InterfaceBlock{}
-// TODO: 		block.Parse(p)
-// TODO: 		p.AddChild(&Node{Value: block})
-// TODO: 	default:
-// TODO: 		p.processDefaultToken(code)
-// TODO: 	}
-// TODO: }
+func (p *Parser) processTypeToken(code lexer.Token) {
+	switch code.Value {
+	case "type":
+		block := &TypeBlock{}
+		block.Parse(p)
+		p.AddChild(&Node{Value: block})
+	case "struct":
+		block := &StructBlock{}
+		block.Parse(p)
+		p.AddChild(&Node{Value: block})
+	case "interface":
+		block := &InterfaceDef{}
+		block.Parse(p)
+		p.AddChild(&Node{Value: block})
+	default:
+		p.processDefaultToken(code)
+	}
+}
 
 func (p *Parser) processBuildToken(token lexer.Token) {
 	block := &Build{}

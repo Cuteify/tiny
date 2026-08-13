@@ -68,6 +68,16 @@ func (f *ForBlock) parseCondition(p *Parser) {
 		if sepCursor == p.Lexer.Cursor {
 			p.Lexer.Skip(';')
 		}
+	} else if sepCursor == p.Lexer.Cursor {
+		// for ; cond; inc 形式：init 为空，条件在下一个 ; 之前
+		p.Lexer.Skip(';')
+		sepCursor2 := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ";"}, p.FindEndCursor())
+		if sepCursor2 == p.Lexer.Cursor {
+			f.Condition = nil
+		} else {
+			f.Condition = p.ParseExp(sepCursor2 - 1)
+		}
+		p.Lexer.Skip(';')
 	} else {
 		f.Condition = p.ParseExp(sepCursor - 1)
 		p.Lexer.Skip(';')
@@ -86,6 +96,7 @@ func (f *ForBlock) parseIncrement(p *Parser) {
 	incToken := p.Lexer.Next()
 	// 检查是否直接遇到 ')' 或 ';' 后面是 '{'
 	if incToken.Type == lexer.SEPARATOR && (incToken.Value == "{" || incToken.Value == ";") {
+		p.Lexer.SetCursor(incToken.Cursor)
 		return
 	}
 

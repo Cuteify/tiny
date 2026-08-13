@@ -1,0 +1,93 @@
+build os("linux")
+build arch("x86_64")
+
+fn syscall(trap: u32, a1: u32, a2: u32, a3: u32) u32 {
+    build asm {
+        mov RAX, $trap
+        mov RDI, $a1
+        mov RSI, $a2
+        mov RDX, $a3
+        syscall
+    }
+}
+
+fn syscall6(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) u32 {
+    build asm {
+        mov RAX, $trap
+        mov RDI, $a1
+        mov RSI, $a2
+        mov RDX, $a3
+        mov R10, $a4
+        mov R8, $a5
+        mov R9, $a6
+        syscall
+    }
+}
+
+fn syscall64(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) u64 {
+    build asm {
+        mov RAX, $trap
+        mov RDI, $a1
+        mov RSI, $a2
+        mov RDX, $a3
+        mov R10, $a4
+        mov R8, $a5
+        syscall
+    }
+}
+
+// 常用系统调用便捷封装（小驼峰命名）
+
+fn exit(code: i32) {
+    build asm {
+        mov RAX, 60
+        mov RDI, $code
+        syscall
+    }
+}
+
+fn brk(addr: ptr) ptr {
+    build asm {
+        mov RAX, 12
+        mov RDI, $addr
+        syscall
+    }
+}
+
+fn write(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov RAX, 1
+        mov RDI, $fd
+        mov RSI, $buf
+        mov RDX, $count
+        syscall
+    }
+}
+
+fn read(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov RAX, 0
+        mov RDI, $fd
+        mov RSI, $buf
+        mov RDX, $count
+        syscall
+    }
+}
+
+fn open(pathname: u64, flags: i32, mode: u32) i32 {
+    build asm {
+        mov RAX, 2
+        mov RDI, $pathname
+        mov RSI, $flags
+        mov RDX, $mode
+        syscall
+    }
+}
+
+fn close(fd: i32) i32 {
+    build asm {
+        mov RAX, 3
+        mov RDI, $fd
+        syscall
+    }
+}

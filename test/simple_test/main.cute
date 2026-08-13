@@ -1,0 +1,12 @@
+// 简单测试
+
+fn test_if() int {
+    if 5 > 3 {
+        ret 1
+    }
+    ret 0
+}
+
+fn main() int {
+    ret test_if()
+}

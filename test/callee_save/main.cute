@@ -1,0 +1,16 @@
+// 测试 callee-save 寄存器保存
+
+fn test_callee_save() int {
+    var a: int = 1
+    var b: int = 2
+    var c: int = 3
+    var d: int = 4
+    var e: int = 5
+
+    var sum: int = a + b + c + d + e
+    ret sum
+}
+
+fn main() int {
+    ret test_callee_save()
+}

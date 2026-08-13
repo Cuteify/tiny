@@ -35,6 +35,10 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 		return "DWORD[ebp+8]"
 	}
 
+	if v.IsGlobal {
+		return "[__global_" + v.Name.First() + "]"
+	}
+
 	var isDefineInArg bool
 	if v.Define.Node != nil {
 		switch v.Define.Type {
@@ -193,10 +197,16 @@ func makeEbpAddr(offset int) string {
 func isRegName(name string) bool {
 	switch name {
 	case "EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "ESP", "EBP",
-		"eax", "ebx", "ecx", "edx", "esi", "edi", "esp", "ebp":
+		"eax", "ebx", "ecx", "edx", "esi", "edi", "esp", "ebp",
+		"EDX:EAX", "edx:eax":
 		return true
 	}
 	return false
+}
+
+// isRegPair 判断是否是 64 位寄存器对结果（值已在 EAX:EDX 中，无需额外存储）
+func isRegPair(name string) bool {
+	return name == "EDX:EAX" || name == "edx:eax"
 }
 
 func is64Type(t typeSys.Type) bool {
@@ -207,36 +217,42 @@ func is64Type(t typeSys.Type) bool {
 }
 
 func genLoAddr(ctx *context.Context, v *parser.VarBlock) string {
+	if v.IsGlobal {
+		return "[__global_" + v.Name.First() + "]"
+	}
 	addr := genVarAddr(ctx, v)
 	idx := strings.Index(addr, "[ebp")
 	if idx == -1 {
-		return "DWORD" + addr
+		return addr
 	}
-	return "DWORD" + addr[idx:]
+	return addr[idx:]
 }
 
 func genHiAddr(ctx *context.Context, v *parser.VarBlock) string {
+	if v.IsGlobal {
+		return "[__global_" + v.Name.First() + "+4]"
+	}
 	addr := genVarAddr(ctx, v)
 	idx := strings.Index(addr, "[ebp")
 	if idx == -1 {
-		return "DWORD" + addr
+		return addr
 	}
 	ebpPart := addr[idx:]
 	closeIdx := strings.Index(ebpPart, "]")
 	if closeIdx == -1 {
-		return "DWORD" + ebpPart
+		return ebpPart
 	}
 	offsetStr := ebpPart[4:closeIdx]
 	if offsetStr == "" {
-		return "DWORD[ebp+4]"
+		return "[ebp+4]"
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		return "DWORD" + ebpPart
+		return ebpPart
 	}
 	offset += 4
 	if offset < 0 {
-		return "DWORD[ebp" + strconv.Itoa(offset) + "]"
+		return "[ebp" + strconv.Itoa(offset) + "]"
 	}
-	return "DWORD[ebp+" + strconv.Itoa(offset) + "]"
+	return "[ebp+" + strconv.Itoa(offset) + "]"
 }

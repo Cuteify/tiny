@@ -67,6 +67,7 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	}
 
 	// 处理子目录和.cute文件
+	var rootNode *parser.Node
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -77,6 +78,17 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			p.Block.Parser = p
 			p.Package = packageInfo
 			p.Parse()
+			// 文件级 build arch/os 过滤：顶层声明不匹配当前目标则跳过整个文件
+			fileSkipped := false
+			for _, child := range p.Block.Children {
+				if b, ok := child.Value.(*parser.Build); ok && b.Type == "arch" && b.Ignore {
+					fileSkipped = true
+					break
+				}
+			}
+			if fileSkipped {
+				continue
+			}
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
 					switch p.Block.Children[i].Value.(type) {
@@ -86,20 +98,42 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 					}
 				}
 			}
-			packageInfo.AST = p.Block
+			if rootNode == nil {
+				rootNode = p.Block
+				packageInfo.AST = p.Block
+			} else {
+				// 将当前文件的子节点合并到 rootNode
+				for _, child := range p.Block.Children {
+					rootNode.AddChild(child)
+				}
+			}
 		}
 	}
 
 	if isRoot {
+		rootNode := packageInfo.AST.(*parser.Node)
 		for _, info := range packages {
 			tmp := info.AST.(*parser.Node)
-			packageInfo.AST.(*parser.Node).Children = append(packageInfo.AST.(*parser.Node).Children, tmp.Children...)
+			for _, child := range tmp.Children {
+				rootNode.AddChild(child)
+			}
 		}
 		// 将所有包的AST都设置成合并后的全局AST
 		for _, info := range packages {
 			info.AST = packageInfo.AST
 		}
-		packageInfo.AST.(*parser.Node).Check()
+		// 统一整棵合并树的 Parser 为根文件 Parser：
+		// 包内节点的 Parser 原本指向各自包文件的小树，跨包 Find 会找不到其它包
+		rootNode = packageInfo.AST.(*parser.Node)
+		var fixParser func(n *parser.Node)
+		fixParser = func(n *parser.Node) {
+			n.Parser = rootNode.Parser
+			for _, c := range n.Children {
+				fixParser(c)
+			}
+		}
+		fixParser(rootNode)
+		rootNode.Check()
 	}
 
 	return packageInfo, nil

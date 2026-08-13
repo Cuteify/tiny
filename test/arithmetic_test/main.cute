@@ -1,0 +1,37 @@
+// 基础算术运算测试
+
+fn add(a int, b int) int {
+    ret a + b
+}
+
+fn subtract(a int, b int) int {
+    ret a - b
+}
+
+fn multiply(a int, b int) int {
+    ret a * b
+}
+
+fn divide(a int, b int) int {
+    if b == 0 {
+        ret 0
+    }
+    ret a / b
+}
+
+fn modulo(a int, b int) int {
+    if b == 0 {
+        ret 0
+    }
+    ret a % b
+}
+
+fn main() int {
+    var sum: int = add(10, 20)
+    var diff: int = subtract(30, 15)
+    var prod: int = multiply(5, 6)
+    var quot: int = divide(100, 4)
+    var mod: int = modulo(17, 5)
+    
+    ret sum + diff + prod + quot + mod
+}

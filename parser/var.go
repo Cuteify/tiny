@@ -20,6 +20,7 @@ type VarBlock struct {
 	StartCursor   int          // 变量名在源代码中的起始位置
 	Offset        int          // 变量在栈帧中的偏移量（编译时使用）
 	Type          typeSys.Type // 变量的数据类型
+	IsGlobal      bool         // 是否为全局变量（顶层定义）
 }
 
 func (p *Parser) parseTypeAnnotation() typeSys.Type {
@@ -74,6 +75,7 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 			}
 			return nil
 		}
+		// next 不是 "."，回退到 next 之前的位置
 		p.Lexer.SetCursor(next.Cursor)
 		// 先检查系统类型
 		if sysType := typeSys.GetSystemType(nameStr); sysType != nil {
@@ -95,6 +97,9 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 // 这是入口函数，会调用ParseVar然后将自身添加到语法树
 func (v *VarBlock) Parse(p *Parser) {
 	v.ParseVar(p)
+	if p.ThisBlock == p.Block && v.IsDefine {
+		v.IsGlobal = true
+	}
 	p.AddChild(&Node{Value: v})
 }
 
@@ -159,8 +164,8 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 		// 将 x++ 转换为表达式: x = x + 1
 		v.Value = &Expression{
 			Separator: code.Value[0 : len(code.Value)-1], // "+" 或 "-"
-			Left:      &Expression{Num: 1, Type: typeSys.GetSystemType("int")},
-			Right:     valPart,
+			Left:      valPart,
+			Right:     &Expression{Num: 1, Type: typeSys.GetSystemType("int")},
 		}
 
 		// 建立父子关系
@@ -197,8 +202,8 @@ func (v *VarBlock) ParseNameVar(p *Parser, code lexer.Token, stopCursor int) {
 
 		v.Value = &Expression{
 			Separator: code.Value[0 : len(code.Value)-1], // "+", "-", "*" 等
-			Left:      v.Value,
-			Right:     valPart,
+			Left:      valPart,
+			Right:     v.Value,
 		}
 
 		// 建立父子关系
@@ -303,6 +308,7 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 				if vb, ok := result.Value.(*VarBlock); ok {
 					v.Type = vb.Type
 					v.Offset = vb.Offset
+					v.IsGlobal = vb.IsGlobal
 					v.Define = result
 				}
 			case FindTypeArg:

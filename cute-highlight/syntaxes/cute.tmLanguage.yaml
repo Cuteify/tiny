@@ -1,0 +1,64 @@
+# TextMate grammar for cute language (cuteify 编译器)
+# 基于 lexer/keywords.go 的关键字表生成
+name: cute
+scopeName: source.cute
+fileTypes: [cute]
+patterns:
+  # 注释（行注释 //）
+  - name: comment.line.double-slash.cute
+    match: //.*$
+  # 反引号 RAW 字符串
+  - name: string.quoted.raw.cute
+    begin: '`'
+    end: '`'
+  # 双引号字符串
+  - name: string.quoted.double.cute
+    begin: '"'
+    end: '"'
+    patterns:
+      - name: constant.character.escape.cute
+        match: '\\\\(n|t|r|0|\\"|\\\\|\\x[0-9a-fA-F]{2})'
+  # 单引号字符
+  - name: string.quoted.single.cute
+    begin: "'"
+    end: "'"
+    patterns:
+      - name: constant.character.escape.cute
+        match: '\\\\(n|t|r|0|\\\\|\\x[0-9a-fA-F]{2})'
+  # 数字（十进制/十六进制/浮点）
+  - name: constant.numeric.cute
+    match: \b(0[xX][0-9a-fA-F]+|0[bB][01]+|[0-9]+(\.[0-9]+)?)\b
+  # 布尔字面量
+  - name: constant.language.boolean.cute
+    match: \b(true|false)\b
+  # 流程控制关键字
+  - name: keyword.control.cute
+    match: \b(if|while|for|ret|break|continue|else|switch|case|try|except|finally)\b
+  # 声明关键字
+  - name: keyword.declaration.cute
+    match: \b(var|let|const|fn|build)\b
+  # 类型定义关键字
+  - name: storage.type.cute
+    match: \b(type|struct|interface)\b
+  # 内置类型
+  - name: storage.type.primitive.cute
+    match: \b(u8|u16|u32|u64|i8|i16|i32|i64|f32|f64|bool|string|char|list|void)\b
+  # 函数定义名 fn name(
+  - name: meta.function.cute
+    begin: \b(fn)\s+([a-zA-Z_][a-zA-Z0-9_.]*)\b
+    beginCaptures:
+      '1':
+        name: keyword.declaration.cute
+      '2':
+        name: entity.name.function.cute
+    end: (?=\{|$)
+    patterns:
+      # 函数定义参数中的类型
+      - name: storage.type.cute
+        match: \b(u8|u16|u32|u64|i8|i16|i32|i64|f32|f64|bool|string|char|list|void)\b
+  # 函数调用 name(
+  - name: meta.function-call.cute
+    match: \b([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?=\()(?!\b(if|while|for|switch|case|build)\b)
+    captures:
+      '1':
+        name: entity.name.function.call.cute

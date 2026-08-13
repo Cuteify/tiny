@@ -1,0 +1,8 @@
+{
+    "name": "mem_suite",
+    "version": "1.0.0",
+    "imports": {
+        "memory": "std:memory",
+        "syscall": "std:syscall"
+    }
+}

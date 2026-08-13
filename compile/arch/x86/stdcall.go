@@ -1,7 +1,6 @@
 package x86
 
 import (
-	"cuteify/compile/arch"
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
@@ -9,25 +8,41 @@ import (
 	"strconv"
 )
 
+// Stdcall 实现 x86 stdcall 调用约定（全部压栈，被调者清理）。
 type Stdcall struct {
 	ctx *context.Context
+	*x86Ops
 }
 
 func NewStdcall(ctx *context.Context) *Stdcall {
 	a := &Stdcall{
-		ctx: ctx,
+		ctx:    ctx,
+		x86Ops: newOps(ctx),
 	}
-	ctx.Reg = regmgr.NewRegMgr(regs, a.GenVarAddr)
+	ctx.Reg = regmgr.NewRegMgr(regs)
 	return a
 }
 
+// Info 返回调用约定的名称
 func (a *Stdcall) Info() string { return "x86 stdcall" }
 
+// Prologue 函数前序代码
+func (a *Stdcall) Prologue(fn *parser.FuncBlock) string {
+	return a.prologue(fn)
+}
+
+// Epilogue 函数后序代码(公共返回点，stdcall: ret N 被调者清理参数)
+func (a *Stdcall) Epilogue(fn *parser.FuncBlock) string {
+	return a.epilogue(fn, true)
+}
+
+// Call 函数调用（stdcall：被调者清理参数）
 func (a *Stdcall) Call(call *parser.CallBlock) string {
 	if call == nil || call.Func == nil {
 		return ""
 	}
 
+	// 处理 list 方法调用（len/cap/ptr）
 	if call.ThisVar != nil && call.ThisVar.Type != nil &&
 		call.ThisVar.Type.Kind() == "list" && len(call.Args) == 0 {
 		methodName := call.Name.Last()
@@ -48,18 +63,15 @@ func (a *Stdcall) Call(call *parser.CallBlock) string {
 
 normalCall:
 	fn := call.Func
-
-	savedRegs := a.ctx.Reg.SaveAll(false)
 	code := ""
-	for _, regCode := range savedRegs {
-		code += regCode
-	}
 
+	// 压入 this 指针（如果有）
 	if call.ThisVar != nil {
 		thisAddr := genVarAddr(a.ctx, call.ThisVar)
 		code += utils.Format("push " + thisAddr + "; push this pointer")
 	}
 
+	// 压入参数（从右到左）
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		arg := call.Args[i]
 		if arg == nil {
@@ -68,176 +80,25 @@ normalCall:
 		code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
 	}
 
-	name := fn.Name.String()
-	if name != "main" {
-		name = name + strconv.Itoa(len(fn.Args))
-	}
+	// 生成函数名
+	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
 	code += utils.Format("call " + name)
 
+	// stdcall: 被调者清理参数栈，调用者无需 add esp
 	return code
 }
 
+// Return 函数返回
 func (a *Stdcall) Return(ret *parser.ReturnBlock) string {
-	code := ""
-	if ret != nil && len(ret.Value) != 0 {
-		if is64Type(ret.Value[0].Type) {
-			code += a.Exp(ret.Value[0], "EDX:EAX", "return值存入EDX:EAX")
-			a.ctx.Reg.Free(ret.Value[0])
-		} else {
-			eaxReg := &regmgr.Reg{Name: "EAX", RegIndex: 0}
-			a.ctx.Reg.Force(eaxReg, a.ctx.Now, ret.Value[0])
-
-			if eaxReg.StoreCode != "" {
-				code += utils.Format(eaxReg.StoreCode)
-			}
-
-			code += a.Exp(ret.Value[0], "EAX", "return值存入EAX")
-			a.ctx.Reg.Free(ret.Value[0])
-		}
-	}
-
-	code += utils.Format("; ---- 退出函数 ----")
-
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("add esp, " + strconv.Itoa(a.ctx.StackSize) + "; 清理局部变量栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
-	}
-
-	for i := len(regs) - 1; i >= 0; i-- {
-		r := regs[i]
-		if r.CalleeSave {
-			code += utils.Format("pop " + r.Name + "; 恢复" + r.Name)
-		}
-	}
-
-	code += utils.Format("leave")
-
-	argSize := 0
-	if a.ctx.CurrentFunc != nil {
-		argSize = arch.CalcArgsSize(a.ctx.CurrentFunc)
-		if a.ctx.CurrentFunc.Class != nil {
-			argSize += 4
-		}
-	}
-	if argSize > 0 {
-		code += utils.Format("ret " + strconv.Itoa(argSize) + "; stdcall: 被调者清理参数栈")
-	} else {
-		code += utils.Format("ret")
-	}
-	code += "\n"
-
+	code := a.returnValue(ret)
+	code += a.returnJump()
 	return code
 }
 
-func (a *Stdcall) Func(funcBlock *parser.FuncBlock) string {
-	if funcBlock == nil {
-		return ""
-	}
-
-	argOffset := 8
-	if funcBlock.Class != nil {
-		argOffset += 4
-	}
-
-	for i := 0; i < len(funcBlock.Args); i++ {
-		arg := funcBlock.Args[i]
-		arg.Offset = argOffset
-		argOffset += arg.Type.Size()
-	}
-
-	name := funcBlock.Name.String()
-	if name != "main" {
-		name = name + strconv.Itoa(len(funcBlock.Args))
-	}
-	code := utils.Format("; ==============================")
-	code += utils.Format("; Function:" + name)
-	code += utils.Format(name + ":")
-	utils.Count++
-	code += utils.Format("push ebp; 保存调用者的栈帧基址")
-	code += utils.Format("mov ebp, esp; 设置当前栈帧基址")
-
-	csCount := 0
-	for i := 0; i < len(regs); i++ {
-		r := regs[i]
-		if r.CalleeSave {
-			code += utils.Format("push " + r.Name + "; 保存" + r.Name)
-			csCount++
-		}
-	}
-
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*csCount)
-
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
-	}
-
-	code += utils.Format("; ---- 函数开始 ----")
-	return code
-}
-
+// Exp 编译表达式（64 位类型路由到 compile64Type）
 func (a *Stdcall) Exp(exp *parser.Expression, result, desc string) string {
-	expc := expCom{ctx: a.ctx}
-	return expc.CompileExpr(exp, result, desc)
-}
-
-func (a *Stdcall) For(forBlock *parser.ForBlock) string {
-	if forBlock == nil {
-		return ""
+	if exp != nil && is64Type(exp.Type) {
+		return compile64Type(a.ctx, exp, result, desc)
 	}
-
-	forBlock.Offset = a.ctx.IfCount
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	forEndLabel := forLabel + "_end"
-
-	code := utils.Format("")
-	code += utils.Format("")
-
-	if forBlock.Init != nil {
-		code += a.Exp(forBlock.Init, "", "初始化for循环")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	code += utils.Format(forLabel + ": ; for循环开始")
-
-	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		code += a.Exp(forBlock.Condition, forEndLabel, "for循环条件检查")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	return code
-}
-
-func (a *Stdcall) EndFor(forBlock *parser.ForBlock) string {
-	code := utils.Format("")
-	code += utils.Format("")
-
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	code += a.Exp(forBlock.Increment, "", "for循环增量")
-	code += utils.Format("jmp " + forLabel + "; for循环")
-	code += utils.Format(forLabel + "_end: ; for循环结束")
-	return code
-}
-
-func (a *Stdcall) Var(varBlock *parser.VarBlock) string {
-	if varBlock.Value == nil {
-		return ""
-	}
-	if is64Type(varBlock.Type) {
-		loAddr := genLoAddr(a.ctx, varBlock)
-		hiAddr := genHiAddr(a.ctx, varBlock)
-		code := a.Exp(varBlock.Value, loAddr, "设置变量"+varBlock.Name.String())
-		if !isRegName(loAddr) {
-			code += utils.Format("mov dword " + hiAddr + ", edx; 设置变量high")
-		}
-		return code
-	}
-	addr := genVarAddr(a.ctx, varBlock)
-	return a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
-}
-
-func (a *Stdcall) GenVarAddr(varBlock *parser.VarBlock) string {
-	return genVarAddr(a.ctx, varBlock)
+	return a.exp(exp, result, desc)
 }

@@ -15,7 +15,16 @@ func (c *Compiler) CompileBuild(n *parser.Node) (code string) {
 		// 使用存储的 VarBlock 进行替换
 		for varName, tmpVar := range block.VarMap {
 			placeholder := "$" + varName
-			addr := fmt.Sprintf("DWORD[ebp+%d]", tmpVar.Offset)
+			var addr, bare string
+			if c.Ctx.Is64Bit {
+				addr = fmt.Sprintf("QWORD[rbp+%d]", tmpVar.Offset)
+				bare = fmt.Sprintf("[rbp+%d]", tmpVar.Offset)
+			} else {
+				addr = fmt.Sprintf("DWORD[ebp+%d]", tmpVar.Offset)
+				bare = fmt.Sprintf("[ebp+%d]", tmpVar.Offset)
+			}
+			// 先替换 [$x]（内存寻址），再替换 $x（值加载）
+			asm = strings.ReplaceAll(asm, "["+placeholder+"]", bare)
 			asm = strings.ReplaceAll(asm, placeholder, addr)
 		}
 		// 使用 Format 格式化每一行

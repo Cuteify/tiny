@@ -22,7 +22,8 @@ func init() {
 
 // Compiler 编译器结构体，负责将AST转换为汇编代码
 type Compiler struct {
-	Ctx *context.Context // 编译器上下文
+	Ctx           *context.Context // 编译器上下文
+	RootGenerated bool             // 标记是否已生成 section .text
 }
 
 // NewCompiler 创建新的编译器
@@ -36,7 +37,7 @@ func NewCompiler(parser *parser.Parser) *Compiler {
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.initializeContext()
 	code = c.compileRoot(node, code)
-	code += c.compileChildren(node, code)
+	code += c.compileChildren(node, "")
 	code += c.compileRootTail(node)
 	return code
 }
@@ -51,10 +52,55 @@ func (c *Compiler) initializeContext() {
 }
 
 func (c *Compiler) compileRoot(node *parser.Node, code string) string {
-	if node.Father == nil {
-		return "section .text\nglobal _start\n\n"
+	// 只在最外层生成一次 section .text
+	if c.RootGenerated {
+		return ""
 	}
-	return ""
+	// 只在根节点（没有Father）生成
+	if node.Father != nil {
+		return ""
+	}
+	c.RootGenerated = true
+	return c.generateGlobalSection(node) + "section .text\nglobal _start\n\n"
+}
+
+// generateGlobalSection 输出全局变量的 .bss/.data 声明
+func (c *Compiler) generateGlobalSection(node *parser.Node) string {
+	var bssCode, dataCode string
+	for _, ch := range node.Children {
+		vb, ok := ch.Value.(*parser.VarBlock)
+		if !ok || !vb.IsGlobal || !vb.IsDefine {
+			continue
+		}
+		name := "__global_" + vb.Name.First()
+		size := vb.Type.Size()
+		if size != 4 && size != 8 {
+			continue
+		}
+		// 常量初始化值放入 .data，其余放 .bss
+		if vb.Value != nil && vb.Value.IsConst() {
+			val := int64(vb.Value.Num)
+			if size == 8 {
+				dataCode += "    " + name + " dq " + strconv.FormatInt(val, 10) + "\n"
+			} else {
+				dataCode += "    " + name + " dd " + strconv.FormatInt(val, 10) + "\n"
+			}
+		} else {
+			if size == 8 {
+				bssCode += "    " + name + " resq 1\n"
+			} else {
+				bssCode += "    " + name + " resd 1\n"
+			}
+		}
+	}
+	code := ""
+	if bssCode != "" {
+		code += "section .bss\n" + bssCode
+	}
+	if dataCode != "" {
+		code += "section .data\n" + dataCode
+	}
+	return code
 }
 
 func (c *Compiler) compileChildren(node *parser.Node, code string) string {
@@ -73,7 +119,7 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 	switch v := n.Value.(type) {
 	case *parser.FuncBlock:
 		for _, buildFlag := range v.BuildFlags {
-			if buildFlag.Type == "os" && buildFlag.Ignore {
+			if buildFlag.Ignore {
 				return ""
 			}
 		}
@@ -104,7 +150,7 @@ func (c *Compiler) compileFuncBlock(n *parser.Node) string {
 	if !funcBlock.Useful && funcBlock.Name.String() != "main" {
 		return ""
 	}
-	// 变量栈设置和栈大小计算现在由 arch.Func 调用 arch.SetupVarOffsets 处理
+	// 变量栈设置和栈大小计算现在由 arch.Pro/Epilogue 处理
 	return c.funcHandle(funcBlock, n)
 }
 
@@ -121,24 +167,101 @@ func (c *Compiler) compileIfBlock(n *parser.Node) string {
 		endLabel = "end_" + label
 	}
 
-	code += c.Ctx.Arch.Exp(ifBlock.Condition, endLabel, "")
+	// 编译条件表达式，生成比较和跳转指令
+	code += c.compileCondition(ifBlock.Condition, endLabel)
 
 	code += utils.Format(label+":") + c.Compile(n)
 
 	if ifBlock.Else {
+		code += utils.Format("jmp end_" + label)
 		code += c.compileElseBlock(ifBlock, label)
 	}
 	code += utils.Format("end_" + label + ":")
 	return code
 }
 
+// compileCondition 编译条件表达式，生成比较和跳转指令
+func (c *Compiler) compileCondition(cond *parser.Expression, jumpLabel string) string {
+	if cond == nil {
+		return ""
+	}
+
+	var code string
+
+	// 根据架构选择寄存器名
+	scratchReg1 := "EAX"
+	scratchReg2 := "ECX"
+	if c.Ctx.Is64Bit {
+		scratchReg1 = "RAX"
+		scratchReg2 = "RCX"
+	}
+
+	// 处理比较运算
+	switch cond.Separator {
+	case "==", "!=", "<", ">", "<=", ">=":
+
+		// 32 位模式下 64 位类型比较需要专用双寄存器路径
+		if !c.Ctx.Is64Bit && cond.Left != nil && c.Ctx.Arch.Is64Type(cond.Left.Type) {
+			return c.Ctx.Arch.Compare64(cond, jumpLabel)
+		}
+
+		// 编译左右操作数到寄存器
+		if cond.Left != nil {
+			code += c.Ctx.Arch.Exp(cond.Left, scratchReg1, "left operand")
+			code += utils.Format("push " + scratchReg1 + "; 保护左操作数\n")
+		}
+		if cond.Right != nil {
+			code += c.Ctx.Arch.Exp(cond.Right, scratchReg2, "right operand")
+		}
+		if cond.Left != nil {
+			code += utils.Format("pop " + scratchReg1 + "; 恢复左操作数\n")
+		}
+
+		// 生成比较指令
+		code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
+
+		// 根据操作符生成跳转指令
+		var jumpOp string
+		switch cond.Separator {
+		case "==":
+			jumpOp = "jne" // 相等则不跳转
+		case "!=":
+			jumpOp = "je" // 不等则不跳转
+		case "<":
+			jumpOp = "jge" // 小于则不跳转
+		case ">":
+			jumpOp = "jle" // 大于则不跳转
+		case "<=":
+			jumpOp = "jg" // 小于等于则不跳转
+		case ">=":
+			jumpOp = "jl" // 大于等于则不跳转
+		}
+		code += utils.Format(jumpOp + " " + jumpLabel)
+	case "&&", "||":
+		// 处理逻辑与/或
+		if cond.Left != nil {
+			code += c.compileCondition(cond.Left, jumpLabel)
+		}
+		if cond.Right != nil {
+			code += c.compileCondition(cond.Right, jumpLabel)
+		}
+	default:
+		// 单个表达式，编译到 scratchReg1 并测试是否为 0
+		code += c.Ctx.Arch.Exp(cond, scratchReg1, "condition")
+		code += utils.Format("test " + scratchReg1 + ", " + scratchReg1)
+		code += utils.Format("jz " + jumpLabel) // 为 0 则跳转
+	}
+
+	return code
+}
+
 func (c *Compiler) compileElseBlock(ifBlock *parser.IfBlock, label string) string {
 	var code string
 	code += utils.Format("else_" + label + ":")
-	if ifBlock.ElseBlock.Value.(*parser.ElseBlock).IfCondition != nil {
-		code += c.Ctx.Arch.Exp(ifBlock.ElseBlock.Value.(*parser.ElseBlock).IfCondition, "end_"+label, "")
-	}
 	if ifBlock.ElseBlock != nil {
+		if e, ok := ifBlock.ElseBlock.Value.(*parser.ElseBlock); ok && e.IfCondition != nil {
+			code += c.Ctx.Arch.Exp(e.IfCondition, "end_"+label, "")
+		}
 		code += c.Compile(ifBlock.ElseBlock)
 	}
 	return code
@@ -151,10 +274,13 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 
 func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	varBlock := n.Value.(*parser.VarBlock)
+	if varBlock.IsGlobal && varBlock.IsDefine {
+		return ""
+	}
 	if varBlock.IsDefine && varBlock.Value == nil {
 		return ""
 	}
-	return c.Ctx.Arch.Var(varBlock)
+	return c.Ctx.Arch.VarDecl(varBlock)
 }
 
 func (c *Compiler) compileCallBlock(n *parser.Node) string {
@@ -173,9 +299,9 @@ func (c *Compiler) compileExprBlock(n *parser.Node) string {
 func (c *Compiler) compileForBlock(n *parser.Node) string {
 	forBlock := n.Value.(*parser.ForBlock)
 	var code string
-	code += c.Ctx.Arch.For(forBlock)
+	code += c.Ctx.Arch.ForBegin(forBlock)
 	code += c.Compile(n)
-	code += c.Ctx.Arch.EndFor(forBlock)
+	code += c.Ctx.Arch.ForEnd(forBlock)
 	return code
 }
 
@@ -239,6 +365,7 @@ func (c *Compiler) generateStartEntry() string {
 		code += utils.Format("mov eax, 1")
 		code += utils.Format("int 0x80\n")
 	}
+	utils.Count--
 	return code
 }
 
@@ -254,21 +381,37 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	if name != "main" {
 		name = name + strconv.Itoa(len(funcBlock.Args))
 	}
+
+	// 重置寄存器分配器（每个函数独立）
+	c.Ctx.Reg.Reset()
+
+	// 先生成函数头部（不缩进）
 	code += utils.Format("; ==============================")
 	code += utils.Format("; Function: " + name)
 	code += utils.Format(name + ":")
-	utils.Count++
-	code += c.Ctx.Arch.Func(funcBlock)
 
+	// 增加缩进，让函数体指令有缩进
+	utils.Count++
+
+	// 恢复 Ctx.Now 为当前函数节点（Prologue 需要遍历函数体设置变量偏移）
+	savedNow := c.Ctx.Now
+	c.Ctx.Now = node
+
+	// 生成 prologue（push rbp, mov rbp rsp, 保存 callee-save, 分配栈空间）
+	// callee-save 固定全部保存，栈布局可在函数体编译前确定，避免依赖分配器运行结果
+	code += c.Ctx.Arch.Prologue(funcBlock)
+
+	// 编译函数体（此时参数/变量偏移已正确设置）
 	code += c.Compile(c.Ctx.Now)
 
-	// 若最后不是显式 return，则补齐尾部清理
-	if _, ok := node.Children[len(node.Children)-1].Value.(*parser.ReturnBlock); !ok {
-		code += c.Ctx.Arch.Return(nil)
-	}
-	if utils.Count > 0 {
-		utils.Count--
-	}
+	// 生成 epilogue（清理栈、恢复寄存器、返回）
+	code += c.Ctx.Arch.Epilogue(funcBlock)
+
+	// 恢复 Ctx.Now
+	c.Ctx.Now = savedNow
+
+	// 减少缩进
+	utils.Count--
 	code += utils.Format("; ======函数完毕=======\n\n")
 
 	// 清理寄存器分配数据

@@ -11,7 +11,29 @@ type StructBlock struct {
 }
 
 func (s *StructBlock) Parse(p *Parser) {
+	// 读取结构体名称
+	nameToken := p.Lexer.Next()
+	if nameToken.Type != lexer.NAME {
+		p.Error.MissError("Struct Error", nameToken.Cursor, "expected struct name")
+	}
+	s.Type.TypeName = nameToken.Value
+
+	// 检查是否有继承（: ParentStruct）
 	token := p.Lexer.Next()
+	if token.Value == "struct" {
+		// type 声明形式（type Name struct），跳过 struct 关键字
+		token = p.Lexer.Next()
+	}
+	if token.Value == ":" {
+		// 读取父结构体名称
+		parentToken := p.Lexer.Next()
+		if parentToken.Type != lexer.NAME {
+			p.Error.MissError("Struct Error", parentToken.Cursor, "expected parent struct name")
+		}
+		// TODO: 处理继承
+		token = p.Lexer.Next()
+	}
+
 	if token.Value != "{" {
 		p.Error.MissError("Struct Error", token.Cursor, "expected '{'")
 	}

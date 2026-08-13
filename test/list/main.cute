@@ -1,0 +1,55 @@
+// 列表操作测试 - 覆盖各种列表边界情况
+
+fn main() int {
+    // 测试空列表
+    var empty: []int
+    var emptyLen: int = len(empty)  // 0
+    
+    // 测试单元素列表
+    var single: []int = []int{42}
+    var singleLen: int = len(single)  // 1
+    var singleVal: int = single[0]  // 42
+    
+    // 测试多元素列表
+    var multi: []int = []int{1, 2, 3, 4, 5}
+    var multiLen: int = len(multi)  // 5
+    var first: int = multi[0]  // 1
+    var last: int = multi[4]  // 5
+    
+    // 测试负数列表
+    var negative: []int = []int{-5, -3, -1, 0, 2, 4}
+    var negLen: int = len(negative)  // 6
+    var negFirst: int = negative[0]  // -5
+    var negLast: int = negative[5]  // 4
+    
+    // 测试大数列表
+    var large: []int = []int{1000000, 2000000, 3000000}
+    var largeLen: int = len(large)  // 3
+    var largeSum: int = large[0] + large[1] + large[2]  // 6000000
+    
+    // 测试列表修改
+    var modifiable: []int = []int{1, 2, 3}
+    modifiable[0] = 10
+    modifiable[1] = 20
+    modifiable[2] = 30
+    var modSum: int = modifiable[0] + modifiable[1] + modifiable[2]  // 60
+    
+    // 测试列表切片
+    var sliceable: []int = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    var slice1: []int = sliceable[2:5]  // [3, 4, 5]
+    var slice1Len: int = len(slice1)  // 3
+    
+    var slice2: []int = sliceable[0:3]  // [1, 2, 3]
+    var slice2Len: int = len(slice2)  // 3
+    
+    var slice3: []int = sliceable[7:10]  // [8, 9, 10]
+    var slice3Len: int = len(slice3)  // 3
+    
+    // 测试重复元素列表
+    var repeated: []int = []int{5, 5, 5, 5, 5}
+    var repLen: int = len(repeated)  // 5
+    var repSum: int = repeated[0] + repeated[1] + repeated[2] + repeated[3] + repeated[4]  // 25
+    
+    // 计算总和
+    ret emptyLen + singleLen + singleVal + multiLen + first + last + negLen + negFirst + negLast + largeLen + largeSum + modSum + slice1Len + slice2Len + slice3Len + repLen + repSum
+}

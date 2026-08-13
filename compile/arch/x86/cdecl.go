@@ -1,7 +1,6 @@
 package x86
 
 import (
-	"cuteify/compile/arch"
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
@@ -12,23 +11,38 @@ import (
 // Cdecl 实现 x86 cdecl 调用约定（全部压栈，调用者清理）。
 type Cdecl struct {
 	ctx *context.Context
+	*x86Ops
 }
 
 func NewCdecl(ctx *context.Context) *Cdecl {
 	a := &Cdecl{
-		ctx: ctx,
+		ctx:    ctx,
+		x86Ops: newOps(ctx),
 	}
-	ctx.Reg = regmgr.NewRegMgr(regs, a.GenVarAddr)
+	ctx.Reg = regmgr.NewRegMgr(regs)
 	return a
 }
 
-func (a *Cdecl) Info() (code string) { return "x86 cdecl" }
+// Info 返回调用约定的名称
+func (a *Cdecl) Info() string { return "x86 cdecl" }
 
-func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
+// Prologue 函数前序代码
+func (a *Cdecl) Prologue(fn *parser.FuncBlock) string {
+	return a.prologue(fn)
+}
+
+// Epilogue 函数后序代码(公共返回点)
+func (a *Cdecl) Epilogue(fn *parser.FuncBlock) string {
+	return a.epilogue(fn, false)
+}
+
+// Call 函数调用（cdecl：调用者清理参数）
+func (a *Cdecl) Call(call *parser.CallBlock) string {
 	if call == nil || call.Func == nil {
 		return ""
 	}
 
+	// 处理 list 方法调用（len/cap/ptr）
 	if call.ThisVar != nil && call.ThisVar.Type != nil &&
 		call.ThisVar.Type.Kind() == "list" && len(call.Args) == 0 {
 		methodName := call.Name.Last()
@@ -44,199 +58,58 @@ func (a *Cdecl) Call(call *parser.CallBlock) (code string) {
 			goto normalCall
 		}
 		addr := listFieldAddr(a.ctx, call.ThisVar, fieldOffset)
-		code += utils.Format("mov eax, dword " + addr + "; " + methodName + "()")
-		return
+		return utils.Format("mov eax, dword " + addr + "; " + methodName + "()")
 	}
 
 normalCall:
 	fn := call.Func
+	code := ""
 
-	savedRegs := a.ctx.Reg.SaveAll(false)
-	for _, regCode := range savedRegs {
-		code += regCode
-	}
-
+	// 压入 this 指针（如果有）
 	if call.ThisVar != nil {
 		thisAddr := genVarAddr(a.ctx, call.ThisVar)
 		code += utils.Format("push " + thisAddr + "; push this pointer")
 	}
 
+	// 压入参数（从右到左，cdecl 约定）
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		arg := call.Args[i]
 		if arg == nil {
 			continue
 		}
-		if arg.Value != nil && is64Type(arg.Value.Type) {
-			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		// 64 位形参但实参是 32 位值（字面量/表达式）：扩展为 8 字节，高 32 位补 0
+		if is64Type(arg.Type) && (arg.Value == nil || !is64Type(arg.Value.Type)) {
+			code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
+			code += utils.Format("push 0\n") + utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 扩展到64位\n")
 		} else {
 			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
 		}
 	}
 
-	name := fn.Name.String()
-	if name != "main" {
-		name = name + strconv.Itoa(len(fn.Args))
-	}
+	// 生成函数名
+	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
 	code += utils.Format("call " + name)
 
-	argSize := arch.CalcArgsSize(call.Func)
-	if call.ThisVar != nil {
-		argSize += 4
-	}
+	// cdecl: 调用者清理参数栈
+	argSize := callArgsSize(call)
 	if argSize > 0 {
-		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; 清理参数栈(cdecl)")
+		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; cdecl: 清理参数栈")
 	}
 
 	return code
 }
 
-func (a *Cdecl) Return(ret *parser.ReturnBlock) (code string) {
-	if ret != nil && len(ret.Value) != 0 {
-		if is64Type(ret.Value[0].Type) {
-			code += a.Exp(ret.Value[0], "EDX:EAX", "return值存入EDX:EAX")
-			a.ctx.Reg.Free(ret.Value[0])
-		} else {
-			eaxReg := &regmgr.Reg{Name: "EAX", RegIndex: 0}
-			a.ctx.Reg.Force(eaxReg, a.ctx.Now, ret.Value[0])
-
-			if eaxReg.StoreCode != "" {
-				code += utils.Format(eaxReg.StoreCode)
-			}
-
-			code += a.Exp(ret.Value[0], "EAX", "return值存入EAX")
-			a.ctx.Reg.Free(ret.Value[0])
-		}
-	}
-
-	code += utils.Format("; ---- 退出函数 ----")
-
-	// 清理局部变量栈空间
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("add esp, " + strconv.Itoa(a.ctx.StackSize) + "; 清理局部变量栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
-	}
-
-	// 恢复callee-saved寄存器
-	for i := len(regs) - 1; i >= 0; i-- {
-		r := regs[i]
-		if r.CalleeSave {
-			code += utils.Format("pop " + r.Name + "; 恢复" + r.Name)
-		}
-	}
-
-	// 恢复调用者的栈帧基址
-	code += utils.Format("leave")
-	code += utils.Format("ret\n")
+// Return 函数返回
+func (a *Cdecl) Return(ret *parser.ReturnBlock) string {
+	code := a.returnValue(ret)
+	code += a.returnJump()
 	return code
 }
 
-func (a *Cdecl) Func(funcBlock *parser.FuncBlock) (code string) {
-	if funcBlock == nil {
-		return ""
+// Exp 编译表达式（64 位类型路由到 compile64Type）
+func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) string {
+	if exp != nil && is64Type(exp.Type) {
+		return compile64Type(a.ctx, exp, result, desc)
 	}
-
-	argOffset := 8
-	if funcBlock.Class != nil {
-		argOffset += 4
-	}
-
-	for i := 0; i < len(funcBlock.Args); i++ {
-		arg := funcBlock.Args[i]
-		arg.Offset = argOffset
-		argOffset += arg.Type.Size()
-	}
-
-	code += utils.Format("push ebp; 保存调用者的栈帧基址")
-	code += utils.Format("mov ebp, esp; 设置当前栈帧基址")
-
-	csCount := 0
-	for i := 0; i < len(regs); i++ {
-		r := regs[i]
-		if r.CalleeSave {
-			code += utils.Format("push " + r.Name + "; 保存" + r.Name)
-			csCount++
-		}
-	}
-
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*csCount)
-
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
-	}
-
-	code += utils.Format("; ---- 函数开始 ----")
-	return code
-}
-
-func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) (code string) {
-	expc := expCom{ctx: a.ctx}
-	return expc.CompileExpr(exp, result, desc)
-}
-
-func (a *Cdecl) For(forBlock *parser.ForBlock) (code string) {
-	if forBlock == nil {
-		return ""
-	}
-
-	forBlock.Offset = a.ctx.IfCount
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	forEndLabel := forLabel + "_end"
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	// 1. 初始化 - 编译变量定义
-	if forBlock.Init != nil {
-		// 编译初始化表达式到变量地址
-		code += a.Exp(forBlock.Init, "", "初始化for循环")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	// 循环开始标签
-	code += utils.Format(forLabel + ": ; for循环开始")
-
-	// 2. 条件检查 - 如果条件为假则跳出循环
-	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		// 将条件编译到一个临时寄存器
-		code += a.Exp(forBlock.Condition, forEndLabel, "for循环条件检查")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	return code
-}
-
-func (a *Cdecl) EndFor(forBlock *parser.ForBlock) (code string) {
-	code += utils.Format("")
-	code += utils.Format("")
-
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	code += a.Exp(forBlock.Increment, "", "for循环增量")
-	code += utils.Format("jmp " + forLabel + "; for循环")
-	code += utils.Format(forLabel + "_end: ; for循环结束")
-	return
-}
-
-func (a *Cdecl) Var(varBlock *parser.VarBlock) (code string) {
-	if varBlock.Value == nil {
-		return
-	}
-	if is64Type(varBlock.Type) {
-		loAddr := genLoAddr(a.ctx, varBlock)
-		hiAddr := genHiAddr(a.ctx, varBlock)
-		code += a.Exp(varBlock.Value, loAddr, "设置变量"+varBlock.Name.String())
-		if !isRegName(loAddr) {
-			code += utils.Format("mov dword " + hiAddr + ", edx; 设置变量high")
-		}
-		return
-	}
-	addr := genVarAddr(a.ctx, varBlock)
-	code += a.ctx.Arch.Exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
-	return
-}
-
-func (a *Cdecl) GenVarAddr(varBlock *parser.VarBlock) (addr string) {
-	return genVarAddr(a.ctx, varBlock)
+	return a.exp(exp, result, desc)
 }

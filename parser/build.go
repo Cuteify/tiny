@@ -2,6 +2,7 @@ package parser
 
 import (
 	"cuteify/lexer"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -13,6 +14,7 @@ type Build struct {
 	ExtRet       string
 	UseMoreStack bool
 	OS           []string
+	Archs        []string
 	Ignore       bool
 	Link         string
 	VarMap       map[string]*VarBlock // 变量名 -> 临时VarBlock（已填充Offset）
@@ -91,6 +93,30 @@ func (b *Build) Parse(p *Parser) {
 			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
 		default:
 		}
+	case "arch":
+		p.Lexer.Skip('(')
+		stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
+		for p.Lexer.Cursor < stopToken {
+			archName := p.Lexer.Next()
+			switch archName.Type {
+			case lexer.SEPARATOR:
+				if archName.Value == ")" {
+					break
+				}
+				if archName.Value != "," {
+					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
+				}
+			case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
+				b.Archs = append(b.Archs, archName.Value)
+			}
+		}
+		b.Type = "arch"
+		b.checkArchMatch()
+		switch p.ThisBlock.Value.(type) {
+		case *FuncBlock:
+			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
+		default:
+		}
 	case "link":
 		b.Type = "link"
 		p.Lexer.Skip('(')
@@ -114,6 +140,20 @@ func (b *Build) checkOSMatch() {
 	for _, os := range b.OS {
 		os = strings.TrimSpace(os)
 		if os == currentOS {
+			return
+		}
+	}
+	b.Ignore = true
+}
+
+func (b *Build) checkArchMatch() {
+	currentArch := os.Getenv("CUTE_ARCH")
+	if currentArch == "" {
+		currentArch = "x86"
+	}
+	for _, arch := range b.Archs {
+		arch = strings.TrimSpace(arch)
+		if arch == currentArch {
 			return
 		}
 	}

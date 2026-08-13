@@ -1,0 +1,100 @@
+// 结构体测试 - 覆盖各种结构体边界情况
+
+type Point struct {
+    x: int
+    y: int
+}
+
+type Point3D struct {
+    x: int
+    y: int
+    z: int
+}
+
+type Rectangle struct {
+    width: int
+    height: int
+}
+
+type Circle struct {
+    radius: int
+}
+
+// 结构体方法
+fn Point.distanceToOrigin() int {
+    ret self.x * self.x + self.y * self.y
+}
+
+fn Point.translate(dx int, dy int) {
+    self.x += dx
+    self.y += dy
+}
+
+fn Rectangle.area() int {
+    ret self.width * self.height
+}
+
+fn Rectangle.perimeter() int {
+    ret 2 * (self.width + self.height)
+}
+
+fn Circle.area() int {
+    // 简化的圆面积计算：3 * r * r
+    ret 3 * self.radius * self.radius
+}
+
+fn Circle.circumference() int {
+    // 简化的圆周长计算：2 * 3 * r
+    ret 2 * 3 * self.radius
+}
+
+fn main() int {
+    // 测试基本结构体
+    var p1: Point
+    p1.x = 3
+    p1.y = 4
+    var p1Dist: int = p1.distanceToOrigin()  // 25 (3*3 + 4*4)
+    
+    // 测试结构体方法修改字段
+    p1.translate(2, 3)  // p1.x = 5, p1.y = 7
+    var p1NewDist: int = p1.distanceToOrigin()  // 74 (5*5 + 7*7)
+    
+    // 测试矩形
+    var rect: Rectangle
+    rect.width = 10
+    rect.height = 5
+    var rectArea: int = rect.area()  // 50
+    var rectPerim: int = rect.perimeter()  // 30
+    
+    // 测试圆形
+    var circle: Circle
+    circle.radius = 7
+    var circleArea: int = circle.area()  // 147 (3 * 7 * 7)
+    var circleCirc: int = circle.circumference()  // 42 (2 * 3 * 7)
+    
+    // 测试3D点
+    var p3d: Point3D
+    p3d.x = 1
+    p3d.y = 2
+    p3d.z = 3
+    var p3dSum: int = p3d.x + p3d.y + p3d.z  // 6
+    
+    // 测试零值结构体
+    var zeroPoint: Point
+    var zeroDist: int = zeroPoint.distanceToOrigin()  // 0
+    
+    // 测试负值结构体
+    var negPoint: Point
+    negPoint.x = -3
+    negPoint.y = -4
+    var negDist: int = negPoint.distanceToOrigin()  // 25 ((-3)*(-3) + (-4)*(-4))
+    
+    // 测试大值结构体
+    var bigPoint: Point
+    bigPoint.x = 1000
+    bigPoint.y = 2000
+    var bigDist: int = bigPoint.distanceToOrigin()  // 5000000
+    
+    // 计算总和
+    ret p1Dist + p1NewDist + rectArea + rectPerim + circleArea + circleCirc + p3dSum + zeroDist + negDist + bigDist
+}

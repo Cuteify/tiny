@@ -2,317 +2,239 @@ package regmgr
 
 import (
 	"cuteify/parser"
-	"cuteify/utils"
-	"fmt"
-	"strconv"
 )
 
-// RegMgr 寄存器管理器
-type RegMgr struct {
-	Record     map[*parser.Expression]*Reg // 寄存器分配记录
-	Regs       []*Reg                      // 寄存器状态数组
-	RegCount   int                         // 已分配寄存器数量
-	index      int                         // 分配索引（LRU）
-	totalReg   int                         // 总寄存器数量
-	genVarAddr func(varBlock *parser.VarBlock) string
+// MemAddr 内存地址接口
+type MemAddr interface {
+	String() string
+	Size() int
+	IsPtr() bool
+	Eq(MemAddr) bool
 }
 
 // Reg 寄存器信息
 type Reg struct {
-	StoreCode  string       // 溢出存储代码
-	Name       string       // 寄存器名称
-	RegIndex   int          // 物理寄存器索引
-	index      int          // 分配索引
-	UsingNode  *parser.Node // 使用节点
-	Using      bool         // 是否使用
-	CalleeSave bool         // 被调用者保存
-	Locked     bool         // 锁定状态（关键字段）
-	SpillCount int          // 溢出次数统计
+	Name       string  // 寄存器名称
+	RegIndex   int     // 物理寄存器索引
+	ClassMask  uint32  // 寄存器类别掩码（硬件固有属性）
+	CalleeSave bool    // 是否 callee-save
+	User       MemAddr // 溢出回写地址
+	ExpID      int     // 绑定的表达式 ID（用于复用）
+	Free       bool    // 是否空闲
+	StoreCode  string  // 溢出存储代码
 }
 
-// NewRegMgr 创建新的寄存器管理器
-func NewRegMgr(regs []*Reg, genVarAddr func(varBlock *parser.VarBlock) string) *RegMgr {
+// RegMgr 寄存器管理器
+type RegMgr struct {
+	Record   map[*parser.Expression]*Reg // 表达式 -> 寄存器
+	Regs     []*Reg                      // 所有寄存器
+	TotalReg int                         // 总寄存器数量
+}
+
+// NewRegMgr 创建寄存器管理器
+// 支持两种调用方式：
+// 1. NewRegMgr(regs) - 只传寄存器列表
+// 2. NewRegMgr(regs, genVarAddr) - 传寄存器列表和地址生成函数
+func NewRegMgr(regs []*Reg) *RegMgr {
 	rm := &RegMgr{
-		Regs:       regs,
-		Record:     make(map[*parser.Expression]*Reg),
-		totalReg:   len(regs),
-		genVarAddr: genVarAddr,
+		Record:   make(map[*parser.Expression]*Reg),
+		Regs:     regs,
+		TotalReg: len(regs),
+	}
+	// 初始化所有寄存器为空闲
+	for _, reg := range regs {
+		reg.Free = true
 	}
 	return rm
 }
 
-// Get 为表达式分配寄存器（支持生命周期感知）
-func (rm *RegMgr) Get(n *parser.Node, exp *parser.Expression, needCalleeSave bool) (reg *Reg) {
-	rm.index++
-	// 检查是否已分配
-	if existing := rm.Record[exp]; existing != nil && existing.Using {
-		existing.index = rm.index
-		return existing
-	}
-
-	if !needCalleeSave {
-		// 分配不需要callee保存的的寄存器
-		if reg = rm.allocate(n, exp, false); reg != nil {
-			return reg
+// SaveAll 保存所有已使用的寄存器（生成 push 指令）
+func (rm *RegMgr) SaveAll(calleeOnly bool) []string {
+	var codes []string
+	for _, reg := range rm.Regs {
+		if !reg.Free {
+			if calleeOnly && !reg.CalleeSave {
+				continue
+			}
+			codes = append(codes, "push "+reg.Name+"; save "+reg.Name)
 		}
 	}
-
-	if reg == nil {
-		if reg = rm.allocate(n, exp, true); reg != nil {
-			return reg
-		}
-	}
-
-	// 寄存器不足，执行溢出处理（跳过锁定寄存器）
-	reg = rm.spillReg(n, exp, needCalleeSave)
-	return reg
+	return codes
 }
 
-func (rm *RegMgr) allocate(n *parser.Node, exp *parser.Expression, needCalleeSave bool) *Reg {
-	// 检查是否有剩余寄存器
-	if rm.RegCount >= rm.totalReg {
-		return nil
-	}
-
-	// 分配寄存器
-	for i := 0; i < rm.totalReg; i++ {
-		reg := rm.Regs[i]
-
-		if reg != nil && (reg.Using || reg.CalleeSave) {
-			continue
+// Force 强制将表达式绑定到指定寄存器
+func (rm *RegMgr) Force(reg *Reg, exp *parser.Expression) {
+	// 释放该寄存器之前绑定的表达式
+	for e, r := range rm.Record {
+		if r == reg {
+			delete(rm.Record, e)
+			break
 		}
+	}
+	// 绑定新表达式
+	rm.Record[exp] = reg
+	reg.Free = false
+}
 
-		// 写入新的所有权数据
-		reg.Reset()
-		rm.Record[exp] = reg
-		reg.UsingNode = n
-		reg.index = rm.index
-		reg.Using = true
-		rm.calcUsingReg()
+// FindByName 按名称查找寄存器（返回 regmgr.Regs 中的真实对象）
+func (rm *RegMgr) FindByName(name string) *Reg {
+	for _, reg := range rm.Regs {
+		if reg.Name == name {
+			return reg
+		}
+	}
+	return nil
+}
 
+// Get 获取或分配寄存器（兼容旧 API）
+func (rm *RegMgr) Get(node *parser.Node, exp *parser.Expression, mask uint32, calleeSave bool) *Reg {
+	// 检查是否已分配
+	if reg, ok := rm.Record[exp]; ok {
+		return reg
+	}
+	// 分配新寄存器
+	return rm.AllocPref(exp, mask, nil, nil, 0, nil, "")
+}
+
+// AllocPref 偏好分配寄存器。
+// mask: 必须满足的类别掩码
+// prefer: 偏好分数数组（index 对应 RegIndex，越大越优先）
+// avoid: 厌恶分数数组（index 对应 RegIndex，越大越避免）
+// expID: 当前表达式 ID（用于复用）
+// user: 溢出回写地址
+// avoidName: 必须避开的寄存器名（该寄存器值仍在使用）
+func (rm *RegMgr) AllocPref(
+	exp *parser.Expression,
+	mask uint32,
+	prefer []int,
+	avoid []int,
+	expID int,
+	user MemAddr,
+	avoidName string,
+) *Reg {
+	// 1. 已分配则直接返回
+	if reg, ok := rm.Record[exp]; ok {
 		return reg
 	}
 
-	return nil
-}
-
-// calculateSpillCost 计算溢出代价
-func (rm *RegMgr) calcSpillCost(reg *Reg, needCalleeSave bool) int {
-	cost := reg.index // 基本成本：最近使用程度
-
-	// 锁定寄存器的代价无限大（绝对不溢出）
-	if reg.Locked {
-		return int(^uint(0) >> 1)
-	}
-
-	// 根据偏好调整成本
-	if needCalleeSave && reg.CalleeSave {
-		cost += 1000
-	} else if !needCalleeSave && !reg.CalleeSave {
-		cost += 500
-	}
-
-	// 考虑溢出历史
-	cost += reg.SpillCount * 100
-
-	return cost
-}
-
-// Force 强制分配特定寄存器
-func (rm *RegMgr) Force(reg *Reg, n *parser.Node, exp *parser.Expression) *Reg {
-	rm.index++
-
-	if reg == nil {
-		return nil
-	}
-
-	// 获取寄存器索引
-	regIndex := reg.RegIndex
-	if reg.Name != "" {
-		for i := 0; i < rm.totalReg; i++ {
-			if rm.Regs[i].Name == reg.Name {
-				regIndex = i
-				break
-			}
-		}
-	}
-
-	// 检查索引
-	if regIndex < 0 || regIndex >= rm.totalReg {
-		panic("无效的寄存器索引: " + strconv.Itoa(regIndex))
-	}
-
-	// 写入数据到临时变量
-	*reg = *rm.Regs[regIndex]
-
-	// 检查是否被锁定
-	if reg.Locked {
-		panic(fmt.Sprintf("编译器内部错误: 无法强制获取寄存器 %s，该寄存器已被锁定",
-			rm.Regs[regIndex].Name))
-	}
-
-	// 检查是否被占用
-	if reg.Using {
-		// 溢出当前占用的寄存器
-		rm.genSpill(reg)
-	}
-
-	// 写入新的所有权数据
-	reg.Reset()
-	reg.index = rm.index
-	reg.UsingNode = n
-	reg.Using = true
-
-	rm.Record[exp] = reg
-	rm.calcUsingReg()
-
-	return reg
-}
-
-// spillReg 溢出单个寄存器
-func (rm *RegMgr) spillReg(n *parser.Node, exp *parser.Expression, needCalleeSave bool) *Reg {
-	// 计算代价
-	minCost := int(^uint(0) >> 1)
-	var minReg *Reg
+	// 2. 复用：找相同 expID 且空闲的寄存器
 	for _, reg := range rm.Regs {
-		cost := rm.calcSpillCost(reg, needCalleeSave)
-		if cost < minCost {
-			minCost = cost
-			minReg = reg
-		}
-	}
-
-	if minReg == nil {
-		panic("编译器内部错误: 无法溢出寄存器")
-	}
-
-	// 执行溢出操作
-	delete(rm.Record, exp)
-	minReg.StoreCode = rm.genSpill(minReg)
-
-	// 重新分配所有权
-	minReg.Reset()
-	minReg.Using = true
-	minReg.UsingNode = n
-	minReg.SpillCount++
-	minReg.index = rm.index
-
-	// 重新计算使用中的寄存器
-	rm.calcUsingReg()
-
-	// 返回的溢出寄存器
-	return minReg
-}
-
-// genSpill 生成溢出代码（NASM格式）
-func (rm *RegMgr) genSpill(reg *Reg) string {
-	if reg.UsingNode == nil {
-		return ""
-	}
-
-	if vb, ok := reg.UsingNode.Value.(*parser.VarBlock); ok {
-		addr := rm.genVarAddr(vb)
-		// x86 32位平台所有寄存器都是32位，溢出时只能存储32位
-		// 强制使用dword避免类型不匹配问题
-		sizePrefix := "dword"
-		name := reg.Name
-		if len(name) == 3 && name[0] == 'R' || (len(name) >= 2 && name[0] == 'R' && name[1] >= '0' && name[1] <= '9') {
-			sizePrefix = "QWORD"
-		}
-		code := utils.Format("mov " + sizePrefix + " " + addr + ", " + reg.Name + "; spill")
-		reg.StoreCode = code
-		return code
-	}
-
-	// 临时表达式值不溢出到栈（通过EBX callee-save寄存器处理）
-	// 中间值应该已经在表达式中正确处理，这里不需要生成溢出代码
-	return ""
-}
-
-// Free 释放寄存器
-func (rm *RegMgr) Free(exp *parser.Expression) {
-	rm.index++
-
-	// 检查是否存在记录
-	if rm.Record[exp] == nil {
-		return
-	}
-
-	// 释放寄存器
-	reg := rm.Record[exp]
-	reg.Reset()
-	//delete(rm.Record, exp)
-
-	// 重新计算使用中的寄存器
-	rm.calcUsingReg()
-}
-
-// calcUsingReg 更新寄存器计数
-func (rm *RegMgr) calcUsingReg() {
-	count := 0
-	for i := 0; i < rm.totalReg; i++ {
-		if rm.Regs[i] != nil && rm.Regs[i].Using {
-			count++
-		}
-	}
-	rm.RegCount = count
-}
-
-// Reuse 重用节点寄存器
-func (rm *RegMgr) Reuse(n *parser.Node) *Reg {
-	for _, reg := range rm.Record {
-		if reg.UsingNode == n && reg.Using {
+		if reg.ClassMask&mask != 0 && reg.Free && reg.ExpID == expID && expID != 0 && reg.Name != avoidName {
+			reg.Free = false
+			reg.User = user
+			rm.Record[exp] = reg
 			return reg
 		}
 	}
+
+	// 3. 找空闲寄存器：优先 prefer 最高的
+	bestReg := (*Reg)(nil)
+	bestScore := -1
+	for _, reg := range rm.Regs {
+		if reg.ClassMask&mask != 0 && reg.Free && reg.Name != avoidName {
+			score := 0
+			if reg.RegIndex < len(prefer) {
+				score = prefer[reg.RegIndex]
+			}
+			if score > bestScore {
+				bestScore = score
+				bestReg = reg
+			}
+		}
+	}
+	if bestReg != nil {
+		bestReg.Free = false
+		bestReg.User = user
+		bestReg.ExpID = expID
+		rm.Record[exp] = bestReg
+		return bestReg
+	}
+
+	// 4. 必须溢出：优先选有回写地址的寄存器（可真正保存值），否则选 avoid 最低的
+	worstReg := (*Reg)(nil)
+	worstScore := int(^uint(0) >> 1)
+	for _, reg := range rm.Regs {
+		if reg.ClassMask&mask != 0 && reg.User != nil && reg.Name != avoidName {
+			score := 0
+			if reg.RegIndex < len(avoid) {
+				score = avoid[reg.RegIndex]
+			}
+			if score < worstScore {
+				worstScore = score
+				worstReg = reg
+			}
+		}
+	}
+	if worstReg == nil {
+		for _, reg := range rm.Regs {
+			if reg.ClassMask&mask != 0 && reg.Name != avoidName {
+				score := 0
+				if reg.RegIndex < len(avoid) {
+					score = avoid[reg.RegIndex]
+				}
+				if score < worstScore {
+					worstScore = score
+					worstReg = reg
+				}
+			}
+		}
+	}
+	if worstReg != nil {
+		rm.Spill(worstReg)
+		worstReg.Free = false
+		worstReg.User = user
+		worstReg.ExpID = expID
+		rm.Record[exp] = worstReg
+		return worstReg
+	}
+
 	return nil
 }
 
-func (rm *RegMgr) Save(exp *parser.Expression) (code string) {
-	// 生成溢出代码
-	rm.genSpill(rm.Record[exp])
-	delete(rm.Record, exp)
-	rm.calcUsingReg()
-	return
-}
-
-func (rm *RegMgr) SaveAll(calleeSave bool) (codes []string) {
-	// 强制回写全部
-	for exp, ri := range rm.Record {
-		if ri.CalleeSave != calleeSave || ri.Locked {
-			continue
-		}
-		// 生成溢出代码
-		codes = append(codes, rm.genSpill(ri))
+// Free 释放寄存器的占用，但保留 User（用于溢出回写）
+func (rm *RegMgr) Free(exp *parser.Expression) {
+	reg := rm.Record[exp]
+	if reg != nil {
+		reg.Free = true
 		delete(rm.Record, exp)
 	}
-	rm.calcUsingReg()
-	return
 }
 
+// Spill 溢出寄存器，生成回写代码
+func (rm *RegMgr) Spill(reg *Reg) (code string) {
+	if reg.User != nil {
+		code = "mov " + reg.User.String() + ", " + reg.Name + "\n"
+		reg.StoreCode = code
+	}
+	reg.Free = true
+	reg.User = nil
+	reg.ExpID = 0
+	return code
+}
+
+// UpdateUser 更新寄存器的 User（当寄存器值被修改时调用）
+func (rm *RegMgr) UpdateUser(reg *Reg, user MemAddr) {
+	if reg != nil {
+		reg.User = user
+	}
+}
+
+// Reset 重置所有寄存器
 func (rm *RegMgr) Reset() {
-	// 清理寄存器记录
+	for _, reg := range rm.Regs {
+		reg.Free = true
+		reg.User = nil
+		reg.ExpID = 0
+	}
 	rm.Record = map[*parser.Expression]*Reg{}
-	for i := 0; i < rm.totalReg; i++ {
-		reg := rm.Regs[i]
-		if reg != nil && reg.Using {
-			reg.Reset()
-			reg.SpillCount = 0
+}
+
+// AvailableRegs 统计符合掩码的空闲寄存器数量
+func (rm *RegMgr) AvailableRegs(mask uint32) (count int) {
+	for _, reg := range rm.Regs {
+		if reg.ClassMask&mask != 0 && reg.Free {
+			count++
 		}
 	}
-	rm.calcUsingReg()
-	rm.index = 0
-	rm.RegCount = 0
-}
-
-func (reg *Reg) Reset() {
-	reg.Using = false
-	reg.Locked = false
-	reg.UsingNode = nil
-	reg.StoreCode = ""
-}
-
-func (rm *RegMgr) GetRegUsage() (int, int, int) {
-	rm.calcUsingReg()
-	return rm.RegCount, rm.totalReg, rm.index
+	return
 }

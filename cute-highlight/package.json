@@ -1,0 +1,35 @@
+{
+  "name": "cute-highlight",
+  "displayName": "Cute Language Highlight",
+  "description": "临时语法高亮插件：cute 语言 (cuteify 编译器)",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cute",
+        "aliases": [
+          "cute",
+          "Cute"
+        ],
+        "extensions": [
+          ".cute"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cute",
+        "scopeName": "source.cute",
+        "path": "./syntaxes/cute.tmLanguage.json"
+      }
+    ]
+  }
+}

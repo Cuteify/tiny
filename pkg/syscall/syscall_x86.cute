@@ -1,0 +1,100 @@
+build os("linux")
+build arch("x86")
+
+fn syscall(trap: u32, a1: u32, a2: u32, a3: u32) u32 {
+    build asm {
+        mov EAX, $trap
+        mov EBX, $a1
+        mov ECX, $a2
+        mov EDX, $a3
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn syscall6(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) u32 {
+    build asm {
+        mov EAX, $trap
+        mov EBX, $a1
+        mov ECX, $a2
+        mov EDX, $a3
+        mov ESI, $a4
+        mov EDI, $a5
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn syscall64(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) u64 {
+    build asm {
+        mov EAX, $trap
+        mov EBX, $a1
+        mov ECX, $a2
+        mov EDX, $a3
+        mov ESI, $a4
+        mov EDI, $a5
+        int 0x80
+        mov edx, 0
+    }
+}
+
+// 常用系统调用便捷封装（小驼峰命名）
+
+fn exit(code: i32) {
+    build asm {
+        mov EAX, 1
+        mov EBX, $code
+        int 0x80
+    }
+}
+
+fn brk(addr: ptr) ptr {
+    build asm {
+        mov EAX, 45
+        mov EBX, $addr
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn write(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov EAX, 4
+        mov EBX, $fd
+        mov ECX, $buf
+        mov EDX, $count
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn read(fd: i32, buf: u64, count: u64) i32 {
+    build asm {
+        mov EAX, 3
+        mov EBX, $fd
+        mov ECX, $buf
+        mov EDX, $count
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn open(pathname: u64, flags: i32, mode: u32) i32 {
+    build asm {
+        mov EAX, 5
+        mov EBX, $pathname
+        mov ECX, $flags
+        mov EDX, $mode
+        int 0x80
+        mov edx, 0
+    }
+}
+
+fn close(fd: i32) i32 {
+    build asm {
+        mov EAX, 6
+        mov EBX, $fd
+        int 0x80
+        mov edx, 0
+    }
+}

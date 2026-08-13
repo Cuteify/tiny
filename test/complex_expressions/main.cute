@@ -1,0 +1,76 @@
+// 复杂表达式测试
+
+fn add(a int, b int) int {
+    ret a + b
+}
+
+fn multiply(a int, b int) int {
+    ret a * b
+}
+
+fn subtract(a int, b int) int {
+    ret a - b
+}
+
+fn complex_arithmetic() int {
+    ret ((10 + 5) * 2 - 8) / 4 + 3
+}
+
+fn nested_function_calls() int {
+    var tmp: int = multiply(2, 3)
+    var tmp2: int = subtract(10, 4)
+    ret add(tmp, tmp2)
+}
+
+fn complex_boolean() int {
+    var a: int = 5
+    var b: int = 10
+    var c: int = 15
+    if a < b && b < c {
+        ret 1
+    }
+    ret 0
+}
+
+fn mixed_operations() int {
+    var x: int = 100
+    var y: int = 7
+    var z: int = 3
+    ret x / y + x % y - z * 2
+}
+
+fn bitwise_complex() int {
+    var a: int = 255
+    var b: int = 15
+    var c: int = 240
+    ret (a & b) | (a ^ c)
+}
+
+fn chained_comparisons() int {
+    var x: int = 5
+    var result: int = 0
+    if x > 0 {
+        result += 1
+    }
+    if x < 10 {
+        result += 1
+    }
+    if x >= 5 {
+        result += 1
+    }
+    if x <= 5 {
+        result += 1
+    }
+    ret result
+}
+
+fn main() int {
+    var sum: int = 0
+    sum += complex_arithmetic()
+    sum += nested_function_calls()
+    sum += complex_boolean()
+    sum += mixed_operations()
+    sum += bitwise_complex()
+    sum += chained_comparisons()
+    ret sum
+}

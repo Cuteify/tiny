@@ -1,12 +1,27 @@
+// 结构体方法测试
+
 struct Point {
-    x: int
-    y: int
+    pub x: int
+    pub y: int
 }
 
-fn Point.GetX() int {
-    ret 42
+fn (self Point) move(dx int, dy int) {
+    self.x += dx
+    self.y += dy
+}
+
+fn (self Point) getX() int {
+    ret self.x
+}
+
+fn (self Point) getY() int {
+    ret self.y
 }
 
 fn main() int {
-    ret 0
+    var p: Point
+    p.x = 10
+    p.y = 20
+    p.move(5, 10)
+    ret p.getX() + p.getY()
 }

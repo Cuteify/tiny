@@ -451,11 +451,11 @@ func (exp *Expression) checkArith(p *Parser) bool {
 		return exp.checkOverload(p)
 	}
 
-	// 类型推导：float+float→f64，否则→int
+	// 类型推导：float+float→f64，否则→左操作数类型
 	if typeSys.CheckKind(exp.Left.Type, "float") || typeSys.CheckKind(exp.Right.Type, "float") {
 		exp.Type = typeSys.GetSystemType("f64")
 	} else {
-		exp.Type = typeSys.GetSystemType("int")
+		exp.Type = exp.Left.Type
 	}
 
 	if exp.Left.IsConst() && exp.Right.IsConst() {
@@ -471,7 +471,12 @@ func (exp *Expression) checkArith(p *Parser) bool {
 func (exp *Expression) checkEq(p *Parser) bool {
 
 	if !typeSys.TypeEqual(exp.Left.Type, exp.Right.Type) {
-		return exp.checkOverload(p)
+		// 数值常量可与任何数值类型比较（如 u64 == 0）
+		constNum := (exp.Left.IsConst() && typeSys.IsNum(exp.Left.Type) && typeSys.IsNum(exp.Right.Type)) ||
+			(exp.Right.IsConst() && typeSys.IsNum(exp.Right.Type) && typeSys.IsNum(exp.Left.Type))
+		if !constNum {
+			return exp.checkOverload(p)
+		}
 	}
 
 	exp.Type = typeSys.GetSystemType("bool")

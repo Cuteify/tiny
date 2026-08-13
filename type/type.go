@@ -1,11 +1,18 @@
 package typeSys
 
 import (
+	"os"
 	"strings"
 	"unsafe"
 )
 
 var TargetPointerSize int = 4
+
+func init() {
+	if os.Getenv("CUTE_ARCH") == "x86_64" {
+		TargetPointerSize = 8
+	}
+}
 
 func SetTargetPointerSize(size int) {
 	TargetPointerSize = size
@@ -56,6 +63,8 @@ func (r RType) Alignment() int {
 		switch r.TypeName {
 		case "int", "uint":
 			return TargetPointerSize
+		case "ptr":
+			return TargetPointerSize
 		case "string":
 			return TargetPointerSize
 		default:
@@ -94,6 +103,12 @@ func (r RType) Size() int {
 			r.RSize = 2
 		case "i8", "u8", "bool", "byte":
 			r.RSize = 1
+		case "ptr":
+			if TargetPointerSize == 8 {
+				r.RSize = 8
+			} else {
+				r.RSize = 4
+			}
 		case "string":
 			if TargetPointerSize == 8 {
 				r.RSize = 24
@@ -168,6 +183,9 @@ type (
 	Float64Type struct {
 		RType
 	}
+	PtrType struct {
+		RType
+	}
 	StringType struct {
 		RType
 	}
@@ -204,6 +222,8 @@ func GetSystemType(name string) Type {
 		return &Float32Type{RType: RType{TypeName: "f32"}}
 	case "f64":
 		return &Float64Type{RType: RType{TypeName: "f64"}}
+	case "ptr":
+		return &PtrType{RType: RType{TypeName: "ptr"}}
 	case "string":
 		return &StringType{RType: RType{TypeName: "string"}}
 	default:
@@ -282,6 +302,8 @@ func getSystemKind(t Type) string {
 		return "uint"
 	case "f32", "f64":
 		return "float"
+	case "ptr":
+		return "uint"
 	case "bool":
 		return "bool"
 	case "byte":

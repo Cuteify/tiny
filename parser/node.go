@@ -51,9 +51,41 @@ func (n *Node) Check() bool {
 // AddChild 向当前节点添加子节点并建立父子关系
 func (n *Node) AddChild(node *Node) {
 	n.Children = append(n.Children, node)
-	node.Parser = n.Parser
 	node.Father = n
+	for p := n; p != nil; p = p.Father {
+		if p.Parser != nil {
+			node.Parser = p.Parser
+			break
+		}
+	}
 	if checker, ok := node.Value.(Checker); ok {
-		checker.Check(n.Parser)
+		checker.Check(node.Parser)
+	}
+	// 跨包调用在解析期不可见（包函数尚未合并），保持未检查状态，
+	// 等待所有包合并后的 rootNode.Check() 重试解析
+	if cb, ok := node.Value.(*CallBlock); ok {
+		if cb.Func == nil && cb.Name.IsPath() {
+			node.Checked = false
+			for f := node.Father; f != nil; f = f.Father {
+				f.Checked = false
+			}
+		}
+	}
+}
+
+func (n *Node) Replace(newNodes ...*Node) {
+	children := n.Father.Children
+	for i, child := range children {
+		if child == n {
+			n.Father.Children = make([]*Node, 0, len(children)+len(newNodes)-1)
+			n.Father.Children = append(n.Father.Children, children[:i]...)
+			for _, node := range newNodes {
+				n.Father.AddChild(node)
+			}
+			if i < len(children)-1 {
+				n.Father.Children = append(n.Father.Children, children[i+1:]...)
+			}
+			break
+		}
 	}
 }

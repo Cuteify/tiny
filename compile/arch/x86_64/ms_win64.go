@@ -9,30 +9,114 @@ import (
 	"strconv"
 )
 
+// win64ArgRegs Microsoft x64 ABI 参数寄存器（第1-4个参数）
 var win64ArgRegs = []string{"RCX", "RDX", "R8", "R9"}
 
+// win64CalleeSaved Microsoft x64 ABI 的 callee-save 寄存器
 var win64CalleeSaved = []string{"RDI", "RSI", "RBX", "R12", "R13", "R14", "R15"}
 
+// Win64 实现 x86_64 Microsoft x64 ABI 调用约定。
 type Win64 struct {
 	ctx *context.Context
+	*x86_64Ops
 }
 
 func NewWin64(ctx *context.Context) *Win64 {
-	a := &Win64{ctx: ctx}
-	ctx.Reg = regmgr.NewRegMgr(Regs, a.GenVarAddr)
+	a := &Win64{
+		ctx:       ctx,
+		x86_64Ops: newOps(ctx, win64CalleeSaved),
+	}
+	regs := cloneRegs(Regs, win64CalleeSaved)
+	ctx.Reg = regmgr.NewRegMgr(regs)
 	ctx.PointerSize = 8
 	ctx.Is64Bit = true
 	ctx.StackAlignment = 16
 	return a
 }
 
+// Info 返回调用约定的名称
 func (a *Win64) Info() string { return "x86_64 Microsoft x64 ABI" }
 
-func (a *Win64) Call(call *parser.CallBlock) string {
+// Prologue 函数前序代码
+func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
+	if fn == nil {
+		panic("内部错误")
+	}
+
+	// 设置参数偏移量（rbp+16 起）
+	setArgsOffset(fn)
+
+	code += utils.Format("push rbp")
+	code += utils.Format("mov rbp, rsp")
+
+	// 固定保存所有 callee-save 寄存器（不依赖分配器记录，保证确定性和栈布局一致性）
+	csRegs := a.CalleeSaveRegs()
+	for _, regName := range csRegs {
+		code += utils.Format("push " + regName + "; 保存" + regName)
+	}
+
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs))
+
+	// Win64 调用者需要 32 字节 shadow space
+	a.ctx.StackSize += 32
+
+	if a.ctx.StackSize%16 != 0 {
+		a.ctx.StackSize = (a.ctx.StackSize + 15) & ^15
+	}
+
+	if a.ctx.StackSize > 0 {
+		code += utils.Format("sub rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配局部变量空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
+	}
+
+	// 将寄存器参数保存到栈上(Win64 ABI: RCX, RDX, R8, R9)
+	argRegIdx := 0
+	if fn.Class != nil {
+		// 如果有this指针,第一个寄存器是this，保存到 [rbp+16]
+		code += utils.Format("mov QWORD [rbp+16], " + win64ArgRegs[0] + "; this pointer")
+		argRegIdx = 1
+	}
+
+	for i := 0; i < len(fn.Args); i++ {
+		arg := fn.Args[i]
+		if argRegIdx+i < len(win64ArgRegs) {
+			regName := win64ArgRegs[argRegIdx+i]
+			addr := "[rbp+" + strconv.Itoa(arg.Offset) + "]"
+			code += utils.Format("mov QWORD " + addr + ", " + regName + "; 保存参数" + strconv.Itoa(i) + "到栈")
+		}
+	}
+
+	return code
+}
+
+// Epilogue 函数后序代码(公共返回点)
+func (a *Win64) Epilogue(fn *parser.FuncBlock) string {
+	funcName := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	code := utils.Format("func_end_" + funcName + ":")
+
+	// 清理局部变量栈空间
+	if a.ctx.StackSize > 0 {
+		code += utils.Format("add rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 清理局部变量栈空间")
+	}
+
+	// 恢复 callee-save 寄存器(逆序)
+	csRegs := a.CalleeSaveRegs()
+	for i := len(csRegs) - 1; i >= 0; i-- {
+		code += utils.Format("pop " + csRegs[i] + "; 恢复" + csRegs[i])
+	}
+
+	code += utils.Format("leave; 恢复栈帧")
+	code += utils.Format("ret")
+	code += "\n"
+	return code
+}
+
+// Call 函数调用（Win64：前4个参数用寄存器 RCX/RDX/R8/R9，其余压栈 + 32字节 shadow space）
+func (a *Win64) Call(call *parser.CallBlock) (code string) {
 	if call == nil || call.Func == nil {
 		return ""
 	}
 
+	// 处理 list 方法调用（len/cap/ptr）
 	if call.ThisVar != nil && call.ThisVar.Type != nil &&
 		call.ThisVar.Type.Kind() == "list" && len(call.Args) == 0 {
 		methodName := call.Name.Last()
@@ -53,199 +137,75 @@ func (a *Win64) Call(call *parser.CallBlock) string {
 
 normalCall:
 	fn := call.Func
-	var code string
 
-	savedRegs := a.ctx.Reg.SaveAll(false)
-	for _, regCode := range savedRegs {
-		code += regCode
-	}
+	argRegIdx := 0
 
-	thisTakesArgSlot := call.ThisVar != nil
-
-	stackArgSize := 0
-	for i := len(call.Args) - 1; i >= 0; i-- {
-		arg := call.Args[i]
-		if arg == nil || arg.Value == nil {
-			continue
-		}
-
-		argIdx := i
-		if thisTakesArgSlot {
-			argIdx++
-		}
-		if argIdx >= 4 {
-			code += a.Exp(arg.Value, "push", "stack arg"+strconv.Itoa(i))
-			stackArgSize += 8
-		}
-	}
-
-	code += utils.Format("sub rsp, 32; shadow space")
-
-	regArgCount := 0
+	// this 指针作为第一个寄存器参数
 	if call.ThisVar != nil {
 		thisAddr := GenVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("mov RCX, " + thisAddr + "; this pointer")
-		regArgCount = 1
+		code += utils.Format("mov " + win64ArgRegs[0] + ", " + thisAddr + "; this pointer")
+		argRegIdx = 1
 	}
 
+	// 统计需要压栈的参数个数
+	stackArgs := 0
 	for i := 0; i < len(call.Args); i++ {
 		arg := call.Args[i]
-		if arg == nil || arg.Value == nil {
+		if arg == nil {
 			continue
 		}
-
-		if regArgCount < 4 {
-			code += a.Exp(arg.Value, win64ArgRegs[regArgCount], "arg"+strconv.Itoa(i))
-			regArgCount++
+		if argRegIdx+i >= len(win64ArgRegs) {
+			stackArgs++
 		}
 	}
 
-	name := fn.Name.String()
-	if name != "main" {
-		name = name + strconv.Itoa(len(fn.Args))
+	// 压栈参数（从右到左）
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		arg := call.Args[i]
+		if arg == nil {
+			continue
+		}
+		regIdx := argRegIdx + i
+		if regIdx >= len(win64ArgRegs) {
+			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		}
 	}
+
+	// 寄存器参数
+	for i := 0; i < len(call.Args); i++ {
+		arg := call.Args[i]
+		if arg == nil {
+			continue
+		}
+		regIdx := argRegIdx + i
+		if regIdx < len(win64ArgRegs) {
+			code += a.Exp(arg.Value, win64ArgRegs[regIdx], "参数"+strconv.Itoa(i))
+		}
+	}
+
+	// shadow space
+	code += utils.Format("sub rsp, 32; shadow space")
+
+	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
 	code += utils.Format("call " + name)
 
-	cleanupSize := 32 + stackArgSize
-	code += utils.Format("add rsp, " + strconv.Itoa(cleanupSize) + "; cleanup shadow space + stack args")
-
-	return code
-}
-
-func (a *Win64) Return(ret *parser.ReturnBlock) string {
-	var code string
-
-	if ret != nil && len(ret.Value) != 0 {
-		raxReg := &regmgr.Reg{Name: "RAX", RegIndex: 0}
-		a.ctx.Reg.Force(raxReg, a.ctx.Now, ret.Value[0])
-
-		if raxReg.StoreCode != "" {
-			code += utils.Format(raxReg.StoreCode)
-		}
-
-		code += a.Exp(ret.Value[0], "RAX", "return value -> RAX")
-		a.ctx.Reg.Free(ret.Value[0])
-	}
-
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("add rsp, " + strconv.Itoa(a.ctx.StackSize))
-	}
-
-	for i := len(win64CalleeSaved) - 1; i >= 0; i-- {
-		code += utils.Format("pop " + win64CalleeSaved[i])
-	}
-
-	code += utils.Format("leave")
-	code += utils.Format("ret\n")
-	return code
-}
-
-func (a *Win64) Func(funcBlock *parser.FuncBlock) string {
-	if funcBlock == nil {
-		return ""
-	}
-
-	var code string
-
-	argOffset := 16
-
-	if funcBlock.Class != nil {
-		for i := 0; i < len(funcBlock.Args); i++ {
-			arg := funcBlock.Args[i]
-			arg.Offset = argOffset
-			argOffset += arg.Type.Size()
-		}
-	} else {
-		for i := 0; i < len(funcBlock.Args); i++ {
-			arg := funcBlock.Args[i]
-			arg.Offset = argOffset
-			argOffset += arg.Type.Size()
-		}
-	}
-
-	code += utils.Format("push rbp")
-	code += utils.Format("mov rbp, rsp")
-
-	for _, regName := range win64CalleeSaved {
-		code += utils.Format("push " + regName)
-	}
-
-	csCount := len(win64CalleeSaved)
-
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*csCount)
-
-	a.ctx.StackSize += 32
-
-	if a.ctx.StackSize%16 != 0 {
-		a.ctx.StackSize = (a.ctx.StackSize + 15) & ^15
-	}
-
-	if a.ctx.StackSize > 0 {
-		code += utils.Format("sub rsp, " + strconv.Itoa(a.ctx.StackSize))
+	// 清理 shadow space + 栈参数
+	cleanupSize := 32 + stackArgs*8
+	if cleanupSize > 0 {
+		code += utils.Format("add rsp, " + strconv.Itoa(cleanupSize) + "; cleanup shadow space + stack args")
 	}
 
 	return code
 }
 
+// Return 函数返回
+func (a *Win64) Return(ret *parser.ReturnBlock) (code string) {
+	code = a.returnValue(ret)
+	code += a.returnJump()
+	return code
+}
+
+// Exp 编译表达式
 func (a *Win64) Exp(exp *parser.Expression, result, desc string) string {
-	expc := ExpCom{ctx: a.ctx}
-	return expc.CompileExpr(exp, result, desc)
-}
-
-func (a *Win64) For(forBlock *parser.ForBlock) string {
-	if forBlock == nil {
-		return ""
-	}
-
-	forBlock.Offset = a.ctx.IfCount
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	forEndLabel := forLabel + "_end"
-
-	var code string
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	if forBlock.Init != nil {
-		code += a.Exp(forBlock.Init, "", "for init")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	code += utils.Format(forLabel + ": ; for loop start")
-
-	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		code += a.Exp(forBlock.Condition, forEndLabel, "for condition check")
-	}
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	return code
-}
-
-func (a *Win64) EndFor(forBlock *parser.ForBlock) string {
-	var code string
-
-	code += utils.Format("")
-	code += utils.Format("")
-
-	forLabel := "for_" + strconv.Itoa(forBlock.Offset)
-	code += a.Exp(forBlock.Increment, "", "for increment")
-	code += utils.Format("jmp " + forLabel + "; for loop")
-	code += utils.Format(forLabel + "_end: ; for loop end")
-	return code
-}
-
-func (a *Win64) Var(varBlock *parser.VarBlock) string {
-	addr := GenVarAddr(a.ctx, varBlock)
-	if varBlock.Value == nil {
-		return ""
-	}
-	return a.ctx.Arch.Exp(varBlock.Value, addr, "set var "+varBlock.Name.String())
-}
-
-func (a *Win64) GenVarAddr(varBlock *parser.VarBlock) string {
-	return GenVarAddr(a.ctx, varBlock)
+	return a.exp(exp, result, desc)
 }

@@ -6,7 +6,7 @@ struct Person {
 
 struct Student : Person {
     pub grade: int
-    pub score: float
+    pub score: f64
 }
 
 struct EmptyStruct {

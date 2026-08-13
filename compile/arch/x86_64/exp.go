@@ -42,9 +42,11 @@ func (c *ExpCom) CompileExpr(exp *parser.Expression, result, desc string) (code 
 		}
 	}
 
-	if exp.Type.Type() == "bool" {
-		return c.CompileBoolExpr(exp, result)
-	}
+	// 移除对 CompileBoolExpr 的调用，避免与 compileCondition 重复生成 cmp 指令
+	// if exp.Type.Type() == "bool" {
+	// 	return c.CompileBoolExpr(exp, result)
+	// }
+
 	if tmp := c.numConstHandle(exp, result, desc); tmp != "" {
 		code = tmp
 		return
@@ -212,8 +214,13 @@ func (c *ExpCom) strConstHandle(exp *parser.Expression, result, desc string) (co
 		} else {
 			code += utils.Format("mov QWORD " + result + ", " + label + "; " + desc)
 			strLen := len(exp.StringVal)
-			code += utils.Format("mov QWORD [" + result[5:len(result)-1] + "+8], " + strconv.Itoa(strLen))
-			code += utils.Format("mov QWORD [" + result[5:len(result)-1] + "+16], " + strconv.Itoa(strLen))
+			// 如果result是寄存器名，直接使用寄存器；如果是内存地址，提取地址部分
+			addr := result
+			if len(result) > 5 && result[:5] == "QWORD" {
+				addr = result[5:]
+			}
+			code += utils.Format("mov QWORD [" + addr + "+8], " + strconv.Itoa(strLen))
+			code += utils.Format("mov QWORD [" + addr + "+16], " + strconv.Itoa(strLen))
 		}
 		return
 	}
@@ -223,7 +230,7 @@ func (c *ExpCom) strConstHandle(exp *parser.Expression, result, desc string) (co
 func (c *ExpCom) compileLeafNode(exp *parser.Expression) (code string, reg *regmgr.Reg) {
 	tmp, resultVal := c.CompileExprVal(exp)
 	code += tmp
-	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 
 	if c.varWithSetVal {
 		return
@@ -231,7 +238,12 @@ func (c *ExpCom) compileLeafNode(exp *parser.Expression) (code string, reg *regm
 
 	if c.ctx.EbxOccupied && reg != nil && reg.Name == "RBX" {
 		c.ctx.Reg.Free(exp)
-		reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+		reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
+	}
+
+	if reg == nil {
+		// 如果寄存器分配失败，使用RAX作为默认寄存器
+		reg = &regmgr.Reg{Name: "RAX", RegIndex: 0}
 	}
 
 	if reg.StoreCode != "" {
@@ -286,7 +298,7 @@ func (c *ExpCom) compileLeftChild(exp *parser.Expression) (code string, reg *reg
 		c.ctx.UseEBXDirect = false
 		reg = nil
 
-		c.ctx.Reg.Force(&regmgr.Reg{Name: "RBX", RegIndex: 1}, c.ctx.Now, exp.Left)
+		c.ctx.Reg.Force(&regmgr.Reg{Name: "RBX", RegIndex: 1}, exp.Left)
 		return
 	}
 
@@ -294,7 +306,9 @@ func (c *ExpCom) compileLeftChild(exp *parser.Expression) (code string, reg *reg
 		code, result = c.CompileExprVal(exp.Left)
 	} else {
 		code, reg = c.CompileExprChildren(exp.Left)
-		result = reg.Name
+		if reg != nil {
+			result = reg.Name
+		}
 	}
 	return
 }
@@ -376,7 +390,10 @@ func (c *ExpCom) generateOpNormal(code string, exp *parser.Expression, leftReg, 
 	reg, src := c.selectResultReg(leftReg, rightReg, leftResult, rightResult, exp)
 
 	if reg == nil {
-		reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+		reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
+		if reg == nil {
+			return code, nil
+		}
 		if reg.StoreCode != "" {
 			code += utils.Format(reg.StoreCode)
 		}
@@ -434,54 +451,62 @@ func (c *ExpCom) CompileBoolExpr(exp *parser.Expression, result string) (code st
 	var rightReg *regmgr.Reg
 	var leftCode, leftResult string
 	var rightCode, rightResult string
-	if exp.Type.Type() == "bool" {
-		if exp.Left != nil {
-			if exp.Left.IsConst() {
-				leftCode, leftResult = c.CompileExprVal(exp.Left)
-			} else {
-				leftCode, leftReg = c.CompileExprChildren(exp.Left)
+	if exp.Left != nil {
+		if exp.Left.IsConst() {
+			leftCode, leftResult = c.CompileExprVal(exp.Left)
+		} else {
+			leftCode, leftReg = c.CompileExprChildren(exp.Left)
+			if leftReg != nil {
 				leftResult = leftReg.Name
-			}
-		}
-		code += leftCode
-
-		if exp.Right != nil {
-			if exp.Right.IsConst() {
-				rightCode, rightResult = c.CompileExprVal(exp.Right)
 			} else {
-				rightCode, rightReg = c.CompileExprChildren(exp.Right)
-				rightResult = rightReg.Name
+				// 回退到CompileExprVal
+				leftCode, leftResult = c.CompileExprVal(exp.Left)
 			}
 		}
-		code += rightCode
+	}
+	code += leftCode
 
-		formattedLeft := leftResult
-		formattedRight := rightResult
-		code += utils.Format("cmp " + formattedLeft + ", " + formattedRight)
-		if exp.Left != nil {
-			c.ctx.Reg.Free(exp.Left)
-		}
-		if exp.Right != nil {
-			c.ctx.Reg.Free(exp.Right)
-		}
-		switch c.ctx.ExpType {
-		case OrExp:
-		case AndExp:
-		default:
-			switch exp.Separator {
-			case "==":
-				code += utils.Format("jne " + result + "; 判断后跳转到目标")
-			case "!=":
-				code += utils.Format("je " + result + "; 判断后跳转到目标")
-			case "<":
-				code += utils.Format("jnl " + result + "; 判断后跳转到目标")
-			case ">":
-				code += utils.Format("jle " + result + "; 判断后跳转到目标")
-			case "<=":
-				code += utils.Format("jg " + result + "; 判断后跳转到目标")
-			case ">=":
-				code += utils.Format("jl " + result + "; 判断后跳转到目标")
+	if exp.Right != nil {
+		if exp.Right.IsConst() {
+			rightCode, rightResult = c.CompileExprVal(exp.Right)
+		} else {
+			rightCode, rightReg = c.CompileExprChildren(exp.Right)
+			if rightReg != nil {
+				rightResult = rightReg.Name
+			} else {
+				// 回退到CompileExprVal
+				rightCode, rightResult = c.CompileExprVal(exp.Right)
 			}
+		}
+	}
+	code += rightCode
+
+	formattedLeft := leftResult
+	formattedRight := rightResult
+	code += utils.Format("cmp " + formattedLeft + ", " + formattedRight)
+	if exp.Left != nil {
+		c.ctx.Reg.Free(exp.Left)
+	}
+	if exp.Right != nil {
+		c.ctx.Reg.Free(exp.Right)
+	}
+	switch c.ctx.ExpType {
+	case OrExp:
+	case AndExp:
+	default:
+		switch exp.Separator {
+		case "==":
+			code += utils.Format("jne " + result + "; 判断后跳转到目标")
+		case "!=":
+			code += utils.Format("je " + result + "; 判断后跳转到目标")
+		case "<":
+			code += utils.Format("jnl " + result + "; 判断后跳转到目标")
+		case ">":
+			code += utils.Format("jle " + result + "; 判断后跳转到目标")
+		case "<=":
+			code += utils.Format("jg " + result + "; 判断后跳转到目标")
+		case ">=":
+			code += utils.Format("jl " + result + "; 判断后跳转到目标")
 		}
 	}
 
@@ -504,15 +529,11 @@ func (c *ExpCom) CompileExprVal(exp *parser.Expression) (code, result string) {
 		}
 	} else if exp.Var != nil {
 		if exp.Var.Value != nil {
-			code = c.ctx.Arch.Var(exp.Var)
+			code = c.ctx.Arch.VarDecl(exp.Var)
 			c.varWithSetVal = true
 			return
 		}
-		if rInfo := c.ctx.Reg.Reuse(exp.Var.Define.Node); rInfo != nil {
-			result = rInfo.Name
-		} else {
-			result = GenVarAddr(c.ctx, exp.Var)
-		}
+		result = GenVarAddr(c.ctx, exp.Var)
 	} else if exp.Call != nil {
 		code = c.ctx.Arch.Call(exp.Call)
 		result = "RAX"
@@ -664,7 +685,7 @@ func (c *ExpCom) compileSliceFields(exp *parser.Expression, ptrAddr, lenAddr, ca
 	}
 	code += leftCode
 
-	reg := c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	reg := c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 	if reg.StoreCode != "" {
 		code += reg.StoreCode
 	}
@@ -798,7 +819,7 @@ func (c *ExpCom) compileSliceFields(exp *parser.Expression, ptrAddr, lenAddr, ca
 
 func (c *ExpCom) compileListLiteral(exp *parser.Expression) (code string, reg *regmgr.Reg) {
 	if len(exp.ListElems) == 0 {
-		reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+		reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 		if reg.StoreCode != "" {
 			code += reg.StoreCode
 		}
@@ -847,7 +868,7 @@ func (c *ExpCom) compileListLiteral(exp *parser.Expression) (code string, reg *r
 	code += utils.Format("; list literal [" + strconv.Itoa(n) + " elements]")
 	code += "section .data\n" + dataSection + "section .text\n"
 
-	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 	if reg.StoreCode != "" {
 		code += reg.StoreCode
 	}
@@ -879,7 +900,7 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 	}
 	code += listCode
 
-	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 	if reg.StoreCode != "" {
 		code += reg.StoreCode
 	}
@@ -945,7 +966,7 @@ func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regm
 	}
 	code += listCode
 
-	addrReg := c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	addrReg := c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 	if addrReg.StoreCode != "" {
 		code += addrReg.StoreCode
 	}
@@ -1018,7 +1039,7 @@ func (c *ExpCom) compileSlice(exp *parser.Expression) (code string, reg *regmgr.
 	}
 	code += leftCode
 
-	reg = c.ctx.Reg.Get(c.ctx.Now, exp, false)
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
 	if reg.StoreCode != "" {
 		code += reg.StoreCode
 	}

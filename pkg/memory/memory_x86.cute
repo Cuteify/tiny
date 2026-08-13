@@ -1,0 +1,238 @@
+build os("linux")
+build arch("x86")
+
+fn load8(addr: ptr) u8 {
+    build asm {
+        mov EAX, $addr
+        movzx EAX, byte[EAX]
+    }
+}
+
+fn load32(addr: ptr) u32 {
+    build asm {
+        mov EAX, $addr
+        mov EAX, [EAX]
+    }
+}
+
+fn store8(addr: ptr, val: u8) {
+    build asm {
+        mov EAX, $addr
+        mov ECX, $val
+        mov [EAX], CL
+    }
+}
+
+fn store32(addr: ptr, val: u32) {
+    build asm {
+        mov EAX, $addr
+        mov ECX, $val
+        mov [EAX], ECX
+    }
+}
+
+// 空闲块分桶头（块结构：[next: u32][size: u32]，8 字节头）
+var g_h0: ptr = 0
+var g_h1: ptr = 0
+var g_h2: ptr = 0
+var g_h3: ptr = 0
+var g_h4: ptr = 0
+var g_h5: ptr = 0
+var g_h6: ptr = 0
+var g_h7: ptr = 0
+var g_h8: ptr = 0
+
+// slot_of 返回 size(+8 头) 所在桶序号（0..8）
+fn slot_of(req: u32) u32 {
+    if req <= 32 {
+    ret 0
+}
+    if req <= 48 {
+    ret 1
+}
+    if req <= 64 {
+    ret 2
+}
+    if req <= 96 {
+    ret 3
+}
+    if req <= 128 {
+    ret 4
+}
+    if req <= 192 {
+    ret 5
+}
+    if req <= 256 {
+    ret 6
+}
+    if req <= 384 {
+    ret 7
+}
+    ret 8
+}
+
+// blk_size_of 返回桶固定块大小
+fn blk_size_of(idx: u32) u32 {
+    if idx == 0 {
+    ret 32
+}
+    if idx == 1 {
+    ret 48
+}
+    if idx == 2 {
+    ret 64
+}
+    if idx == 3 {
+    ret 96
+}
+    if idx == 4 {
+    ret 128
+}
+    if idx == 5 {
+    ret 192
+}
+    if idx == 6 {
+    ret 256
+}
+    if idx == 7 {
+    ret 384
+}
+    ret 512
+}
+
+fn head_of(idx: u32) ptr {
+    if idx == 0 {
+    ret g_h0
+}
+    if idx == 1 {
+    ret g_h1
+}
+    if idx == 2 {
+    ret g_h2
+}
+    if idx == 3 {
+    ret g_h3
+}
+    if idx == 4 {
+    ret g_h4
+}
+    if idx == 5 {
+    ret g_h5
+}
+    if idx == 6 {
+    ret g_h6
+}
+    if idx == 7 {
+    ret g_h7
+}
+    ret g_h8
+}
+
+fn set_head(idx: u32, v: ptr) ptr {
+    if idx == 0 {
+    g_h0 = v
+    ret 0
+}
+    if idx == 1 {
+    g_h1 = v
+    ret 0
+}
+    if idx == 2 {
+    g_h2 = v
+    ret 0
+}
+    if idx == 3 {
+    g_h3 = v
+    ret 0
+}
+    if idx == 4 {
+    g_h4 = v
+    ret 0
+}
+    if idx == 5 {
+    g_h5 = v
+    ret 0
+}
+    if idx == 6 {
+    g_h6 = v
+    ret 0
+}
+    if idx == 7 {
+    g_h7 = v
+    ret 0
+}
+    g_h8 = v; ret 0
+}
+
+// refill 向堆申请 4096 字节切成固定块填充桶
+fn refill(idx: u32, blk_size: u32) ptr {
+    var chunk: ptr = syscall.brk(0)
+    var nb: ptr = syscall.brk(chunk + 4096)
+    if nb < chunk + 4096 {
+    ret 0
+}
+    store32(chunk + 4, blk_size)
+    var head: ptr = chunk
+    var prev: ptr = 0
+    var p: ptr = chunk
+    var end: ptr = chunk + 4096
+    for ; p + blk_size <= end; {
+        store32(p, 0)
+        if prev != 0 {
+            store32(prev, p)
+        }
+        store32(p + 4, blk_size)
+        prev = p
+        p = p + blk_size
+    }
+    set_head(idx, head)
+    ret chunk
+}
+
+// malloc 分配 size 字节，返回数据指针；失败返回 0
+fn malloc(size: u32) ptr {
+    var req: u32 = size + 8
+    if req > 512 {
+        var old: ptr = syscall.brk(0)
+        var nb: ptr = syscall.brk(old + req)
+        if nb < old + req {
+    ret 0
+}
+        store32(old, 0)
+        store32(old + 4, req)
+        ret old + 8
+    }
+    var idx: u32 = slot_of(req)
+    var blk_size: u32 = blk_size_of(idx)
+    var head: ptr = head_of(idx)
+    if head == 0 {
+        head = refill(idx, blk_size)
+        if head == 0 {
+    ret 0
+}
+    }
+    var next: ptr = load32(head)
+    set_head(idx, next)
+    store32(head + 4, blk_size)
+    ret head + 8
+}
+
+// free 释放 ptr 指向的块：小块回桶，大块且为堆顶则收缩 brk
+fn free(ptr: ptr) ptr {
+    if ptr == 0 {
+    ret 0
+}
+    var blk: ptr = ptr - 8
+    var size: u32 = load32(blk + 4)
+    if size > 512 {
+        var cur: ptr = syscall.brk(0)
+        if blk + size == cur {
+            syscall.brk(blk)
+        }
+        ret 0
+    }
+    var idx: u32 = slot_of(size)
+    var head: ptr = head_of(idx)
+    store32(blk, head)
+    set_head(idx, blk)
+}

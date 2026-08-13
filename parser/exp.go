@@ -59,7 +59,7 @@ func (exp *Expression) valueString() string {
 	if exp.StringVal != "" {
 		return fmt.Sprintf("\"%s\"", exp.StringVal)
 	}
-	if exp.Type == typeSys.GetSystemType("bool") {
+	if typeSys.CheckType(exp.Type, typeSys.GetSystemType("bool")) {
 		if exp.Bool {
 			return "true"
 		}

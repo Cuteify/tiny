@@ -1,0 +1,99 @@
+// 递归和复杂控制流测试 - 覆盖各种递归和循环边界情况
+
+// 递归函数
+fn fibonacci(n int) int {
+    if n <= 1 {
+        ret n
+    }
+    ret fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn factorial(n int) int {
+    if n <= 1 {
+        ret 1
+    }
+    ret n * factorial(n - 1)
+}
+
+fn power(base int, exp int) int {
+    if exp == 0 {
+        ret 1
+    }
+    if exp % 2 == 0 {
+        var half: int = power(base, exp / 2)
+        ret half * half
+    }
+    ret base * power(base, exp - 1)
+}
+
+// 嵌套循环
+fn nestedLoops(n int) int {
+    var sum: int = 0
+    for i := 0; i < n; i++ {
+        for j := 0; j < n; j++ {
+            sum += i + j
+        }
+    }
+    ret sum
+}
+
+// 多重条件
+fn multiCondition(a int, b int, c int) int {
+    if a > b && b > c {
+        ret 1
+    }
+    if a < b && b < c {
+        ret 2
+    }
+    if a == b || b == c {
+        ret 3
+    }
+    ret 4
+}
+
+// 复杂表达式
+fn complexExpression(x int, y int, z int) int {
+    ret (x + y) * (z - x) / (y + 1) % (z + 2)
+}
+
+fn main() int {
+    // 测试斐波那契数列
+    var fib0: int = fibonacci(0)   // 0
+    var fib1: int = fibonacci(1)   // 1
+    var fib2: int = fibonacci(2)   // 1
+    var fib5: int = fibonacci(5)   // 5
+    var fib10: int = fibonacci(10) // 55
+    
+    // 测试阶乘
+    var fact0: int = factorial(0)  // 1
+    var fact1: int = factorial(1)  // 1
+    var fact5: int = factorial(5)  // 120
+    var fact10: int = factorial(10) // 3628800
+    
+    // 测试幂运算
+    var pow1: int = power(2, 0)    // 1
+    var pow2: int = power(2, 1)    // 2
+    var pow3: int = power(2, 10)   // 1024
+    var pow4: int = power(3, 5)    // 243
+    
+    // 测试嵌套循环
+    var loop1: int = nestedLoops(1)  // 0
+    var loop2: int = nestedLoops(2)  // 4
+    var loop3: int = nestedLoops(3)  // 18
+    var loop5: int = nestedLoops(5)  // 100
+    
+    // 测试多重条件
+    var cond1: int = multiCondition(5, 3, 1)  // 1 (5>3>1)
+    var cond2: int = multiCondition(1, 3, 5)  // 2 (1<3<5)
+    var cond3: int = multiCondition(5, 5, 3)  // 3 (5==5)
+    var cond4: int = multiCondition(5, 3, 3)  // 3 (3==3)
+    var cond5: int = multiCondition(1, 5, 3)  // 4 (其他情况)
+    
+    // 测试复杂表达式
+    var expr1: int = complexExpression(10, 5, 3)  // (10+5)*(3-10)/(5+1)%(3+2)
+    var expr2: int = complexExpression(0, 0, 0)   // (0+0)*(0-0)/(0+1)%(0+2)
+    var expr3: int = complexExpression(1, 1, 1)   // (1+1)*(1-1)/(1+1)%(1+2)
+    
+    // 计算总和
+    ret fib0 + fib1 + fib2 + fib5 + fib10 + fact0 + fact1 + fact5 + fact10 + pow1 + pow2 + pow3 + pow4 + loop1 + loop2 + loop3 + loop5 + cond1 + cond2 + cond3 + cond4 + cond5 + expr1 + expr2 + expr3
+}

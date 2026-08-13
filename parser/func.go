@@ -3,6 +3,7 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
+	"os"
 )
 
 // FuncBlock 函数定义结构体
@@ -177,10 +178,14 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			if token.Value == ":" {
 				// 先后解析一个Name作为参数类型
 				n, _ := p.ParseName(false)
-				results := p.Find(n, FindTypeType)
-				if len(results) > 0 {
-					if tb, ok := results[0].Value.(*TypeBlock); ok {
-						argTmp.Type = tb.Type()
+				if sysType := typeSys.GetSystemType(n.String()); sysType != nil {
+					argTmp.Type = sysType
+				} else {
+					results := p.Find(n, FindTypeType)
+					if len(results) > 0 {
+						if tb, ok := results[0].Value.(*TypeBlock); ok {
+							argTmp.Type = tb.Type()
+						}
 					}
 				}
 				if argTmp.Type == nil {
@@ -326,10 +331,14 @@ func (f *FuncBlock) validateAllArgTypes(p *Parser) {
 
 // Check 检查函数定义的有效性，并计算参数的栈偏移量
 // 在 cdecl 调用约定中，参数从右到左压栈
-// 返回地址占用 4 字节，所以第一个参数从 [ebp+8] 开始
+// 返回地址占用 4 字节，所以第一个参数从 [ebp+8] 开始（x86）
+// x86_64 下参数从 [rbp+16] 开始
 func (f *FuncBlock) Check(p *Parser) bool {
 	// 计算参数起始偏移量
 	argCount := 8
+	if os.Getenv("CUTE_ARCH") == "x86_64" {
+		argCount = 16
+	}
 
 	for _, v := range f.Args {
 		if !v.Check(p) {

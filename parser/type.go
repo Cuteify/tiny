@@ -25,7 +25,7 @@ type TypeBlock struct {
 func (t *TypeBlock) Parse(p *Parser) {
 	t.StartCursor = p.Lexer.Cursor
 
-	name, _ := p.ParseName(false)
+	name, nameCursor := p.ParseName(false)
 	t.Name = name
 	if !name.Check() {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "invalid type name: '"+name.String()+"'")
@@ -43,7 +43,8 @@ func (t *TypeBlock) Parse(p *Parser) {
 	case "struct":
 		t.Kind = TypeStruct
 		t.Struct = &StructBlock{}
-		t.Struct.Type.RType.TypeName = name.String()
+		// StructBlock.Parse 会自行读取结构体名称，回退到名称位置
+		p.Lexer.SetCursor(nameCursor)
 		t.Struct.Parse(p)
 		t.EndCursor = t.Struct.EndCursor
 	case "interface":

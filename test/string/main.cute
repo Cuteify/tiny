@@ -1,0 +1,66 @@
+// 字符串操作测试 - 覆盖各种字符串边界情况
+
+fn stringLength(s string) int {
+    ret len(s)
+}
+
+fn stringConcat(s1 string, s2 string) string {
+    ret s1 + s2
+}
+
+fn stringRepeat(s string, n int) string {
+    var result: string = ""
+    for i := 0; i < n; i++ {
+        result = result + s
+    }
+    ret result
+}
+
+fn main() int {
+    // 测试空字符串
+    var empty: string = ""
+    var emptyLen: int = stringLength(empty)  // 0
+    
+    // 测试单字符字符串
+    var single: string = "a"
+    var singleLen: int = stringLength(single)  // 1
+    
+    // 测试普通字符串
+    var normal: string = "hello"
+    var normalLen: int = stringLength(normal)  // 5
+    
+    // 测试中文字符串
+    var chinese: string = "你好世界"
+    var chineseLen: int = stringLength(chinese)  // 4 (字符数)
+    
+    // 测试字符串拼接
+    var concat1: string = stringConcat("hello", " world")  // "hello world"
+    var concat1Len: int = stringLength(concat1)  // 11
+    
+    var concat2: string = stringConcat("", "test")  // "test"
+    var concat2Len: int = stringLength(concat2)  // 4
+    
+    var concat3: string = stringConcat("test", "")  // "test"
+    var concat3Len: int = stringLength(concat3)  // 4
+    
+    // 测试字符串重复
+    var repeat1: string = stringRepeat("ab", 3)  // "ababab"
+    var repeat1Len: int = stringLength(repeat1)  // 6
+    
+    var repeat2: string = stringRepeat("x", 0)  // ""
+    var repeat2Len: int = stringLength(repeat2)  // 0
+    
+    var repeat3: string = stringRepeat("", 5)  // ""
+    var repeat3Len: int = stringLength(repeat3)  // 0
+    
+    // 测试长字符串
+    var long: string = "this is a very long string for testing purposes"
+    var longLen: int = stringLength(long)  // 47
+    
+    // 测试特殊字符
+    var special: string = "!@#$%^&*()"
+    var specialLen: int = stringLength(special)  // 10
+    
+    // 计算总和
+    ret emptyLen + singleLen + normalLen + chineseLen + concat1Len + concat2Len + concat3Len + repeat1Len + repeat2Len + repeat3Len + longLen + specialLen
+}

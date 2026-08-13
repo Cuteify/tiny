@@ -1,0 +1,66 @@
+// 函数调用测试
+
+fn no_args() int {
+    ret 42
+}
+
+fn single_arg(x int) int {
+    ret x * 2
+}
+
+fn multi_args(a int, b int, c int) int {
+    ret a + b + c
+}
+
+fn recursive_factorial(n int) int {
+    if n <= 1 {
+        ret 1
+    }
+    ret n * recursive_factorial(n - 1)
+}
+
+fn recursive_gcd(a int, b int) int {
+    if b == 0 {
+        ret a
+    }
+    ret recursive_gcd(b, a % b)
+}
+
+fn mutual_rec_a(n int) int {
+    if n <= 0 {
+        ret 0
+    }
+    ret 1 + mutual_rec_b(n - 1)
+}
+
+fn mutual_rec_b(n int) int {
+    if n <= 0 {
+        ret 0
+    }
+    ret 1 + mutual_rec_a(n - 1)
+}
+
+fn nested_calls() int {
+    var tmp: int = multi_args(1, 2, 3)
+    ret single_arg(tmp)
+}
+
+fn chained_calls() int {
+    var a: int = single_arg(5)
+    var b: int = single_arg(a)
+    var c: int = single_arg(b)
+    ret c
+}
+
+fn main() int {
+    var sum: int = 0
+    sum += no_args()
+    sum += single_arg(10)
+    sum += multi_args(1, 2, 3)
+    sum += recursive_factorial(5)
+    sum += recursive_gcd(48, 18)
+    sum += mutual_rec_a(5)
+    sum += nested_calls()
+    sum += chained_calls()
+    ret sum
+}

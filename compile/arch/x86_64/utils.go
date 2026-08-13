@@ -24,6 +24,11 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 		return "QWORD[rbp+16]"
 	}
 
+	if v.IsGlobal {
+		sizePrefix := GetLenName(v.Type.Size())
+		return sizePrefix + "[rel __global_" + v.Name.First() + "]"
+	}
+
 	var isDefineInArg bool
 	if v.Define.Node != nil {
 		switch v.Define.Type {

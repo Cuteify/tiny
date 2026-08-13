@@ -1,0 +1,69 @@
+// 位运算测试 - 覆盖各种位运算边界情况
+
+fn bitwiseAnd(a int, b int) int {
+    ret a & b
+}
+
+fn bitwiseOr(a int, b int) int {
+    ret a | b
+}
+
+fn bitwiseXor(a int, b int) int {
+    ret a ^ b
+}
+
+fn bitwiseNot(a int) int {
+    ret ~a
+}
+
+fn leftShift(a int, n int) int {
+    ret a << n
+}
+
+fn rightShift(a int, n int) int {
+    ret a >> n
+}
+
+fn mixedBitwise(a int, b int) int {
+    var andVal: int = a & b
+    var orVal: int = a | b
+    var xorVal: int = a ^ b
+    ret andVal + orVal + xorVal
+}
+
+fn main() int {
+    // 测试与运算
+    var and1: int = bitwiseAnd(255, 15)      // 255 & 15 = 15
+    var and2: int = bitwiseAnd(0, 255)       // 0 & 255 = 0
+    var and3: int = bitwiseAnd(-1, 255)      // -1 & 255 = 255
+    
+    // 测试或运算
+    var or1: int = bitwiseOr(240, 15)        // 240 | 15 = 255
+    var or2: int = bitwiseOr(0, 0)           // 0 | 0 = 0
+    var or3: int = bitwiseOr(-1, 0)          // -1 | 0 = -1
+    
+    // 测试异或运算
+    var xor1: int = bitwiseXor(255, 255)     // 255 ^ 255 = 0
+    var xor2: int = bitwiseXor(0, 255)       // 0 ^ 255 = 255
+    var xor3: int = bitwiseXor(170, 85)      // 170 ^ 85 = 255
+    
+    // 测试取反运算
+    var not1: int = bitwiseNot(0)            // ~0 = -1
+    var not2: int = bitwiseNot(-1)           // ~(-1) = 0
+    var not3: int = bitwiseNot(255)          // ~255 = -256
+    
+    // 测试左移
+    var lshift1: int = leftShift(1, 0)       // 1 << 0 = 1
+    var lshift2: int = leftShift(1, 8)       // 1 << 8 = 256
+    var lshift3: int = leftShift(1, 16)      // 1 << 16 = 65536
+    
+    // 测试右移
+    var rshift1: int = rightShift(256, 8)    // 256 >> 8 = 1
+    var rshift2: int = rightShift(65536, 16) // 65536 >> 16 = 1
+    var rshift3: int = rightShift(-1, 1)     // -1 >> 1 = -1 (算术右移)
+    
+    // 测试混合运算
+    var mixed: int = mixedBitwise(170, 85)   // (170 & 85) + (170 | 85) + (170 ^ 85) = 0 + 255 + 255 = 510
+    
+    ret and1 + and2 + and3 + or1 + or2 + or3 + xor1 + xor2 + xor3 + not1 + not2 + not3 + lshift1 + lshift2 + lshift3 + rshift1 + rshift2 + rshift3 + mixed
+}

@@ -1,0 +1,99 @@
+// 控制流测试
+
+fn test_if_simple() int {
+    if 5 > 3 {
+        ret 1
+    }
+    ret 0
+}
+
+fn test_if_else() int {
+    if 3 > 5 {
+        ret 1
+    } else {
+        ret 0
+    }
+}
+
+fn test_nested_if() int {
+    if 10 > 5 {
+        if 8 > 3 {
+            ret 1
+        } else {
+            ret 2
+        }
+    } else {
+        ret 3
+    }
+}
+
+fn test_for_simple() int {
+    var sum: int = 0
+    for i := 0; i < 5; i++ {
+        sum += i
+    }
+    ret sum
+}
+
+fn test_for_nested() int {
+    var sum: int = 0
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 2; j++ {
+            sum += 1
+        }
+    }
+    ret sum
+}
+
+fn test_for_with_break() int {
+    var sum: int = 0
+    for i := 0; i < 10; i++ {
+        if i == 5 {
+            break
+        }
+        sum += i
+    }
+    ret sum
+}
+
+fn test_for_with_continue() int {
+    var sum: int = 0
+    for i := 0; i < 5; i++ {
+        if i == 2 {
+            continue
+        }
+        sum += i
+    }
+    ret sum
+}
+
+fn test_complex_condition() int {
+    var x: int = 5
+    var y: int = 10
+    if x > 3 && y < 20 {
+        ret 1
+    }
+    ret 0
+}
+
+fn test_or_condition() int {
+    var x: int = 5
+    if x < 3 || x > 10 {
+        ret 1
+    }
+    ret 0
+}
+
+fn main() int {
+    var result: int = 0
+    result += test_if_simple()
+    result += test_if_else()
+    result += test_nested_if()
+    result += test_for_simple()
+    result += test_for_nested()
+    result += test_for_with_break()
+    result += test_for_with_continue()
+    result += test_complex_condition()
+    result += test_or_condition()
+    ret result
+}
