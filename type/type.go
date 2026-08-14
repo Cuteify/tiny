@@ -52,6 +52,7 @@ type RType struct {
 	IsPtr      bool
 	RAlignment int
 	_methods   []any
+	_ptrElem   Type // 真实指针（IsPtr）的被指类型
 }
 
 func (r *RType) Kind() string {
@@ -88,6 +89,15 @@ func (r RType) Type() string {
 
 func (r RType) Size() int {
 	if r.RSize == 0 {
+		if r.IsPtr {
+			// 指针类型大小 = 目标指针大小，而非元素大小
+			if TargetPointerSize == 8 {
+				r.RSize = 8
+			} else {
+				r.RSize = 4
+			}
+			return r.RSize
+		}
 		switch r.TypeName {
 		case "int", "uint":
 			if TargetPointerSize == 8 {
@@ -121,6 +131,9 @@ func (r RType) Size() int {
 }
 
 func (r *RType) Elem() Type {
+	if r.IsPtr {
+		return r._ptrElem
+	}
 	return nil
 }
 
@@ -256,6 +269,19 @@ func ToRType(t Type) *RType {
 	return (*RType)(unsafe.Pointer((*[2]uintptr)(unsafe.Pointer(&t))[1]))
 }
 
+// MakePointer 创建真实指针类型：标记 IsPtr 并记录被指类型（元素信息）。
+// 返回新的类型对象，不修改原类型（避免污染共享的 StructType/ListType/AliasType）。
+// 系统 ptr（地址号类型）不是指针，IsPointer() 为 false，无元素信息。
+func MakePointer(t Type) Type {
+	return &RType{
+		TypeName:   t.Type(),
+		RParent:    t,
+		IsPtr:      true,
+		RAlignment: TargetPointerSize,
+		_ptrElem:   t,
+	}
+}
+
 func AutoType(before, after Type, IsConst bool) (ok bool) {
 	if before != nil && after != nil {
 		beforeType := before.Type()
@@ -263,6 +289,12 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 		beforePtr := before.IsPointer()
 		afterPtr := after.IsPointer()
 		if beforeType == afterType && beforePtr == afterPtr {
+			return true
+		}
+		// 指针放宽：同为指针类（IsPtr 或系统 ptr）且 Kind 相同 → 允许互转（如 memory.malloc 返回的 ptr 赋给 *T）
+		beforeIsPtr := beforePtr || beforeType == "ptr"
+		afterIsPtr := afterPtr || afterType == "ptr"
+		if beforeIsPtr && afterIsPtr && KindEqual(before, after) && IsNum(before) && IsNum(after) {
 			return true
 		}
 		if KindEqual(before, after) && before.IsPointer() == after.IsPointer() {

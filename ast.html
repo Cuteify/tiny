@@ -76,242 +76,286 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content"><span class="tag tag-expr">root</span></span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="1">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">os</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="2">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_exit</span>
-    <span class="node-detail">(code: i32)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="3">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="4">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_write</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(fd: i32, buf: u64, count: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="5">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="6">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="7">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_read</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(fd: i32, buf: u64, count: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="8">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="9">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="10">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_open</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(filename: u64, flags: i32, mode: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="11">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="12">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="13">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_close</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(fd: i32)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="14">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="15">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="16">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_mmap</span>
-    <span class="node-type">→ u64</span>
-    <span class="node-detail">(addr: u64, length: u64, prot: i32, flags: i32, fd: i32, offset: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="17">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="18">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="19">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_munmap</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(addr: u64, length: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="20">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="21">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="22">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">sys_brk</span>
-    <span class="node-type">→ u64</span>
-    <span class="node-detail">(addr: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="23">
-    <span class="tag tag-build">build</span>
-    <span class="node-detail">asm</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="24">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="25">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">malloc</span>
-    <span class="node-type">→ u64</span>
-    <span class="node-detail">(size: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="26">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">sys_mmap(addr = 0, length = size, prot = 3, flags = 34, fd = -1, offset = 0)</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="27">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">free</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(ptr: u64)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="28">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">sys_munmap(addr = ptr, length = 0)</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="29">
+  <span class="node-content collapsible" data-id="1">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
     <span class="node-name">main</span>
-    <span class="node-type">→ i32</span>
+    <span class="node-type">→ int</span>
     <span class="node-detail">()</span>
   </span>
   <ul class="children">
 <li class="node">
+  <span class="node-content" data-id="2">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">empty</span>
+    <span class="node-type">[]int</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="3">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">emptyLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = empty)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="4">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">single</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [42]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="5">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">singleLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = single)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="6">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">singleVal</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= single.[Exp[0]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="7">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">multi</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1, 2, 3, 4, 5]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="8">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">multiLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = multi)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="9">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">first</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= multi.[Exp[0]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="10">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">last</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= multi.[Exp[4]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="11">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">negative</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [-5, -3, -1, 0, 2, 4]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="12">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">negLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = negative)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="13">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">negFirst</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= negative.[Exp[0]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="14">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">negLast</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= negative.[Exp[5]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="15">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">large</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1e+06, 2e+06, 3e+06]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="16">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">largeLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = large)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="17">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">largeSum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= ((large.[Exp[0]] + large.[Exp[1]]) + large.[Exp[2]])</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="18">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">modifiable</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1, 2, 3]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="19">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">modifiable.[Exp[0]]</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 10</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="20">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">modifiable.[Exp[0]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="21">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">modifiable.[Exp[1]]</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 20</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="22">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">modifiable.[Exp[1]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="23">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">modifiable.[Exp[2]]</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 30</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="24">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">modifiable.[Exp[2]]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="25">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">modSum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= ((modifiable.[Exp[0]] + modifiable.[Exp[1]]) + modifiable.[Exp[2]])</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="26">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">sliceable</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="27">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice1</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= sliceable.[Exp[2]:&lt;expr&gt;]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="28">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice1Len</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = slice1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="29">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice2</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= sliceable.[Exp[0]:&lt;expr&gt;]</span>
+  </span>
+</li>
+<li class="node">
   <span class="node-content" data-id="30">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">sys_exit</span>
-    <span class="node-detail">(code = 0)</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice2Len</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = slice2)</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="31">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice3</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= sliceable.[Exp[7]:&lt;expr&gt;]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="32">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice3Len</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = slice3)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="33">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">repeated</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [5, 5, 5, 5, 5]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="34">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">repLen</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= len( = repeated)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="35">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">repSum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= ((((repeated.[Exp[0]] + repeated.[Exp[1]]) + repeated.[Exp[2]]) + repeated.[Exp[3]]) + repeated.[Exp[4]])</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="36">
     <span class="tag tag-return">ret</span>
-    <span class="node-detail">0</span>
+    <span class="node-detail">((((((((((((((((emptyLen + singleLen) + singleVal) + multiLen) + first) + last) + negLen) + negFirst) + negLast) + largeLen) + largeSum) + modSum) + slice1Len) + slice2Len) + slice3Len) + repLen) + repSum)</span>
   </span>
 </li>
   </ul>
@@ -319,7 +363,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">32 nodes · 11 functions · 0 variables</div>
+<div class="subtitle" style="margin-top:20px">37 nodes · 1 functions · 31 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{

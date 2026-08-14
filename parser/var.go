@@ -39,12 +39,8 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 	}
 	if code.Type == lexer.SEPARATOR && code.Value == "*" {
 		elemType := p.parseTypeAnnotation()
-		if rType, ok := elemType.(*typeSys.RType); ok {
-			rType.IsPtr = true
-			return rType
-		}
 		if elemType != nil {
-			return elemType
+			return typeSys.MakePointer(elemType)
 		}
 		return nil
 	}
@@ -375,6 +371,10 @@ func (v *VarBlock) removeOldStaticVal(p *Parser) {
 				goto end
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
+				// 定义节点必须保留，否则后续引用会变成 undefined
+				if tmp.IsDefine {
+					continue
+				}
 				// 如果找到同名变量的常量赋值，移除它
 				if tmp.Name.String() == searchName && tmp.Value != nil && tmp.Value.IsConst() {
 					if i == len(p.ThisBlock.Children)-1 {

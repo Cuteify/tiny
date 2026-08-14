@@ -290,8 +290,11 @@ func (f *FuncBlock) parseTypeArg(p *Parser, v *BracketsValue, isPtr bool, oldCur
 	f.Args[len(f.Args)-1].Type = tmp
 
 	if tmp != nil {
-		rtmp := typeSys.ToRType(tmp)
-		rtmp.IsPtr = isPtr
+		if isPtr {
+			f.Args[len(f.Args)-1].Type = typeSys.MakePointer(tmp)
+		} else {
+			f.Args[len(f.Args)-1].Type = tmp
+		}
 	} else {
 		p.Error.MissErrors("Syntax Error", oldCursor, v.Value.Cursor, "need type")
 	}

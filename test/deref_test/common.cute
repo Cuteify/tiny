@@ -1,0 +1,103 @@
+// 指针解引用通用测试（x86 / x86_64 共用）
+build os("linux")
+
+fn t_stack() int {
+    var a: int = 100
+    var p: *int = &a
+    *p = 200
+    if a != 200 {
+        ret 0
+    }
+    if *p != 200 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_u8() int {
+    var b: u8 = 0
+    var pb: *u8 = &b
+    *pb = 7
+    if b != 7 {
+        ret 0
+    }
+    if *pb != 7 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_u16() int {
+    var c: u16 = 0
+    var pc: *u16 = &c
+    *pc = 258
+    if c != 258 {
+        ret 0
+    }
+    if *pc != 258 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_u32() int {
+    var d: u32 = 0
+    var pd: *u32 = &d
+    *pd = 305419896
+    if d != 305419896 {
+        ret 0
+    }
+    if *pd != 305419896 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_heap() int {
+    var hp: *u8 = memory.malloc(32)
+    if hp == 0 {
+        ret 0
+    }
+    *hp = 42
+    if *hp != 42 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_arith() int {
+    var f: u8 = 10
+    var pf: *u8 = &f
+    var pf2: *u8 = pf + 1
+    *pf2 = 11
+    if *pf != 10 {
+        ret 0
+    }
+    if *pf2 != 11 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_callarg() int {
+    var g: u32 = 100
+    var pg: *u32 = &g
+    *pg = memory.load32(&g)
+    if g != 100 {
+        ret 0
+    }
+    if *pg != 100 {
+        ret 0
+    }
+    ret 1
+}
+
+fn t_deref_val() int {
+    var h: u32 = 20
+    var ph: *u32 = &h
+    var sum: u32 = *ph + *ph
+    if sum != 40 {
+        ret 0
+    }
+    ret 1
+}

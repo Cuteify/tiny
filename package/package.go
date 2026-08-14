@@ -21,6 +21,37 @@ var all *All = &All{
 	Types: make(map[string]*parser.Node),
 }
 
+// fixPkgNamePaths 使用包自身的导入表把跨包名称的第一段固定为包路径前缀。
+// 合并后的树共享根 Parser（根包导入表不含本包别名），若不在此固定，
+// rootNode.Check 阶段的 FixPath 找不到别名，导致跨包调用解析失败
+// （Func 为 nil、不被标记 Useful，调用不生成代码）。
+// 第一段不是导入别名的名称（结构体方法、局部变量等）保持原样。
+func fixPkgNamePaths(n *parser.Node, pkg *packageFmt.Info) {
+	if n == nil {
+		return
+	}
+	switch v := n.Value.(type) {
+	case *parser.CallBlock:
+		if v.Name.IsPath() {
+			v.Name.FixPath(pkg)
+		}
+	case *parser.Expression:
+		if v.Call != nil && v.Call.Name.IsPath() {
+			v.Call.Name.FixPath(pkg)
+		}
+		if v.Var != nil && v.Var.Name.IsPath() {
+			v.Var.Name.FixPath(pkg)
+		}
+	case *parser.VarBlock:
+		if v.Value != nil && v.Value.Call != nil && v.Value.Call.Name.IsPath() {
+			v.Value.Call.Name.FixPath(pkg)
+		}
+	}
+	for _, c := range n.Children {
+		fixPkgNamePaths(c, pkg)
+	}
+}
+
 func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	// 列出目录下所有文件
 	files, err := os.ReadDir(packagePath)
@@ -97,6 +128,11 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 						funcBlock.Name.SetPkgPath(packagePath)
 					}
 				}
+				// 用本包导入表把跨包名称固定为包路径前缀。
+				// 合并后的树共享根 Parser（根包导入表不含本包别名），
+				// 若不在此固定，rootNode.Check 阶段的 FixPath 找不到别名，
+				// 导致跨包调用解析失败（Func 为 nil、不被标记 Useful）。
+				fixPkgNamePaths(p.Block, packageInfo)
 			}
 			if rootNode == nil {
 				rootNode = p.Block

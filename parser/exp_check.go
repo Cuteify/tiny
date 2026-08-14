@@ -79,6 +79,10 @@ func (exp *Expression) checkOp(p *Parser) bool {
 		return exp.checkListLiteral(p)
 	case "!", "~":
 		return exp.checkUnary(p)
+	case "*", "&":
+		if exp.Left == nil {
+			return exp.checkUnary(p)
+		}
 	case "-":
 		if exp.Left == nil {
 			return exp.checkUnary(p)
@@ -144,12 +148,22 @@ func (exp *Expression) checkLogic(p *Parser) bool {
 	return true
 }
 
-// checkAssign 检查赋值运算符类型兼容性。若左子为索引表达式则转换为 []=。
+// checkAssign 检查赋值运算符类型兼容性。若左子为索引表达式则转换为 []=，
+// 若左子为解引用表达式则转换为 deref=。
 func (exp *Expression) checkAssign(p *Parser) bool {
 	// 索引赋值转换：arr[i] = val → arr[]=[i, val]
 	if exp.Left != nil && exp.Left.Separator == "[]" {
 		exp.Separator = "[]="
 		return exp.checkIndexAssign(p)
+	}
+
+	// 解引用赋值转换：*p = val → deref=(val, p)
+	if exp.Left != nil && exp.Left.Separator == "*" && exp.Left.Left == nil {
+		ptr := exp.Left.Right
+		exp.Separator = "deref="
+		exp.Left = exp.Right
+		exp.Right = ptr
+		return exp.checkDerefAssign(p)
 	}
 
 	// 递归检查右值
@@ -205,6 +219,34 @@ func (exp *Expression) checkIndexAssign(p *Parser) bool {
 				"cannot use "+exp.Left.Type.Type()+" as type "+elemType.Type()+" in index assignment")
 			return false
 		}
+	}
+
+	return true
+}
+
+// checkDerefAssign 检查解引用赋值 *addr = value（节点形状 deref=(值, 指针)）。
+func (exp *Expression) checkDerefAssign(p *Parser) bool {
+	if exp.Right != nil {
+		if !exp.Right.Check(p) {
+			return false
+		}
+	}
+	if exp.Left != nil {
+		if !exp.Left.Check(p) {
+			return false
+		}
+	}
+
+	if exp.Right.Type == nil || !exp.Right.Type.IsPointer() {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot assign through non-pointer")
+		return false
+	}
+
+	elemType := typeSys.GetSystemType(exp.Right.Type.Type())
+	if exp.Left.Type != nil && elemType != nil && !typeSys.AutoType(exp.Left.Type, elemType, exp.Left.IsConst()) {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"cannot use "+exp.Left.Type.Type()+" as type "+elemType.Type()+" in dereference assignment")
+		return false
 	}
 
 	return true
@@ -399,12 +441,32 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 			exp.Num = float64(^int64(exp.Right.Num))
 			exp.foldNum(exp.Num)
 		}
+
+	case "*":
+		if !exp.Right.Type.IsPointer() {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"operator '*' requires pointer operand, got "+exp.Right.Type.Type())
+			return false
+		}
+		exp.Type = typeSys.GetSystemType(exp.Right.Type.Type())
+
+	case "&":
+		if exp.Right.Var == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "operator '&' requires a variable operand")
+			return false
+		}
+		t := typeSys.GetSystemType(exp.Right.Type.Type())
+		if t == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot take address of type "+exp.Right.Type.Type())
+			return false
+		}
+		exp.Type = typeSys.MakePointer(t)
 	}
 
 	return true
 }
 
-// checkAdd 检查加法运算：数值加法 + 字符串拼接 + 运算符重载。
+// checkAdd 检查加法运算：数值加法 + 字符串拼接 + 指针算术 + 运算符重载。
 func (exp *Expression) checkAdd(p *Parser) bool {
 	switch {
 	case typeSys.CheckKind(exp.Left.Type, "string") && typeSys.CheckKind(exp.Right.Type, "string"):
@@ -413,6 +475,14 @@ func (exp *Expression) checkAdd(p *Parser) bool {
 			exp.StringVal = exp.Left.StringVal + exp.Right.StringVal
 			exp.foldBin()
 		}
+		return true
+
+	case exp.Left.Type.IsPointer() && typeSys.IsNum(exp.Right.Type):
+		exp.Type = exp.Left.Type
+		return true
+
+	case typeSys.IsNum(exp.Left.Type) && exp.Right.Type.IsPointer():
+		exp.Type = exp.Right.Type
 		return true
 
 	case typeSys.IsNum(exp.Left.Type) && typeSys.IsNum(exp.Right.Type):

@@ -6,6 +6,7 @@ import (
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
 	"strings"
@@ -70,6 +71,11 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 		return c.leaf(exp, result)
 	}
 
+	// 解引用赋值：deref=(值, 指针)
+	if exp.Separator == "deref=" {
+		return c.derefSet(exp)
+	}
+
 	// 一元运算：只有 Right 子节点，Left 为 nil
 	if exp.Left == nil && exp.Right != nil {
 		return c.unary(exp, result, ei)
@@ -92,45 +98,60 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 // leaf 编译叶子节点
 func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 	// 特殊处理函数调用：需要先生成 call 指令
-	if exp.Call != nil {
-		code := c.arch.Call(exp.Call)
-		val := c.arch.ReturnReg() // 函数返回值寄存器（EAX/RAX）
-		if result == "push" {
-			return code + utils.Format("push "+val)
-		}
-		if result != val {
-			// 目标为 32 位内存槽时使用 EAX（x86_64 下 RAX 写入 DWORD 槽非法）
-			if strings.Contains(result, "DWORD[") && strings.HasPrefix(val, "R") {
-				val = "EAX"
+if exp.Call != nil {
+			code := c.arch.Call(exp.Call)
+			val := c.arch.ReturnReg() // 函数返回值寄存器（EAX/RAX）
+			if result == "push" {
+				return code + utils.Format("push "+val)
 			}
-			return code + utils.Format("mov "+result+", "+val)
+			if result != val {
+				// 目标为窄内存槽时源寄存器名匹配槽宽度（RAX→AL/AX/EAX）
+				if strings.Contains(result, "[") {
+					val = matchMemWidth(result, val)
+				}
+				return code + utils.Format("mov "+result+", "+val)
+			}
+			return code
 		}
-		return code
-	}
 
 	val := c.val(exp)
 	if result == "push" {
 		return utils.Format("push " + val)
 	}
 	if result != val {
-		// 32 位内存源装载到 64 位寄存器：改用 32 位寄存器名
-		if strings.Contains(val, "DWORD[") && strings.HasPrefix(result, "R") {
-			result = "E" + result[1:]
-		}
-		// 内存到内存：无法直接 mov，需要经寄存器中转
+		// 内存到内存：无法直接 mov，需要经寄存器中转（两端宽度匹配）
 		if strings.Contains(val, "[") && strings.Contains(result, "[") {
 			tmp := c.arch.ReturnReg()
 			if reg := c.allocReg(exp); reg != nil {
 				tmp = reg.Name
 			}
-			// 32 位内存源中转也需匹配宽度
-			if strings.Contains(val, "DWORD[") && strings.HasPrefix(tmp, "R") {
-				tmp = "E" + tmp[1:]
+			var code string
+			// 宽度匹配装载：BYTE/WORD → movzx，DWORD → 32 位名，QWORD 直接
+			switch memPrefix(val) {
+			case "BYTE", "WORD":
+				code += utils.Format("movzx " + tmp + ", " + val)
+			case "DWORD":
+				code += utils.Format("mov " + eName(tmp) + ", " + val)
+			default:
+				code += utils.Format("mov " + tmp + ", " + val)
 			}
-			code := utils.Format("mov " + tmp + ", " + val)
-			code += utils.Format("mov " + result + ", " + tmp)
+			code += utils.Format("mov " + result + ", " + matchMemWidth(result, tmp))
 			c.ctx.Reg.Free(exp)
 			return code
+		}
+		// 寄存器 → 窄内存槽：源寄存器名匹配槽宽度
+		if strings.Contains(result, "[") && isRegLike(val) {
+			val = matchMemWidth(result, val)
+		} else if strings.Contains(val, "[") {
+			// 内存 → 寄存器：BYTE/WORD 需 movzx（零扩展），DWORD 用 32 位名
+			switch memPrefix(val) {
+			case "BYTE", "WORD":
+				return utils.Format("movzx " + result + ", " + val)
+			case "DWORD":
+				if strings.HasPrefix(result, "R") {
+					result = "E" + result[1:]
+				}
+			}
 		}
 		return utils.Format("mov " + result + ", " + val)
 	}
@@ -153,6 +174,11 @@ func (c *ECompiler) val(exp *parser.Expression) string {
 
 // unary 编译一元运算符
 func (c *ECompiler) unary(exp *parser.Expression, result string, ei *ExpInfo) string {
+	// 取地址：直接 lea 变量地址，无需生成右子代码
+	if exp.Separator == "&" {
+		return c.emitAddrOf(exp, result)
+	}
+
 	// 分配右子寄存器
 	rReg := c.allocReg(exp.Right)
 	if rReg == nil {
@@ -195,16 +221,27 @@ func (c *ECompiler) emitUnary(exp *parser.Expression, result string, rReg *regmg
 		code += utils.Format("sete " + lo8(rVal))
 		code += utils.Format("movzx " + rVal + ", " + lo8(rVal))
 		if result != rVal {
-			code += utils.Format("mov " + result + ", " + rVal)
+			code += utils.Format("mov " + result + ", " + matchMemWidth(result, rVal))
 		}
 		return code
+	}
+
+	// 解引用读：[src] → dst
+	if exp.Separator == "*" {
+		prefix := c.derefPrefix(exp.Right.Type)
+		if result == "push" {
+			code = c.derefLoad(prefix, rVal, rVal)
+			code += utils.Format("push " + rVal)
+			return code
+		}
+		return c.derefLoad(prefix, result, rVal)
 	}
 
 	// 普通情况
 	if result == rVal {
 		code = c.emitUnaryOp(rVal, exp.Separator, rVal)
 	} else {
-		code = utils.Format("mov " + result + ", " + rVal)
+		code = utils.Format("mov " + result + ", " + matchMemWidth(result, rVal))
 		code += c.emitUnaryOp(result, exp.Separator, result)
 	}
 
@@ -227,6 +264,240 @@ func (c *ECompiler) emitUnaryOp(dst, op, src string) string {
 	default:
 		return ""
 	}
+}
+
+// emitAddrOf 生成取地址指令：lea result, [变量地址]
+func (c *ECompiler) emitAddrOf(exp *parser.Expression, result string) string {
+	if exp.Right == nil || exp.Right.Var == nil {
+		return ""
+	}
+	// lea 需要裸地址：剥离 VarAddr 的宽度前缀（BYTE/WORD/DWORD/QWORD）
+	addr := stripMemPrefix(c.arch.VarAddr(exp.Right.Var))
+
+	// push：经临时寄存器中转
+	if result == "push" || strings.Contains(result, "[") {
+		rReg := c.allocReg(exp)
+		if rReg == nil {
+			rReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+		}
+		code := utils.Format("lea " + rReg.Name + ", " + addr)
+		if result == "push" {
+			code += utils.Format("push " + rReg.Name)
+		} else {
+			code += utils.Format("mov " + result + ", " + rReg.Name)
+		}
+		c.ctx.Reg.Free(exp)
+		return code
+	}
+
+	return utils.Format("lea " + result + ", " + addr)
+}
+
+// derefSet 编译解引用赋值 *addr = value（节点形状 deref=(值, 指针)）。
+func (c *ECompiler) derefSet(exp *parser.Expression) string {
+	ei := c.expInfo[exp]
+	calleeName := c.arch.CalleeSaveReg()
+
+	// 1. 计算值到 vReg
+	vReg := c.allocReg(exp.Left)
+	if vReg == nil {
+		vReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	code := c.generate(exp.Left, vReg.Name)
+
+	// 指针侧含调用时，把值保存到 callee-save 寄存器（call 会破坏 caller-saved）
+	vVal := vReg.Name
+	callee := ""
+	if ei.Right.HasCall {
+		callee = calleeName
+		code += utils.Format("mov " + callee + ", " + vReg.Name)
+		c.ctx.Reg.Free(exp.Left)
+		if calleeReg := c.getRegByName(callee); calleeReg != nil {
+			c.ctx.Reg.Force(calleeReg, exp.Left)
+		}
+		vVal = callee
+	}
+
+	// 2. 计算指针到 pReg（避开值寄存器）
+	pReg := c.allocRegAvoid(exp.Right, vReg.Name)
+	if pReg == nil {
+		pReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
+	}
+	code += c.generate(exp.Right, pReg.Name)
+
+	// 3. 写入：[p] = v
+	prefix := c.derefPrefix(exp.Right.Type)
+	code += c.derefStore(prefix, pReg.Name, vVal)
+
+	c.ctx.Reg.Free(exp.Left)
+	c.ctx.Reg.Free(exp.Right)
+	return code
+}
+
+// derefPrefix 返回解引用类型的内存操作宽度前缀（BYTE/WORD/DWORD/QWORD）。
+// 真实指针（IsPointer）的宽度取被指类型 Elem 的大小；
+// 系统 ptr 是地址号类型（无元素信息），宽度即指针大小。
+func (c *ECompiler) derefPrefix(t typeSys.Type) string {
+	if t == nil {
+		return ""
+	}
+	if t.IsPointer() {
+		if elem := t.Elem(); elem != nil {
+			return c.arch.LengthName(elem.Size())
+		}
+		return c.arch.LengthName(c.arch.PointerSize())
+	}
+	if t.Type() == "ptr" {
+		return c.arch.LengthName(c.arch.PointerSize())
+	}
+	return c.arch.LengthName(t.Size())
+}
+
+// memPrefix 返回内存操作数的宽度前缀（BYTE/WORD/DWORD/QWORD），非内存返回空串。
+// 使用 HasPrefix 而非 Contains 匹配，避免 QWORD[ 误匹配 WORD[。
+func memPrefix(mem string) string {
+	m := strings.TrimSpace(mem)
+	switch {
+	case strings.HasPrefix(m, "BYTE["):
+		return "BYTE"
+	case strings.HasPrefix(m, "WORD["):
+		return "WORD"
+	case strings.HasPrefix(m, "DWORD["):
+		return "DWORD"
+	case strings.HasPrefix(m, "QWORD["):
+		return "QWORD"
+	}
+	return ""
+}
+
+// matchMemWidth 根据内存槽宽度返回寄存器名的匹配形式（RAX→AL/AX/EAX）。
+// 用于 64 位寄存器与窄内存槽互传时避免操作数宽度不匹配。
+// 非内存目标时原样返回 reg。
+func matchMemWidth(mem, reg string) string {
+	switch memPrefix(mem) {
+	case "BYTE":
+		return lo8(reg)
+	case "WORD":
+		return lo16(reg)
+	case "DWORD":
+		return eName(reg)
+	}
+	return reg
+}
+
+// stripMemPrefix 去掉内存操作数的宽度前缀（BYTE/WORD/DWORD/QWORD），
+// lea 等指令要求裸地址形式。
+func stripMemPrefix(addr string) string {
+	for _, p := range []string{"BYTE", "WORD", "DWORD", "QWORD"} {
+		if strings.HasPrefix(addr, p) {
+			return addr[len(p):]
+		}
+	}
+	return addr
+}
+
+// isRegLike 判断字符串是否为寄存器名（常量/内存地址不会以 R/E 开头）。
+func isRegLike(name string) bool {
+	return strings.HasPrefix(name, "R") || strings.HasPrefix(name, "E")
+}
+
+// derefLoad 生成内存读指令：[src] → dst。
+func (c *ECompiler) derefLoad(prefix, dst, src string) string {
+	load := func(dst, src string) string {
+		switch prefix {
+		case "BYTE", "WORD":
+			return utils.Format("movzx " + dst + ", " + prefix + " [" + src + "]")
+		case "DWORD":
+			return utils.Format("mov " + eName(dst) + ", DWORD [" + src + "]")
+		case "QWORD":
+			return utils.Format("mov " + dst + ", QWORD [" + src + "]")
+		}
+		return ""
+	}
+
+	// 内存目标需经寄存器中转（x86 不支持 mov mem, mem），写回时匹配槽宽度
+	if strings.Contains(dst, "[") {
+		tmp := c.arch.ReturnReg()
+		return load(tmp, src) + utils.Format("mov "+dst+", "+matchMemWidth(dst, tmp))
+	}
+	return load(dst, src)
+}
+
+// derefStore 生成内存写指令：[dst] = src。
+func (c *ECompiler) derefStore(prefix, dst, src string) string {
+	switch prefix {
+	case "BYTE":
+		return utils.Format("mov BYTE [" + dst + "], " + lo8(src))
+	case "WORD":
+		return utils.Format("mov WORD [" + dst + "], " + lo16(src))
+	case "DWORD":
+		return utils.Format("mov DWORD [" + dst + "], " + eName(src))
+	case "QWORD":
+		return utils.Format("mov QWORD [" + dst + "], " + src)
+	}
+	return ""
+}
+
+// lo16 返回寄存器名的低16位寄存器名（16位内存写需要）
+func lo16(name string) string {
+	switch strings.ToUpper(name) {
+	case "EAX", "RAX":
+		return "ax"
+	case "EBX", "RBX":
+		return "bx"
+	case "ECX", "RCX":
+		return "cx"
+	case "EDX", "RDX":
+		return "dx"
+	case "ESI", "RSI":
+		return "si"
+	case "EDI", "RDI":
+		return "di"
+	case "R8":
+		return "r8w"
+	case "R9":
+		return "r9w"
+	case "R10":
+		return "r10w"
+	case "R11":
+		return "r11w"
+	case "R12":
+		return "r12w"
+	case "R13":
+		return "r13w"
+	case "R14":
+		return "r14w"
+	case "R15":
+		return "r15w"
+	}
+	return "ax"
+}
+
+// eName 返回寄存器的32位名（RAX→EAX；R8→R8D；EAX 等 32 位名原样）。
+// x86 下寄存器本身是 EAX 形式（无 R 前缀），原样返回。
+func eName(name string) string {
+	switch name {
+	case "R8":
+		return "R8D"
+	case "R9":
+		return "R9D"
+	case "R10":
+		return "R10D"
+	case "R11":
+		return "R11D"
+	case "R12":
+		return "R12D"
+	case "R13":
+		return "R13D"
+	case "R14":
+		return "R14D"
+	case "R15":
+		return "R15D"
+	}
+	if strings.HasPrefix(name, "R") {
+		return "E" + name[1:]
+	}
+	return name
 }
 
 // lo8 返回寄存器名的低8位寄存器名（sete/movzx 需要）
@@ -297,7 +568,7 @@ func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) st
 	callee := ""
 	if ei.Right.HasCall {
 		callee = calleeName
-		lCode += utils.Format("mov " + callee + ", " + lVal)
+		lCode += utils.Format("mov " + matchMemWidth(lVal, callee) + ", " + lVal)
 		// 先释放左子原寄存器，再绑定 callee 寄存器（值已转移到 callee）
 		c.ctx.Reg.Free(exp.Left)
 		if calleeReg := c.getRegByName(callee); calleeReg != nil {
@@ -341,7 +612,7 @@ func (c *ECompiler) binRL(exp *parser.Expression, result string, ei *ExpInfo) st
 	rVal := rReg.Name
 	if ei.Left.HasCall {
 		callee = calleeName
-		rCode += utils.Format("mov " + callee + ", " + rReg.Name)
+		rCode += utils.Format("mov " + matchMemWidth(rVal, callee) + ", " + rVal)
 		// 先释放右子原寄存器，再绑定 callee 寄存器（值已转移到 callee）
 		c.ctx.Reg.Free(exp.Right)
 		if calleeReg := c.getRegByName(callee); calleeReg != nil {
@@ -441,6 +712,7 @@ func (c *ECompiler) getRegByName(name string) *regmgr.Reg {
 
 // emitBin 生成二元运算指令。
 // lVal/rVal 为左右操作数（寄存器名或内存地址），result 为结果目标。
+// 结果/操作数为窄内存槽时，寄存器操作数名匹配槽宽度（add DWORD[mem], EAX）。
 func (c *ECompiler) emitBin(exp *parser.Expression, result, lVal, rVal, callee string) string {
 	var code string
 
@@ -461,25 +733,25 @@ func (c *ECompiler) emitBin(exp *parser.Expression, result, lVal, rVal, callee s
 		if lVal == callee {
 			// 左在 callee-save：先搬到 result，再运算
 			if result != callee {
-				code = utils.Format("mov " + result + ", " + callee)
+				code = utils.Format("mov " + result + ", " + matchMemWidth(result, callee))
 			}
-			code += c.arch.InstBinary(result, exp.Separator, rVal)
+			code += c.arch.InstBinary(result, exp.Separator, matchMemWidth(result, rVal))
 		} else {
 			// 右在 callee-save
 			if result != lVal {
-				code = utils.Format("mov " + result + ", " + lVal)
+				code = utils.Format("mov " + result + ", " + matchMemWidth(result, lVal))
 			}
-			code += c.arch.InstBinary(result, exp.Separator, callee)
+			code += c.arch.InstBinary(result, exp.Separator, matchMemWidth(result, callee))
 		}
 	} else {
 		// 普通情况
 		if result == lVal {
-			// 结果直接写到左操作数寄存器
-			code = c.arch.InstBinary(lVal, exp.Separator, rVal)
+			// 结果直接写到左操作数寄存器/内存槽
+			code = c.arch.InstBinary(lVal, exp.Separator, matchMemWidth(lVal, rVal))
 		} else {
 			// 需要先 mov 左操作数到 result，再运算
-			code = utils.Format("mov " + result + ", " + lVal)
-			code += c.arch.InstBinary(result, exp.Separator, rVal)
+			code = utils.Format("mov " + result + ", " + matchMemWidth(result, lVal))
+			code += c.arch.InstBinary(result, exp.Separator, matchMemWidth(result, rVal))
 		}
 	}
 

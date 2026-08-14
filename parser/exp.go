@@ -95,6 +95,7 @@ func (e *Expression) BeParent(exp *Expression) {
 
 // opTable 运算符优先级表
 var opTable = map[string]int{
+	"=":  0,
 	"||": 1,
 	"&&": 2,
 	"==": 3,
@@ -407,6 +408,11 @@ func (p *Parser) handleName() *Expression {
 			exp.Call = callBlock
 			return exp
 		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
+			// 在解引用语句（*p = v）中，"=" 必须留在表达式树中作为运算符
+			if p.PreventNameAssign && token.Value == "=" {
+				p.Lexer.SetCursor(token.Cursor)
+				break
+			}
 			block := &VarBlock{}
 			// 把指针放到name之前
 			p.Lexer.SetCursor(nameStart)

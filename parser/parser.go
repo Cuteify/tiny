@@ -10,13 +10,14 @@ import (
 )
 
 type Parser struct {
-	Block       *Node
-	ThisBlock   *Node
-	Lexer       *lexer.Lexer
-	BracketsNum int
-	Error       *errorUtil.Error
-	Package     *packageFmt.Info
-	DontBack    int
+	Block             *Node
+	ThisBlock         *Node
+	Lexer             *lexer.Lexer
+	BracketsNum       int
+	Error             *errorUtil.Error
+	Package           *packageFmt.Info
+	DontBack          int
+	PreventNameAssign bool
 }
 
 // Next 解析下一个语法单元，返回是否结束
@@ -49,15 +50,29 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.BUILD:
 		p.processBuildToken(code)
 	default:
+		// *p = v / *p 解引用语句（以 * 开头的语句）
+		if code.Type == lexer.SEPARATOR && code.Value == "*" {
+			p.processDerefStmt(beforeCursor)
+			return
+		}
 		p.processDefaultToken(code)
 	}
 
 	return
 }
 
-// parseTypeRef 解析类型引用，支持 []Type 语法
+// parseTypeRef 解析类型引用，支持 []Type 和 *Type 语法
 func (p *Parser) parseTypeRef() typeSys.Type {
 	token := p.Lexer.Next()
+
+	// 检查是否是 *Type 语法（指针类型）
+	if token.Type == lexer.SEPARATOR && token.Value == "*" {
+		elemType := p.parseTypeRef()
+		if elemType != nil {
+			return typeSys.MakePointer(elemType)
+		}
+		return nil
+	}
 
 	// 检查是否是 []Type 语法
 	if token.Type == lexer.SEPARATOR && token.Value == "[" {
@@ -304,6 +319,18 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 func (p *Parser) processBuildToken(token lexer.Token) {
 	block := &Build{}
 	block.Parse(p)
+}
+
+// processDerefStmt 解析以 * 开头的解引用赋值/表达式语句
+func (p *Parser) processDerefStmt(beforeCursor int) {
+	p.Lexer.SetCursor(beforeCursor)
+	p.PreventNameAssign = true
+	exp := p.ParseExp(p.FindEndCursor())
+	p.PreventNameAssign = false
+	if exp == nil {
+		return
+	}
+	p.AddChild(&Node{Value: exp})
 }
 
 func (p *Parser) processDefaultToken(code lexer.Token) {

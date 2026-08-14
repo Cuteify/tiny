@@ -244,8 +244,19 @@ func (n Name) FixPath(pkg *packageFmt.Info) bool {
 	if !n.IsPath() {
 		return false
 	}
+	// 已修复为包路径的不再处理（合并树上各包名称已带各自前缀，
+	// 此时 pkg 是根包，其 Imports 不含其它包的导入别名）
+	if n[0].IsPkgPath {
+		return true
+	}
 	importName := n[0].Name
+	if pkg == nil || pkg.Imports == nil {
+		return false
+	}
 	pkgRealPath := packageFmt.FixPathName(pkg.Imports[importName])
+	if pkgRealPath == "" {
+		return false
+	}
 	n[0].Name = pkgRealPath
 	n[0].IsPkgPath = true
 	return true
