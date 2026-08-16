@@ -2,6 +2,7 @@
 package x86_64
 
 import (
+	"strings"
 	"cuteify/compile/context"
 	exppkg "cuteify/compile/exp"
 	"cuteify/compile/regmgr"
@@ -158,6 +159,20 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	case "-":
 		return utils.Format("sub " + dst + ", " + src)
 	case "*":
+		if strings.Contains(dst, "[") {
+			// nasm 不支持 imul 内存目标，经栈中转
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov RAX, " + src)
+				src = "RAX"
+			}
+			code += utils.Format("push " + src + "; 暂存乘数")
+			code += utils.Format("mov RAX, " + dst)
+			code += utils.Format("imul RAX, qword [rsp]")
+			code += utils.Format("mov " + dst + ", RAX")
+			code += utils.Format("add rsp, 8; 清理乘数")
+			return code
+		}
 		return utils.Format("imul " + dst + ", " + src)
 	case "/":
 		code := utils.Format("push " + src + "; 保存除数")
@@ -182,8 +197,33 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	case "|":
 		return utils.Format("or " + dst + ", " + src)
 	case "<<":
+		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
+			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov RAX, " + src)
+				src = "RAX"
+			}
+			code += utils.Format("push " + src + "; 暂存移位计数")
+			code += utils.Format("mov cl, byte [rsp]")
+			code += utils.Format("shl " + dst + ", cl")
+			code += utils.Format("add rsp, 8; 清理移位计数")
+			return code
+		}
 		return utils.Format("shl " + dst + ", " + src)
 	case ">>":
+		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov RAX, " + src)
+				src = "RAX"
+			}
+			code += utils.Format("push " + src + "; 暂存移位计数")
+			code += utils.Format("mov cl, byte [rsp]")
+			code += utils.Format("sar " + dst + ", cl")
+			code += utils.Format("add rsp, 8; 清理移位计数")
+			return code
+		}
 		return utils.Format("sar " + dst + ", " + src)
 	default:
 		return ""
@@ -207,10 +247,9 @@ func (a *x86_64Ops) Compile64Type(e *parser.Expression, result, desc string) str
 // VarDecl 变量声明/赋值
 func (a *x86_64Ops) VarDecl(varBlock *parser.VarBlock) string {
 	if varBlock.Value == nil {
-		return ""
+		return exppkg.New(a.ctx).ZeroVar(varBlock)
 	}
-	addr := GenVarAddr(a.ctx, varBlock)
-	return a.exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
+	return exppkg.New(a.ctx).Assign(varBlock)
 }
 
 // VarAddr 变量地址
@@ -300,9 +339,12 @@ func (a *x86_64Ops) exp(e *parser.Expression, result, desc string) string {
 	return exppkg.New(a.ctx).Compile(e, result, desc)
 }
 
-// setArgsOffset 设置参数偏移（rbp+16 起）
+// setArgsOffset 设置参数偏移（rbp+16 起；方法首个参数从 rbp+24 起，rbp+16 被 this 占用）
 func setArgsOffset(fn *parser.FuncBlock) {
 	argOffset := 16
+	if fn.Class != nil {
+		argOffset = 24
+	}
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
 		arg.Offset = argOffset
@@ -313,10 +355,9 @@ func setArgsOffset(fn *parser.FuncBlock) {
 // varDecl 变量声明/赋值
 func (a *x86_64Ops) varDecl(varBlock *parser.VarBlock) string {
 	if varBlock.Value == nil {
-		return ""
+		return exppkg.New(a.ctx).ZeroVar(varBlock)
 	}
-	addr := GenVarAddr(a.ctx, varBlock)
-	return a.exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
+	return exppkg.New(a.ctx).Assign(varBlock)
 }
 
 // returnValue 生成返回值代码（RAX）

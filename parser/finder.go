@@ -250,6 +250,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 							ok, r := enterTypeFind(name[n:], tmp.Type)
 							if ok && (r.Type&typ) != 0 {
 								r.Node = child
+								r.Path = append([]any{tmp}, r.Path...)
 								res = append(res, r)
 							}
 						}
@@ -261,15 +262,16 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 				}
 			case *VarBlock:
 				if v.IsDefine {
-					if name.IsPath() {
-						if n := name.Match(v.Name); n > 0 {
-							ok, r := enterTypeFind(name[n:], v.Type)
-							if ok && (r.Type&typ) != 0 {
-								r.Node = child
-								res = append(res, r)
-							}
+if name.IsPath() {
+					if n := name.Match(v.Name); n > 0 {
+						ok, r := enterTypeFind(name[n:], v.Type)
+						if ok && (r.Type&typ) != 0 {
+							r.Node = child
+							r.Path = append([]any{v}, r.Path...)
+							res = append(res, r)
 						}
-					} else {
+					}
+				} else {
 						if v.Name.Eq(name) && (typ&FindTypeVar) != 0 {
 							res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeVar})
 						}
@@ -290,6 +292,10 @@ func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {
 	n := name.Fork()
 	nowType := t
 	findPath := []any{}
+	// 记录基础类型（访问前的起始类型），供编译层计算字段/元素偏移
+	if nowType != nil {
+		findPath = append(findPath, nowType)
+	}
 	for nowType != nil && n.Length() > 0 {
 		switch nowType.Kind() {
 		case "list":
@@ -378,6 +384,7 @@ func findArg(fb *FuncBlock, name Name, nowBlock *Node) (res FindResult, ok bool)
 				ok, r := enterTypeFind(name[n:], arg.Type)
 				if ok {
 					r.Node = nowBlock
+					r.Path = append([]any{arg}, r.Path...)
 					return r, true
 				}
 			}

@@ -76,7 +76,1099 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content"><span class="tag tag-expr">root</span></span>
   <ul class="children">
 <li class="node">
-  <span class="node-content collapsible" data-id="1">
+  <span class="node-content" data-id="1">
+    <span class="tag tag-type">type</span>
+    <span class="node-name">Vector2D</span>
+    <span class="node-detail">struct</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="2">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">Vector2D.length</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">impl Vector2D ()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="3">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((self.x * self.x) + (self.y * self.y))</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="4">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">Vector2D.scale</span>
+    <span class="node-detail">impl Vector2D (factor: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="5">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">self.x</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (self.x * factor)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="6">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">self.x</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="7">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">self.y</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (self.y * factor)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="8">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">self.y</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="9">
+    <span class="tag tag-type">type</span>
+    <span class="node-name">Matrix</span>
+    <span class="node-detail">struct</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="10">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">Matrix.get</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">impl Matrix (r: int, c: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="11">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">nil[self.data]</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="12">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">Matrix.set</span>
+    <span class="node-detail">impl Matrix (r: int, c: int, val: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="13">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[self.data][] = </span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="14">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">fibonacci</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(n: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content collapsible" data-id="15">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(n &lt;= 1)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="16">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">n</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="17">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(fibonacci(n = (n - 1)) + fibonacci(n = (n - 2)))</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="18">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">factorial</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(n: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content collapsible" data-id="19">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(n &lt;= 1)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="20">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">1</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="21">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(n * factorial(n = (n - 1)))</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="22">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">power</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(base: int, exp: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content collapsible" data-id="23">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(exp == 0)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="24">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">1</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="25">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">((exp % 2) == 0)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="26">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">half</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= power(base = base, exp = (exp / 2))</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="27">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(half * half)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="28">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(base * power(base = base, exp = (exp - 1)))</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="29">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">sum3</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(a: int, b: int, c: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="30">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((a + b) + c)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="31">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">max3</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(a: int, b: int, c: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="32">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">max</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= a</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="33">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(b &gt; max)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="34">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">max</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= b</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="35">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(c &gt; max)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="36">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">max</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= c</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="37">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">max</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="38">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">stringLength</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(s: string)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="39">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">len( = s)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="40">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">repeatString</span>
+    <span class="node-type">→ string</span>
+    <span class="node-detail">(s: string, n: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="41">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">result</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="42">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">i</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="43">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">i ; (i &lt; n) ; i</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="44">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">i</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (i + 1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="45">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">result</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= (result + s)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="46">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">result</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="47">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">bitwiseOps</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(a: int, b: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="48">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">andVal</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (a &amp; b)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="49">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">orVal</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (a | b)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="50">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">xorVal</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (a ^ b)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="51">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">notVal</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (nil ~ a)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="52">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">shiftL</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (a &lt;&lt; 2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="53">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">shiftR</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (a &gt;&gt; 2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="54">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(((((andVal + orVal) + xorVal) + notVal) + shiftL) + shiftR)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="55">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">complexExpression</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(x: int, y: int, z: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="56">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">(((((x + y) * (z - x)) / (y + 1)) % (z + 2)) | ((x &amp; y) ^ (y | z)))</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="57">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">multiCondition</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(a: int, b: int, c: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content collapsible" data-id="58">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">((a &gt; b) &amp;&amp; (b &gt; c))</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="59">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">1</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="60">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">((a &lt; b) &amp;&amp; (b &lt; c))</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="61">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">2</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="62">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">((a == b) || (b == c))</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="63">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">3</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="64">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">4</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="65">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">nestedLoops</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">(n: int)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="66">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">sum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="67">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">i</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="68">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">i ; (i &lt; n) ; i</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="69">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">i</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (i + 1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="70">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">j</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="71">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">j ; (j &lt;= i) ; j</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="72">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">j</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (j + 1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="73">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">k</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="74">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">k ; (k &lt;= j) ; k</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="75">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">k</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (k + 1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="76">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">sum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= (sum + ((i + j) + k))</span>
+  </span>
+</li>
+  </ul>
+</li>
+  </ul>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="77">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">sum</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="78">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">listOperations</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="79">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">list</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [5, 2, 8, 1, 9, 3, 7, 4, 6]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="80">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">first</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= nil[list]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="81">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">last</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= nil[list]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="82">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">slice1</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= nil[list]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="83">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[list][] = </span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="84">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[list][] = </span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="85">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">sum</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= sum3(a = nil[list], b = nil[list], c = nil[list])</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="86">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">max</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= max3(a = nil[list], b = nil[list], c = nil[list])</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="87">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((((first + last) + len( = slice1)) + sum) + max)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="88">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">stringOperations</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="89">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">s1</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= &#34;Hello&#34;</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="90">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">s2</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= &#34;World&#34;</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="91">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">s3</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= ((s1 + &#34; &#34;) + s2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="92">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">len1</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= stringLength(s = s1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="93">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">len3</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= stringLength(s = s3)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="94">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">repeated</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= repeatString(s = s1, n = 3)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="95">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">lenRep</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= stringLength(s = repeated)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="96">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((len1 + len3) + lenRep)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="97">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">structOperations</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="98">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">v1</span>
+    <span class="node-type">Vector2D</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="99">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">v1.x</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 3</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="100">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">v1.x</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="101">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">v1.y</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 4</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="102">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">v1.y</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="103">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">length</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= v1.length()</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="104">
+    <span class="tag tag-call">call</span>
+    <span class="node-name">v1.scale</span>
+    <span class="node-detail">(factor = 2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="105">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((length + v1.x) + v1.y)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="106">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">matrixOperations</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="107">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">m</span>
+    <span class="node-type">Matrix</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="108">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">m.rows</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 2</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="109">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">m.rows</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="110">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">m.cols</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 3</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="111">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">m.cols</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="112">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">m.data</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1, 2, 3, 4, 5, 6]</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="113">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">m.data</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="114">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">val1</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= m.get(r = 0, c = 0)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="115">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">val2</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= m.get(r = 1, c = 2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="116">
+    <span class="tag tag-call">call</span>
+    <span class="node-name">m.set</span>
+    <span class="node-detail">(r = 0, c = 1, val = 10)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="117">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">val3</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= m.get(r = 0, c = 1)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="118">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((val1 + val2) + val3)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="119">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">recursiveTests</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="120">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">fib10</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= fibonacci(n = 10)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="121">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">fact5</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= factorial(n = 5)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="122">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">pow2_10</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= power(base = 2, exp = 10)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="123">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((fib10 + fact5) + pow2_10)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="124">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">bitwiseTests</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="125">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">a</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 255</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="126">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">b</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 15</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="127">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">result</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= bitwiseOps(a = a, b = b)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="128">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">result</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="129">
+    <span class="toggle">▾</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">expressionTests</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="130">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">x</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 10</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="131">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">y</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 20</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="132">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">z</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= 30</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="133">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">result1</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= complexExpression(x = x, y = y, z = z)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="134">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">result2</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= multiCondition(a = 5, b = 10, c = 15)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="135">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">result3</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= nestedLoops(n = 5)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="136">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">((result1 + result2) + result3)</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="137">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
     <span class="node-name">main</span>
@@ -85,277 +1177,73 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="2">
+  <span class="node-content" data-id="138">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">empty</span>
-    <span class="node-type">[]int</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="3">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">emptyLen</span>
+    <span class="node-name">listResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= len( = empty)</span>
+    <span class="node-detail">= listOperations()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="4">
+  <span class="node-content" data-id="139">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">single</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [42]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="5">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">singleLen</span>
+    <span class="node-name">stringResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= len( = single)</span>
+    <span class="node-detail">= stringOperations()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="6">
+  <span class="node-content" data-id="140">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">singleVal</span>
+    <span class="node-name">structResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= single.[Exp[0]]</span>
+    <span class="node-detail">= structOperations()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="7">
+  <span class="node-content" data-id="141">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">multi</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [1, 2, 3, 4, 5]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="8">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">multiLen</span>
+    <span class="node-name">matrixResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= len( = multi)</span>
+    <span class="node-detail">= matrixOperations()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="9">
+  <span class="node-content" data-id="142">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">first</span>
+    <span class="node-name">recursiveResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= multi.[Exp[0]]</span>
+    <span class="node-detail">= recursiveTests()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="10">
+  <span class="node-content" data-id="143">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">last</span>
+    <span class="node-name">bitwiseResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= multi.[Exp[4]]</span>
+    <span class="node-detail">= bitwiseTests()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="11">
+  <span class="node-content" data-id="144">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">negative</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [-5, -3, -1, 0, 2, 4]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="12">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">negLen</span>
+    <span class="node-name">expressionResult</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= len( = negative)</span>
+    <span class="node-detail">= expressionTests()</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="13">
+  <span class="node-content" data-id="145">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">negFirst</span>
+    <span class="node-name">total</span>
     <span class="node-type">int</span>
-    <span class="node-detail">= negative.[Exp[0]]</span>
+    <span class="node-detail">= ((((((listResult + stringResult) + structResult) + matrixResult) + recursiveResult) + bitwiseResult) + expressionResult)</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="14">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">negLast</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= negative.[Exp[5]]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="15">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">large</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [1e+06, 2e+06, 3e+06]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="16">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">largeLen</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= len( = large)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="17">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">largeSum</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= ((large.[Exp[0]] + large.[Exp[1]]) + large.[Exp[2]])</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="18">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">modifiable</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [1, 2, 3]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="19">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">modifiable.[Exp[0]]</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 10</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="20">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">modifiable.[Exp[0]]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="21">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">modifiable.[Exp[1]]</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 20</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="22">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">modifiable.[Exp[1]]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="23">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">modifiable.[Exp[2]]</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 30</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="24">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">modifiable.[Exp[2]]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="25">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">modSum</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= ((modifiable.[Exp[0]] + modifiable.[Exp[1]]) + modifiable.[Exp[2]])</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="26">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">sliceable</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="27">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice1</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= sliceable.[Exp[2]:&lt;expr&gt;]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="28">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice1Len</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= len( = slice1)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="29">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice2</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= sliceable.[Exp[0]:&lt;expr&gt;]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="30">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice2Len</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= len( = slice2)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="31">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice3</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= sliceable.[Exp[7]:&lt;expr&gt;]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="32">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">slice3Len</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= len( = slice3)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="33">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">repeated</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [5, 5, 5, 5, 5]</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="34">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">repLen</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= len( = repeated)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="35">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">repSum</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= ((((repeated.[Exp[0]] + repeated.[Exp[1]]) + repeated.[Exp[2]]) + repeated.[Exp[3]]) + repeated.[Exp[4]])</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="36">
+  <span class="node-content" data-id="146">
     <span class="tag tag-return">ret</span>
-    <span class="node-detail">((((((((((((((((emptyLen + singleLen) + singleVal) + multiLen) + first) + last) + negLen) + negFirst) + negLast) + largeLen) + largeSum) + modSum) + slice1Len) + slice2Len) + slice3Len) + repLen) + repSum)</span>
+    <span class="node-detail">total</span>
   </span>
 </li>
   </ul>
@@ -363,7 +1251,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">37 nodes · 1 functions · 31 variables</div>
+<div class="subtitle" style="margin-top:20px">147 nodes · 23 functions · 68 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{

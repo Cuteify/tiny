@@ -45,6 +45,13 @@ func (c *ECompiler) collectRec(exp *parser.Expression) *ExpInfo {
 	ei.Left = c.collectRec(exp.Left)
 	ei.Right = c.collectRec(exp.Right)
 
+	// 索引子表达式（列表/字符串索引、切片 [i]、[i:j]、[i:j:k]）
+	for _, ix := range exp.Index {
+		if ix != nil {
+			c.collectRec(ix)
+		}
+	}
+
 	// 叶子节点
 	if exp.Separator == "" {
 		if exp.IsConst() {

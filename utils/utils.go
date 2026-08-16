@@ -107,6 +107,22 @@ func Format(text string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// IsNumber 判断字符串是否为整数立即数（含负数）
+func IsNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, c := range s {
+		if c == '-' && i == 0 {
+			continue
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // GetLengthName 返回大小对应的汇编长度前缀
 func GetLengthName(size int) string {
 	switch size {

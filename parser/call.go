@@ -46,9 +46,19 @@ func (c *CallBlock) Check(p *Parser) bool {
 			if c.Func == nil {
 				c.Func = fb
 				// 包名被方法分支误判为接收者时，清除伪 ThisVar
-				c.ThisVar = nil
+				if fb.Class == nil {
+					c.ThisVar = nil
+				}
 			}
 		}
+	}
+
+	// 方法调用（找到的 Func 属于类型）：设置 ThisVar 为接收者
+	if c.Func != nil && c.Func.Class != nil && c.ThisVar == nil && c.Name.IsPath() {
+		receiverName := c.Name.Fork()
+		receiverName = receiverName[:len(receiverName)-1]
+		c.ThisVar = &VarBlock{Name: receiverName}
+		c.ThisVar.ParseDefine(p)
 	}
 
 	// If still not found and name is a path (e.g. a.len), try method call
@@ -162,7 +172,9 @@ func (c *CallBlock) ParseCall(p *Parser) {
 				if argExp != nil {
 					c.Args = append(c.Args, &ArgBlock{Value: argExp})
 				}
-				p.Lexer.Skip(')')
+				if p.Lexer.Cursor <= stopCursor {
+					p.Lexer.Skip(')')
+				}
 				c.Check(p)
 				return
 			}
@@ -175,7 +187,9 @@ func (c *CallBlock) ParseCall(p *Parser) {
 				if argExp != nil {
 					c.Args = append(c.Args, &ArgBlock{Value: argExp})
 				}
-				p.Lexer.SetCursor(token.Cursor + 1)
+				if p.Lexer.Cursor <= token.Cursor {
+					p.Lexer.SetCursor(token.Cursor + 1)
+				}
 				break
 			}
 		}

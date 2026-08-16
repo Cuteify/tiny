@@ -2,7 +2,9 @@
 package x86
 
 import (
+	"strings"
 	"cuteify/compile/arch"
+	exppkg "cuteify/compile/exp"
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
@@ -146,6 +148,20 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 	case "-":
 		return utils.Format("sub " + dst + ", " + src)
 	case "*":
+		if strings.Contains(dst, "[") {
+			// nasm 不支持 imul 内存目标，经栈中转
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov EAX, " + src)
+				src = "EAX"
+			}
+			code += utils.Format("push " + src + "; 暂存乘数")
+			code += utils.Format("mov EAX, " + dst)
+			code += utils.Format("imul EAX, dword [esp]")
+			code += utils.Format("mov " + dst + ", EAX")
+			code += utils.Format("add esp, 4; 清理乘数")
+			return code
+		}
 		return utils.Format("imul " + dst + ", " + src)
 	case "/":
 		code := utils.Format("push " + src + "; 保存除数")
@@ -170,8 +186,33 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 	case "|":
 		return utils.Format("or " + dst + ", " + src)
 	case "<<":
+		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
+			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov EAX, " + src)
+				src = "EAX"
+			}
+			code += utils.Format("push " + src + "; 暂存移位计数")
+			code += utils.Format("mov cl, byte [esp]")
+			code += utils.Format("shl " + dst + ", cl")
+			code += utils.Format("add esp, 4; 清理移位计数")
+			return code
+		}
 		return utils.Format("shl " + dst + ", " + src)
 	case ">>":
+		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
+			code := ""
+			if strings.Contains(src, "[") {
+				code += utils.Format("mov EAX, " + src)
+				src = "EAX"
+			}
+			code += utils.Format("push " + src + "; 暂存移位计数")
+			code += utils.Format("mov cl, byte [esp]")
+			code += utils.Format("sar " + dst + ", cl")
+			code += utils.Format("add esp, 4; 清理移位计数")
+			return code
+		}
 		return utils.Format("sar " + dst + ", " + src)
 	default:
 		return ""
@@ -193,18 +234,9 @@ func (a *x86Ops) Compile64Type(e *parser.Expression, result, desc string) string
 // VarDecl 变量声明/赋值
 func (a *x86Ops) VarDecl(varBlock *parser.VarBlock) string {
 	if varBlock.Value == nil {
-		return ""
+		return exppkg.New(a.ctx).ZeroVar(varBlock)
 	}
-	if is64Type(varBlock.Type) {
-		return a.varDecl64(varBlock)
-	}
-	addr := genVarAddr(a.ctx, varBlock)
-	if varBlock.Value.Type != nil && is64Type(varBlock.Value.Type) {
-		// 64 位表达式赋给 32 位变量：只取低 32 位（截断高位）
-		code := a.exp(varBlock.Value, "EAX", "设置变量"+varBlock.Name.String())
-		return code + utils.Format("mov dword "+addr+", eax; 设置变量"+varBlock.Name.String())
-	}
-	return a.exp(varBlock.Value, addr, "设置变量"+varBlock.Name.String())
+	return exppkg.New(a.ctx).Assign(varBlock)
 }
 
 // VarAddr 变量地址

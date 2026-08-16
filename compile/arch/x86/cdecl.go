@@ -5,6 +5,7 @@ import (
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
 	"cuteify/utils"
+	"strings"
 	"strconv"
 )
 
@@ -65,12 +66,6 @@ normalCall:
 	fn := call.Func
 	code := ""
 
-	// 压入 this 指针（如果有）
-	if call.ThisVar != nil {
-		thisAddr := genVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("push " + thisAddr + "; push this pointer")
-	}
-
 	// 压入参数（从右到左，cdecl 约定）
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		arg := call.Args[i]
@@ -83,6 +78,19 @@ normalCall:
 			code += utils.Format("push 0\n") + utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 扩展到64位\n")
 		} else {
 			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+		}
+	}
+
+	// 最后压入 this 指针（如果有）：this 位于 [ebp+8]，参数从 [ebp+12] 起
+	if call.ThisVar != nil {
+		thisAddr := genVarAddr(a.ctx, call.ThisVar)
+		if call.ThisVar.Type != nil && !call.ThisVar.Type.IsPointer() {
+			// 值语义：压结构体地址（lea 取地址）
+			addrOnly := thisAddr[strings.Index(thisAddr, "["):]
+			code += utils.Format("lea eax, " + addrOnly + "; this pointer")
+			code += utils.Format("push eax; push this pointer")
+		} else {
+			code += utils.Format("push " + thisAddr + "; push this pointer")
 		}
 	}
 

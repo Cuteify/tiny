@@ -6,6 +6,7 @@ import (
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
 	"cuteify/utils"
+	"strings"
 	"strconv"
 )
 
@@ -136,7 +137,13 @@ normalCall:
 	// this 指针作为第一个寄存器参数
 	if call.ThisVar != nil {
 		thisAddr := GenVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("mov " + sysvArgRegs[0] + ", " + thisAddr + "; this pointer")
+		if call.ThisVar.Type != nil && !call.ThisVar.Type.IsPointer() {
+			// 值语义：传结构体地址（lea 取地址）
+			addrOnly := thisAddr[strings.Index(thisAddr, "["):]
+			code += utils.Format("lea " + sysvArgRegs[0] + ", " + addrOnly + "; this pointer")
+		} else {
+			code += utils.Format("mov " + sysvArgRegs[0] + ", " + thisAddr + "; this pointer")
+		}
 		argRegIdx = 1
 	}
 

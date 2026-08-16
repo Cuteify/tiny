@@ -1,4 +1,7 @@
 {
     "version": "1.0.0",
-    "description": "超级复杂测试程序 - 测试所有语言特性"
+    "description": "超级复杂测试程序 - 测试所有语言特性",
+    "imports": {
+        "memory": "std:memory"
+    }
 }

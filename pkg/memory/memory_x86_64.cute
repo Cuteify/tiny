@@ -251,3 +251,27 @@ fn free(ptr: ptr) ptr {
     store64(blk, head)
     set_head(idx, blk)
 }
+
+// realloc 调整 ptr 指向块的大小，返回新指针；失败返回 0（ptr 保持有效）
+fn realloc(ptr: ptr, new_size: u64) ptr {
+    if ptr == 0 {
+        ret malloc(new_size)
+    }
+    var old_size: u64 = load64(ptr - 8) - 16
+    var np: ptr = malloc(new_size)
+    if np == 0 {
+        ret 0
+    }
+    var copy_size: u64 = old_size
+    if copy_size > new_size {
+        copy_size = new_size
+    }
+    var i: u64 = 0
+    for ; i < copy_size; {
+        var b: u8 = load8(ptr + i)
+        store8(np + i, b)
+        i = i + 1
+    }
+    free(ptr)
+    ret np
+}

@@ -1,4 +1,7 @@
 {
     "version": "1.0.0",
-    "description": "list type test"
+    "description": "list type test",
+    "imports": {
+        "memory": "std:memory"
+    }
 }

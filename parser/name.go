@@ -344,13 +344,8 @@ func (p *Parser) ParseName(wait bool) (name Name, cursor int) {
 					p.Lexer.SetCursor(code.Cursor)
 					goto end
 				}
-				// For expression indices (like list[0], list[len(list)-1]), stop parsing name
-				// and let ParseExp handle the index
+				// 表达式索引（list[0]、self.data[i] 等）：停在 '[' 交给 ParseExp 处理
 				p.Lexer.SetCursor(code.Cursor)
-				slice := p.parseNameSlice()
-				if slice != nil {
-					name = append(name, NamePart{Slice: slice})
-				}
 				goto end
 			case "_":
 				name[len(name)-1].Name += "_"

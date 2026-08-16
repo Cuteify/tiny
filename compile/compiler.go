@@ -277,9 +277,6 @@ func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	if varBlock.IsGlobal && varBlock.IsDefine {
 		return ""
 	}
-	if varBlock.IsDefine && varBlock.Value == nil {
-		return ""
-	}
 	return c.Ctx.Arch.VarDecl(varBlock)
 }
 
@@ -292,6 +289,11 @@ func (c *Compiler) compileExprBlock(n *parser.Node) string {
 	exp := n.Value.(*parser.Expression)
 	if exp.Separator == "[]=" {
 		return c.Ctx.Arch.Exp(exp, "", "list index assignment")
+	}
+	// 多段名赋值（p1.x = 3、self.x += dx 等）：表达式里携带完整 VarBlock，
+	// 转用变量声明路径生成正确的目标地址
+	if exp.Var != nil && exp.Var.Value != nil {
+		return c.Ctx.Arch.VarDecl(exp.Var)
 	}
 	return c.Ctx.Arch.Exp(exp, "", "expression statement")
 }

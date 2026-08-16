@@ -3,7 +3,6 @@ package parser
 import (
 	typeSys "cuteify/type"
 
-	"math"
 	"strings"
 )
 
@@ -618,7 +617,7 @@ func (exp *Expression) foldArith(p *Parser) bool {
 		}
 		exp.Num = float64(int(left) % int(right))
 	case "^":
-		exp.Num = math.Pow(left, right)
+		exp.Num = float64(int(left) ^ int(right))
 	case "<<":
 		exp.Num = float64(int(left) << int(right))
 	case ">>":

@@ -178,6 +178,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 	var root, current *Expression
 	justEnterBracket := false
 	justExitBracket := false
+	bracketChild := false
 	bracketCount := 0
 
 	// 迭代解析表达式
@@ -209,6 +210,9 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			justExitBracket = true // 减少退出括号的计数
 			if current.Father != nil {
 				current = current.Father
+				bracketChild = true
+			} else {
+				bracketChild = false
 			}
 			continue
 		}
@@ -275,7 +279,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 		}
 		if current.Separator != "" && exp.Separator != "" {
 			// 如果括号是根节点，应该把括号的优先级做到最高
-			if (opTable[current.Separator] < opTable[exp.Separator] || justEnterBracket) && !(justExitBracket && isRoot) && current.Left != nil {
+			if (opTable[current.Separator] < opTable[exp.Separator] || justEnterBracket) && !(justExitBracket && !bracketChild) && current.Left != nil {
 				// 等价于BeParent，但是无法确定Right是否存在，所以手动处理
 				if current.Right != nil {
 					exp.SetLeft(current.Right)
@@ -288,6 +292,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			}
 			justEnterBracket = false // 增加进入括号的计数
 			justExitBracket = false  // 减少退出括号的计数
+			bracketChild = false
 			// TODO：错误返回导致ROOT被覆盖
 			current = exp
 		} else if current.Separator == "" && exp.Separator != "" {
@@ -305,6 +310,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			current = exp            // 把exp作为当前节点
 			justEnterBracket = false // 增加进入括号的计数
 			justExitBracket = false  // 减少退出括号的计数
+			bracketChild = false
 		} else if current.Separator != "" && exp.Separator == "" {
 			current.Insert(exp)
 		} else {
@@ -374,12 +380,7 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 
 	case lexer.NAME:
 		p.Lexer.SetCursor(code.Cursor)
-		exp := p.handleName()
-		if p.Lexer.Cursor > stopCursor {
-			p.Lexer.SetCursor(code.Cursor)
-			return nil
-		}
-		return exp
+		return p.handleName()
 	case lexer.SEPARATOR:
 		if code.Value == "\n" || code.Value == ";" || code.Value == "\r" {
 			p.Lexer.SetCursor(code.Cursor)
@@ -462,7 +463,7 @@ func (p *Parser) handleIndex() *Expression {
 						}
 					}
 					// Advance cursor past the closing ']'
-					p.Lexer.SetCursor(token.Cursor + 1)
+					p.Lexer.SetCursor(token.EndCursor)
 					return &Expression{
 						Separator: "[]",
 						Index:     index,
@@ -471,7 +472,6 @@ func (p *Parser) handleIndex() *Expression {
 				continue
 			case ":":
 				if bracketDepth == 1 {
-					// 解析 : 之前的表达式
 					if startCursor < token.Cursor {
 						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
@@ -484,7 +484,9 @@ func (p *Parser) handleIndex() *Expression {
 						p.Error.MissError("Expression Error", p.Lexer.Cursor, "too many ':' in index")
 						return nil
 					}
-					startCursor = p.Lexer.Cursor // 更新起始位置
+					// 跳过 ':'，推进游标避免重复读取
+					p.Lexer.SetCursor(token.EndCursor)
+					startCursor = p.Lexer.Cursor
 					continue
 				}
 			}
