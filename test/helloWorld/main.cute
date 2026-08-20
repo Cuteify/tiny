@@ -1,0 +1,6 @@
+// Hello World 测试脚本
+
+fn main() int {
+    console.println("Make World Cuteify")
+    ret 0
+}

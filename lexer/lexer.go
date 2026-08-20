@@ -235,9 +235,6 @@ func (l *Lexer) GetToken() (Token, error) {
 	}
 	// 匹配Token，返回类型
 	if typeNum, ok := keywords[word]; ok {
-		if typeNum == BOOL && (word == "true" || word == "false") {
-			goto other
-		}
 		token := Token{
 			Type:      typeNum,
 			Value:     word,
@@ -246,7 +243,6 @@ func (l *Lexer) GetToken() (Token, error) {
 		token.Cursor = l.Cursor - token.Len()
 		return token, nil
 	}
-other:
 	if isDigit(word) {
 		oldCursor := l.Cursor
 		word2, _ := l.GetWord()

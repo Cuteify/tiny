@@ -129,6 +129,12 @@ func (b *Build) Parse(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need link name")
 		}
 		p.Lexer.SetCursor(stopToken)
+		switch p.ThisBlock.Value.(type) {
+		case *FuncBlock:
+			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
+		default:
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "link only in func")
+		}
 	default:
 		return
 	}

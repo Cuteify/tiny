@@ -477,10 +477,13 @@ func (a *x86Ops) varDecl64(varBlock *parser.VarBlock) string {
 	return code
 }
 
-// setArgsOffset 设置参数偏移（ebp+8 起，this 指针额外 +4）
+// setArgsOffset 设置参数偏移（ebp+8 起，this 指针额外 +4；容器返回函数 [ebp+8] 为隐藏返回槽地址参数）
 func setArgsOffset(fn *parser.FuncBlock) {
 	argOffset := 8
 	if fn.Class != nil {
+		argOffset += 4
+	}
+	if arch.FuncReturnsLarge(fn) {
 		argOffset += 4
 	}
 	for i := 0; i < len(fn.Args); i++ {
@@ -511,8 +514,22 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 
 	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*len(csRegs))
 
+	// 预留大值返回槽：容器 12B；结构体按槽数（Size/4）；+ 隐藏参数地址保存 4B
+	retBytes := 12
+	if arch.FuncReturnsLarge(fn) {
+		retBytes = arch.ArgSlots(fn.Return[0]) * 4
+	}
+	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 4
+	a.ctx.StackSize += retBytes + 4
+
 	if a.ctx.StackSize > 0 {
 		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
+	}
+
+	// 大值返回函数：保存调用者传入的返回槽地址（[ebp+8] 隐藏参数）
+	if arch.FuncReturnsLarge(fn) {
+		code += utils.Format("mov EAX, DWORD [ebp+8]; 保存返回槽地址") +
+			utils.Format("mov DWORD [ebp" + strconv.Itoa(a.ctx.RetSlot+retBytes) + "], EAX")
 	}
 
 	code += utils.Format("\n")
@@ -563,6 +580,24 @@ func (a *x86Ops) epilogue(fn *parser.FuncBlock, stdcallCleanup bool) string {
 func (a *x86Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 	if ret == nil || len(ret.Value) == 0 {
 		return ""
+	}
+	// 大值（容器 3 槽 / 结构体多槽）返回值：装载到本帧返回槽，再拷到隐藏参数（[ebp+8]）指向的调用者返回槽
+	if ret.Value[0].Type != nil && arch.FuncReturnsLarge(a.ctx.CurrentFunc) {
+		slots := arch.ArgSlots(ret.Value[0].Type)
+		slot := "[ebp" + strconv.Itoa(a.ctx.RetSlot) + "]"
+		code += exppkg.New(a.ctx).Compile(ret.Value[0], "DWORD"+slot, "return值存入返回槽")
+		code += utils.Format("mov EDI, DWORD [ebp" + strconv.Itoa(a.ctx.RetSlot+slots*4) + "]; 恢复返回槽地址")
+		for j := 0; j < slots; j++ {
+			off := j * 4
+			if off == 0 {
+				code += utils.Format("mov EAX, DWORD " + slot)
+				code += utils.Format("mov DWORD [EDI], EAX")
+			} else {
+				code += utils.Format("mov EAX, DWORD [ebp" + strconv.Itoa(a.ctx.RetSlot+off) + "]")
+				code += utils.Format("mov DWORD [EDI+" + strconv.Itoa(off) + "], EAX")
+			}
+		}
+		return code
 	}
 	is64 := is64Type(ret.Value[0].Type)
 	if !is64 && a.ctx.CurrentFunc != nil && len(a.ctx.CurrentFunc.Return) > 0 {

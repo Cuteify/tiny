@@ -262,16 +262,23 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 				}
 			case *VarBlock:
 				if v.IsDefine {
-if name.IsPath() {
-					if n := name.Match(v.Name); n > 0 {
-						ok, r := enterTypeFind(name[n:], v.Type)
-						if ok && (r.Type&typ) != 0 {
-							r.Node = child
-							r.Path = append([]any{v}, r.Path...)
-							res = append(res, r)
+					if name.IsPath() {
+						if n := name.Match(v.Name); n > 0 {
+							if n == name.Length() {
+								// 完全匹配（跨包常量/全局变量）
+								if (typ & FindTypeVar) != 0 {
+									res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeVar})
+								}
+								continue
+							}
+							ok, r := enterTypeFind(name[n:], v.Type)
+							if ok && (r.Type&typ) != 0 {
+								r.Node = child
+								r.Path = append([]any{v}, r.Path...)
+								res = append(res, r)
+							}
 						}
-					}
-				} else {
+					} else {
 						if v.Name.Eq(name) && (typ&FindTypeVar) != 0 {
 							res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeVar})
 						}
@@ -297,6 +304,17 @@ func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {
 		findPath = append(findPath, nowType)
 	}
 	for nowType != nil && n.Length() > 0 {
+		// 指针基类型/中间指针：解引用一层后继续查找字段
+		// （p.x / p.x.y / head.next.x，支持多层指针链）
+		if nowType.IsPointer() {
+			elem := nowType.Elem()
+			if elem == nil {
+				ok = false
+				return
+			}
+			nowType = elem
+			findPath = append(findPath, nowType)
+		}
 		switch nowType.Kind() {
 		case "list":
 			if n[0].Slice == nil {

@@ -1,4 +1,7 @@
 {
     "version": "1.0.0",
-    "description": "字符串操作测试"
+    "description": "字符串操作测试",
+    "imports": {
+        "memory": "std:memory"
+    }
 }

@@ -1,0 +1,8 @@
+{
+    "name": "heap_struct",
+    "version": "1.0.0",
+    "description": "堆上结构体测试（M4）",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

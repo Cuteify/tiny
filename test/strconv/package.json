@@ -1,0 +1,9 @@
+{
+    "name": "strconv",
+    "version": "1.0.0",
+    "description": "string/num 互转测试（toString/parse）",
+    "imports": {
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

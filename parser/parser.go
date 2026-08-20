@@ -18,6 +18,8 @@ type Parser struct {
 	Package           *packageFmt.Info
 	DontBack          int
 	PreventNameAssign bool
+	CurStructName     string       // 当前正在解析的结构体名（支持自引用字段 *T）
+	CurStructType     typeSys.Type // 当前正在解析的结构体类型实例（与注册后同一实例）
 }
 
 // Next 解析下一个语法单元，返回是否结束

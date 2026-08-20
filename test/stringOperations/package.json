@@ -1,0 +1,6 @@
+{
+    "name": "string_operations",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

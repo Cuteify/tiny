@@ -24,22 +24,57 @@ func init() {
 type Compiler struct {
 	Ctx           *context.Context // 编译器上下文
 	RootGenerated bool             // 标记是否已生成 section .text
+	stringSyms    map[string]bool  // build link 声明的全局符号（如 __string_len）
 }
 
 // NewCompiler 创建新的编译器
 func NewCompiler(parser *parser.Parser) *Compiler {
 	return &Compiler{
-		Ctx: context.NewContext(),
+		Ctx:        context.NewContext(),
+		stringSyms: map[string]bool{},
 	}
 }
 
 // Compile 编译入口方法，将AST节点编译为汇编代码
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.initializeContext()
+	c.collectLinkSyms(node)
+	c.Ctx.StringSyms = c.stringSyms
 	code = c.compileRoot(node, code)
 	code += c.compileChildren(node, "")
 	code += c.compileRootTail(node)
 	return code
+}
+
+// collectLinkSyms 收集 build link 声明的全局符号名（如 __string_len），
+// 供内建 len/cap 检测后改为调用 strings 包实现（未提供时保持内联）。
+func (c *Compiler) collectLinkSyms(node *parser.Node) {
+	if node == nil {
+		return
+	}
+	if fb, ok := node.Value.(*parser.FuncBlock); ok {
+		for _, bf := range fb.BuildFlags {
+			if bf.Type == "link" && bf.Link != "" {
+				if c.stringSyms == nil {
+					c.stringSyms = map[string]bool{}
+				}
+				c.stringSyms[bf.Link] = true
+			}
+		}
+	}
+	for _, ch := range node.Children {
+		c.collectLinkSyms(ch)
+	}
+}
+
+// findLinkFlag 返回函数的 build link 标志（若有）。
+func (c *Compiler) findLinkFlag(funcBlock *parser.FuncBlock) *parser.Build {
+	for _, bf := range funcBlock.BuildFlags {
+		if bf.Type == "link" && !bf.Ignore {
+			return bf
+		}
+	}
+	return nil
 }
 
 func (c *Compiler) initializeContext() {
@@ -72,7 +107,7 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 		if !ok || !vb.IsGlobal || !vb.IsDefine {
 			continue
 		}
-		name := "__global_" + vb.Name.First()
+		name := "__global_" + utils.ToNASMName(vb.Name.String())
 		size := vb.Type.Size()
 		if size != 4 && size != 8 {
 			continue
@@ -384,12 +419,22 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 		name = name + strconv.Itoa(len(funcBlock.Args))
 	}
 
+	// build link：函数以链接名输出为全局符号（如 __string_len），
+	// 同时保留原函数名标签（供包内/跨包直接调用），两个标签指向同一实现。
+	alias := ""
+	if linkFlag := c.findLinkFlag(funcBlock); linkFlag != nil {
+		alias = linkFlag.Link
+	}
+
 	// 重置寄存器分配器（每个函数独立）
 	c.Ctx.Reg.Reset()
 
 	// 先生成函数头部（不缩进）
 	code += utils.Format("; ==============================")
 	code += utils.Format("; Function: " + name)
+	if alias != "" {
+		code += utils.Format(alias + ":")
+	}
 	code += utils.Format(name + ":")
 
 	// 增加缩进，让函数体指令有缩进

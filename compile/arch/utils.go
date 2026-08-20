@@ -2,7 +2,52 @@ package arch
 
 import (
 	"cuteify/parser"
+	"cuteify/type"
 )
+
+// IsListLikeType 判断是否为三字段容器类型（list/string）
+func IsListLikeType(t typeSys.Type) bool {
+	return t != nil && (t.Kind() == "list" || t.Kind() == "string")
+}
+
+// ArgSlots 计算参数/返回值占用的指针宽度槽数：
+// 容器固定 3 槽（ptr/len/cap）；>指针宽度的结构体按 Size/PointerSize 拆槽；其余 1 槽。
+func ArgSlots(t typeSys.Type) int {
+	if t == nil {
+		return 1
+	}
+	if IsListLikeType(t) {
+		return 3
+	}
+	if t.Size() > typeSys.TargetPointerSize {
+		return t.Size() / typeSys.TargetPointerSize
+	}
+	return 1
+}
+
+// FuncReturnsContainer 判断函数是否返回容器类型
+func FuncReturnsContainer(fn *parser.FuncBlock) bool {
+	return fn != nil && len(fn.Return) > 0 && IsListLikeType(fn.Return[0])
+}
+
+// FuncReturnsLarge 判断函数是否返回大值（容器 3 槽 / 结构体多槽），需返回槽机制
+func FuncReturnsLarge(fn *parser.FuncBlock) bool {
+	if fn == nil || len(fn.Return) == 0 {
+		return false
+	}
+	t := fn.Return[0]
+	if t == nil {
+		return false
+	}
+	if IsListLikeType(t) {
+		return true
+	}
+	// 64 位标量（i64/u64/f64）走寄存器/双寄存器（EDX:EAX），不走返回槽
+	if t.Size() == 8 && (t.Type() == "i64" || t.Type() == "u64" || t.Type() == "f64") {
+		return false
+	}
+	return t.Size() > typeSys.TargetPointerSize
+}
 
 // CalcArgsSize 计算函数参数大小
 func CalcArgsSize(fn *parser.FuncBlock, align int) (size int) {

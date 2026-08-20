@@ -1,0 +1,9 @@
+fn main() int {
+    var x: int = 5
+    var c: int = 0
+    for x > 0 {
+        c = c + 1
+        x = x - 1
+    }
+    ret c
+}

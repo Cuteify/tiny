@@ -1,7 +1,10 @@
 build os("linux")
 build arch("x86_64")
 
-fn syscall(trap: u32, a1: u32, a2: u32, a3: u32) u32 {
+// 底层内联系统调用：唯一必须 build asm 的地方（syscall 指令 + 参数寄存器装载），
+// 其余便捷封装均为纯 Cuteify 转发
+
+fn syscall(trap: u64, a1: u64, a2: u64, a3: u64) u64 {
     build asm {
         mov RAX, $trap
         mov RDI, $a1
@@ -11,7 +14,7 @@ fn syscall(trap: u32, a1: u32, a2: u32, a3: u32) u32 {
     }
 }
 
-fn syscall6(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) u32 {
+fn syscall6(trap: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) u64 {
     build asm {
         mov RAX, $trap
         mov RDI, $a1
@@ -24,7 +27,7 @@ fn syscall6(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) u32
     }
 }
 
-fn syscall64(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) u64 {
+fn syscall64(trap: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) u64 {
     build asm {
         mov RAX, $trap
         mov RDI, $a1
@@ -36,58 +39,28 @@ fn syscall64(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) u64 {
     }
 }
 
-// 常用系统调用便捷封装（小驼峰命名）
+// 常用系统调用便捷封装（小驼峰命名，纯 Cuteify 转发）
 
 fn exit(code: i32) {
-    build asm {
-        mov RAX, 60
-        mov RDI, $code
-        syscall
-    }
+    syscall(60, code, 0, 0)
 }
 
 fn brk(addr: ptr) ptr {
-    build asm {
-        mov RAX, 12
-        mov RDI, $addr
-        syscall
-    }
+    ret syscall64(12, addr, 0, 0, 0, 0)
 }
 
-fn write(fd: i32, buf: u64, count: u64) i32 {
-    build asm {
-        mov RAX, 1
-        mov RDI, $fd
-        mov RSI, $buf
-        mov RDX, $count
-        syscall
-    }
+fn write(fd: i32, buf: ptr, count: u64) i32 {
+    ret syscall64(1, fd, buf, count, 0, 0)
 }
 
-fn read(fd: i32, buf: u64, count: u64) i32 {
-    build asm {
-        mov RAX, 0
-        mov RDI, $fd
-        mov RSI, $buf
-        mov RDX, $count
-        syscall
-    }
+fn read(fd: i32, buf: ptr, count: u64) i32 {
+    ret syscall64(0, fd, buf, count, 0, 0)
 }
 
 fn open(pathname: u64, flags: i32, mode: u32) i32 {
-    build asm {
-        mov RAX, 2
-        mov RDI, $pathname
-        mov RSI, $flags
-        mov RDX, $mode
-        syscall
-    }
+    ret syscall64(2, pathname, flags, mode, 0, 0)
 }
 
 fn close(fd: i32) i32 {
-    build asm {
-        mov RAX, 3
-        mov RDI, $fd
-        syscall
-    }
+    ret syscall(3, fd, 0, 0)
 }

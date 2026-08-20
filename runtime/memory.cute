@@ -1,36 +1,31 @@
 // runtime/memory.cute - 内存管理运行时库 (简化版)
 
-// 内存池的起始地址和大小
-var heap_start: u64 = 0
-var heap_end: u64 = 0
-var current_brk: u64 = 0
+// 静态堆：16MB BSS 数组，由 ELF 加载器分配真实内存，无需系统调用
+var heap_buf: [16777216]u8
+var heap_used: u64 = 0
 
-// 初始化堆
+// 初始化堆（保持接口兼容，静态堆无需初始化）
 fn init_heap(start_addr: u64, size: u64) {
-    heap_start = start_addr
-    heap_end = start_addr + size
-    current_brk = start_addr
+    heap_used = 0
 }
 
-// 简单的brk系统调用模拟
+// 简单的brk内存池模拟
 fn sbrk(increment: i32) u64 {
-    var old_brk: u64 = current_brk
-    
+    var old_brk: u64 = heap_used
+    var base: u64 = &heap_buf
+
     if (increment > 0) {
-        if (current_brk + increment > heap_end) {
+        if (heap_used + increment > 16777216) {
             // 内存不足
             ret 0xFFFFFFFFFFFFFFFF  // 返回错误码
         }
-        current_brk = current_brk + increment
-    } else if (increment < 0) {
-        if (current_brk + increment < heap_start) {
-            // 地址太小
-            ret 0xFFFFFFFFFFFFFFFF  // 返回错误码
-        }
-        current_brk = current_brk + increment
+        heap_used = heap_used + increment
+    } else {
+        // 不支持收缩
+        ret 0xFFFFFFFFFFFFFFFF
     }
-    
-    ret old_brk
+
+    ret base + old_brk
 }
 
 // 简单的内存分配器

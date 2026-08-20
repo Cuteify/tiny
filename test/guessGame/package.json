@@ -1,0 +1,5 @@
+{
+    "name": "guessGame",
+    "version": "1.0.0",
+    "description": "猜数游戏测试（二分策略，确定性退出码）"
+}

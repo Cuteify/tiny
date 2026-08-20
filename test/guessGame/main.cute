@@ -1,0 +1,40 @@
+// 猜数游戏测试：二分策略玩家对固定谜底（1-100）猜测，返回猜测次数
+// 谜底 42 → 7 次；谜底 1 → 6 次；谜底 100 → 7 次
+
+fn guessGame(target uint) uint {
+    var low: uint = 1
+    var high: uint = 100
+    var tries: uint = 0
+    var found: bool = false
+    for !found {
+        var mid: uint = low + (high - low) / 2
+        tries = tries + 1
+        if mid == target {
+            found = true
+        }
+        if mid < target {
+            low = mid + 1
+        }
+        if mid > target {
+            high = mid - 1
+        }
+    }
+    ret tries
+}
+
+fn main() int {
+    var ok: int = 0
+    var t1: uint = guessGame(42)
+    if t1 == 7 {
+        ok = ok + 1
+    }
+    var t2: uint = guessGame(1)
+    if t2 == 6 {
+        ok = ok + 1
+    }
+    var t3: uint = guessGame(100)
+    if t3 == 7 {
+        ok = ok + 1
+    }
+    ret ok
+}

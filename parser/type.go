@@ -45,7 +45,13 @@ func (t *TypeBlock) Parse(p *Parser) {
 		t.Struct = &StructBlock{}
 		// StructBlock.Parse 会自行读取结构体名称，回退到名称位置
 		p.Lexer.SetCursor(nameCursor)
+		savedName := p.CurStructName
+		savedType := p.CurStructType
+		p.CurStructName = name.String()
+		p.CurStructType = &t.Struct.Type
 		t.Struct.Parse(p)
+		p.CurStructName = savedName
+		p.CurStructType = savedType
 		t.EndCursor = t.Struct.EndCursor
 	case "interface":
 		t.Kind = TypeInterface

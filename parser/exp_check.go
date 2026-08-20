@@ -44,7 +44,8 @@ func (exp *Expression) checkVar(p *Parser) bool {
 		return true
 	}
 
-	p.Error.MissError("Type Error", p.Lexer.Cursor, "undefined variable: "+exp.Var.Name.String())
+	// 同包跨文件/跨包定义在 parse 期不可见（parse 期只解析当前文件），
+	// 此处静默返回，由合并后的 rootNode.Check() 统一重试与报错。
 	return false
 }
 
@@ -447,7 +448,18 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 				"operator '*' requires pointer operand, got "+exp.Right.Type.Type())
 			return false
 		}
-		exp.Type = typeSys.GetSystemType(exp.Right.Type.Type())
+		elem := exp.Right.Type.Elem()
+		if elem == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"cannot dereference type "+exp.Right.Type.Type())
+			return false
+		}
+		if elem.Size() > 8 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"cannot dereference type "+elem.Type()+" (size > 8, use field access instead)")
+			return false
+		}
+		exp.Type = elem
 
 	case "&":
 		if exp.Right.Var == nil {
@@ -456,8 +468,11 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 		}
 		t := typeSys.GetSystemType(exp.Right.Type.Type())
 		if t == nil {
-			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot take address of type "+exp.Right.Type.Type())
-			return false
+			if exp.Right.Type == nil || exp.Right.Type.Kind() == "unknown" {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot take address of type "+exp.Right.Type.Type())
+				return false
+			}
+			t = exp.Right.Type
 		}
 		exp.Type = typeSys.MakePointer(t)
 	}

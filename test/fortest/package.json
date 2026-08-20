@@ -1,0 +1,1 @@
+{"name": "fortest", "version": "1.0.0", "description": "", "imports": {"memory": "std:memory", "strlib": "./lib"}}

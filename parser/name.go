@@ -98,21 +98,23 @@ func (n Name) Last() string {
 	return n[len(n)-1].Name
 }
 
-// First 返回名称的第一部分的名称
+// First 返回名称的第一部分的名称：
+// 首段为包路径时返回连续包路径段（编译期全局名用），否则返回首段。
 func (n Name) First() string {
 	if len(n) == 0 {
 		return ""
 	}
-	parts := make([]string, len(n))
-	i := 0
-	for ; i < len(n); i++ {
-		part := n[i]
-		parts[i] = part.Name
-		if !part.IsPkgPath {
+	if !n[0].IsPkgPath {
+		return n[0].Name
+	}
+	parts := make([]string, 0, len(n))
+	for i := 0; i < len(n); i++ {
+		if !n[i].IsPkgPath {
 			break
 		}
+		parts = append(parts, n[i].Name)
 	}
-	return strings.Join(parts[:i+1], ".")
+	return strings.Join(parts, ".")
 }
 
 // IsPrivate 判断名称是否包含以下划线开头的私有部分
@@ -152,7 +154,7 @@ func (n Name) Match(other Name) int {
 	}
 	for i := 0; i < len(n) && i < len(other); i++ {
 		if n[i].Name != other[i].Name {
-			return i - 1
+			return i
 		}
 	}
 	if len(n) == len(other) {
@@ -206,7 +208,9 @@ func (n Name) Check() bool {
 	ok := !n.IsEmpty()
 	for _, part := range n {
 		if part.Name != "" {
-			ok = ok && utils.CheckName(part.Name)
+			if !part.IsPkgPath {
+				ok = ok && utils.CheckName(part.Name)
+			}
 		}
 		if part.Name == "" {
 			ok = ok && part.Slice != nil

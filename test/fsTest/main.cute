@@ -1,0 +1,30 @@
+fn main() i32 {
+    // 1. 创建并写入文件（"hello\n" 小端字节 = 11473676690792）
+    var data: u64 = 11473676690792
+    var fd: i32 = fs.open("fsTest.txt", fs.O_WRONLY | fs.O_CREAT | fs.O_TRUNC, 420)
+    if (fd < 0) {
+        ret 1
+    }
+    var w: i32 = fs.write(fd, &data, 6)
+    fs.close(fd)
+    if (w != 6) {
+        ret 2
+    }
+
+    // 2. 读回验证
+    var buf: u64 = 0
+    var fd2: i32 = fs.open("fsTest.txt", fs.O_RDONLY, 0)
+    if (fd2 < 0) {
+        ret 3
+    }
+    var r: i32 = fs.read(fd2, &buf, 6)
+    fs.close(fd2)
+    if (r != 6) {
+        ret 4
+    }
+    if (buf != 11473676690792) {
+        ret 5
+    }
+
+    ret 0
+}

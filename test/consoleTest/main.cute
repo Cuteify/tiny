@@ -1,0 +1,14 @@
+fn main() i32 {
+    // print 返回写出的字节数
+    var w: i32 = console.print("hi")
+    if (w != 2) {
+        ret 1
+    }
+    // println 返回内容 + 换行的字节数
+    var w2: i32 = console.println("hi")
+    if (w2 != 3) {
+        ret 2
+    }
+    console.println("Hello, console library!")
+    ret 0
+}

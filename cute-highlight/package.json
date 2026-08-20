@@ -31,5 +31,8 @@
         "path": "./syntaxes/cute.tmLanguage.json"
       }
     ]
+  },
+  "scripts": {
+    "build": "vsix package"
   }
 }

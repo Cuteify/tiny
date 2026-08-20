@@ -64,7 +64,15 @@ func (c *ECompiler) Assign(v *parser.VarBlock) string {
 	c.Collect(v.Value)
 	if isThisField(v) {
 		pre, addr, reg := c.thisMem(v)
-		mem := c.derefPrefix(v.Type) + "[" + addr + "]"
+		mem := c.fieldValPrefix(v.Type) + "[" + addr + "]"
+		code := pre + c.generate(v.Value, mem)
+		c.freeTmpReg(reg)
+		return code + "; 设置变量" + v.Name.String() + "\n"
+	}
+	// 指针基字段写入（p.x = v）：先加载指针值再间接寻址
+	if needPtrMem(v) {
+		pre, addr, reg := c.ptrMem(v)
+		mem := c.fieldValPrefix(v.Type) + "[" + addr + "]"
 		code := pre + c.generate(v.Value, mem)
 		c.freeTmpReg(reg)
 		return code + "; 设置变量" + v.Name.String() + "\n"
@@ -100,6 +108,119 @@ func (c *ECompiler) thisMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
 	return pre, reg.Name + "+" + strconv.Itoa(off), reg
 }
 
+// needPtrMem 判断字段访问是否需要指针间接寻址（p.x / head.next.x 等）。
+// 路径中存在指针中间层（除最后一个目标字段类型外）时返回 true。
+func needPtrMem(v *parser.VarBlock) bool {
+	if v == nil || len(v.Name) <= 1 || isThisField(v) || v.Define.Node == nil || len(v.Define.Path) < 2 {
+		return false
+	}
+	for i := 0; i < len(v.Define.Path)-1; i++ {
+		if t, ok := v.Define.Path[i].(typeSys.Type); ok && t != nil && t.IsPointer() {
+			return true
+		}
+	}
+	return false
+}
+
+// ptrMem 为指针基/指针中间层字段访问生成间接寻址（一层或多层装载）。
+// 返回（前置代码, 内存地址表达式, 临时寄存器）。
+func (c *ECompiler) ptrMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
+	reg := c.allocTmpReg()
+	size := c.arch.PointerSize()
+	ln := c.arch.LengthName(size)
+
+	// 基础变量槽地址（Path[0] 为变量/参数；this/self 已由 isThisField 排除）
+	var baseOff int
+	isGlobal := false
+	var globalName string
+	var baseType typeSys.Type
+	if len(v.Define.Path) > 0 {
+		switch base := v.Define.Path[0].(type) {
+		case *parser.VarBlock:
+			baseOff = base.Offset
+			baseType = base.Type
+			if base.IsGlobal {
+				isGlobal = true
+				name := base.Name.String()
+				if base.Define.Value != nil {
+					if vb, ok := base.Define.Value.(*parser.VarBlock); ok && vb.Name != nil {
+						name = vb.Name.String()
+					}
+				}
+				globalName = "__global_" + utils.ToNASMName(name)
+			}
+		case *parser.ArgBlock:
+			baseOff = base.Offset
+			baseType = base.Type
+		}
+	}
+	var base string
+	if isGlobal {
+		base = "[rel " + globalName + "]"
+	} else {
+		frame := c.arch.FramePtr()
+		if baseOff < 0 {
+			base = "[" + frame + strconv.Itoa(baseOff) + "]"
+		} else if baseOff == 0 {
+			base = "[" + frame + "]"
+		} else {
+			base = "[" + frame + "+" + strconv.Itoa(baseOff) + "]"
+		}
+	}
+
+	// 第一装载：基础变量是指针则读指针值，否则取地址（值结构体在栈上）
+	var pre string
+	var currentType typeSys.Type
+	if baseType != nil && baseType.IsPointer() {
+		pre = utils.Format("mov " + reg.Name + ", " + ln + " " + base)
+		currentType = baseType.Elem()
+	} else {
+		pre = utils.Format("lea " + reg.Name + ", " + base)
+		currentType = baseType
+	}
+	if currentType == nil {
+		c.freeTmpReg(reg)
+		return pre, reg.Name, reg
+	}
+
+	// 沿字段路径：遇指针字段装载一层，普通字段累计偏移
+	off := 0
+	for i := 1; i < len(v.Name); i++ {
+		st, ok := currentType.(*typeSys.StructType)
+		if !ok {
+			break
+		}
+		st.Layout()
+		field := st.Field(v.Name[i].Name)
+		if field == nil {
+			break
+		}
+		off += field.Offset
+		if i == len(v.Name)-1 {
+			break
+		}
+		currentType = field.Type
+		if currentType == nil {
+			break
+		}
+		if currentType.IsPointer() {
+			// 指针中间层：从当前地址装载指针值并清零偏移
+			if off != 0 {
+				pre += utils.Format("mov " + reg.Name + ", " + ln + " [" + reg.Name + "+" + strconv.Itoa(off) + "]")
+			} else {
+				pre += utils.Format("mov " + reg.Name + ", " + ln + " [" + reg.Name + "]")
+			}
+			off = 0
+			currentType = currentType.Elem()
+		}
+	}
+	addr := reg.Name
+	if off != 0 {
+		addr = reg.Name + "+" + strconv.Itoa(off)
+	}
+	return pre, addr, reg
+}
+
 // allocTmpReg 分配临时寄存器（不绑定表达式，调用方负责 freeTmpReg）
 // 避开 ReturnReg：derefLoad/derefStore 用 ReturnReg 作临时寄存器，避免覆盖
 func (c *ECompiler) allocTmpReg() *regmgr.Reg {
@@ -126,6 +247,18 @@ func fieldOffsetOf(v *parser.VarBlock) int {
 		return 0
 	}
 	base, ok := v.Define.Path[0].(typeSys.Type)
+	if !ok {
+		switch t := v.Define.Path[0].(type) {
+		case *parser.VarBlock:
+			base, ok = t.Type, t.Type != nil
+		case *parser.ArgBlock:
+			base, ok = t.Type, t.Type != nil
+		case *parser.FuncBlock:
+			base, ok = t.Class, t.Class != nil
+		case *typeSys.StructField:
+			base, ok = t.Type, t.Type != nil
+		}
+	}
 	if !ok || base == nil {
 		return 0
 	}
@@ -200,6 +333,11 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 		}
 	}
 
+	// string 拼接 +（运行期，常量折叠已在 parser 层处理）
+	if exp.Separator == "+" && exp.Type != nil && typeSys.CheckKind(exp.Type, "string") {
+		return c.stringConcatExp(exp, result, ei)
+	}
+
 	// 一元运算：只有 Right 子节点，Left 为 nil
 	if exp.Left == nil && exp.Right != nil {
 		return c.unary(exp, result, ei)
@@ -230,11 +368,35 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 	// 特殊处理函数调用：需要先生成 call 指令
 	if exp.Call != nil {
 			code := c.arch.Call(exp.Call)
+			// 大值（容器/结构体）返回值：call 已写入本帧返回槽，从这里多槽装载
+			if exp.Call.Func != nil && len(exp.Call.Func.Return) > 0 && arch.FuncReturnsLarge(exp.Call.Func) {
+				ps := c.arch.PointerSize()
+				ln := c.arch.LengthName(ps)
+				slots := arch.ArgSlots(exp.Call.Func.Return[0])
+				retBase := c.arch.FramePtr() + strconv.Itoa(c.ctx.RetSlot)
+				if result == "push" {
+					var pcode string
+					for i := slots - 1; i >= 0; i-- {
+						off := i * ps
+						if off == 0 {
+							pcode += utils.Format("push " + ln + " [" + retBase + "]")
+						} else {
+							pcode += utils.Format("push " + ln + " [" + retBase + "+" + strconv.Itoa(off) + "]")
+						}
+					}
+					return code + pcode
+				}
+				if strings.Contains(result, "[") {
+					code += c.copySlots(stripOuterBrackets(result), retBase, slots*ps)
+					return code
+				}
+				return code + utils.Format("mov " + result + ", " + ln + " [" + retBase + "]")
+			}
 			val := c.arch.ReturnReg() // 函数返回值寄存器（EAX/RAX）
 			if result == "push" {
 				return code + utils.Format("push "+val)
 			}
-			if result != val {
+		if result != val {
 				// 目标为窄内存槽时源寄存器名匹配槽宽度（RAX→AL/AX/EAX）
 				if strings.Contains(result, "[") {
 					val = matchMemWidth(result, val)
@@ -245,10 +407,14 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 		}
 
 	val := c.val(exp)
+	// 多槽叶子（容器/结构体）：常量/变量多槽装载
+	if c.isMultiSlotLeaf(exp) {
+		return c.loadMultiSlot(exp, result)
+	}
 	// this/self 字段访问（self.x）：this 是指针，需先加载再间接寻址
 	if exp.Var != nil && isThisField(exp.Var) {
 		pre, addr, reg := c.thisMem(exp.Var)
-		prefix := c.derefPrefix(exp.Var.Type)
+		prefix := c.fieldValPrefix(exp.Var.Type)
 		var code string
 		if result == "push" {
 			code = c.derefLoad(prefix, reg.Name, addr)
@@ -259,7 +425,43 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 		c.freeTmpReg(reg)
 		return pre + code
 	}
+	// 指针基字段访问（p.x）：先加载指针值再间接寻址
+	if exp.Var != nil && needPtrMem(exp.Var) {
+		pre, addr, reg := c.ptrMem(exp.Var)
+		prefix := c.fieldValPrefix(exp.Var.Type)
+		var code string
+		if result == "push" {
+			code = c.derefLoad(prefix, reg.Name, addr)
+			code += utils.Format("push " + reg.Name)
+		} else {
+			code = c.derefLoad(prefix, result, addr)
+		}
+		c.freeTmpReg(reg)
+		return pre + code
+	}
+	// 常量 → QWORD 内存槽：NASM mov r/m64,imm 只支持 imm32（符号扩展），
+	// 超过 32 位必须拆成高低两条 mov dword（x86_64 会截断，x86 直接非法）
+	if strings.Contains(result, "QWORD[") && !strings.Contains(val, "[") {
+		if num, err := strconv.ParseFloat(val, 64); err == nil {
+			if num > 0xFFFFFFFF || num < -0x80000000 || c.arch.PointerSize() == 4 {
+				loAddr := strings.Replace(result, "QWORD[", "DWORD[", 1)
+				hiAddr := hiMemAddr(loAddr)
+				lo32 := int64(num) & 0xFFFFFFFF
+				hi32 := (int64(num) >> 32) & 0xFFFFFFFF
+				return utils.Format("mov " + loAddr + ", " + strconv.FormatInt(lo32, 10) + "; 64bit low") +
+					utils.Format("mov " + hiAddr + ", " + strconv.FormatInt(hi32, 10) + "; 64bit high")
+			}
+		}
+	}
 	if result == "push" {
+		// x86_64：push 仅支持 64 位操作数，窄内存值经 EAX 零扩展后 push RAX
+		if c.arch.PointerSize() == 8 {
+			switch memPrefix(val) {
+			case "BYTE", "WORD", "DWORD":
+				return utils.Format("mov EAX, " + val) +
+					utils.Format("push RAX")
+			}
+		}
 		return utils.Format("push " + val)
 	}
 	if result != val {
@@ -305,6 +507,15 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 // val 获取表达式的值（不生成代码）
 func (c *ECompiler) val(exp *parser.Expression) string {
 	if exp.IsConst() {
+		if exp.StringVal != "" {
+			return c.getStringLabel(exp.StringVal)
+		}
+		if exp.Type != nil && exp.Type.Kind() == "bool" {
+			if exp.Bool {
+				return "1"
+			}
+			return "0"
+		}
 		return strconv.FormatFloat(exp.Num, 'f', -1, 64)
 	}
 	if exp.Var != nil {
@@ -478,8 +689,19 @@ func (c *ECompiler) derefSet(exp *parser.Expression) string {
 	return code
 }
 
-// derefPrefix 返回解引用类型的内存操作宽度前缀（BYTE/WORD/DWORD/QWORD）。
-// 真实指针（IsPointer）的宽度取被指类型 Elem 的大小；
+// fieldValPrefix 字段访问的读写宽度：指针字段按指针大小（存的是地址），
+// 标量按自身宽度；容器/超宽字段由 loadContainer 等路径处理，回退指针宽度。
+func (c *ECompiler) fieldValPrefix(t typeSys.Type) string {
+	if t == nil {
+		return c.arch.LengthName(c.arch.PointerSize())
+	}
+	if isListLike(t) || t.Size() > c.arch.PointerSize() {
+		return c.arch.LengthName(c.arch.PointerSize())
+	}
+	return c.arch.LengthName(t.Size())
+}
+
+// derefPrefix 返回解引用类型的内存操作宽度前缀（BYTE/WORD/DWORD/QWORD）。// 真实指针（IsPointer）的宽度取被指类型 Elem 的大小；
 // 系统 ptr 是地址号类型（无元素信息），宽度即指针大小。
 func (c *ECompiler) derefPrefix(t typeSys.Type) string {
 	if t == nil {
@@ -495,6 +717,27 @@ func (c *ECompiler) derefPrefix(t typeSys.Type) string {
 		return c.arch.LengthName(c.arch.PointerSize())
 	}
 	return c.arch.LengthName(t.Size())
+}
+
+// hiMemAddr 返回 DWORD 内存操作数的相邻高 4 字节地址（[rbp-48] → [rbp-44]）
+func hiMemAddr(dwordAddr string) string {
+	idx := strings.LastIndex(dwordAddr, "]")
+	if idx == -1 {
+		return dwordAddr
+	}
+	base := dwordAddr[:idx]
+	plus := strings.LastIndex(base, "+")
+	if plus != -1 {
+		if off, err := strconv.Atoi(base[plus+1:]); err == nil {
+			return base[:plus] + "+" + strconv.Itoa(off+4) + "]"
+		}
+	}
+	if minus := strings.LastIndex(base, "-"); minus != -1 {
+		if off, err := strconv.Atoi(base[minus+1:]); err == nil {
+			return base[:minus] + "-" + strconv.Itoa(off-4) + "]"
+		}
+	}
+	return dwordAddr
 }
 
 // memPrefix 返回内存操作数的宽度前缀（BYTE/WORD/DWORD/QWORD），非内存返回空串。
@@ -922,9 +1165,333 @@ func (c *ECompiler) emitBin(exp *parser.Expression, result, lVal, rVal, callee s
 
 // ============ 列表/字符串（list/string）三字段容器支持 ============
 
+// loadContainerPair 装载容器表达式到 {ptr, len} 寄存器对（常量/变量/函数调用）
+func (c *ECompiler) loadContainerPair(exp *parser.Expression, r0, r1 string) string {
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+	if exp.IsConst() && isListLike(exp.Type) {
+		label := "0"
+		if exp.StringVal != "" {
+			label = c.getStringLabel(exp.StringVal)
+		}
+		slen := len(exp.StringVal)
+		return utils.Format("mov " + r0 + ", " + label) +
+			utils.Format("mov " + r1 + ", " + strconv.Itoa(slen))
+	}
+	if exp.Var != nil && isListLike(exp.Var.Type) {
+		if isThisField(exp.Var) {
+			// this/self 字段：this 是指针，先经寄存器装载再间接寻址
+			p2, addr2, reg2 := c.thisMem(exp.Var)
+			code := p2 + utils.Format("mov "+r0+", "+ln+" ["+addr2+"]") +
+				utils.Format("mov "+r1+", "+ln+" ["+addr2+"+"+strconv.Itoa(ps)+"]")
+			c.freeTmpReg(reg2)
+			return code
+		}
+		src := stripOuterBrackets(c.arch.VarAddr(exp.Var))
+		return utils.Format("mov " + r0 + ", " + ln + " [" + src + "]") +
+			utils.Format("mov " + r1 + ", " + ln + " [" + src + "+" + strconv.Itoa(ps) + "]")
+	}
+	if exp.Call != nil {
+		code := c.arch.Call(exp.Call)
+		retBase := c.arch.FramePtr() + strconv.Itoa(c.ctx.RetSlot)
+		code += utils.Format("mov " + r0 + ", " + ln + " [" + retBase + "]")
+		code += utils.Format("mov " + r1 + ", " + ln + " [" + retBase + "+" + strconv.Itoa(ps) + "]")
+		return code
+	}
+	// 嵌套表达式（如字符串拼接链的内层）：递归编译到返回槽再装载
+	if exp.Separator != "" {
+		retBase := c.arch.FramePtr() + strconv.Itoa(c.ctx.RetSlot)
+		code := c.generate(exp, "["+retBase+"]")
+		return code + utils.Format("mov " + r0 + ", " + ln + " [" + retBase + "]") +
+			utils.Format("mov " + r1 + ", " + ln + " [" + retBase + "+" + strconv.Itoa(ps) + "]")
+	}
+	return ""
+}
+
+// allocRegSecond 分配除 avoidName 外的另一个空闲寄存器（不记入 Record，需手动 Free）
+func (c *ECompiler) allocRegSecond(avoidName string) *regmgr.Reg {
+	for _, reg := range c.ctx.Reg.Regs {
+		if reg.Free && reg.Name != avoidName {
+			reg.Free = false
+			reg.ExpID = 0
+			reg.User = nil
+			return reg
+		}
+	}
+	return nil
+}
+
+// stringConcatExp 运行期字符串拼接：malloc 新缓冲 + 两段 rep movsb + 双 NUL + 三槽装载
+// 左/右容器经 loadContainerPair 装载到寄存器后压栈暂存，避免调用间破坏。
+func (c *ECompiler) stringConcatExp(exp *parser.Expression, result string, ei *ExpInfo) string {
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+	code := ""
+
+	// 左容器 → 寄存器对 → 压栈（左ptr、左len）
+	l0 := c.allocReg(exp.Left)
+	l1 := c.allocRegSecond(l0.Name)
+	if l0 == nil {
+		l0 = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	if l1 == nil {
+		l1 = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	code += c.loadContainerPair(exp.Left, l0.Name, l1.Name)
+	code += utils.Format("push " + l0.Name)
+	code += utils.Format("push " + l1.Name)
+	c.ctx.Reg.Free(exp.Left)
+	l1.Free = true
+
+	// 右容器 → 寄存器对 → 压栈（右ptr、右len）
+	r0 := c.allocReg(exp.Right)
+	r1 := c.allocRegSecond(r0.Name)
+	if r0 == nil {
+		r0 = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	if r1 == nil {
+		r1 = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	code += c.loadContainerPair(exp.Right, r0.Name, r1.Name)
+	code += utils.Format("push " + r0.Name)
+	code += utils.Format("push " + r1.Name)
+	c.ctx.Reg.Free(exp.Right)
+	r1.Free = true
+
+	// 固定工作区（跨 call 安全）：
+	// x64：pop 到 callee-save R12-R15（malloc 会保存它们）
+	// x86：留在栈上（EBX 是唯一 callee-save，作新 ptr；四值经 [esp+N] 访问）
+	var rLen, rPtr, lLen, lPtr, tmp1, tmp2, ret string
+	ret = c.arch.ReturnReg()
+	if ps == 8 {
+		code += utils.Format("pop R12") // 右len
+		code += utils.Format("pop R13") // 右ptr
+		code += utils.Format("pop R14") // 左len
+		code += utils.Format("pop R15") // 左ptr
+		rLen, rPtr, lLen, lPtr = "R12", "R13", "R14", "R15"
+		tmp1, tmp2 = "R9", "RDI"
+	} else {
+		rLen, rPtr, lLen, lPtr = "0", "4", "8", "12" // [esp+N] 偏移
+		tmp1, tmp2 = "EAX", "ECX"
+	}
+
+	// total = 左len + 右len；x86 压栈暂存（x64 在 call 后用 R14/R12 重算，
+	// 因为 callee 的参数保存槽 [rbp+16] 会落在 caller 的 rsp 处，压栈值会被覆盖）
+	if ps == 8 {
+		code += utils.Format("mov " + tmp1 + ", " + lLen)
+		code += utils.Format("add " + tmp1 + ", " + rLen)
+	} else {
+		code += utils.Format("mov " + tmp1 + ", [esp+" + lLen + "]")
+		code += utils.Format("add " + tmp1 + ", [esp+" + rLen + "]")
+		code += utils.Format("push " + tmp1)
+	}
+
+	// malloc(align8(total+1))：x64 RDI 传参；x86 压栈传参
+	code += utils.Format("lea " + tmp2 + ", [" + tmp1 + "+8]")
+	code += utils.Format("and " + tmp2 + ", -8")
+	if ps == 8 {
+		code += utils.Format("mov RDI, " + tmp2) +
+			utils.Format("call std_memory_malloc1")
+	} else {
+		code += utils.Format("push " + tmp2) +
+			utils.Format("call std_memory_malloc1") +
+			utils.Format("add esp, 4")
+	}
+	code += utils.Format("mov " + ret + ", " + c.arch.ReturnReg())
+
+	// 右段拷贝：dst = new + 左len，src = 右ptr，count = 右len
+	if ps == 8 {
+		code += utils.Format("mov " + tmp2 + ", " + ret)
+		code += utils.Format("add " + tmp2 + ", " + lLen)
+		code += utils.Format("mov RSI, " + rPtr)
+		code += utils.Format("mov RCX, " + rLen)
+	} else {
+		// 栈布局（esp→）：[esp+0]=total、[esp+4]=右len、[esp+8]=右ptr、[esp+12]=左len、[esp+16]=左ptr
+		code += utils.Format("mov EDI, " + ret)
+		code += utils.Format("add EDI, [esp+12]")
+		code += utils.Format("mov ESI, [esp+8]")
+		code += utils.Format("mov ECX, [esp+4]")
+	}
+	code += utils.Format("rep movsb")
+
+	// 左段拷贝：dst = new，src = 左ptr，count = 左len
+	if ps == 8 {
+		code += utils.Format("mov " + tmp2 + ", " + ret)
+		code += utils.Format("mov RSI, " + lPtr)
+		code += utils.Format("mov RCX, " + lLen)
+	} else {
+		code += utils.Format("mov EDI, " + ret)
+		code += utils.Format("mov ESI, [esp+16]")
+		code += utils.Format("mov ECX, [esp+12]")
+	}
+	code += utils.Format("rep movsb")
+
+	// 双 NUL 终止
+	if ps == 8 {
+		// 重算 total：R9 已被 call 污染，R14（左len）/R12（右len）为 callee-saved 仍存活
+		code += utils.Format("mov " + tmp1 + ", " + lLen)
+		code += utils.Format("add " + tmp1 + ", " + rLen)
+		code += utils.Format("mov byte [" + ret + "+" + tmp1 + "], 0")
+		code += utils.Format("mov byte [" + ret + "+" + tmp1 + "+1], 0")
+		// cap = align8(total+1) - 1
+		code += utils.Format("lea " + rLen + ", [" + tmp1 + "+8]")
+		code += utils.Format("and " + rLen + ", -8")
+		code += utils.Format("dec " + rLen)
+	} else {
+		code += utils.Format("mov EDX, [esp+0]") // total
+		code += utils.Format("mov byte [" + ret + "+EDX], 0")
+		code += utils.Format("mov byte [" + ret + "+EDX+1], 0")
+		code += utils.Format("lea ECX, [EDX+8]")
+		code += utils.Format("and ECX, -8")
+		code += utils.Format("dec ECX")
+		rLen, lLen = "ECX", "EDX"
+	}
+
+	// 装载结果三槽 {ptr, len, cap}
+	if ps == 8 {
+		// x64：rLen 已被覆盖为 cap，total 仍在 tmp1（R9）中
+		if result == "push" {
+			code += utils.Format("push " + rLen)  // cap
+			code += utils.Format("push " + tmp1)  // len
+			code += utils.Format("push " + ret)   // ptr
+		} else if strings.Contains(result, "[") {
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "], " + ret)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(ps) + "], " + tmp1)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(2*ps) + "], " + rLen)
+		} else {
+			code += utils.Format("mov " + result + ", " + ret)
+		}
+	} else {
+		if result == "push" {
+			code += utils.Format("push " + rLen)  // cap
+			code += utils.Format("push " + lLen)  // len
+			code += utils.Format("push " + ret)   // ptr
+		} else if strings.Contains(result, "[") {
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "], " + ret)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(ps) + "], " + lLen)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(2*ps) + "], " + rLen)
+		} else {
+			code += utils.Format("mov " + result + ", " + ret)
+		}
+	}
+
+	// 清理暂存槽：x86 5 个（total、右len、右ptr、左len、左ptr）；x64 无
+	if ps != 8 {
+		code += utils.Format("add esp, 20")
+	}
+	return code
+}
+
 // isListLike 判断是否为三字段容器类型（list/string）
 func isListLike(t typeSys.Type) bool {
 	return t != nil && (t.Kind() == "list" || t.Kind() == "string")
+}
+
+// isMultiSlotLeaf 判断叶子表达式是否为多槽值（容器 3 槽 / 结构体 N 槽）
+func (c *ECompiler) isMultiSlotLeaf(exp *parser.Expression) bool {
+	if exp.IsConst() && isListLike(exp.Type) {
+		return true
+	}
+	if exp.Var != nil && exp.Var.Type != nil {
+		if isListLike(exp.Var.Type) {
+			return true
+		}
+		return exp.Var.Type.Size() > c.arch.PointerSize()
+	}
+	return false
+}
+
+// loadMultiSlot 多槽叶子装载：容器 3 槽；结构体按 Size/PointerSize 槽数
+func (c *ECompiler) loadMultiSlot(exp *parser.Expression, result string) string {
+	if exp.Var != nil && exp.Var.Type != nil && !isListLike(exp.Var.Type) {
+		return c.loadStruct(exp.Var, result)
+	}
+	return c.loadContainer(exp, result)
+}
+
+// loadStruct 结构体叶子多槽装载（值语义拷贝：按 PointerSize 分槽）
+func (c *ECompiler) loadStruct(v *parser.VarBlock, result string) string {
+	if v == nil || v.Type == nil {
+		return ""
+	}
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+	slots := v.Type.Size() / ps
+	src := stripOuterBrackets(c.arch.VarAddr(v))
+	pre := ""
+	if isThisField(v) {
+		p2, addr2, reg2 := c.thisMem(v)
+		pre = p2
+		src = addr2
+		defer c.freeTmpReg(reg2)
+	} else if needPtrMem(v) {
+		p3, addr3, reg3 := c.ptrMem(v)
+		pre = p3
+		src = addr3
+		defer c.freeTmpReg(reg3)
+	}
+	if result == "push" {
+		// 高地址槽先入栈
+		var code string
+		for i := slots - 1; i >= 0; i-- {
+			off := i * ps
+			if off == 0 {
+				code += utils.Format("push " + ln + " [" + src + "]")
+			} else {
+				code += utils.Format("push " + ln + " [" + src + "+" + strconv.Itoa(off) + "]")
+			}
+		}
+		return pre + code
+	}
+	if strings.Contains(result, "[") {
+		return pre + c.copySlots(stripOuterBrackets(result), src, slots*ps)
+	}
+	return pre + utils.Format("mov " + result + ", " + ln + " [" + src + "]")
+}
+
+// loadContainer 容器（list/string）叶子三槽装载：常量 → {label, len, len}；变量 → 从内存读三槽
+func (c *ECompiler) loadContainer(exp *parser.Expression, result string) string {
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+	if exp.IsConst() && isListLike(exp.Type) {
+		label := "0"
+		if exp.StringVal != "" {
+			label = c.getStringLabel(exp.StringVal)
+		}
+		slen := len(exp.StringVal)
+		return c.emit3(result, label, slen, slen)
+	}
+	if exp.Var != nil && isListLike(exp.Var.Type) {
+		src := stripOuterBrackets(c.arch.VarAddr(exp.Var))
+		pre := ""
+		if isThisField(exp.Var) {
+			// this/self 字段：this 是指针，先经寄存器装载再间接寻址
+			p2, addr2, reg2 := c.thisMem(exp.Var)
+			pre = p2
+			src = addr2
+			defer c.freeTmpReg(reg2)
+		} else if needPtrMem(exp.Var) {
+			// 指针基字段（p.s）：先加载指针值再间接寻址
+			p3, addr3, reg3 := c.ptrMem(exp.Var)
+			pre = p3
+			src = addr3
+			defer c.freeTmpReg(reg3)
+		}
+		if result == "push" {
+			// 高地址槽先入栈：cap、len、ptr
+			var code string
+			for i := 2; i >= 0; i-- {
+				off := i * ps
+				code += utils.Format("push " + ln + " [" + src + "+" + strconv.Itoa(off) + "]")
+			}
+			return pre + code
+		}
+		if strings.Contains(result, "[") {
+			return pre + c.copySlots(stripOuterBrackets(result), src, 3*ps)
+		}
+		return pre + utils.Format("mov " + result + ", " + ln + " [" + src + "]")
+	}
+	return ""
 }
 
 // listFields 返回三字段偏移（x64: 0/8/16；x86: 0/4/8）
@@ -1005,13 +1572,14 @@ func (c *ECompiler) emitZero3(result string) string {
 }
 
 // emit3 将 {ptr, len, cap} 三字段装载到 result（内存/寄存器/push）
+// push 顺序：cap/len/ptr（ptr 最后入栈落在低地址，与 callee 参数槽序一致）
 func (c *ECompiler) emit3(result, ptrReg string, length, cap int) string {
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
 	if result == "push" {
-		code := utils.Format("push " + ptrReg)
+		code := utils.Format("push " + strconv.Itoa(cap))
 		code += utils.Format("push " + strconv.Itoa(length))
-		code += utils.Format("push " + strconv.Itoa(cap))
+		code += utils.Format("push " + ptrReg)
 		return code
 	}
 	if strings.Contains(result, "[") {
@@ -1049,8 +1617,11 @@ func (c *ECompiler) listLiteral(exp *parser.Expression, result string) string {
 		off := i * elemSize
 		if elem.Type != nil && elem.Type.Kind() == "string" {
 			// string 元素：三槽（ptr/len/cap）
-			if elem.IsConst() && elem.StringVal != "" {
-				label := c.getStringLabel(elem.StringVal)
+			if elem.IsConst() {
+				label := "0"
+				if elem.StringVal != "" {
+					label = c.getStringLabel(elem.StringVal)
+				}
 				slen := len(elem.StringVal)
 				code += utils.Format("mov " + c.arch.LengthName(ps) + " [" + callee + "+" + strconv.Itoa(off+ptrOff) + "], " + label)
 				code += utils.Format("mov " + c.arch.LengthName(ps) + " [" + callee + "+" + strconv.Itoa(off+lenOff) + "], " + strconv.Itoa(slen))
@@ -1176,27 +1747,19 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 			elemSize = lt.Elem().Size()
 		}
 	}
-
-	// 1. 值先算到寄存器（地址计算无调用，值可安全跨指令保存）
-	vReg := c.allocReg(exp.Right)
-	if vReg == nil {
-		vReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
-	}
-	code := c.generate(exp.Right, vReg.Name)
 	if elemSize > c.arch.PointerSize() {
 		// 多槽元素（string）赋值暂不支持非常量源
-		c.ctx.Reg.Free(exp.Right)
 		return ""
 	}
 
-	// 2. 列表指针 → aReg（避开值寄存器）
-	aReg := c.allocRegAvoid(indexExpr.Right, vReg.Name)
+	// 1. 列表指针 → aReg
+	aReg := c.allocRegAvoid(indexExpr.Right, "")
 	if aReg == nil {
 		aReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
 	}
-	code += c.generate(indexExpr.Right, aReg.Name)
+	code := c.generate(indexExpr.Right, aReg.Name)
 
-	// 3. 索引偏移
+	// 2. 索引偏移
 	idxExpr := indexExpr.Index[0]
 	if idxExpr.IsConst() {
 		off := int(idxExpr.Num) * elemSize
@@ -1213,6 +1776,13 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 		code += utils.Format("add " + aReg.Name + ", " + iReg.Name)
 		c.ctx.Reg.Free(idxExpr)
 	}
+
+	// 3. 值最后装载到寄存器（先算地址：期间 EAX 空闲可作临时，避免覆盖值）
+	vReg := c.allocReg(exp.Right)
+	if vReg == nil {
+		vReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	code += c.generate(exp.Right, vReg.Name)
 
 	// 4. 写入
 	code += c.derefStore(c.arch.LengthName(elemSize), aReg.Name, vReg.Name)
@@ -1345,6 +1915,52 @@ func (c *ECompiler) sliceExp(exp *parser.Expression, result string) string {
 }
 
 // listFieldRead 读容器字段（len/cap）：变量直接读三槽；表达式先算 ptr 再偏移
+// builtinStringSlotCall len(s)/cap(s)（string 参数）链接到全局符号实现：
+// 装载容器地址后 call __string_len/cap（由 strings 包 build link 提供）。
+// 返回 EAX/RAX；结果装载模式与 listFieldRead 一致（push/[mem]/寄存器）。
+func (c *ECompiler) builtinStringSlotCall(arg *parser.Expression, sym string, result string) string {
+	ps := c.arch.PointerSize()
+	var code string
+	if arg.Var != nil {
+		// 变量：容器地址 = [rbp/ebp+偏移]，lea 装载
+		addr := c.arch.VarAddr(arg.Var)
+		if ps == 8 {
+			code += utils.Format("lea RDI, " + addr + "; len/cap 容器地址")
+		} else {
+			code += utils.Format("lea EAX, " + addr + "; len/cap 容器地址")
+			code += utils.Format("push EAX")
+		}
+	} else {
+		// 常量/表达式：容器地址在寄存器（generate 后为容器地址）
+		rReg := c.allocReg(arg)
+		if rReg == nil {
+			rReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+		}
+		code += c.generate(arg, rReg.Name)
+		if ps == 8 {
+			code += utils.Format("mov RDI, " + rReg.Name + "; len/cap 容器地址")
+		} else {
+			code += utils.Format("push " + rReg.Name)
+		}
+		c.ctx.Reg.Free(arg)
+	}
+	code += utils.Format("call " + sym)
+	if ps == 4 {
+		code += utils.Format("add esp, 4")
+	}
+	// 结果装载（返回 EAX/RAX）
+	retReg := c.arch.ReturnReg()
+	if result == "push" {
+		code += utils.Format("push " + retReg)
+	} else if strings.Contains(result, "[") {
+		ln := c.arch.LengthName(ps)
+		code += c.derefLoad(ln, result, retReg)
+	} else {
+		code += utils.Format("mov " + result + ", " + retReg + "; len/cap 结果")
+	}
+	return code
+}
+
 func (c *ECompiler) listFieldRead(arg *parser.Expression, off int, result string) string {
 	ln := c.arch.LengthName(c.arch.PointerSize())
 	if arg.Var != nil {
@@ -1390,6 +2006,12 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 			off := lenOff
 			if name == "cap" {
 				off = capOff
+			}
+			// string 参数且 build link 提供了全局符号（strings 包实现）：
+			// 改为 call __string_len/cap，链接到 strings 包的具体实现。
+			if call.Args[0].Value.Type.Kind() == "string" &&
+				c.ctx.StringSyms != nil && c.ctx.StringSyms["__string_"+name] {
+				return c.builtinStringSlotCall(call.Args[0].Value, "__string_"+name, result)
 			}
 			return c.listFieldRead(call.Args[0].Value, off, result)
 		}

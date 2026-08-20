@@ -1,0 +1,60 @@
+// strconv 测试：strings.toString / strings.parse（2-62 进制）
+fn sLen(s string) uint {
+    var p: ptr = &s
+    ret memory.load64(p + 8)
+}
+
+fn sChar(s string, idx uint) uint {
+    var p: ptr = &s
+    var b: ptr = memory.load64(p)
+    ret memory.load8(b + idx)
+}
+
+fn main() int {
+    var ok: int = 0
+    var a: string = strings.toString(12345, 10)
+    if sLen(a) == 5 && sChar(a, 0) == 49 && sChar(a, 4) == 53 {
+        ok = ok + 1
+    }
+    var b: string = strings.toString(-42, 10)
+    if sLen(b) == 3 && sChar(b, 0) == 45 && sChar(b, 2) == 50 {
+        ok = ok + 1
+    }
+    var c: string = strings.toString(255, 2)
+    if sLen(c) == 8 && sChar(c, 0) == 49 && sChar(c, 7) == 49 {
+        ok = ok + 1
+    }
+    var d: string = strings.toString(255, 16)
+    if sLen(d) == 2 && sChar(d, 0) == 102 && sChar(d, 1) == 102 {
+        ok = ok + 1
+    }
+    var e: string = strings.toString(35, 36)
+    if sLen(e) == 1 && sChar(e, 0) == 122 {
+        ok = ok + 1
+    }
+    var f: string = strings.toString(61, 62)
+    if sLen(f) == 1 && sChar(f, 0) == 90 {
+        ok = ok + 1
+    }
+    var g: int = strings.parse("12345", 10)
+    if g == 12345 {
+        ok = ok + 1
+    }
+    var h: int = strings.parse("-42", 10)
+    if h == -42 {
+        ok = ok + 1
+    }
+    var i: int = strings.parse("ff", 16)
+    if i == 255 {
+        ok = ok + 1
+    }
+    var j: int = strings.parse("11111111", 2)
+    if j == 255 {
+        ok = ok + 1
+    }
+    var k: int = strings.parse("Z", 62)
+    if k == 61 {
+        ok = ok + 1
+    }
+    ret ok
+}

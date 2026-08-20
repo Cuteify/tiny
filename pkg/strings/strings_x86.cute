@@ -1,0 +1,157 @@
+build os("linux")
+build arch("x86")
+
+// 字符串容器槽位（x86 三槽各 4 字节）：ptr+0 / len+4 / cap+8
+// len/cap/toCstring 返回 uint（平台原生字宽，x86 为 4 字节）。
+// uint 与 i32/u32/u64 同为数值类型可隐式转换：作 u64 形参实参时由实参扩展（高 32 补 0）处理。
+
+fn len(s string) uint {
+    build link("__string_len")
+    var p: ptr = &s
+    ret memory.load32(p + 4)
+}
+
+fn cap(s string) uint {
+    build link("__string_cap")
+    var p: ptr = &s
+    ret memory.load32(p + 8)
+}
+
+fn eq(s string, t string) bool {
+    build link("__string_eq")
+    var p: ptr = &s
+    var q: ptr = &t
+    var x: uint = memory.load32(p)
+    var y: uint = memory.load32(q)
+    if x == y {
+        ret true
+    }
+    ret false
+}
+
+fn ne(s string, t string) bool {
+    build link("__string_ne")
+    var p: ptr = &s
+    var q: ptr = &t
+    var x: uint = memory.load32(p)
+    var y: uint = memory.load32(q)
+    if x != y {
+        ret true
+    }
+    ret false
+}
+
+fn toCstring(s string) uint {
+    build link("__string_toCstring")
+    var p: ptr = &s
+    ret memory.load32(p)
+}
+// toU64 int→u64 位模式桥（语言层无 int↔uint 转换，地址/位模式拷贝实现）
+fn toU64(n int) u64 {
+    build link("__string_toU64")
+    var p: ptr = &n
+    ret memory.load32(p)
+}
+
+// fromI64 u64→int 位模式桥
+fn fromI64(n u64) int {
+    build link("__string_fromI64")
+    var x: int = 0
+    var p: ptr = &x
+    memory.store32(p, n)
+    ret x
+}
+
+// toString 整数转字符串（2-62 进制，负数带负号）
+fn toString(n int, base uint) string {
+    build link("__string_toString")
+    var neg: bool = false
+    var num: uint = 0
+    if n < 0 {
+        neg = true
+        num = toU64(0 - n)
+    } else {
+        num = toU64(n)
+    }
+    var digits: uint = 1
+    var tmp: uint = num
+    for tmp >= base {
+        tmp = tmp / base
+        digits = digits + 1
+    }
+    var total: uint = digits
+    if neg {
+        total = total + 1
+    }
+    var buf: ptr = memory.malloc(total + 1)
+    var v: uint = num
+    if v == 0 {
+        memory.store8(buf, 48)
+    } else {
+        var i: uint = 0
+        for v > 0 {
+            var digit: uint = v % base
+            var ch: uint = 0
+            if digit < 10 {
+                ch = digit + 48
+            } else if digit < 36 {
+                ch = digit + 97 - 10
+            } else {
+                ch = digit + 65 - 36
+            }
+            memory.store8(buf + (total - 1 - i), ch)
+            v = v / base
+            i = i + 1
+        }
+    }
+    if neg {
+        memory.store8(buf, 45)
+    }
+    memory.store8(buf + total, 0)
+    var s: string
+    var p: ptr = &s
+    var b: uint = buf
+    memory.store32(p, b)
+    memory.store32(p + 4, total)
+    memory.store32(p + 8, total)
+    ret s
+}
+
+// parse 字符串转整数（2-62 进制，支持负号；非法字符停止解析）
+fn parse(s string, base uint) int {
+    build link("__string_parse")
+    var p: ptr = &s
+    var ptrVal: ptr = memory.load32(p)
+    var n: uint = memory.load32(p + 4)
+    var i: uint = 0
+    var neg: bool = false
+    var c: uint = memory.load8(ptrVal)
+    if c == 45 {
+        neg = true
+        i = 1
+    }
+    var val: uint = 0
+    var bad: bool = false
+    for i < n {
+        var d: uint = memory.load8(ptrVal + i)
+        var v: uint = 0
+        if d >= 48 && d <= 57 {
+            v = d - 48
+        } else if d >= 97 && d <= 122 {
+            v = d - 97 + 10
+        } else if d >= 65 && d <= 90 {
+            v = d - 65 + 36
+        } else {
+            bad = true
+        }
+        if !bad {
+            val = val * base + v
+        }
+        i = i + 1
+    }
+    var r: int = fromI64(val)
+    if neg {
+        r = 0 - r
+    }
+    ret r
+}

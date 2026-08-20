@@ -1,6 +1,7 @@
 package x86
 
 import (
+	"cuteify/compile/arch"
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
@@ -72,11 +73,51 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		// 64 位形参但实参是 32 位值（字面量/表达式）：扩展为 8 字节，高 32 位补 0
-		if is64Type(arg.Type) && (arg.Value == nil || !is64Type(arg.Value.Type)) {
+		// string 形参：槽 12 字节（ptr+len+cap），实参三槽真实值
+		if arg.Type != nil && arg.Type.Type() == "string" && arg.Value != nil {
+			// 嵌套调用：先 call（返回值在本帧返回槽），再从返回槽压三槽
+			if arg.Value.Call != nil {
+				code += a.Call(arg.Value.Call)
+				code += utils.Format("push dword [ebp" + strconv.Itoa(a.ctx.RetSlot+8) + "]; 参数" + strconv.Itoa(i) + " cap槽\n")
+				code += utils.Format("push dword [ebp" + strconv.Itoa(a.ctx.RetSlot+4) + "]; 参数" + strconv.Itoa(i) + " len槽\n")
+				code += utils.Format("push dword [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; 参数" + strconv.Itoa(i) + " ptr槽\n")
+				continue
+			}
+			// 字符串常量：cap=len=slen，ptr=label
+			if arg.Value.IsConst() {
+				slen := len(arg.Value.StringVal)
+				code += utils.Format("push " + strconv.Itoa(slen) + "; 参数" + strconv.Itoa(i) + " cap槽\n")
+				code += utils.Format("push " + strconv.Itoa(slen) + "; 参数" + strconv.Itoa(i) + " len槽\n")
+				code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
+				code += utils.Format("push EAX; 参数" + strconv.Itoa(i) + " ptr槽\n")
+				continue
+			}
+			// 容器变量：从内存读三槽（ptr+len+cap 各 4 字节）
+			if arg.Value.Var != nil {
+				src := genVarAddr(a.ctx, arg.Value.Var)
+				base := strings.TrimSuffix(src, "]")
+				code += utils.Format("push dword " + base + "+8]; 参数" + strconv.Itoa(i) + " cap槽\n")
+				code += utils.Format("push dword " + base + "+4]; 参数" + strconv.Itoa(i) + " len槽\n")
+				code += utils.Format("push dword " + src + "; 参数" + strconv.Itoa(i) + " ptr槽\n")
+				continue
+			}
+		}
+		// 8 字节形参（i64/u64/f64）但实参不是真 64 位数值：
+		// 扩展为 8 字节压栈，高 32 位补 0（字面量/表达式只产生 32 位值）
+		needExtend := arg.Type.Size() == 8 && !arch.IsListLikeType(arg.Type) &&
+			arg.Type.Kind() != "struct" && (arg.Value == nil || !is64Type(arg.Value.Type))
+		// 4 字节形参但实参是 64 位数值：窄化为低 32 位压栈（数值隐式转换语义，
+		// 否则按实参宽度压 8 字节会错位后续参数槽）
+		needNarrow := arg.Type.Size() == 4 && arg.Value != nil && !arch.IsListLikeType(arg.Type) &&
+			arg.Type.Kind() != "struct" && is64Type(arg.Value.Type)
+		switch {
+		case needNarrow:
+			code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
+			code += utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 窄化为32位\n")
+		case needExtend:
 			code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
 			code += utils.Format("push 0\n") + utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 扩展到64位\n")
-		} else {
+		default:
 			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
 		}
 	}
@@ -96,12 +137,20 @@ normalCall:
 
 	// 生成函数名
 	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	isContainerRet := arch.FuncReturnsLarge(fn)
+	if isContainerRet {
+		code += utils.Format("lea EAX, [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址")
+		code += utils.Format("push EAX; 大值返回槽地址")
+	}
 	code += utils.Format("call " + name)
 
 	// cdecl: 调用者清理参数栈
 	argSize := callArgsSize(call)
 	if argSize > 0 {
 		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; cdecl: 清理参数栈")
+	}
+	if isContainerRet {
+		code += utils.Format("add esp, 4; 清理返回槽地址")
 	}
 
 	return code

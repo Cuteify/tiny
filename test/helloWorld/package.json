@@ -1,0 +1,8 @@
+{
+    "name": "hello_world",
+    "version": "1.0.0",
+    "description": "Hello World 测试脚本",
+    "imports": {
+        "console": "std:console"
+    }
+}

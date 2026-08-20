@@ -65,8 +65,13 @@ func (c *CallBlock) Check(p *Parser) bool {
 	if c.Func == nil && c.Name.IsPath() && c.ThisVar == nil {
 		receiverName := c.Name.Fork()
 		receiverName = receiverName[:len(receiverName)-1]
-		c.ThisVar = &VarBlock{Name: receiverName}
-		c.ThisVar.ParseDefine(p)
+		// 接收者必须为简单名：FixPkgNamePaths 固定的完整包路径（如
+		// /home/.../pkg/memory.store64）不是方法调用，跳过 ParseDefine
+		//（CheckName 会因路径段中的 '/' 报 "name is not valid"）。
+		if !receiverName.IsPath() {
+			c.ThisVar = &VarBlock{Name: receiverName}
+			c.ThisVar.ParseDefine(p)
+		}
 	}
 
 	if c.Func == nil && c.ThisVar != nil {
@@ -158,13 +163,23 @@ func (c *CallBlock) Check(p *Parser) bool {
 func (c *CallBlock) ParseCall(p *Parser) {
 	p.Lexer.Skip('(')
 	var token lexer.Token
+	depth := 0 // 括号深度：支持嵌套调用作为参数（如 f(g(x), y)）
 
 	for {
 		oldCursor := p.Lexer.Cursor
 		for {
 			token = p.Lexer.Next()
 
-			if token.Value == ")" {
+			if token.Type == lexer.SEPARATOR && token.Value == "(" {
+				depth++
+				continue
+			}
+			if token.Type == lexer.SEPARATOR && token.Value == ")" && depth > 0 {
+				depth--
+				continue
+			}
+
+			if token.Type == lexer.SEPARATOR && token.Value == ")" {
 				stopCursor := token.Cursor
 				p.Lexer.SetCursor(oldCursor)
 
@@ -179,7 +194,7 @@ func (c *CallBlock) ParseCall(p *Parser) {
 				return
 			}
 
-			if token.Value == "," {
+			if token.Type == lexer.SEPARATOR && token.Value == "," && depth == 0 {
 				stopCursor := token.Cursor
 				p.Lexer.SetCursor(oldCursor)
 

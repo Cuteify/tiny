@@ -26,6 +26,10 @@ type Context struct {
 	StackSize int // 当前函数的栈大小
 	ArgsSize  int // 当前函数的参数大小
 
+	// 容器（list/string）返回值槽：负数偏移（[rbp/ebp+RetSlot]）
+	// 每函数预留：x64 返回槽 24B + R10 保存 8B = 32B；x86 返回槽 12B + 隐藏参数保存 4B = 16B
+	RetSlot int
+
 	// 栈对齐
 	StackAlignment int // 栈对齐大小（字节），默认8
 
@@ -47,6 +51,10 @@ type Context struct {
 	// 字符串常量池
 	StringConsts map[string]string // 字面值 → 标签名
 	StrCount     int               // 字符串标签计数
+
+	// build link 提供的全局符号（如 __string_len）：由 strings 包实现，
+	// 编译器内建 len/cap 检测到后改为调用该符号
+	StringSyms map[string]bool
 
 	ListDataCount int // list数据段标签计数
 

@@ -1,0 +1,9 @@
+{
+    "name": "strings_test",
+    "version": "1.0.0",
+    "description": "strings package test",
+    "imports": {
+        "fs": "std:fs",
+        "strings": "std:strings"
+    }
+}

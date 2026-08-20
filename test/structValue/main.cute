@@ -1,0 +1,84 @@
+// 结构体值语义测试（M5a）：赋值整体拷贝
+
+type Point struct {
+    x: int
+    y: int
+}
+
+type Trio struct {
+    a: int
+    b: int
+    c: int
+}
+
+fn main() int {
+    // 1. struct 整体赋值（拷贝）
+    var p: Point
+    p.x = 3
+    p.y = 4
+    var q: Point = p
+    q.x = 30
+    var s1: int = p.x + p.y + q.x + q.y
+
+    // 2. 三字段结构体（3 槽）
+    var t: Trio
+    t.a = 1
+    t.b = 2
+    t.c = 3
+    var u: Trio = t
+    u.c = 30
+    var s2: int = t.a + t.b + t.c + u.a + u.b + u.c
+
+    // 3. 结构体按值传参（2 槽：寄存器 RDI+RSI）
+    var p: Point
+    p.x = 10
+    p.y = 20
+    var r1: int = sumPoint(p)
+
+    // 4. 结构体按值传参（3 槽：跨到栈参数）
+    var t2: Trio
+    t2.a = 4
+    t2.b = 5
+    t2.c = 6
+    var r2: int = sumTrio(t2, 100)
+
+    // 5. 结构体按值返回（2 槽）
+    var rp: Point = makePoint(5, 6)
+    var r3: int = rp.x + rp.y
+
+    // 6. 结构体按值返回（3 槽）
+    var rt: Trio = makeTrio()
+    var r4: int = rt.a + rt.b + rt.c
+
+    // 7. 结构体返回后嵌套调用（makePoint 作为参数）
+    var r5: int = sumPoint(makePoint(3, 4))
+
+    ret s1 + s2 + r1 + r2 + r3 + r4 + r5
+}
+
+// 4. 结构体按值传参（2 槽：寄存器 RDI+RSI）
+fn sumPoint(p: Point) int {
+    ret p.x + p.y
+}
+
+// 5. 结构体按值传参（3 槽：跨到栈参数）
+fn sumTrio(t: Trio, extra: int) int {
+    ret t.a + t.b + t.c + extra
+}
+
+// 6. 结构体按值返回（2 槽）
+fn makePoint(x: int, y: int) Point {
+    var p: Point
+    p.x = x
+    p.y = y
+    ret p
+}
+
+// 7. 结构体按值返回（3 槽）
+fn makeTrio() Trio {
+    var t: Trio
+    t.a = 7
+    t.b = 8
+    t.c = 9
+    ret t
+}

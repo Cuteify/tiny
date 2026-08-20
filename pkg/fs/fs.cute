@@ -1,17 +1,26 @@
-build os("linux")
+// pkg/fs/fs.cute - 文件系统库：文件描述符操作
+// 平台无关实现，底层复用 std:syscall（架构相关指令集中在 syscall 包内）
 
-fn open(pathname: u32, flags: i32, mode: u32) i32 {
-    ret syscall.syscall(5, pathname, flags, mode)
+// 文件打开标志（Linux x86 / x86_64 数值相同，POSIX 命名）
+const O_RDONLY: i32 = 0
+const O_WRONLY: i32 = 1
+const O_RDWR: i32 = 2
+const O_CREAT: i32 = 64
+const O_TRUNC: i32 = 512
+const O_APPEND: i32 = 1024
+
+fn open(path string, flags i32, mode u32) i32 {
+    ret syscall.open(strings.toCstring(path), flags, mode)
 }
 
-fn close(fd: i32) i32 {
-    ret syscall.syscall(6, fd, 0, 0)
+fn read(fd i32, buf *u64, count u64) i32 {
+    ret syscall.read(fd, buf, count)
 }
 
-fn read(fd: i32, buf: u32, count: u32) i32 {
-    ret syscall.syscall(3, fd, buf, count)
+fn write(fd i32, buf *u64, count u64) i32 {
+    ret syscall.write(fd, buf, count)
 }
 
-fn write(fd: i32, buf: u32, count: u32) i32 {
-    ret syscall.syscall(4, fd, buf, count)
+fn close(fd i32) i32 {
+    ret syscall.close(fd)
 }

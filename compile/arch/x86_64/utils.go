@@ -4,9 +4,20 @@ import (
 	"cuteify/compile/context"
 	"cuteify/parser"
 	typeSys "cuteify/type"
+	"cuteify/utils"
 	"strconv"
 	"strings"
 )
+
+// globalVarName 返回全局变量的定义名（引用端从 Define 取定义块名，保证与生成端一致）
+func globalVarName(v *parser.VarBlock) string {
+	if v.Define.Value != nil {
+		if vb, ok := v.Define.Value.(*parser.VarBlock); ok && vb.Name != nil {
+			return vb.Name.String()
+		}
+	}
+	return v.Name.String()
+}
 
 func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 	// 处理 this 或 self 指针
@@ -25,7 +36,7 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 
 	if v.IsGlobal {
 		sizePrefix := GetLenName(v.Type.Size())
-		return sizePrefix + "[rel __global_" + v.Name.First() + "]"
+		return sizePrefix + "[rel __global_" + utils.ToNASMName(globalVarName(v)) + "]"
 	}
 
 	var isDefineInArg bool

@@ -18,8 +18,17 @@ func caldAddrWithLen(size int, offset int) (code string) {
 	return utils.GetLengthName(size) + "[ebp + " + strconv.FormatInt(int64(offset), 10) + "]"
 }
 
-func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
-	if v.Name.First() == "this" {
+// globalVarName 返回全局变量的定义名（引用端从 Define 取定义块名，保证与生成端一致）
+func globalVarName(v *parser.VarBlock) string {
+	if v.Define.Value != nil {
+		if vb, ok := v.Define.Value.(*parser.VarBlock); ok && vb.Name != nil {
+			return vb.Name.String()
+		}
+	}
+	return v.Name.String()
+}
+
+func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {	if v.Name.First() == "this" {
 		if len(v.Name) > 1 {
 			thisAddr := "[ebp+8]"
 			fieldOffset := calculateThisFieldOffset(ctx, v)
@@ -36,7 +45,7 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 	}
 
 	if v.IsGlobal {
-		return "[__global_" + v.Name.First() + "]"
+		return "[__global_" + utils.ToNASMName(globalVarName(v)) + "]"
 	}
 
 	var isDefineInArg bool
@@ -346,7 +355,7 @@ func is64Type(t typeSys.Type) bool {
 
 func genLoAddr(ctx *context.Context, v *parser.VarBlock) string {
 	if v.IsGlobal {
-		return "[__global_" + v.Name.First() + "]"
+		return "[__global_" + utils.ToNASMName(globalVarName(v)) + "]"
 	}
 	addr := genVarAddr(ctx, v)
 	idx := strings.Index(addr, "[ebp")
@@ -358,7 +367,7 @@ func genLoAddr(ctx *context.Context, v *parser.VarBlock) string {
 
 func genHiAddr(ctx *context.Context, v *parser.VarBlock) string {
 	if v.IsGlobal {
-		return "[__global_" + v.Name.First() + "+4]"
+		return "[__global_" + utils.ToNASMName(globalVarName(v)) + "+4]"
 	}
 	addr := genVarAddr(ctx, v)
 	idx := strings.Index(addr, "[ebp")

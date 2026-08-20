@@ -42,7 +42,7 @@ patterns:
     match: \b(type|struct|interface)\b
   # 内置类型
   - name: storage.type.primitive.cute
-    match: \b(u8|u16|u32|u64|i8|i16|i32|i64|f32|f64|bool|string|char|list|void)\b
+    match: \b(uint|u8|u16|u32|u64|int|i8|i16|i32|i64|f32|f64|bool|string|char|list|void)\b
   # 函数定义名 fn name(
   - name: meta.function.cute
     begin: \b(fn)\s+([a-zA-Z_][a-zA-Z0-9_.]*)\b

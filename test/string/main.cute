@@ -31,7 +31,7 @@ fn main() int {
     
     // 测试中文字符串
     var chinese: string = "你好世界"
-    var chineseLen: int = stringLength(chinese)  // 4 (字符数)
+    var chineseLen: int = stringLength(chinese)  // 12 (字节数：UTF-8 每字 3 字节)
     
     // 测试字符串拼接
     var concat1: string = stringConcat("hello", " world")  // "hello world"

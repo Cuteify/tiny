@@ -1,0 +1,37 @@
+fn main() i32 {
+    // 1. len/cap：字节长度
+    var s: string = "hello"
+    if (strings.len(s) != 5) {
+        ret 1
+    }
+    if (strings.cap(s) != 5) {
+        ret 2
+    }
+    if (strings.len("中文") != 6) {
+        ret 3
+    }
+
+    // 2. eq/ne：指针比较（字符串常量 intern，同值同地址）
+    if (!strings.eq(s, "hello")) {
+        ret 4
+    }
+    if (strings.ne(s, "hello")) {
+        ret 5
+    }
+    if (!strings.ne(s, "world")) {
+        ret 6
+    }
+
+    // 3. to_cstring：返回字符串数据地址，交给 syscall.open 使用（open 成功即证明路径正确）
+    var fd: i32 = fs.open("stringsTest.txt", fs.O_WRONLY | fs.O_CREAT | fs.O_TRUNC, 420)
+    if (fd < 0) {
+        ret 7
+    }
+    var data: u64 = 11473676690792
+    var w: i32 = fs.write(fd, &data, 6)
+    fs.close(fd)
+    if (w != 6) {
+        ret 8
+    }
+    ret 0
+}

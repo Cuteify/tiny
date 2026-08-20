@@ -38,63 +38,28 @@ fn syscall64(trap: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) u64 {
     }
 }
 
-// 常用系统调用便捷封装（小驼峰命名）
+// 常用系统调用便捷封装（小驼峰命名，纯 Cuteify 转发）
 
 fn exit(code: i32) {
-    build asm {
-        mov EAX, 1
-        mov EBX, $code
-        int 0x80
-    }
+    syscall(1, code, 0, 0)
 }
 
 fn brk(addr: ptr) ptr {
-    build asm {
-        mov EAX, 45
-        mov EBX, $addr
-        int 0x80
-        mov edx, 0
-    }
+    ret syscall(45, addr, 0, 0)
 }
 
-fn write(fd: i32, buf: u64, count: u64) i32 {
-    build asm {
-        mov EAX, 4
-        mov EBX, $fd
-        mov ECX, $buf
-        mov EDX, $count
-        int 0x80
-        mov edx, 0
-    }
+fn write(fd: i32, buf: ptr, count: u64) i32 {
+    ret syscall(4, fd, buf, count)
 }
 
-fn read(fd: i32, buf: u64, count: u64) i32 {
-    build asm {
-        mov EAX, 3
-        mov EBX, $fd
-        mov ECX, $buf
-        mov EDX, $count
-        int 0x80
-        mov edx, 0
-    }
+fn read(fd: i32, buf: ptr, count: u64) i32 {
+    ret syscall(3, fd, buf, count)
 }
 
 fn open(pathname: u64, flags: i32, mode: u32) i32 {
-    build asm {
-        mov EAX, 5
-        mov EBX, $pathname
-        mov ECX, $flags
-        mov EDX, $mode
-        int 0x80
-        mov edx, 0
-    }
+    ret syscall(5, pathname, flags, mode)
 }
 
 fn close(fd: i32) i32 {
-    build asm {
-        mov EAX, 6
-        mov EBX, $fd
-        int 0x80
-        mov edx, 0
-    }
+    ret syscall(6, fd, 0, 0)
 }

@@ -1,0 +1,9 @@
+{
+    "name": "echo",
+    "version": "1.0.0",
+    "description": "echo 测试：输入啥就输出啥",
+    "imports": {
+        "fs": "std:fs",
+        "console": "std:console"
+    }
+}

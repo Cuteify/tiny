@@ -5,6 +5,7 @@ import (
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
 	"encoding/json"
+
 	"os"
 	"path"
 )
@@ -34,21 +35,87 @@ func fixPkgNamePaths(n *parser.Node, pkg *packageFmt.Info) {
 	case *parser.CallBlock:
 		if v.Name.IsPath() {
 			v.Name.FixPath(pkg)
+		} else if v.Func == nil {
+			// 同包跨文件函数调用：包级函数在合并时统一 SetPkgPath，
+			// parse 期未解析出的同包调用在此补上本包前缀，供合并后匹配。
+			v.Name.SetPkgPath(pkg.Path)
+		}
+		for _, arg := range v.Args {
+			if arg != nil && arg.Value != nil {
+				fixExpNamePaths(arg.Value, pkg)
+			}
 		}
 	case *parser.Expression:
-		if v.Call != nil && v.Call.Name.IsPath() {
-			v.Call.Name.FixPath(pkg)
-		}
-		if v.Var != nil && v.Var.Name.IsPath() {
-			v.Var.Name.FixPath(pkg)
-		}
+		fixExpNamePaths(v, pkg)
 	case *parser.VarBlock:
-		if v.Value != nil && v.Value.Call != nil && v.Value.Call.Name.IsPath() {
-			v.Value.Call.Name.FixPath(pkg)
+		if v.Value != nil {
+			fixExpNamePaths(v.Value, pkg)
+		}
+	case *parser.ReturnBlock:
+		for _, exp := range v.Value {
+			if exp != nil {
+				fixExpNamePaths(exp, pkg)
+			}
+		}
+	case *parser.IfBlock:
+		if v.Condition != nil {
+			fixExpNamePaths(v.Condition, pkg)
+		}
+		if v.ElseBlock != nil {
+			fixPkgNamePaths(v.ElseBlock, pkg)
+		}
+	case *parser.ElseBlock:
+		if v.IfCondition != nil {
+			fixExpNamePaths(v.IfCondition, pkg)
+		}
+	case *parser.ForBlock:
+		if v.Init != nil {
+			fixExpNamePaths(v.Init, pkg)
+		}
+		if v.Condition != nil {
+			fixExpNamePaths(v.Condition, pkg)
+		}
+		if v.Increment != nil {
+			fixExpNamePaths(v.Increment, pkg)
 		}
 	}
 	for _, c := range n.Children {
 		fixPkgNamePaths(c, pkg)
+	}
+}
+
+// fixExpNamePaths 递归修复表达式树中的跨包调用/变量名
+func fixExpNamePaths(exp *parser.Expression, pkg *packageFmt.Info) {
+	if exp == nil {
+		return
+	}
+	if exp.Call != nil {
+		if exp.Call.Name.IsPath() {
+			exp.Call.Name.FixPath(pkg)
+		} else if exp.Call.Func == nil {
+			exp.Call.Name.SetPkgPath(pkg.Path)
+		}
+		for _, arg := range exp.Call.Args {
+			if arg != nil && arg.Value != nil {
+				fixExpNamePaths(arg.Value, pkg)
+			}
+		}
+	}
+	if exp.Var != nil {
+		if exp.Var.Name.IsPath() {
+			exp.Var.Name.FixPath(pkg)
+		} else if exp.Var.Type == nil {
+			// 同包跨文件全局变量/常量引用（parse 期未解析出类型）
+			exp.Var.Name.SetPkgPath(pkg.Path)
+		}
+	}
+	fixExpNamePaths(exp.Left, pkg)
+	fixExpNamePaths(exp.Right, pkg)
+	for _, idx := range exp.Index {
+		fixExpNamePaths(idx, pkg)
+	}
+	for _, elem := range exp.ListElems {
+		fixExpNamePaths(elem, pkg)
 	}
 }
 
@@ -122,10 +189,11 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			}
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
-					switch p.Block.Children[i].Value.(type) {
+					switch v := p.Block.Children[i].Value.(type) {
 					case *parser.FuncBlock:
-						funcBlock := p.Block.Children[i].Value.(*parser.FuncBlock)
-						funcBlock.Name.SetPkgPath(packagePath)
+						v.Name.SetPkgPath(packagePath)
+					case *parser.VarBlock:
+						v.Name.SetPkgPath(packagePath)
 					}
 				}
 				// 用本包导入表把跨包名称固定为包路径前缀。
@@ -164,6 +232,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		var fixParser func(n *parser.Node)
 		fixParser = func(n *parser.Node) {
 			n.Parser = rootNode.Parser
+			if ib, ok := n.Value.(*parser.IfBlock); ok && ib.ElseBlock != nil {
+				fixParser(ib.ElseBlock)
+			}
 			for _, c := range n.Children {
 				fixParser(c)
 			}

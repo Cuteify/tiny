@@ -3,6 +3,7 @@ package x86_64
 
 import (
 	"strings"
+	"cuteify/compile/arch"
 	"cuteify/compile/context"
 	exppkg "cuteify/compile/exp"
 	"cuteify/compile/regmgr"
@@ -364,6 +365,28 @@ func (a *x86_64Ops) varDecl(varBlock *parser.VarBlock) string {
 func (a *x86_64Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 	if ret == nil || len(ret.Value) == 0 {
 		return ""
+	}
+
+	// 大值（容器 3 槽 / 结构体多槽）返回值：装载到本帧返回槽，再拷到 R10 指向的调用者返回槽
+	if ret.Value[0].Type != nil && arch.FuncReturnsLarge(a.ctx.CurrentFunc) {
+		slots := arch.ArgSlots(ret.Value[0].Type)
+		slot := "[rbp" + strconv.Itoa(a.ctx.RetSlot) + "]"
+		code += exppkg.New(a.ctx).Compile(ret.Value[0], "QWORD"+slot, "return值存入返回槽")
+		code += utils.Format("mov R10, QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+slots*8) + "]; 恢复返回槽地址")
+		for j := 0; j < slots; j++ {
+			off := j * 8
+			if off == 0 {
+				code += utils.Format("mov RAX, QWORD " + slot)
+			} else {
+				code += utils.Format("mov RAX, QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+off) + "]")
+			}
+			if j == 0 {
+				code += utils.Format("mov QWORD [R10], RAX")
+			} else {
+				code += utils.Format("mov QWORD [R10+" + strconv.Itoa(off) + "], RAX")
+			}
+		}
+		return code
 	}
 
 	raxReg := a.ctx.Reg.FindByName("RAX")

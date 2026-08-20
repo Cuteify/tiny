@@ -1,0 +1,8 @@
+{
+    "name": "m5all",
+    "version": "1.0.0",
+    "description": "M5 full audit",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

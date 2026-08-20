@@ -1,0 +1,63 @@
+// 堆上结构体测试（M4）：*T 字段访问 + malloc 分配 + 指针链 + &struct 取址
+
+
+
+type Point struct {
+    x: int
+    y: int
+}
+
+type Node struct {
+    value: int
+    next: *Node
+}
+
+fn Point.distanceToOrigin() int {
+    ret self.x * self.x + self.y * self.y
+}
+
+fn main() int {
+    // 1. malloc 分配堆上结构体：p.x / p.y 写入与读取
+    var p: *Point = memory.malloc(16)
+    p.x = 3
+    p.y = 4
+    var s: int = p.x + p.y
+
+    // 2. 指针链：head -> n1 -> n2，链式展开求和
+    var head: *Node = memory.malloc(24)
+    var n1: *Node = memory.malloc(24)
+    var n2: *Node = memory.malloc(24)
+    head.value = 1
+    n1.value = 2
+    n2.value = 3
+    head.next = n1
+    n1.next = n2
+
+    var chainSum: int = head.value + head.next.value + head.next.next.value
+
+    // 3. 栈结构体字段是指针（head.next.value 路径）
+    var stackNode: Node
+    stackNode.value = 10
+    stackNode.next = n1
+    var viaStack: int = stackNode.next.value
+
+    // 4. &struct 取址后经指针访问
+    var q: Point
+    q.x = 5
+    q.y = 6
+    var qp: *Point = &q
+    var qs: int = qp.x + qp.y
+
+    // 5. 堆对象方法调用（this 传指针值）
+    var heapDist: int = p.distanceToOrigin()
+
+    // 6. 堆对象上的方法修改字段（self.x 写入 heap）
+    var r: *Point = memory.malloc(16)
+    r.x = 1
+    r.y = 2
+    r.x += 10
+    r.y += 20
+    var rSum: int = r.x + r.y
+
+    ret s + chainSum + viaStack + qs + heapDist + rSum
+}

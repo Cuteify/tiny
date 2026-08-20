@@ -297,6 +297,23 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 		if beforeIsPtr && afterIsPtr && KindEqual(before, after) && IsNum(before) && IsNum(after) {
 			return true
 		}
+		// 任意指针 → 系统 ptr：地址语义一致（如 &s 容器地址赋给 ptr 交给 memory.load64 读槽）
+		if beforePtr && afterType == "ptr" && !afterPtr {
+			return true
+		}
+		// 系统 ptr → 任意 *T：地址语义一致（如 memory.malloc 返回的 ptr 赋给 *T）
+		if !beforePtr && beforeType == "ptr" && afterPtr {
+			return true
+		}
+		// 数字常量 0 → 指针：空指针
+		if afterPtr && IsConst && IsNum(before) && beforeType != "ptr" && before.Size() <= after.Size() {
+			return true
+		}
+		// 数值同 Kind 尺寸不同 → 允许隐式转换（零扩展/截断，如 x86 上 u32 地址扩展为 u64）
+		if KindEqual(before, after) && !beforePtr && !afterPtr && IsNum(before) && IsNum(after) &&
+			before.Size() != after.Size() {
+			return true
+		}
 		if KindEqual(before, after) && before.IsPointer() == after.IsPointer() {
 			if CheckKind(before, "list") {
 				return false

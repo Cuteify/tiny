@@ -1,5 +1,6 @@
 package parser
 
+
 type CFGNode struct {
 	After     *Node
 	Before    *Node

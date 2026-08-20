@@ -70,8 +70,8 @@ func (i *InterfaceDef) parseMethod(p *Parser) {
 		retName, _ := p.ParseName(false)
 		results := p.Find(retName, FindTypeType)
 		if len(results) > 0 {
-			if tb, ok := results[0].Value.(*TypeBlock); ok {
-				method.Returns = append(method.Returns, tb.Type())
+			if t, ok := results[0].Value.(typeSys.Type); ok {
+				method.Returns = append(method.Returns, t)
 			}
 		}
 	} else {

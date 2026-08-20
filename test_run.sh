@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # cute 编译器测试运行脚本
 # 用法: ./test_run.sh [测试目录] [架构...]
-#   默认: ./test_run.sh test/deref_test x86_64 x86
+#   默认: ./test_run.sh test/derefTest x86_64 x86
 # 退出码含义见各测试 main.cute（deref_test 中 ret 7 = 全部通过）
 
 set -u
 cd "$(dirname "$0")" || exit 1
 
-TARGET_DIR="${1:-test/deref_test}"
+TARGET_DIR="${1:-test/derefTest}"
 if [ $# -gt 1 ]; then
     ARCHS=("${@:2}")
 else

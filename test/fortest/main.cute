@@ -1,0 +1,9 @@
+fn sLen(s string) uint {
+    var p: ptr = &s
+    ret memory.load64(p + 8)
+}
+
+fn main() int {
+    var a: string = strlib.toString(12345, 10)
+    ret sLen(a)
+}

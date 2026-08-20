@@ -173,18 +173,38 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			continue
 		}
 
+		// 指针/切片类型前缀（*T、[]T）
+		if bracketCount == 0 && (token.Value == "*" || token.Value == "[") {
+			p.Lexer.SetCursor(token.Cursor)
+			argTmp.Type = p.parseTypeAnnotation()
+			if argTmp.Type == nil {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+			}
+			token = p.Lexer.Next()
+			continue
+		}
+
 		// 处理其他部分
 		if bracketCount == 0 {
 			if token.Value == ":" {
-				// 先后解析一个Name作为参数类型
-				n, _ := p.ParseName(false)
-				if sysType := typeSys.GetSystemType(n.String()); sysType != nil {
-					argTmp.Type = sysType
+				// 指针/切片参数（*T、[]T）走类型注解解析
+				nextTok := p.Lexer.Next()
+				if nextTok.Value == "*" || nextTok.Value == "[" {
+					p.Lexer.SetCursor(nextTok.Cursor)
+					argTmp.Type = p.parseTypeAnnotation()
 				} else {
-					results := p.Find(n, FindTypeType)
-					if len(results) > 0 {
-						if tb, ok := results[0].Value.(*TypeBlock); ok {
-							argTmp.Type = tb.Type()
+					p.Lexer.SetCursor(nextTok.Cursor)
+					// 先后解析一个Name作为参数类型
+					n, _ := p.ParseName(false)
+					var results FindResults
+					if sysType := typeSys.GetSystemType(n.String()); sysType != nil {
+						argTmp.Type = sysType
+					} else {
+						results = p.Find(n, FindTypeType)
+						if len(results) > 0 {
+							if t, ok := results[0].Value.(typeSys.Type); ok {
+								argTmp.Type = t
+							}
 						}
 					}
 				}
@@ -231,6 +251,16 @@ func (f *FuncBlock) ParseRetType(p *Parser) {
 	token := p.Lexer.Next()
 	if token.Value == "{" {
 		p.Lexer.SetCursor(token.Cursor)
+		return
+	}
+	// 指针/切片返回类型（*T、[]T）走类型注解解析
+	if token.Value == "*" || token.Value == "[" {
+		p.Lexer.SetCursor(token.Cursor)
+		if t := p.parseTypeAnnotation(); t != nil {
+			f.Return = append(f.Return, t)
+		} else {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
+		}
 		return
 	}
 	p.Lexer.SetCursor(token.Cursor)

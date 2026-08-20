@@ -14,23 +14,21 @@ type Info struct {
 
 func FixPathName(path string) string {
 	tmp := make([]byte, len(path))
-	for n, char := range path {
-		tmp[n] = byte(char)
+	for n := 0; n < len(path); n++ {
+		char := path[n]
 		switch char {
 		case '\\':
-			tmp[n] = '/'
+			char = '/'
 		case ' ':
-			tmp[n] = '_'
+			char = '_'
 		case ':':
-			tmp[n] = '_'
+			char = '_'
 		}
 		// 处理非常规字符
-		if char > 128 {
-			tmp[n] = '_'
+		if char > 127 || char < 32 {
+			char = '_'
 		}
-		if char < 32 {
-			tmp[n] = '_'
-		}
+		tmp[n] = char
 	}
 	return unsafe.String(unsafe.SliceData(tmp), len(tmp))
 }

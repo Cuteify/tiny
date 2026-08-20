@@ -1,0 +1,18 @@
+// pkg/console/console.cute - 控制台库：标准输入/输出/错误
+// 平台无关实现，底层复用 std:syscall（架构相关指令集中在 syscall 包内）
+
+// 标准文件描述符
+const STDIN: i32 = 0
+const STDOUT: i32 = 1
+const STDERR: i32 = 2
+
+// 打印字符串（返回写出的字节数）
+fn print(s string) i32 {
+    ret syscall.write(STDOUT, strings.toCstring(s), strings.len(s))
+}
+
+// 打印字符串并换行（返回写出的字节数，含换行）
+fn println(s string) i32 {
+    var n: i32 = print(s)
+    ret n + syscall.write(STDOUT, strings.toCstring("\n"), 1)
+}

@@ -1,0 +1,13 @@
+// echo 测试：从 stdin 逐块读取，原样写回 stdout，直到 EOF
+
+fn main() int {
+    var buf: u64 = 0
+    var n: i32 = 1
+    for n > 0 {
+        n = fs.read(console.STDIN, &buf, 8)
+        if n > 0 {
+            fs.write(console.STDOUT, &buf, n)
+        }
+    }
+    ret 0
+}

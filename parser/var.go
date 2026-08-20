@@ -67,6 +67,9 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 					if tb, ok := results[0].Value.(*TypeBlock); ok {
 						return tb.Type()
 					}
+					if t, ok := results[0].Value.(typeSys.Type); ok {
+						return t
+					}
 				}
 				return nil
 			}
@@ -78,10 +81,19 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 		if sysType := typeSys.GetSystemType(nameStr); sysType != nil {
 			return sysType
 		}
+		// 自引用结构体字段（type Node struct { next: *Node }）：当前结构体尚未注册到作用域
+		if p.CurStructName != "" && nameStr == p.CurStructName {
+			if p.CurStructType != nil {
+				return p.CurStructType
+			}
+		}
 		results := p.Find(NewName(nameStr), FindTypeType)
 		if len(results) > 0 {
 			if tb, ok := results[0].Value.(*TypeBlock); ok {
 				return tb.Type()
+			}
+			if t, ok := results[0].Value.(typeSys.Type); ok {
+				return t
 			}
 		}
 		return nil
