@@ -1,3 +1,5 @@
+section .bss
+    __global_gbuf resb 24
 section .data
     __global_std_memory_gH0 dq 0
     __global_std_memory_gH1 dq 0

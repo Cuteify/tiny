@@ -115,7 +115,10 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 			c.Ctx.GlobalStrings = append(c.Ctx.GlobalStrings, vb)
 			continue
 		}
+		// 聚合类型（list/struct）：按 Size 预留 .bss 槽（未初始化），
+		// 运行期由赋值语句填充三槽/字段
 		if size != 4 && size != 8 {
+			bssCode += "    " + name + " resb " + strconv.Itoa(size) + "\n"
 			continue
 		}
 		// 常量初始化值放入 .data，其余放 .bss

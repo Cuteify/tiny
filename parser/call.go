@@ -15,6 +15,15 @@ type CallBlock struct {
 	NewType typeSys.Type // new(T) 的目标类型（内建堆对象创建）
 }
 
+
+// safeTypeName nil 安全的类型名（首趟未解析的跨包调用实参 Type 为 nil）
+func safeTypeName(t typeSys.Type) string {
+	if t == nil {
+		return "<unresolved>"
+	}
+	return t.Type()
+}
+
 // Check 检查函数调用的参数数量和类型是否匹配
 func (c *CallBlock) Check(p *Parser) bool {
 	if c.Name.IsEmpty() {
@@ -150,17 +159,19 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	// 检查每个参数
 	for i, arg := range c.Args {
-		// 检查参数表达式
 		// 获取对应的函数定义参数
 		defArg := c.Func.Args[i]
 
 		arg.Value.Check(p)
 
-		// 类型检查
-		if !typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
+		// 类型检查。首趟解析时跨包调用尚未解析，arg.Value.Type 可能为 nil，
+		// 此时跳过检查（合并后 rootNode.Check 重试会补齐）；错误消息里的
+		// 类型名同样需要判空，避免构造消息时二次崩溃。
+		if arg.Value.Type != nil && defArg.Type != nil &&
+			!typeSys.AutoType(arg.Value.Type, defArg.Type, true) {
 			p.Error.MissError("Type Error", p.Lexer.Cursor-1,
-				"cannot use "+arg.Value.Type.Type()+" as type "+
-					defArg.Type.Type()+" in argument to "+c.Name.String())
+				"cannot use "+safeTypeName(arg.Value.Type)+" as type "+
+					safeTypeName(defArg.Type)+" in argument to "+c.Name.String())
 			return false
 		}
 
