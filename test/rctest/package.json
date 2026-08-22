@@ -1,0 +1,1 @@
+{ "name": "rctest", "version": "1.0.0", "imports": { "memory": "std:memory" } }

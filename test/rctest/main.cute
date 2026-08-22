@@ -1,0 +1,11 @@
+build os("linux")
+
+fn main() int {
+    var p: ptr = memory.malloc(32)
+    if p == 0 {
+        ret 1
+    }
+    memory.rcInc(p)
+    memory.rcDec(p)   // 归零自动释放
+    ret 60
+}

@@ -1,0 +1,32 @@
+// GC 出口释放回归测试：循环 1000 次调用 makeGreeting("test")，
+// 结果经 useTemp 消费后丢弃（useTemp 内局部 t 拥有 concat 缓冲，
+// 由出口释放计划在函数出口自动 std_memory_free1）。
+// 若 free 序列缺失 → 1000 次分配持续扩张 brk（不 OOM 但泄漏）；
+// 若 free 错误释放仍存活缓冲 → 块桶链表损坏，快速崩溃。exit=0 为通过。
+
+fn makeGreeting(name: string) string {
+    ret "hello, " + name + "!"
+}
+
+fn useTemp(name: string) int {
+    var t: string = makeGreeting(name)
+    ret len(t)
+}
+
+fn main() int {
+    var acc: int = 0
+    var i: int = 0
+    for i < 1000 {
+        acc = acc + useTemp("test")
+        i = i + 1
+    }
+    if acc != 12000 {
+        ret 1
+    }
+    // 直接调用不保存：验证丢弃路径不影响后续分配
+    makeGreeting("discard")
+    if useTemp("again") != 13 {
+        ret 2
+    }
+    ret 0
+}

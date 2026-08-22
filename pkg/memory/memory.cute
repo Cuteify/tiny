@@ -247,3 +247,18 @@ fn memset(s: ptr, c: u8, n: uint) ptr {
     }
     ret s
 }
+
+// rcInc 增加 p 指向对象的引用计数（p 为 malloc 返回的数据指针）。
+// 计划使用侧表方案：rcTable 是 {ptr→count} 映射，不改变对象布局。
+fn rcInc(p: ptr) {
+    // v0 实现：暂用简单方案——不做任何事（占位）
+    // v1 将引入侧表哈希映射
+}
+
+// rcDec 减少引用计数，归零时自动 free。
+// 返回是否实际释放了对象。
+fn rcDec(p: ptr) bool {
+    // v0 实现：直接 free（等价于无共享场景的确定性释放）
+    free(p)
+    ret true
+}

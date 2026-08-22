@@ -2,6 +2,7 @@ package compile
 
 import (
 	"cuteify/compile/context"
+	"cuteify/compile/gc"
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"cuteify/utils"
@@ -514,6 +515,13 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	// 编译函数体（此时参数/变量偏移已正确设置）
 	code += c.Compile(c.Ctx.Now)
 
+	// GC 出口释放（Phase 3）：所有 return 都 jmp 到 func_end（由 Epilogue 发出），
+	// fallthrough 也汇合于此，故在 body 之后、epilogue 之前拼接一次释放序列
+	// 即可覆盖全部出口。main 无需 GC；build link 别名是链接符号包装器，跳过。
+	if funcBlock.Name.String() != "main" && alias == "" {
+		code += c.emitGCFrees(funcBlock, node)
+	}
+
 	// 生成 epilogue（清理栈、恢复寄存器、返回）
 	code += c.Ctx.Arch.Epilogue(funcBlock)
 
@@ -538,4 +546,56 @@ func pr(block *parser.Node, tabnum int) {
 	for _, k := range block.Children {
 		pr(k, tabnum+1)
 	}
+}
+
+// emitGCFrees 生成函数出口的 GC 释放序列（Phase 3 代码生成）。
+// 查询 gc.Plans 中该函数的出口释放计划，把每个帧内拥有变量的栈槽
+// 指针交给 std_memory_free1 释放。无计划/变量栈槽未回填（-1）时跳过。
+func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) string {
+	plan := gc.Plans[funcBlock.Name.String()]
+	if plan == nil || len(plan.Vars) == 0 {
+		return ""
+	}
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	slot := "QWORD"
+	base := "rbp"
+	if !is64 {
+		slot = "DWORD"
+		base = "ebp"
+	}
+	var code string
+	for _, fv := range plan.Vars {
+		off := findLocalVarOffset(node, fv.Name)
+		if off == -1 {
+			continue // 栈槽未找到（未分配/被豁免），跳过该变量
+		}
+		code += utils.Format("; gc: free " + fv.Name)
+		if is64 {
+			code += utils.Format("mov RDI, " + slot + " [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("call std_memory_free1")
+		} else {
+			code += utils.Format("push " + slot + " [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("call std_memory_free1")
+			code += utils.Format("add esp, 4")
+		}
+	}
+	return code
+}
+
+// findLocalVarOffset 在函数节点子树内查找同名局部定义变量的栈偏移。
+// 只匹配非全局的 IsDefine VarBlock 且 Offset 已分配（非 0）；未找到返回 -1。
+func findLocalVarOffset(node *parser.Node, name string) int {
+	if node == nil {
+		return -1
+	}
+	if vb, ok := node.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.IsDefine &&
+		vb.Offset != 0 && vb.Name != nil && vb.Name.First() == name {
+		return vb.Offset
+	}
+	for _, ch := range node.Children {
+		if off := findLocalVarOffset(ch, name); off != -1 {
+			return off
+		}
+	}
+	return -1
 }
