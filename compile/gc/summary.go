@@ -110,8 +110,13 @@ type FnSummary struct {
 	Params    []ParamSummary `json:"params"`    // 仅含有指针参数
 	RetOwned  bool           `json:"retOwned"`  // 返回值是否携带新分配的拥有指针
 	RetEscape Escape         `json:"retEscape"` // 返回值的最高逃逸层级（RetOwned 时有意义）
-	CallsAny  []string       `json:"callsAny"`  // 调用过的无摘要函数名（导致参数退化为 any）
-	Sorted    bool           `json:"-"`         // Params 是否已按 Index 排序
+	CallsAny  []string       `json:"callsAny"` // 调用过的无摘要函数名（导致参数退化为 any）
+
+	// HasGlobalOwnStore 函数体内存在“全局 = 拥有值”赋值（含调用结果直接存全局）。
+	// 此类函数禁用自动释放优化（保守门槛，防止 use-after-free）。
+	HasGlobalOwnStore bool `json:"hasGlobalOwnStore,omitempty"`
+
+	Sorted bool `json:"-"` // Params 是否已按 Index 排序
 }
 
 // Table 全程序摘要表（键 = 函数全路径名）

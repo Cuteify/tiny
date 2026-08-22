@@ -112,20 +112,31 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 		}
 		switch v := n.Value.(type) {
 		case *parser.ReturnBlock:
+			// 仅当返回类型本身是拥有指针时，返回表达式引用参数才算逃逸
+			// （如 print 返回 i32 只是消费参数，不构成逃逸）
+			retOwns := len(fb.Return) > 0 && isOwning(fb.Return[0])
 			for _, rv := range v.Value {
 				if rv == nil {
 					continue
 				}
-				if refsTracked(rv, fb) {
+				if retOwns && refsTracked(rv, fb) {
 					a.bumpRet(key, EscCaller)
+					a.bumpParams(fs, EscCaller, ModeOtherRef)
 				}
 			}
 		case *parser.VarBlock:
-			// 赋值语句（IsDefine=false）：目标是全局 且 右值引用本函数
-			// 参数/局部拥有值 → 该值逃逸到全局
+			// 赋值语句（IsDefine=false）：目标是全局 且 右值为拥有值
+			// （引用参数 / 调用 RetOwned 函数 / 字符串拼接）→ EscGlobal
+			// + 标记函数含全局拥有存储（保守门槛）
 			if !v.IsDefine && v.IsGlobal && v.Value != nil {
-				if refsTracked(v.Value, fb) {
+				hit := refsTracked(v.Value, fb)
+				alloc := exprAllocates(v.Value)
+				if hit {
 					a.bumpParams(fs, EscGlobal, ModeOtherRef)
+				}
+				if (hit || alloc) && !fs.HasGlobalOwnStore {
+					fs.HasGlobalOwnStore = true
+					a.changed = true
 				}
 			}
 		case *parser.CallBlock:
@@ -305,6 +316,52 @@ func strSliceEq(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// exprAllocates 判断表达式是否产生新分配的拥有指针：
+// 调用 RetOwned 函数、new/make（NewType 非空）、字符串拼接（"+" 且 string 类型）。
+func exprAllocates(e *parser.Expression) bool {
+	if e == nil {
+		return false
+	}
+	if e.Call != nil {
+		if e.Call.NewType != nil {
+			return true
+		}
+		if e.Call.Func != nil && len(e.Call.Func.Return) > 0 && isOwning(e.Call.Func.Return[0]) {
+			return true
+		}
+		for _, ag := range e.Call.Args {
+			if ag != nil && exprAllocates(ag.Value) {
+				return true
+			}
+		}
+	}
+	if e.Separator == "+" && e.Type != nil && typeSys.CheckKind(e.Type, "string") {
+		return true
+	}
+	return exprAllocates(e.Left) || exprAllocates(e.Right)
+}
+
+// ParamEscapes 查询被调函数第 idx 个参数的逃逸层级。
+// 无摘要的被调一律返回 EscAny（保守）。
+func ParamEscapes(calleeKey string, idx int) Escape {
+	fs := Table[calleeKey]
+	if fs == nil {
+		return EscAny
+	}
+	for _, p := range fs.Params {
+		if p.Index == idx {
+			return p.Escape
+		}
+	}
+	return EscNone
+}
+
+// CalleeKnown 被调函数是否已有摘要。
+func CalleeKnown(calleeKey string) bool {
+	_, ok := Table[calleeKey]
+	return ok
 }
 
 // DumpSummary 打印单函数摘要（调试辅助）。

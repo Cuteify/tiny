@@ -1,0 +1,12 @@
+var gbuf: []int
+
+fn store(x: []int) {
+    gbuf = x
+}
+
+fn main() int {
+    var loc: []int = new([]int, 4)
+    loc[3] = 77
+    gbuf = loc
+    ret gbuf[3]
+}
