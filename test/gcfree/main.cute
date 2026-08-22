@@ -1,0 +1,20 @@
+fn makeGreeting(name: string) string {
+    ret "hello, " + name + "!"
+}
+
+fn useTemp() int {
+    var t: string = makeGreeting("gc")
+    ret len(t)
+}
+
+fn main() int {
+    var loc: []int = new([]int, 8)
+    loc[7] = 5
+    if loc[7] != 5 {
+        ret 1
+    }
+    if useTemp() != 10 {
+        ret 2
+    }
+    ret 60
+}

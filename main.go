@@ -44,6 +44,8 @@ func main() {
 		if err := gc.DumpAll(os.Stdout); err != nil {
 			panic(err)
 		}
+		fmt.Println("\n=== GC 出口释放计划 ===")
+		fmt.Print(gc.DumpFrees())
 	}
 
 	// AST 模式

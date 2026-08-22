@@ -66,6 +66,9 @@ func Build(root *parser.Node) {
 		}
 	}
 
+	// Phase 3: 基于最终摘要计算出口释放计划
+	PlanFrees(root)
+
 	// 落盘
 	keys := make([]string, 0, len(Table))
 	for k := range Table {
