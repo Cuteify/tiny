@@ -1,0 +1,23 @@
+// fib30 无输出版本：只计算 + 内部计时（结果不打印，外部测总耗时）
+
+fn fib(n int) int {
+    if n <= 1 {
+        ret n
+    }
+    ret fib(n - 1) + fib(n - 2)
+}
+
+fn main() int {
+    var t0: time.Time = time.now()
+    var r: int = fib(30)
+    var t1: time.Time = time.now()
+
+    var ns: u64 = time.sub(t1, t0)
+    if ns == 0 {
+        ret 2
+    }
+    if r != 832040 {
+        ret 1
+    }
+    ret 0
+}

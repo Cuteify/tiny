@@ -3,6 +3,7 @@ package compile
 import (
 	"cuteify/compile/context"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"cuteify/utils"
 	"fmt"
 	"os"
@@ -109,6 +110,11 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 		}
 		name := "__global_" + utils.ToNASMName(vb.Name.String())
 		size := vb.Type.Size()
+		// 字符串（ptr+len+cap=24 字节）延后到 generateDataSection 生成（需字符串字面量）
+		if typeSys.CheckKind(vb.Type, "string") {
+			c.Ctx.GlobalStrings = append(c.Ctx.GlobalStrings, vb)
+			continue
+		}
 		if size != 4 && size != 8 {
 			continue
 		}
@@ -157,6 +163,9 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 			if buildFlag.Ignore {
 				return ""
 			}
+		}
+		if !v.Useful && v.Name.String() != "main" {
+			return ""
 		}
 		return c.compileFuncBlock(n)
 	case *parser.IfBlock:
@@ -241,15 +250,30 @@ func (c *Compiler) compileCondition(cond *parser.Expression, jumpLabel string) s
 		}
 
 		// 编译左右操作数到寄存器
+		leftSavedReg := ""
 		if cond.Left != nil {
 			code += c.Ctx.Arch.Exp(cond.Left, scratchReg1, "left operand")
-			code += utils.Format("push " + scratchReg1 + "; 保护左操作数\n")
+			// 用空闲 callee-save 寄存器保存左操作数（跨右子函数调用保持）。
+			// 不能压栈：被调函数参数槽 [rbp+16]（=调用指令时的 rsp）落在调用者
+			// 栈顶，会覆盖压栈保存的左操作数（如 load8(a) != load8(b) 这类左右都
+			// 是函数调用时，右调用会覆盖左操作数的栈保存）。
+			leftSavedReg = c.Ctx.Reg.AllocCalleeSaveBind(cond.Left, c.Ctx.Arch.CalleeSaveRegs(), c.Ctx.Arch.CalleeSaveReg())
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存左操作数到callee-save")
+			} else {
+				code += utils.Format("push " + scratchReg1 + "; 保护左操作数\n")
+			}
 		}
 		if cond.Right != nil {
 			code += c.Ctx.Arch.Exp(cond.Right, scratchReg2, "right operand")
 		}
 		if cond.Left != nil {
-			code += utils.Format("pop " + scratchReg1 + "; 恢复左操作数\n")
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复左操作数")
+				c.Ctx.Reg.Free(cond.Left)
+			} else {
+				code += utils.Format("pop " + scratchReg1 + "; 恢复左操作数\n")
+			}
 		}
 
 		// 生成比较指令
@@ -359,8 +383,14 @@ func (c *Compiler) compileRootTail(node *parser.Node) string {
 }
 
 func (c *Compiler) generateDataSection() string {
-	if len(c.Ctx.StringConsts) == 0 {
+	if len(c.Ctx.StringConsts) == 0 && len(c.Ctx.GlobalStrings) == 0 {
 		return ""
+	}
+	// 先为全局 string 变量的初始值分配字面量 label，确保 db 一并输出
+	for _, vb := range c.Ctx.GlobalStrings {
+		if vb.Value != nil && vb.Value.IsConst() && vb.Value.StringVal != "" {
+			c.getStringLabel(vb.Value.StringVal)
+		}
 	}
 	code := "\nsection .data\n"
 	for val, label := range c.Ctx.StringConsts {
@@ -372,7 +402,37 @@ func (c *Compiler) generateDataSection() string {
 		code += fmt.Sprintf("    %s db \"%s\", 0\n", label, escaped)
 		code += fmt.Sprintf("    %s_len equ $ - %s\n", label, label)
 	}
+	// 全局 string 变量：ptr/len/cap 三槽，槽宽随架构指针大小（x86 为 dd）
+	dq := "dq"
+	if c.Ctx.Arch.PointerSize() == 4 {
+		dq = "dd"
+	}
+	for _, vb := range c.Ctx.GlobalStrings {
+		name := "__global_" + utils.ToNASMName(vb.Name.String())
+		var strVal string
+		if vb.Value != nil && vb.Value.IsConst() && vb.Value.StringVal != "" {
+			strVal = vb.Value.StringVal
+		}
+		if strVal == "" {
+			code += "    " + name + " " + dq + " 0\n    " + name + "_len " + dq + " 0\n    " + name + "_cap " + dq + " 0\n"
+			continue
+		}
+		label := c.getStringLabel(strVal)
+		code += fmt.Sprintf("    %s %s %s\n", name, dq, label)
+		code += fmt.Sprintf("    %s_len %s %d\n", name, dq, len(strVal))
+		code += fmt.Sprintf("    %s_cap %s %d\n", name, dq, len(strVal))
+	}
 	return code
+}
+
+func (c *Compiler) getStringLabel(val string) string {
+	if label, ok := c.Ctx.StringConsts[val]; ok {
+		return label
+	}
+	c.Ctx.StrCount++
+	label := "str_" + strconv.Itoa(c.Ctx.StrCount)
+	c.Ctx.StringConsts[val] = label
+	return label
 }
 
 func (c *Compiler) hasMainFunction(node *parser.Node) bool {

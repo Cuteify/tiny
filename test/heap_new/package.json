@@ -1,0 +1,8 @@
+{
+    "name": "heapnew",
+    "version": "1.0.0",
+    "description": "heap object new/free test",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

@@ -1,0 +1,41 @@
+build os("linux")
+build arch("x86_64")
+
+// clock_gettime(CLOCK_REALTIME=0, &ts)：x86_64 syscall 228
+// nanosleep(&req)：x86_64 syscall 35
+
+// now 返回当前 UTC 时间（CLOCK_REALTIME）
+fn now() Time {
+    var buf: u64 = 0
+    var p: ptr = &buf
+    syscall.syscall(228, 0, p, 0)
+    var sec: u64 = memory.load64(p)
+    var nsec: u64 = memory.load64(p + 8)
+    var t: Time
+    t.sec = sec
+    t.nsec = nsec
+    t.offset = 0
+    ret t
+}
+
+// sleep 休眠 d 纳秒（nanosleep）
+fn sleep(d u64) {
+    var req: u64 = 0
+    var p: ptr = &req
+    var sec: u64 = d / SECOND
+    var nsec: u64 = d % SECOND
+    memory.store64(p, sec)
+    memory.store64(p + 8, nsec)
+    syscall.syscall(35, p, 0, 0)
+}
+// strSlots 写入 x86_64 字符串三槽（各 8 字节：ptr/len/cap）
+fn strSlots(p: ptr, vptr: u64, vlen: u64, vcap: u64) {
+    memory.store64(p, vptr)
+    memory.store64(p + 8, vlen)
+    memory.store64(p + 16, vcap)
+}
+
+// numOut 按 x86_64 字宽写 int 值到指针目标（8 字节）
+fn numOut(p: ptr, v: int) {
+    memory.store64(p, v)
+}

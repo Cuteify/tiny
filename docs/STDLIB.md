@@ -151,6 +151,7 @@
 |------|------|------|
 | 长度/容量 | `len(x)`、`cap(x)` | 对 string/list 读取容器 len/cap 槽；`len` 对 string 按字节计（UTF-8 中文每字 3 字节） |
 | 追加 | `append(list, v)` | len<cap 直写，否则 realloc 扩容（暂只支持变量 a） |
+| 构造 | `new(T[, v...])` | 堆上分配 Size(T) 并零填充，返回 `*T`；初值按字段顺序写入（标量） |
 | 构造 | `make([]T, len[, cap])` | 运行时分配并零填充 |
 | 拼接 | `s1 + s2` | 运行期 malloc + 双段 `rep movsb`，结果 `{ptr, len, cap}` 三槽 |
 | 比较 | `s == t`、`s != t` | 字符串按 ptr 槽比较（常量 intern 后同值同 label；运行期按身份） |

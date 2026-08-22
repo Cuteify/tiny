@@ -86,6 +86,32 @@ func (rm *RegMgr) FindByName(name string) *Reg {
 	return nil
 }
 
+// AllocCalleeSaveBind 分配一个空闲的 callee-save 寄存器并把 exp 绑定到它，
+// 返回寄存器名；无可用时返回 ""。skip 中列出的寄存器名不分配
+// （如 RBX：binop 的中间值保存逻辑硬编码使用它）。
+// 用途：在函数调用边界保存中间值——callee-save 寄存器跨调用保持；
+// 而压栈保存会被被调函数参数槽 [rbp+16]（=调用点 rsp）覆盖（调用者栈顶临时值）。
+func (rm *RegMgr) AllocCalleeSaveBind(exp *parser.Expression, names []string, skip ...string) string {
+	for _, name := range names {
+		skipped := false
+		for _, s := range skip {
+			if name == s {
+				skipped = true
+				break
+			}
+		}
+		if skipped {
+			continue
+		}
+		reg := rm.FindByName(name)
+		if reg != nil && reg.Free {
+			rm.Force(reg, exp)
+			return name
+		}
+	}
+	return ""
+}
+
 // Get 获取或分配寄存器（兼容旧 API）
 func (rm *RegMgr) Get(node *parser.Node, exp *parser.Expression, mask uint32, calleeSave bool) *Reg {
 	// 检查是否已分配

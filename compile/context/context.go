@@ -52,6 +52,9 @@ type Context struct {
 	StringConsts map[string]string // 字面值 → 标签名
 	StrCount     int               // 字符串标签计数
 
+	// 全局 string 变量（size=24，ptr+len+cap）：在 generateDataSection 阶段生成
+	GlobalStrings []*parser.VarBlock
+
 	// build link 提供的全局符号（如 __string_len）：由 strings 包实现，
 	// 编译器内建 len/cap 检测到后改为调用该符号
 	StringSyms map[string]bool

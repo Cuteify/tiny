@@ -1,6 +1,7 @@
 package parser
 
 import (
+	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 	"fmt"
 )
@@ -54,6 +55,13 @@ func (p *Parser) FindVar(name Name) (*Node, any) {
 	}
 
 	p.ThisBlock = oldThisBlock
+
+	// 兜底：跨文件/跨包全局变量（根包合并树中查找）
+	if n := p.FindGlobal(name); n != nil {
+		if vb, ok := n.Value.(*VarBlock); ok {
+			return n, vb
+		}
+	}
 
 	return nil, nil
 }
@@ -204,6 +212,12 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 	if (typ & FindTypeType) != 0 {
 		if t := typeSys.GetSystemType(name.String()); t != nil {
 			res = append(res, FindResult{Value: t, Path: []any{t}, Type: FindTypeType})
+		}
+		// 解析期跨文件/跨包类型查找（全局注册表）
+		if len(res) == 0 {
+			if t := lookupGlobalType(p, name); t != nil {
+				res = append(res, FindResult{Value: t, Path: []any{t}, Type: FindTypeType})
+			}
 		}
 	}
 
@@ -460,4 +474,90 @@ func genVLen() *typeSys.StructField {
 	sf.Access = typeSys.AccessProtected
 	sf.ParseTags("json:\"len\"")
 	return sf
+}
+
+// lookupGlobalType 解析期跨文件/跨包类型查找（全局注册表）。
+// 单段名（Time）按当前包路径查；路径名（time.Time）按导入解析包路径后查。
+func lookupGlobalType(p *Parser, name Name) any {
+	if p.Package == nil {
+		return nil
+	}
+	if name.IsPath() {
+		first := name[0]
+		rest := ""
+		for i, part := range name[1:] {
+			if i > 0 {
+				rest += "."
+			}
+			rest += part.Name
+		}
+		pkgPath := first.Name
+		if !first.IsPkgPath {
+			if p.Package.Imports == nil {
+				return nil
+			}
+			real, ok := p.Package.Imports[first.Name]
+			if !ok {
+				return nil
+			}
+			pkgPath = real
+		}
+		return packageFmt.LookupType(pkgPath, rest)
+	}
+	return packageFmt.LookupType(p.Package.Path, name.String())
+}
+
+// findGlobalVar 跨文件/跨包全局变量查找（全局注册表 + AST 合并树）。
+// 单段引用名匹配定义名末段（同包跨文件，如 SECOND）；
+// 路径引用名（FixPath 后）与定义名（SetPkgPath 后）完全相等。
+func findGlobalVar(p *Parser, name Name) (*Node, *VarBlock) {
+
+	var children = []*Node{}
+	n := name.Fork()
+	pkgPath := ""
+	if n.IsPath() {
+		n.FixPath(p.Package)
+		first := n[0]
+		if first.IsPkgPath {
+			pkgPath = first.Name
+		} else if p.Package != nil && p.Package.Imports != nil {
+			pkgPath = p.Package.Imports[first.Name]
+		}
+		if p.Package != nil && p.Package.AST != nil {
+			children = p.Package.AST.(*Node).Children
+		}
+	} else if p.Block != nil {
+		children = p.Block.Children
+		if p.Package != nil {
+			pkgPath = p.Package.Path
+		}
+	}
+	// 全局注册表优先（编译期跨包内联展开场景，AST 合并树未必可见）
+	if pkgPath != "" {
+		t := packageFmt.LookupGlobalVar(pkgPath, n.Last())
+		if t != nil {
+			if vb, ok := t.(*VarBlock); ok && vb.IsDefine {
+				return nil, vb
+			}
+		}
+	}
+	for i := len(children) - 1; i >= 0; i-- {
+		child := children[i]
+		if child.Value == nil {
+			continue
+		}
+		if vb, ok := child.Value.(*VarBlock); ok {
+			if !vb.IsDefine {
+				continue
+			}
+			if n.IsPath() {
+				if vb.Name.Eq(n) {
+					return child, vb
+				}
+			} else if vb.Name.Last() == n.Last() {
+				return child, vb
+			}
+		}
+	}
+	return nil, nil
 }

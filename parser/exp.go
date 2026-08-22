@@ -177,8 +177,10 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 	// 迭代变量
 	var root, current *Expression
 	justEnterBracket := false
-	justExitBracket := false
-	bracketChild := false
+	justClosedBracket := false
+	var bracketRoot *Expression
+	var bracketStack []*Expression // 括号外层的 current
+	var rootStack []*Expression    // 括号前的外层 root
 	bracketCount := 0
 
 	// 迭代解析表达式
@@ -191,29 +193,48 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 
 		if exp.Separator == "(" {
 			bracketCount++
-			justEnterBracket = true // 增加进入括号的计数
+			bracketStack = append(bracketStack, current)
+			rootStack = append(rootStack, root)
+			// 括号内独立解析：current 与 root 从头开始
+			current = nil
+			root = nil
+			justEnterBracket = true
+			justClosedBracket = false
 			continue
 		}
 
 		if exp.Separator == ")" {
-			// 让current节点退出括号，返回上一个节点
 			if bracketCount <= 0 {
 				p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected ')'")
 				return nil
 			}
-			bracketCount-- // 减少总计数
-			if bracketCount == 0 {
-				justEnterBracket = false // 减少进入括号的计数
-			} else {
-				justEnterBracket = true // 保持进入括号的计数
+			if current == nil {
+				p.Error.MissError("Expression Error", p.Lexer.Cursor, "empty parentheses")
+				return nil
 			}
-			justExitBracket = true // 减少退出括号的计数
-			if current.Father != nil {
+			bracketCount--
+			outer := bracketStack[len(bracketStack)-1]
+			bracketStack = bracketStack[:len(bracketStack)-1]
+			savedRoot := rootStack[len(rootStack)-1]
+			rootStack = rootStack[:len(rootStack)-1]
+
+			// 定位括号根：向上走到 Father 为 nil 或等于括号外层节点
+			for current.Father != nil && current.Father != outer {
 				current = current.Father
-				bracketChild = true
-			} else {
-				bracketChild = false
 			}
+			bracketRoot = current
+			if outer != nil && bracketRoot.Father == nil {
+				// 括号内容作为整体挂到外层节点上
+				outer.Insert(bracketRoot)
+				current = outer
+				root = savedRoot
+			} else {
+				// 括号根独立（或已挂在外层），当前指向括号根
+				current = bracketRoot
+				root = bracketRoot
+			}
+			justClosedBracket = true
+			justEnterBracket = false
 			continue
 		}
 
@@ -278,8 +299,30 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			continue
 		}
 		if current.Separator != "" && exp.Separator != "" {
+			if justClosedBracket {
+				// 刚关闭括号：括号根作为整体操作数参与运算。
+				// 若括号根挂在外部节点上（如 a-(b+c)*d），运算符取代其在父节点的位置；
+				// 若括号根独立（如 (a+b)*c、(x-y)/z），运算符成为其父（上溯 + BeParent）。
+				if bracketRoot != nil && bracketRoot.Father != nil {
+					father := bracketRoot.Father
+					exp.SetLeft(bracketRoot)
+					father.Insert(exp)
+				} else {
+					for current.Father != nil && opTable[current.Father.Separator] >= opTable[exp.Separator] {
+						current = current.Father
+					}
+					current.BeParent(exp)
+				}
+				justClosedBracket = false
+				justEnterBracket = false
+				current = exp
+				if current.Right == root || current.Left == root {
+					root = current
+				}
+				continue
+			}
 			// 如果括号是根节点，应该把括号的优先级做到最高
-			if (opTable[current.Separator] < opTable[exp.Separator] || justEnterBracket) && !(justExitBracket && !bracketChild) && current.Left != nil {
+			if (opTable[current.Separator] < opTable[exp.Separator] || justEnterBracket) && current.Left != nil {
 				// 等价于BeParent，但是无法确定Right是否存在，所以手动处理
 				if current.Right != nil {
 					exp.SetLeft(current.Right)
@@ -288,11 +331,14 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			} else if current.Right == nil {
 				current.Insert(exp) // 二元后跟随一元运算符的情况
 			} else {
+				// 左结合：新运算符优先级不高于当前链时，上溯到优先级更低（或根）的祖先处挂接，
+				// 避免 `a*b + c/d - e/f + g` 这类链式运算被错误归组为 `a*b + (c/d - (e/f + g))`
+				for current.Father != nil && opTable[current.Father.Separator] >= opTable[exp.Separator] {
+					current = current.Father
+				}
 				current.BeParent(exp)
 			}
 			justEnterBracket = false // 增加进入括号的计数
-			justExitBracket = false  // 减少退出括号的计数
-			bracketChild = false
 			// TODO：错误返回导致ROOT被覆盖
 			current = exp
 		} else if current.Separator == "" && exp.Separator != "" {
@@ -309,8 +355,6 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			exp.SetLeft(current)     // 把当前节点插入到exp的左子节点
 			current = exp            // 把exp作为当前节点
 			justEnterBracket = false // 增加进入括号的计数
-			justExitBracket = false  // 减少退出括号的计数
-			bracketChild = false
 		} else if current.Separator != "" && exp.Separator == "" {
 			current.Insert(exp)
 		} else {
@@ -405,8 +449,15 @@ func (p *Parser) handleName() *Expression {
 		switch token.Value {
 		case "(":
 			callBlock := &CallBlock{Name: name}
-			callBlock.ParseCall(p)
+			if name.String() == "new" {
+				callBlock.ParseNew(p)
+			} else {
+				callBlock.ParseCall(p)
+			}
 			exp.Call = callBlock
+			if callBlock.NewType != nil {
+				exp.Type = typeSys.MakePointer(callBlock.NewType)
+			}
 			return exp
 		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 			// 在解引用语句（*p = v）中，"=" 必须留在表达式树中作为运算符

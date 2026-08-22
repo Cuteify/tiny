@@ -1,0 +1,167 @@
+// time 包回归测试（29+ 项）
+// 返回失败数，0 = 全部通过（exit code 直接映射）
+
+fn sameStr(a string, b string) int {
+    var ap: ptr = strings.toCstring(a)
+    var bp: ptr = strings.toCstring(b)
+    var an: uint = strings.len(a)
+    var bn: uint = strings.len(b)
+    if an != bn {
+        ret 0
+    }
+    var k: uint = 0
+    for k < an {
+        if memory.load8(ap + k) != memory.load8(bp + k) {
+            ret 0
+        }
+        k = k + 1
+    }
+    ret 1
+}
+
+fn main() int {
+    var fails: int = 0
+
+    // 1. unix(0,0) epoch
+    var t0: time.Time = time.unix(0, 0)
+    if time.seconds(t0) != 0 {
+        fails = fails + 1
+    }
+
+    // 2-4. unix(1696204800,0) → 2023-10-02 UTC
+    var t1: time.Time = time.unix(1696204800, 0)
+    if time.year(t1) != 2023 {
+        fails = fails + 1
+    }
+    if time.month(t1) != 10 {
+        fails = fails + 1
+    }
+    if time.day(t1) != 2 {
+        fails = fails + 1
+    }
+
+    // 5. date(2023,10,2,0,0,0,0) = 1696204800
+    var t2: time.Time = time.date(2023, 10, 2, 0, 0, 0, 0)
+    if time.seconds(t2) != 1696204800 {
+        fails = fails + 1
+    }
+
+    // 6-15. 组件提取
+    var t3: time.Time = time.date(2023, 10, 2, 15, 4, 5, 123456789)
+    if time.seconds(t3) != 1696259045 {
+        fails = fails + 1
+    }
+    if time.nanosecond(t3) != 123456789 {
+        fails = fails + 1
+    }
+    if time.year(t3) != 2023 {
+        fails = fails + 1
+    }
+    if time.month(t3) != 10 {
+        fails = fails + 1
+    }
+    if time.day(t3) != 2 {
+        fails = fails + 1
+    }
+    if time.hour(t3) != 15 {
+        fails = fails + 1
+    }
+    if time.minute(t3) != 4 {
+        fails = fails + 1
+    }
+    if time.second(t3) != 5 {
+        fails = fails + 1
+    }
+    if time.weekday(t3) != 1 {
+        fails = fails + 1
+    }
+    if time.yearday(t3) != 275 {
+        fails = fails + 1
+    }
+
+    // 16. add 1 天
+    var t4: time.Time = time.add(t3, time.DAY)
+    if time.seconds(t4) != 1696345445 {
+        fails = fails + 1
+    }
+
+    // 17. add 365 天（跨闰年）
+    var t5: time.Time = time.date(2020, 1, 1, 0, 0, 0, 0)
+    var t6: time.Time = time.add(t5, 365*time.DAY)
+    if time.seconds(t6) != 1609372800 {
+        fails = fails + 1
+    }
+
+    // 18. sub
+    if time.sub(t4, t3) != time.DAY {
+        fails = fails + 1
+    }
+
+    // 19-21. before/after
+    if time.before(t3, t4) == false {
+        fails = fails + 1
+    }
+    if time.after(t4, t3) == false {
+        fails = fails + 1
+    }
+    if time.before(t4, t3) == true {
+        fails = fails + 1
+    }
+
+    // 22-25. format
+    var f1: string = time.format(t3, "2006-01-02")
+    if sameStr(f1, "2023-10-02") == 0 {
+        fails = fails + 1
+    }
+    var f2: string = time.format(t3, "15:04:05")
+    if sameStr(f2, "15:04:05") == 0 {
+        fails = fails + 1
+    }
+    var f3: string = time.format(t3, "2006-01-02 15:04:05")
+    if sameStr(f3, "2023-10-02 15:04:05") == 0 {
+        fails = fails + 1
+    }
+    var f4: string = time.format(t3, "Mon Jan 02")
+    if sameStr(f4, "Mon Oct 02") == 0 {
+        fails = fails + 1
+    }
+    var f5: string = time.format(t3, "03:04 PM")
+    if sameStr(f5, "03:04 PM") == 0 {
+        fails = fails + 1
+    }
+
+    // 26-27. parse
+    var p1: time.Time = time.parse("2006-01-02", "2023-10-02")
+    if time.seconds(p1) != 1696204800 {
+        fails = fails + 1
+    }
+    var p2: time.Time = time.parse("2006-01-02 15:04:05", "2023-10-02 15:04:05")
+    if time.seconds(p2) != 1696259045 {
+        fails = fails + 1
+    }
+
+    // 28-30. 时区
+    if time.zoneOffset("Asia/Shanghai", 1696204800) != 28800 {
+        fails = fails + 1
+    }
+    var za: string = time.zoneAbbr("Asia/Shanghai", 1696204800)
+    if sameStr(za, "CST") == 0 {
+        fails = fails + 1
+    }
+    if time.loadZone("Asia/Shanghai") == false {
+        fails = fails + 1
+    }
+
+    // 31-32. layoutAt
+    if time.layoutAt("2006-01-02", 0, "2006") == false {
+        fails = fails + 1
+    }
+    if time.layoutAt("2006-01-02", 0, "01") == true {
+        fails = fails + 1
+    }
+
+    if fails == 0 {
+        console.println("ALL PASS")
+    }
+    ret fails
+}

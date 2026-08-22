@@ -1,0 +1,60 @@
+type Point struct {
+    x: int
+    y: int
+}
+
+type Node struct {
+    v: int
+    next: *Node
+}
+
+fn Point.distance() int {
+    ret self.x * self.x + self.y * self.y
+}
+
+fn main() int {
+    var ok: int = 0
+    // 1. new 零初始化
+    var p: *Point = new(Point)
+    if p.x == 0 && p.y == 0 {
+        ok = ok + 1
+    }
+    p.x = 3
+    p.y = 4
+    if p.x == 3 && p.y == 4 {
+        ok = ok + 1
+    }
+    // 2. new 带初值（按字段顺序）
+    var q: *Point = new(Point, 5, 6)
+    if q.x == 5 && q.y == 6 {
+        ok = ok + 1
+    }
+    // 3. 堆对象方法调用（this 指针）
+    if q.distance() == 61 {
+        ok = ok + 1
+    }
+    // 4. new 构建链表 + 指针链访问
+    var head: *Node = new(Node)
+    head.v = 1
+    head.next = new(Node)
+    head.next.v = 2
+    head.next.next = new(Node)
+    head.next.next.v = 3
+    if head.v + head.next.v + head.next.next.v == 6 {
+        ok = ok + 1
+    }
+    // 5. new 链式（new 返回值直接字段访问/写入）
+    var nx: *Node = new(Node, 7)
+    nx.next = new(Node, 8)
+    if nx.v + nx.next.v == 15 {
+        ok = ok + 1
+    }
+    // 6. 释放：free 后内存可被新 malloc 复用（不崩即可，块头校验）
+    memory.free(q)
+    var r: *Point = new(Point)
+    r.x = 99
+    if r.x == 99 && r.y == 0 {
+        ok = ok + 1
+    }
+    ret ok
+}

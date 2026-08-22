@@ -535,9 +535,13 @@ func (exp *Expression) checkArith(p *Parser) bool {
 		return exp.checkOverload(p)
 	}
 
-	// 类型推导：float+float→f64，否则→左操作数类型
+	// 类型推导：float→f64；否则宽类型获胜。
+	// 修复：int * u64 原先推导为 int，32 位架构下乘积被截断
+	// （如 365*DAY 纳秒数），必须提升到 8 字节操作数的类型。
 	if typeSys.CheckKind(exp.Left.Type, "float") || typeSys.CheckKind(exp.Right.Type, "float") {
 		exp.Type = typeSys.GetSystemType("f64")
+	} else if exp.Right.Type.Size() > exp.Left.Type.Size() {
+		exp.Type = exp.Right.Type
 	} else {
 		exp.Type = exp.Left.Type
 	}

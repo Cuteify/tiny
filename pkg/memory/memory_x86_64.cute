@@ -47,3 +47,24 @@ fn store64(addr: ptr, val: u64) {
         mov [RAX], RCX
     }
 }
+// ---- 块头字段访问（x86_64 布局：next@p(8B)，size@p+ptrSize(8B)）----
+
+// hdrNext 读块头 next 字段
+fn hdrNext(p: ptr) ptr {
+    ret load64(p)
+}
+
+// hdrSetNext 写块头 next 字段
+fn hdrSetNext(p: ptr, v: ptr) {
+    store64(p, v)
+}
+
+// hdrSizeOf 读块头 size 字段
+fn hdrSizeOf(p: ptr) uint {
+    ret load64(p + ptrSize)
+}
+
+// hdrSetSize 写块头 size 字段
+fn hdrSetSize(p: ptr, s: uint) {
+    store64(p + ptrSize, s)
+}

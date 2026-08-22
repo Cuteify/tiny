@@ -1,0 +1,23 @@
+// pkg/builtin/builtin.cute - 内置包
+// 由编译器自动导入（package.json 标记 "builtin": true），
+// 顶层函数可无命名空间直接调用：print(...) 而非 builtin.print(...)。
+// 类型分派内建 len/cap/copy/new 由编译器直接实现，不在本包。
+// 手动内存管理（malloc/free 等）在 std:memory，需显式导入。
+
+// print 打印字符串到标准输出，返回写出的字节数
+fn print(s: string) i32 {
+    ret syscall.write(1, strings.toCstring(s), strings.len(s))
+}
+
+// println 打印字符串并换行，返回写出的字节数（含换行）
+fn println(s: string) i32 {
+    var n: i32 = print(s)
+    ret n + syscall.write(1, strings.toCstring("\n"), 1)
+}
+
+// panic 打印消息并以状态码 1 终止
+fn panic(msg: string) {
+    print(msg)
+    println("")
+    syscall.exit(1)
+}

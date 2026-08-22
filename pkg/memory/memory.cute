@@ -139,17 +139,17 @@ fn refill(idx: uint, blkSize: uint) ptr {
     if nb < chunk + 4096 {
         ret 0
     }
-    store64(chunk + ptrSize, blkSize)
+    hdrSetSize(chunk, blkSize)
     var head: ptr = chunk
     var prev: ptr = 0
     var p: ptr = chunk
     var end: ptr = chunk + 4096
     for ; p + blkSize <= end; {
-        store64(p, 0)
+        hdrSetNext(p, 0)
         if prev != 0 {
-            store64(prev, p)
+            hdrSetNext(prev, p)
         }
-        store64(p + ptrSize, blkSize)
+        hdrSetSize(p, blkSize)
         prev = p
         p = p + blkSize
     }
@@ -166,8 +166,8 @@ fn malloc(size: uint) ptr {
         if nb < old + req {
             ret 0
         }
-        store64(old, 0)
-        store64(old + ptrSize, req)
+        hdrSetNext(old, 0)
+        hdrSetSize(old, req)
         ret old + ptrSize * 2
     }
     var idx: uint = slotOf(req)
@@ -179,9 +179,9 @@ fn malloc(size: uint) ptr {
             ret 0
         }
     }
-    var next: ptr = load64(head)
+    var next: ptr = hdrNext(head)
     setHead(idx, next)
-    store64(head + ptrSize, blkSize)
+    hdrSetSize(head, blkSize)
     ret head + ptrSize * 2
 }
 
@@ -191,7 +191,7 @@ fn free(ptr: ptr) ptr {
         ret 0
     }
     var blk: ptr = ptr - ptrSize * 2
-    var size: uint = load64(blk + ptrSize)
+    var size: uint = hdrSizeOf(blk)
     if size > 512 {
         var cur: ptr = syscall.brk(0)
         if blk + size == cur {
@@ -201,7 +201,7 @@ fn free(ptr: ptr) ptr {
     }
     var idx: uint = slotOf(size)
     var head: ptr = headOf(idx)
-    store64(blk, head)
+    hdrSetNext(blk, head)
     setHead(idx, blk)
 }
 
@@ -210,7 +210,7 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
     if ptr == 0 {
         ret malloc(newSize)
     }
-    var oldSize: uint = load64(ptr - ptrSize) - ptrSize * 2
+    var oldSize: uint = hdrSizeOf(ptr - ptrSize) - ptrSize * 2
     var np: ptr = malloc(newSize)
     if np == 0 {
         ret 0
@@ -227,4 +227,23 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
     }
     free(ptr)
     ret np
+}
+// memcpy 拷贝 src 前 n 字节到 dest，返回 dest
+fn memcpy(dest: ptr, src: ptr, n: uint) ptr {
+    var i: uint = 0
+    for ; i < n; {
+        store8(dest + i, load8(src + i))
+        i = i + 1
+    }
+    ret dest
+}
+
+// memset 将 s 起 n 字节置为 c，返回 s
+fn memset(s: ptr, c: u8, n: uint) ptr {
+    var i: uint = 0
+    for ; i < n; {
+        store8(s + i, c)
+        i = i + 1
+    }
+    ret s
 }

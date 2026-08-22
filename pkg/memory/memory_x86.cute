@@ -50,3 +50,24 @@ fn store64(addr: ptr, val: u64) {
         mov [EAX+4], ECX
     }
 }
+// ---- 块头字段访问（x86 布局：next@p(4B)，size@p+ptrSize(4B)）----
+
+// hdrNext 读块头 next 字段
+fn hdrNext(p: ptr) ptr {
+    ret load32(p)
+}
+
+// hdrSetNext 写块头 next 字段
+fn hdrSetNext(p: ptr, v: ptr) {
+    store32(p, v)
+}
+
+// hdrSizeOf 读块头 size 字段
+fn hdrSizeOf(p: ptr) uint {
+    ret load32(p + ptrSize)
+}
+
+// hdrSetSize 写块头 size 字段
+fn hdrSetSize(p: ptr, s: uint) {
+    store32(p + ptrSize, s)
+}

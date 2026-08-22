@@ -161,8 +161,9 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 		return utils.Format("sub " + dst + ", " + src)
 	case "*":
 		if strings.Contains(dst, "[") {
-			// nasm 不支持 imul 内存目标，经栈中转
+			// nasm 不支持 imul 内存目标，经栈中转（保护 RAX：左子中间结果可能在其中）
 			code := ""
+			code += utils.Format("push RAX; 保护RAX(左子结果)")
 			if strings.Contains(src, "[") {
 				code += utils.Format("mov RAX, " + src)
 				src = "RAX"
@@ -172,24 +173,40 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 			code += utils.Format("imul RAX, qword [rsp]")
 			code += utils.Format("mov " + dst + ", RAX")
 			code += utils.Format("add rsp, 8; 清理乘数")
+			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
 			return code
 		}
 		return utils.Format("imul " + dst + ", " + src)
 	case "/":
-		code := utils.Format("push " + src + "; 保存除数")
+		// 除法必须经 RAX 中转（cqo/idiv），保护 RAX：左子中间结果可能在其中（dst==RAX 时无需保护）
+		code := ""
+		if strings.ToUpper(dst) != "RAX" {
+			code += utils.Format("push RAX; 保护RAX(左子结果)")
+		}
+		code += utils.Format("push " + src + "; 保存除数")
 		code += utils.Format("mov rax, " + dst)
 		code += utils.Format("cqo")
 		code += utils.Format("idiv qword [rsp]")
 		code += utils.Format("add rsp, 8; 清理除数")
 		code += utils.Format("mov " + dst + ", rax")
+		if strings.ToUpper(dst) != "RAX" {
+			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
+		}
 		return code
 	case "%":
-		code := utils.Format("push " + src + "; 保存除数")
+		code := ""
+		if strings.ToUpper(dst) != "RAX" {
+			code += utils.Format("push RAX; 保护RAX(左子结果)")
+		}
+		code += utils.Format("push " + src + "; 保存除数")
 		code += utils.Format("mov rax, " + dst)
 		code += utils.Format("cqo")
 		code += utils.Format("idiv qword [rsp]")
 		code += utils.Format("add rsp, 8; 清理除数")
 		code += utils.Format("mov " + dst + ", rdx")
+		if strings.ToUpper(dst) != "RAX" {
+			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
+		}
 		return code
 	case "^":
 		return utils.Format("xor " + dst + ", " + src)
@@ -199,8 +216,11 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 		return utils.Format("or " + dst + ", " + src)
 	case "<<":
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
-			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL
+			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL（保护 RAX：左子中间结果可能在其中，dst==RAX 时无需保护）
 			code := ""
+			if strings.ToUpper(dst) != "RAX" {
+				code += utils.Format("push RAX; 保护RAX(左子结果)")
+			}
 			if strings.Contains(src, "[") {
 				code += utils.Format("mov RAX, " + src)
 				src = "RAX"
@@ -209,12 +229,18 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 			code += utils.Format("mov cl, byte [rsp]")
 			code += utils.Format("shl " + dst + ", cl")
 			code += utils.Format("add rsp, 8; 清理移位计数")
+			if strings.ToUpper(dst) != "RAX" {
+				code += utils.Format("pop RAX; 恢复RAX(左子结果)")
+			}
 			return code
 		}
 		return utils.Format("shl " + dst + ", " + src)
 	case ">>":
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
 			code := ""
+			if strings.ToUpper(dst) != "RAX" {
+				code += utils.Format("push RAX; 保护RAX(左子结果)")
+			}
 			if strings.Contains(src, "[") {
 				code += utils.Format("mov RAX, " + src)
 				src = "RAX"
@@ -223,6 +249,9 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 			code += utils.Format("mov cl, byte [rsp]")
 			code += utils.Format("sar " + dst + ", cl")
 			code += utils.Format("add rsp, 8; 清理移位计数")
+			if strings.ToUpper(dst) != "RAX" {
+				code += utils.Format("pop RAX; 恢复RAX(左子结果)")
+			}
 			return code
 		}
 		return utils.Format("sar " + dst + ", " + src)
@@ -424,15 +453,30 @@ func (a *x86_64Ops) compileCond(cond *parser.Expression, jumpLabel string) strin
 		cond.Separator == "<" || cond.Separator == ">" ||
 		cond.Separator == "<=" || cond.Separator == ">=" {
 
+		leftSavedReg := ""
 		if cond.Left != nil {
 			code += a.exp(cond.Left, scratchReg1, "left operand")
-			code += utils.Format("push RAX; 保护左操作数\n")
+			// 用空闲 callee-save 寄存器保存左操作数（跨右子函数调用保持）。
+			// 不能压栈：被调函数参数槽 [rbp+16]（=调用指令时的 rsp）落在调用者
+			// 栈顶，会覆盖压栈保存的左操作数（如 load8(a) != load8(b) 这类左右都
+			// 是函数调用时，右调用会覆盖左操作数的栈保存）。
+			leftSavedReg = a.ctx.Reg.AllocCalleeSaveBind(cond.Left, a.CalleeSaveRegs(), a.CalleeSaveReg())
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存左操作数到callee-save")
+			} else {
+				code += utils.Format("push RAX; 保护左操作数\n")
+			}
 		}
 		if cond.Right != nil {
 			code += a.exp(cond.Right, scratchReg2, "right operand")
 		}
 		if cond.Left != nil {
-			code += utils.Format("pop RAX; 恢复左操作数\n")
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复左操作数")
+				a.ctx.Reg.Free(cond.Left)
+			} else {
+				code += utils.Format("pop RAX; 恢复左操作数\n")
+			}
 		}
 
 		code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)

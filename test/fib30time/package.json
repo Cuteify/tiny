@@ -1,0 +1,10 @@
+{
+    "name": "fib30_time",
+    "version": "1.0.0",
+    "description": "fib30 recursive benchmark timed with std:time (ns precision)",
+    "imports": {
+        "time": "std:time",
+        "console": "std:console",
+        "strings": "std:strings"
+    }
+}

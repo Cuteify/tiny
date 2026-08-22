@@ -2,7 +2,7 @@
 package parser
 
 import (
-
+	packageFmt "cuteify/package/fmt"
 	"cuteify/lexer"
 	typeSys "cuteify/type"
 	"cuteify/utils"
@@ -108,6 +108,10 @@ func (v *VarBlock) Parse(p *Parser) {
 	v.ParseVar(p)
 	if p.ThisBlock == p.Block && v.IsDefine {
 		v.IsGlobal = true
+		// 注册到全局变量表，供同包其它文件及跨包解析期/编译期查找
+		if p.Package != nil && p.Package.Path != "" && v.Name.Length() > 0 {
+			packageFmt.RegisterGlobalVar(p.Package.Path, v.Name.Last(), v)
+		}
 	}
 	p.AddChild(&Node{Value: v})
 }
@@ -311,6 +315,12 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	// 使用 Find 查找变量定义
 	if !v.IsDefine && v.Define.Node == nil {
 		results := p.Find(v.Name, FindTypeVar|FindTypeItem|FindTypeSelf|FindTypeField|FindTypeArg)
+		// 兜底：跨文件/跨包全局变量（根包合并树中查找）
+		if len(results) == 0 && v.Define.Node == nil {
+			if n, vb := findGlobalVar(p, v.Name); vb != nil {
+				results = append(results, FindResult{Node: n, Value: vb, Path: []any{vb}, Type: FindTypeVar})
+			}
+		}
 		for _, result := range results {
 			switch result.Type {
 			case FindTypeVar:

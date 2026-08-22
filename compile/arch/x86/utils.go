@@ -13,9 +13,9 @@ import (
 // 用于函数参数传递时的栈地址计算
 func caldAddrWithLen(size int, offset int) (code string) {
 	if offset == 0 {
-		return utils.GetLengthName(size) + "[ebp]"
+		return GetLengthName(size) + "[ebp]"
 	}
-	return utils.GetLengthName(size) + "[ebp + " + strconv.FormatInt(int64(offset), 10) + "]"
+	return GetLengthName(size) + "[ebp + " + strconv.FormatInt(int64(offset), 10) + "]"
 }
 
 // globalVarName 返回全局变量的定义名（引用端从 Define 取定义块名，保证与生成端一致）
@@ -38,7 +38,7 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {	if v.Name.Fir
 			} else {
 				addr = thisAddr
 			}
-			sizePrefix := utils.GetLengthName(v.Type.Size())
+			sizePrefix := GetLengthName(v.Type.Size())
 			return sizePrefix + addr
 		}
 		return "DWORD[ebp+8]"
@@ -97,7 +97,11 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {	if v.Name.Fir
 	} else {
 		addr = "[ebp+" + offsetStr + "]"
 	}
-	sizePrefix := utils.GetLengthName(v.Type.Size())
+	// 跨包引用的常量（const）合并后 Type 可能为空：按指针宽槽兜底
+	if v.Type == nil {
+		return "DWORD" + addr
+	}
+	sizePrefix := GetLengthName(v.Type.Size())
 	return sizePrefix + addr
 }
 

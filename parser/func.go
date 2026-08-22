@@ -253,6 +253,39 @@ func (f *FuncBlock) ParseRetType(p *Parser) {
 		p.Lexer.SetCursor(token.Cursor)
 		return
 	}
+	// 多返回值 (T1, T2, ...)
+	if token.Value == "(" {
+		for {
+			tok := p.Lexer.Next()
+			if tok.Value == ")" {
+				break
+			}
+			p.Lexer.SetCursor(tok.Cursor)
+			typName, _ := p.ParseName(false)
+			if typName.IsEmpty() {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
+				break
+			}
+			results := p.Find(typName, FindTypeType)
+			if len(results) > 0 {
+				if tb, ok := results[0].Value.(typeSys.Type); ok {
+					f.Return = append(f.Return, tb)
+				}
+			} else {
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
+			}
+			tok = p.Lexer.Next()
+			if tok.Value == "," {
+				continue
+			}
+			if tok.Value == ")" {
+				break
+			}
+			p.Lexer.SetCursor(tok.Cursor)
+			break
+		}
+		return
+	}
 	// 指针/切片返回类型（*T、[]T）走类型注解解析
 	if token.Value == "*" || token.Value == "[" {
 		p.Lexer.SetCursor(token.Cursor)

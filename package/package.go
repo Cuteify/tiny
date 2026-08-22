@@ -5,6 +5,9 @@ import (
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
 	"encoding/json"
+	"regexp"
+	"runtime"
+	"strings"
 
 	"os"
 	"path"
@@ -16,6 +19,59 @@ type All struct {
 }
 
 var packages = make(map[string]*packageFmt.Info)
+
+// 文件级 build 指令预检正则（仅匹配行首无缩进的顶层 build 语句）
+var (
+	reBuildArch = regexp.MustCompile(`(?m)^build\s+arch\s*\(([^)]*)\)`)
+	reBuildOS   = regexp.MustCompile(`(?m)^build\s+os\s*\(([^)]*)\)`)
+)
+
+// preFilterBuild 在解析前检查文件级 build arch/os 指令。
+// 返回 false 表示该文件不匹配当前架构/系统，应跳过。
+func preFilterBuild(pkgPath string) (bool, error) {
+	content, err := os.ReadFile(pkgPath)
+	if err != nil {
+		return false, err
+	}
+	currentArch := os.Getenv("CUTE_ARCH")
+	if currentArch == "" {
+		currentArch = "x86"
+	}
+	splitNames := func(s string) []string {
+		var names []string
+		for _, f := range strings.FieldsFunc(s, func(r rune) bool {
+			return r == ',' || r == '"' || r == '\'' || r == ' ' || r == '\t'
+		}) {
+			names = append(names, f)
+		}
+		return names
+	}
+	if m := reBuildArch.FindStringSubmatch(string(content)); m != nil {
+		matched := false
+		for _, n := range splitNames(m[1]) {
+			if n == currentArch {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false, nil
+		}
+	}
+	if m := reBuildOS.FindStringSubmatch(string(content)); m != nil {
+		matched := false
+		for _, n := range splitNames(m[1]) {
+			if n == runtime.GOOS {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false, nil
+		}
+	}
+	return true, nil
+}
 
 var all *All = &All{
 	Funcs: make(map[string]*parser.Node),
@@ -142,6 +198,15 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
+	if isRoot {
+		// 根包自动导入内置包：顶层函数可无命名空间直接调用
+		if _, ok := packageInfo.Imports["builtin"]; !ok {
+			if packageInfo.Imports == nil {
+				packageInfo.Imports = map[string]string{}
+			}
+			packageInfo.Imports["builtin"] = "std:builtin"
+		}
+	}
 	for k, ppath := range packageInfo.Imports {
 		if _, ok := packages[ppath]; !ok {
 			if ppath[:4] == "std:" {
@@ -171,6 +236,16 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			continue
 		}
 		if path.Ext(file.Name()) == ".cute" {
+			// 解析前预检文件级 build arch/os 指令，不匹配当前目标则跳过文件。
+			// 避免不匹配架构的文件参与解析（其引用的跨文件类型/函数可能在
+			// 本包其他文件解析后才有定义，导致 "type not found"）。
+			keep, err := preFilterBuild(path.Join(packagePath, file.Name()))
+			if err != nil {
+				return nil, err
+			}
+			if !keep {
+				continue
+			}
 			lex := lexer.NewLexer(path.Join(packagePath, file.Name()))
 			p := parser.NewParser(lex)
 			p.Block.Parser = p
@@ -201,6 +276,26 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 				// 若不在此固定，rootNode.Check 阶段的 FixPath 找不到别名，
 				// 导致跨包调用解析失败（Func 为 nil、不被标记 Useful）。
 				fixPkgNamePaths(p.Block, packageInfo)
+			}
+			// build link 提供者登记：编译器内建走 link 路径时标记 Useful
+			for i := 0; i < len(p.Block.Children); i++ {
+				fb, ok := p.Block.Children[i].Value.(*parser.FuncBlock)
+				if !ok {
+					continue
+				}
+				for _, bf := range fb.BuildFlags {
+					if bf.Type == "link" && bf.Link != "" {
+						parser.LinkProviders[bf.Link] = fb
+					}
+				}
+			}
+			// 内置包：逐文件注册顶层函数（先注册保证包内跨文件裸调用可用）
+			if packageInfo.Builtin {
+				for i := 0; i < len(p.Block.Children); i++ {
+					if fb, ok := p.Block.Children[i].Value.(*parser.FuncBlock); ok {
+						parser.BuiltinFuncs[fb.Name.Last()] = fb
+					}
+				}
 			}
 			if rootNode == nil {
 				rootNode = p.Block
@@ -240,6 +335,7 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			}
 		}
 		fixParser(rootNode)
+
 		rootNode.Check()
 	}
 

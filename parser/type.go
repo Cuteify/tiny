@@ -1,6 +1,7 @@
 package parser
 
 import (
+	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 )
 
@@ -72,6 +73,10 @@ func (t *TypeBlock) Parse(p *Parser) {
 		} else {
 			t.Alias = typeSys.NewAlias(name.String(), t.Alias, false)
 		}
+	}
+	// 注册到全局类型表，供同包其它文件（及跨包）解析期引用
+	if p.Package != nil && p.Package.Path != "" {
+		packageFmt.RegisterType(p.Package.Path, name.String(), t.Type())
 	}
 }
 

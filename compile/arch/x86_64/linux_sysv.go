@@ -77,10 +77,36 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 
 	// 将寄存器参数保存到栈上(SysV ABI: RDI, RSI, RDX, RCX, R8, R9)
 	argRegIdx := 0
+	stackArgBase := 16
 	if fn.Class != nil {
 		// 如果有this指针,第一个寄存器是this，保存到 [rbp+16]
 		code += utils.Format("mov QWORD [rbp+16], " + sysvArgRegs[0] + "; this pointer")
 		argRegIdx = 1
+		stackArgBase = 24
+	}
+
+	// 先搬移栈参数（SysV 第 7+ 个）：其原始位置在 [rbp+16]（含 this 时 [rbp+24]）起的
+	// 调用者栈参数区，与下方寄存器参数的保存槽（[rbp+16..56]）重叠，必须先把栈参数
+	// 搬到各自的编译器参数槽（arg.Offset），否则会被寄存器参数保存覆盖而丢失。
+	{
+		stackSlot := 0
+		regIdx := argRegIdx
+		for i := 0; i < len(fn.Args); i++ {
+			arg := fn.Args[i]
+			slots := arch.ArgSlots(arg.Type)
+			if regIdx+slots-1 < len(sysvArgRegs) {
+				regIdx += slots
+				continue
+			}
+			for j := 0; j < slots; j++ {
+				src := "[rbp+" + strconv.Itoa(stackArgBase+(stackSlot+j)*8) + "]"
+				dst := "[rbp+" + strconv.Itoa(arg.Offset+j*8) + "]"
+				code += utils.Format("mov RAX, " + src + "; 保存栈参数" + strconv.Itoa(i) + "槽" + strconv.Itoa(j) + "到栈")
+				code += utils.Format("mov " + dst + ", RAX")
+			}
+			stackSlot += slots
+			regIdx += slots
+		}
 	}
 
 	for i := 0; i < len(fn.Args); i++ {

@@ -1,0 +1,5 @@
+{
+    "name": "u64Test",
+    "version": "1.0.0",
+    "description": "x86 u64 register-pair support test"
+}

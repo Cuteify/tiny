@@ -12,6 +12,7 @@ type CallBlock struct {
 	Func    *FuncBlock
 	Node    *Node
 	ThisVar *VarBlock
+	NewType typeSys.Type // new(T) 的目标类型（内建堆对象创建）
 }
 
 // Check 检查函数调用的参数数量和类型是否匹配
@@ -44,12 +45,24 @@ func (c *CallBlock) Check(p *Parser) bool {
 			}
 			fb.Useful = true
 			if c.Func == nil {
+				fb.Useful = true
 				c.Func = fb
 				// 包名被方法分支误判为接收者时，清除伪 ThisVar
 				if fb.Class == nil {
 					c.ThisVar = nil
 				}
 			}
+		}
+	}
+
+	// 内置包兜底：无命名空间调用（print(...)）→ 注册表直接定位函数块。
+	// 本地/用户函数优先：仅在上方查找失败后进入；
+	// 直接设置 c.Func，首趟即完成参数检查，无需等待包合并重试。
+	if c.Func == nil && !c.Name.IsPath() {
+		if fb, ok := BuiltinFuncs[c.Name.First()]; ok {
+			fb.Useful = true
+			c.Func = fb
+			c.ThisVar = nil
 		}
 	}
 
@@ -220,11 +233,36 @@ func (c *CallBlock) Parse(p *Parser) {
 func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	name := c.Name.String()
 	switch name {
+	case "new":
+		// new(T[, v...])：堆对象创建内建，返回 *T；
+		// new(list[T], len[, cap])：列表创建内建，按值返回列表
+		if c.NewType != nil {
+			retType := typeSys.Type(typeSys.MakePointer(c.NewType))
+			if lt, ok := c.NewType.(*typeSys.ListType); ok && lt.Elem() != nil {
+				retType = lt
+			}
+			c.Func = &FuncBlock{
+				Return: []typeSys.Type{retType},
+			}
+			for _, arg := range c.Args {
+				if arg != nil && arg.Value != nil {
+					arg.Value.Check(p)
+				}
+			}
+			return true
+		}
 	case "len", "lists_len":
 		if len(c.Args) == 1 {
 			c.Args[0].Value.Check(p)
 			argType := c.Args[0].Value.Type
 			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
+				// 字符串走 link 路径（call __string_len）：提前标记提供者 Useful，
+				// 否则提供者可能因无人显式调用被死代码消除（链接期符号未定义）
+				if argType.Kind() == "string" {
+					if fb, ok := LinkProviders["__string_len"]; ok {
+						fb.Useful = true
+					}
+				}
 				c.Func = &FuncBlock{
 					Return: []typeSys.Type{typeSys.GetSystemType("int")},
 				}
@@ -236,6 +274,28 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 			c.Args[0].Value.Check(p)
 			argType := c.Args[0].Value.Type
 			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
+				if argType.Kind() == "string" {
+					if fb, ok := LinkProviders["__string_cap"]; ok {
+						fb.Useful = true
+					}
+				}
+				c.Func = &FuncBlock{
+					Return: []typeSys.Type{typeSys.GetSystemType("int")},
+				}
+				return true
+			}
+		}
+	case "copy":
+		// copy(dst, src)：同 Kind（str/str 或 list/list）元素拷贝，
+		// 拷贝 min(len(dst), len(src)) 个元素，返回拷贝计数
+		if len(c.Args) == 2 && c.Args[0].Value != nil && c.Args[1].Value != nil {
+			c.Args[0].Value.Check(p)
+			c.Args[1].Value.Check(p)
+			dstType := c.Args[0].Value.Type
+			srcType := c.Args[1].Value.Type
+			if dstType != nil && srcType != nil &&
+				dstType.Kind() == srcType.Kind() &&
+				(dstType.Kind() == "string" || dstType.Kind() == "list") {
 				c.Func = &FuncBlock{
 					Return: []typeSys.Type{typeSys.GetSystemType("int")},
 				}
@@ -244,4 +304,59 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 		}
 	}
 	return false
+}
+
+
+// ParseNew 解析 new(T[, v1, v2...])：首个参数为类型名（parseTypeAnnotation），其余为字段初值
+func (c *CallBlock) ParseNew(p *Parser) {
+	p.Lexer.Skip('(')
+	c.NewType = p.parseTypeAnnotation()
+	if c.NewType == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found in new()")
+		return
+	}
+	depth := 0
+	for {
+		oldCursor := p.Lexer.Cursor
+		for {
+			token := p.Lexer.Next()
+			if token.IsEmpty() {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "expected ')' in new()")
+				return
+			}
+			if token.Type == lexer.SEPARATOR && token.Value == "(" {
+				depth++
+				continue
+			}
+			if token.Type == lexer.SEPARATOR && token.Value == ")" && depth > 0 {
+				depth--
+				continue
+			}
+			if token.Type == lexer.SEPARATOR && token.Value == ")" {
+				stopCursor := token.Cursor
+				p.Lexer.SetCursor(oldCursor)
+				argExp := p.ParseExp(stopCursor)
+				if argExp != nil {
+					c.Args = append(c.Args, &ArgBlock{Value: argExp})
+				}
+				if p.Lexer.Cursor <= stopCursor {
+					p.Lexer.Skip(')')
+				}
+				c.Check(p)
+				return
+			}
+			if token.Type == lexer.SEPARATOR && token.Value == "," && depth == 0 {
+				stopCursor := token.Cursor
+				p.Lexer.SetCursor(oldCursor)
+				argExp := p.ParseExp(stopCursor)
+				if argExp != nil {
+					c.Args = append(c.Args, &ArgBlock{Value: argExp})
+				}
+				if p.Lexer.Cursor <= stopCursor {
+					p.Lexer.Skip(',')
+				}
+				break
+			}
+		}
+	}
 }

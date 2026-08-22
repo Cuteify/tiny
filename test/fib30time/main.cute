@@ -1,0 +1,24 @@
+// fib30 基准测试：用 std:time 计时（纳秒精度）
+
+fn fib(n int) int {
+    if n <= 1 {
+        ret n
+    }
+    ret fib(n - 1) + fib(n - 2)
+}
+
+fn main() int {
+    var t0: time.Time = time.now()
+    var r: int = fib(30)
+    var t1: time.Time = time.now()
+
+    var ns: u64 = time.sub(t1, t0)
+    var nsi: int = strings.fromI64(ns)
+
+    console.print("fib(30)=")
+    console.print(strings.toString(r, 10))
+    console.print(" elapsed=")
+    console.print(strings.toString(nsi, 10))
+    console.println("ns")
+    ret 0
+}

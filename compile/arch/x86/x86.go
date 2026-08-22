@@ -26,8 +26,13 @@ var Regs64 = []*regmgr.Reg{
 	{Name: "R15", CalleeSave: true, RegIndex: 13},
 }
 
-// GetLengthName 返回大小对应的汇编长度前缀
+// GetLengthName 返回大小对应的汇编长度前缀。
+// 32 位模式无 8 字节标量指令支持（u64 需寄存器对，尚未实现）：
+// 超宽类型钳制为 DWORD，仅保留低 32 位（时间戳等场景低字已够用）。
 func GetLengthName(size int) string {
+	if size > 4 {
+		size = 4
+	}
 	switch size {
 	case 1:
 		return "BYTE"

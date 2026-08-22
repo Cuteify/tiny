@@ -1,0 +1,10 @@
+{
+    "name": "time",
+    "version": "1.0.0",
+    "description": "Time package: now/format/parse/duration/timezone (IANA tzdata)",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "syscall": "std:syscall"
+    }
+}

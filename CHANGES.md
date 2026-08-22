@@ -21,6 +21,7 @@
 14. [标准库拆分 fs/console 与 x86_64 参数装载修复](#十四标准库拆分-fsconsole-与-x86_64-参数装载修复本次会话)
 15. [else 块跨包调用修复 + toString 负数修复](#十五else-块跨包调用修复--tostring-负数修复本次会话)
 16. [M5 补强：\*T 函数参数/返回类型 + 嵌套 struct 字段](#十六m5-补强t-函数参数返回类型--嵌套-struct-字段本次会话)
+17. [堆对象内建 new(T[, v...])](#十七堆对象内建-newt-v本次会话)
 
 ---
 
@@ -514,3 +515,28 @@ x86 cdecl 压栈此前对 string 实参只压 4 字节（ptr 槽），而 callee
 ### 16.5 遗留
 
 - 未 import 的跨包调用（如 m45 缺 `memory` import）被静默丢弃：`SysV.Call` 对 `call.Func == nil` 返回 `""`（linux_sysv.go:141），不报错。建议后续在调用处对未解析的跨包调用报错。
+
+---
+
+## 十七、堆对象内建 new(T[, v...])（本次会话）
+
+### 17.1 现象与动机
+
+堆上对象此前只能手写 `memory.malloc(Size(T))` 工厂（如 `mkNode`），需手动算字节数、无零初始化保证；语言层无 `new` 内建（`make`/`append` 内建仅有编译层代码，parser 层未接线，`make([]int, 3)` 直接报 `Expression Error: unexpected '['`）。
+
+### 17.2 实现
+
+1. **parser/call.go**：`CallBlock` 增 `NewType` 字段；新增 `ParseNew`（首参走 `parseTypeAnnotation` 解析类型，其余为字段初值表达式，深度计数循环兼容嵌套调用）；`checkBuiltin` 增 `case "new"`（返回类型 `*T`，初值表达式逐个 Check）。
+2. **parser/exp.go** `handleName`：`name == "new"` 时走 `ParseNew`，并设置 `exp.Type = MakePointer(NewType)`。
+3. **compile/exp/exp.go**：`builtinCall` 分派 `case "new"` → `builtinNew`：`emitMalloc(align8(Size(T)))`（x86/x86_64 双架构）+ 零填充（含 padding）+ 初值按 `StructType.Fields()[i].Offset` 写（≤指针宽度的标量值；常量直接写、表达式经寄存器）。
+4. **寄存器安全**（关键）：新对象地址 `push` 到栈顶保存、用时从 `[ESP/RSP]` 重装载（`c.arch.StackPtr()` 抽象），**不占用任何寄存器**——避免覆盖调用方目标地址寄存器（`p.x = new(T)` 路径 Assign 的临时寄存器）与嵌套调用活跃值。
+
+### 17.3 验证
+
+- 新增 `test/heap_new`（7 项）：new 零初始化、字段读写、`new(Point, 5, 6)` 带初值、堆对象方法调用（this 指针）、`new(Node)` 构建链表 + 三级指针链、链式 `nx.next = new(Node, 8)`、`memory.free` 后分配复用（不崩）→ **双架构 exit=7**。
+- 调试过程中确认：`head.next = new(Node)` 首次实现用 callee-save 寄存器保存对象地址会覆盖调用方地址寄存器（新对象 next 自环 → 段错误），改为栈槽后修复。
+- 全量回归双架构全绿：m5=7、heap_struct=84、structValue=11、list=33、strconv=11、memSuite=7、simpleVar=42、derefTest=7（x86_64 与 x86 一致）。
+
+### 17.4 遗留
+
+- 初值参数仅支持 ≤指针宽度的标量；struct/list/string 字段初值与 `new` 嵌套（`r.x = mkPair(5).x` 调用结果字段访问）编译器 panic，后续再补。

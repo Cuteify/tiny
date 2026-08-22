@@ -1,0 +1,8 @@
+{
+    "name": "fib30_bench",
+    "version": "1.0.0",
+    "description": "fib30 benchmark, no output, external timing",
+    "imports": {
+        "time": "std:time"
+    }
+}
