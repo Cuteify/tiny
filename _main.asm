@@ -15,6 +15,40 @@ section .text
 global _start
 
 ; ==============================
+; Function: store1
+store1:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 80; 分配局部变量空间(80字节)
+    mov QWORD [rbp+16], RDI; 保存参数0槽0到栈
+    mov QWORD [rbp+24], RSI; 保存参数0槽1到栈
+    mov QWORD [rbp+32], RDX; 保存参数0槽2到栈
+    mov RAX, QWORD [rbp+16+0]
+    mov QWORD [rel __global_gbuf+0], RAX
+    mov RAX, QWORD [rbp+16+8]
+    mov QWORD [rel __global_gbuf+8], RAX
+    mov RAX, QWORD [rbp+16+16]
+    mov QWORD [rel __global_gbuf+16], RAX
+; 设置变量gbuf
+    func_end_store1:
+    add rsp, 80; 清理局部变量栈空间
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+; ==============================
 ; Function: main
 main:
     push rbp
@@ -25,7 +59,7 @@ main:
     push R14; 保存R14
     push R15; 保存R15
     sub rsp, 96; 分配局部变量空间(96字节)
-    mov RDI, 32
+    mov RDI, 64
     call std_memory_malloc1
     mov RBX, RAX; list buffer
     mov RAX, 0
@@ -33,22 +67,29 @@ main:
     mov QWORD [RBX+8], RAX
     mov QWORD [RBX+16], RAX
     mov QWORD [RBX+24], RAX
+    mov QWORD [RBX+32], RAX
+    mov QWORD [RBX+40], RAX
+    mov QWORD [RBX+48], RAX
+    mov QWORD [RBX+56], RAX
     mov QWORD [rbp-64], RBX
-    mov QWORD [rbp-64+8], 4
-    mov QWORD [rbp-64+16], 4
+    mov QWORD [rbp-64+8], 8
+    mov QWORD [rbp-64+16], 8
 ; 设置变量loc
     mov RAX, QWORD [rbp-64]
     add RAX, 24
     mov RBX, 77
     mov QWORD [RAX], RBX
 ; list index assignment
-    mov RAX, QWORD [rbp-64+0]
-    mov QWORD [rel __global_gbuf+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rel __global_gbuf+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rel __global_gbuf+16], RAX
-; 设置变量gbuf
+    push QWORD [rbp-64+16]
+    push QWORD [rbp-64+8]
+    push QWORD [rbp-64+0]
+; 参数0
+    sub rsp, 80; 下沉暂存多槽参数
+    mov RDI, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+88]; 装载暂存参数
+    mov RDX, QWORD [rsp+96]; 装载暂存参数
+    add rsp, 104; 清理暂存参数
+    call store1
     mov RBX, QWORD [rel __global_gbuf]
     add RBX, 24
     mov RAX, QWORD [RBX]
@@ -56,6 +97,139 @@ main:
     jmp func_end_main
     func_end_main:
     add rsp, 96; 清理局部变量栈空间
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+; ==============================
+; Function: std_builtin_print1
+std_builtin_print1:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 80; 分配局部变量空间(80字节)
+    mov QWORD [rbp+16], RDI; 保存参数0槽0到栈
+    mov QWORD [rbp+24], RSI; 保存参数0槽1到栈
+    mov QWORD [rbp+32], RDX; 保存参数0槽2到栈
+    push 1
+; 参数0
+    sub rsp, 80; 下沉暂存标量参数
+    push QWORD [rbp+16+16]
+    push QWORD [rbp+16+8]
+    push QWORD [rbp+16+0]
+; 参数0
+    sub rsp, 80; 下沉暂存多槽参数
+    mov RDI, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+88]; 装载暂存参数
+    mov RDX, QWORD [rsp+96]; 装载暂存参数
+    add rsp, 104; 清理暂存参数
+    call std_strings_toCstring1
+    push RAX
+; 参数1
+    sub rsp, 80; 下沉暂存标量参数
+    push QWORD [rbp+16+16]
+    push QWORD [rbp+16+8]
+    push QWORD [rbp+16+0]
+; 参数0
+    sub rsp, 80; 下沉暂存多槽参数
+    mov RDI, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+88]; 装载暂存参数
+    mov RDX, QWORD [rsp+96]; 装载暂存参数
+    add rsp, 104; 清理暂存参数
+    call std_strings_len1
+    push RAX
+; 参数2
+    sub rsp, 80; 下沉暂存标量参数
+    mov RDX, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+168]; 装载暂存参数
+    mov RDI, QWORD [rsp+256]; 装载暂存参数
+    add rsp, 264; 清理暂存参数
+    call std_syscall_write3
+; return值存入RAX
+    jmp func_end_std_builtin_print1
+    func_end_std_builtin_print1:
+    add rsp, 80; 清理局部变量栈空间
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+; ==============================
+; Function: std_builtin_println1
+std_builtin_println1:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 80; 分配局部变量空间(80字节)
+    mov QWORD [rbp+16], RDI; 保存参数0槽0到栈
+    mov QWORD [rbp+24], RSI; 保存参数0槽1到栈
+    mov QWORD [rbp+32], RDX; 保存参数0槽2到栈
+    push QWORD [rbp+16+16]
+    push QWORD [rbp+16+8]
+    push QWORD [rbp+16+0]
+; 参数0
+    sub rsp, 80; 下沉暂存多槽参数
+    mov RDI, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+88]; 装载暂存参数
+    mov RDX, QWORD [rsp+96]; 装载暂存参数
+    add rsp, 104; 清理暂存参数
+    call std_builtin_print1
+    mov DWORD[rbp-44], EAX
+; 设置变量n
+    mov EAX, DWORD[rbp-44]
+    mov RBX, RAX
+    push 1
+; 参数0
+    sub rsp, 80; 下沉暂存标量参数
+    push 2
+    push 2
+    push str_1
+; 参数0
+    sub rsp, 80; 下沉暂存多槽参数
+    mov RDI, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+88]; 装载暂存参数
+    mov RDX, QWORD [rsp+96]; 装载暂存参数
+    add rsp, 104; 清理暂存参数
+    call std_strings_toCstring1
+    push RAX
+; 参数1
+    sub rsp, 80; 下沉暂存标量参数
+    push 1
+; 参数2
+    sub rsp, 80; 下沉暂存标量参数
+    mov RDX, QWORD [rsp+80]; 装载暂存参数
+    mov RSI, QWORD [rsp+168]; 装载暂存参数
+    mov RDI, QWORD [rsp+256]; 装载暂存参数
+    add rsp, 264; 清理暂存参数
+    call std_syscall_write3
+    mov RCX, RAX
+    mov RAX, RBX
+    add RAX, RCX
+; return值存入RAX
+    jmp func_end_std_builtin_println1
+    func_end_std_builtin_println1:
+    add rsp, 80; 清理局部变量栈空间
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -1741,139 +1915,6 @@ std_strings_fromI641:
     jmp func_end_std_strings_fromI641
     func_end_std_strings_fromI641:
     add rsp, 96; 清理局部变量栈空间
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-; ==============================
-; Function: std_builtin_print1
-std_builtin_print1:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 80; 分配局部变量空间(80字节)
-    mov QWORD [rbp+16], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp+24], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp+32], RDX; 保存参数0槽2到栈
-    push 1
-; 参数0
-    sub rsp, 80; 下沉暂存标量参数
-    push QWORD [rbp+16+16]
-    push QWORD [rbp+16+8]
-    push QWORD [rbp+16+0]
-; 参数0
-    sub rsp, 80; 下沉暂存多槽参数
-    mov RDI, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+88]; 装载暂存参数
-    mov RDX, QWORD [rsp+96]; 装载暂存参数
-    add rsp, 104; 清理暂存参数
-    call std_strings_toCstring1
-    push RAX
-; 参数1
-    sub rsp, 80; 下沉暂存标量参数
-    push QWORD [rbp+16+16]
-    push QWORD [rbp+16+8]
-    push QWORD [rbp+16+0]
-; 参数0
-    sub rsp, 80; 下沉暂存多槽参数
-    mov RDI, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+88]; 装载暂存参数
-    mov RDX, QWORD [rsp+96]; 装载暂存参数
-    add rsp, 104; 清理暂存参数
-    call std_strings_len1
-    push RAX
-; 参数2
-    sub rsp, 80; 下沉暂存标量参数
-    mov RDX, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+168]; 装载暂存参数
-    mov RDI, QWORD [rsp+256]; 装载暂存参数
-    add rsp, 264; 清理暂存参数
-    call std_syscall_write3
-; return值存入RAX
-    jmp func_end_std_builtin_print1
-    func_end_std_builtin_print1:
-    add rsp, 80; 清理局部变量栈空间
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-; ==============================
-; Function: std_builtin_println1
-std_builtin_println1:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 80; 分配局部变量空间(80字节)
-    mov QWORD [rbp+16], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp+24], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp+32], RDX; 保存参数0槽2到栈
-    push QWORD [rbp+16+16]
-    push QWORD [rbp+16+8]
-    push QWORD [rbp+16+0]
-; 参数0
-    sub rsp, 80; 下沉暂存多槽参数
-    mov RDI, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+88]; 装载暂存参数
-    mov RDX, QWORD [rsp+96]; 装载暂存参数
-    add rsp, 104; 清理暂存参数
-    call std_builtin_print1
-    mov DWORD[rbp-44], EAX
-; 设置变量n
-    mov EAX, DWORD[rbp-44]
-    mov RBX, RAX
-    push 1
-; 参数0
-    sub rsp, 80; 下沉暂存标量参数
-    push 2
-    push 2
-    push str_1
-; 参数0
-    sub rsp, 80; 下沉暂存多槽参数
-    mov RDI, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+88]; 装载暂存参数
-    mov RDX, QWORD [rsp+96]; 装载暂存参数
-    add rsp, 104; 清理暂存参数
-    call std_strings_toCstring1
-    push RAX
-; 参数1
-    sub rsp, 80; 下沉暂存标量参数
-    push 1
-; 参数2
-    sub rsp, 80; 下沉暂存标量参数
-    mov RDX, QWORD [rsp+80]; 装载暂存参数
-    mov RSI, QWORD [rsp+168]; 装载暂存参数
-    mov RDI, QWORD [rsp+256]; 装载暂存参数
-    add rsp, 264; 清理暂存参数
-    call std_syscall_write3
-    mov RCX, RAX
-    mov RAX, RBX
-    add RAX, RCX
-; return值存入RAX
-    jmp func_end_std_builtin_println1
-    func_end_std_builtin_println1:
-    add rsp, 80; 清理局部变量栈空间
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
