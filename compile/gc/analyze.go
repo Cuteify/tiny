@@ -69,6 +69,16 @@ func Build(root *parser.Node) {
 	// Phase 3: 基于最终摘要计算出口释放计划
 	PlanFrees(root)
 
+	// LLR 分析：基于对象绑定的精确生命周期
+	LLRResults = map[string]*LLRResult{}
+	for fnKey, fb := range a.fns {
+		fs := Table[fnKey]
+		if fs == nil { continue }
+		body := a.nodes[fnKey]
+		res := ComputeLLR(fnKey, fb, fs, body)
+		LLRResults[fnKey] = res
+	}
+
 	// 落盘
 	keys := make([]string, 0, len(Table))
 	for k := range Table {

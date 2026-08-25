@@ -122,6 +122,23 @@ type FnSummary struct {
 // Table 全程序摘要表（键 = 函数全路径名）
 var Table = map[string]*FnSummary{}
 
+// LLRResults 全程序 LLR 分析结果
+var LLRResults = map[string]*LLRResult{}
+
+// DumpLLRs 输出全部 LLR 结果
+func DumpLLRs() string {
+	keys := make([]string, 0, len(LLRResults))
+	for k := range LLRResults {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := ""
+	for _, k := range keys {
+		out += DumpLLR(LLRResults[k])
+	}
+	return out
+}
+
 // EnsureParam 确保 Params 包含序号为 idx 的条目且整体按 Index 升序排列，返回该条目的指针；
 // 缺失时插入零值并保持有序（每次直接重新排序，不依赖 Sorted 标志）
 func (f *FnSummary) EnsureParam(idx int) *ParamSummary {

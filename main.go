@@ -46,6 +46,8 @@ func main() {
 		}
 		fmt.Println("\n=== GC 出口释放计划 ===")
 		fmt.Print(gc.DumpFrees())
+		fmt.Println("\n=== GC LLR 分析 ===")
+		fmt.Print(gc.DumpLLRs())
 	}
 
 	// AST 模式
