@@ -403,7 +403,12 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 		}
 		exp := &Expression{Num: num}
 		if exp.Num == float64(int(exp.Num)) {
-			exp.Type = typeSys.GetSystemType("int")
+			// 值超出 int32 范围时使用 i64，避免 x86 上 mov DWORD[mem], imm 溢出
+			if exp.Num > 2147483647 || exp.Num < -2147483648 {
+				exp.Type = typeSys.GetSystemType("i64")
+			} else {
+				exp.Type = typeSys.GetSystemType("int")
+			}
 		} else {
 			exp.Type = typeSys.GetSystemType("f64")
 		}

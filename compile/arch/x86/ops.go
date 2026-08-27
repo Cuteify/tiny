@@ -354,25 +354,25 @@ func (a *x86Ops) compileCond64(cond *parser.Expression, jumpLabel string) string
 		code += utils.Format("cmp eax, ebx")
 		code += utils.Format("je " + jumpLabel)
 	case "<":
-		code += utils.Format("jb " + trueLabel)
-		code += utils.Format("ja " + jumpLabel)
+		code += utils.Format("jl " + trueLabel)
+		code += utils.Format("jg " + jumpLabel)
 		code += utils.Format("cmp eax, ebx")
-		code += utils.Format("jae " + jumpLabel)
+		code += utils.Format("jge " + jumpLabel)
 	case ">":
-		code += utils.Format("ja " + trueLabel)
-		code += utils.Format("jb " + jumpLabel)
+		code += utils.Format("jg " + trueLabel)
+		code += utils.Format("jl " + jumpLabel)
 		code += utils.Format("cmp eax, ebx")
-		code += utils.Format("jbe " + jumpLabel)
+		code += utils.Format("jle " + jumpLabel)
 	case "<=":
-		code += utils.Format("jb " + trueLabel)
-		code += utils.Format("ja " + jumpLabel)
+		code += utils.Format("jl " + trueLabel)
+		code += utils.Format("jg " + jumpLabel)
 		code += utils.Format("cmp eax, ebx")
-		code += utils.Format("ja " + jumpLabel)
+		code += utils.Format("jg " + jumpLabel)
 	case ">=":
-		code += utils.Format("ja " + trueLabel)
-		code += utils.Format("jb " + jumpLabel)
+		code += utils.Format("jg " + trueLabel)
+		code += utils.Format("jl " + jumpLabel)
 		code += utils.Format("cmp eax, ebx")
-		code += utils.Format("jb " + jumpLabel)
+		code += utils.Format("jl " + jumpLabel)
 	}
 	code += utils.Format(trueLabel + ":")
 	return code

@@ -259,6 +259,15 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 		v.Value = p.ParseExp(stopCursor)
 		if v.Value != nil {
 			v.Value.Check(p)
+			// 如果字面量值超出 int32 范围，将变量类型提升为 i64
+			// 避免 x86 上 mov DWORD[mem], imm 溢出问题
+			if v.Value != nil && v.Value.IsConst() && v.Type != nil &&
+				v.Value.Type != nil && v.Value.Type.Type() == "i64" &&
+				v.Type.Type() == "int" {
+				if v.Value.Num > 2147483647 || v.Value.Num < -2147483648 {
+					v.Type = typeSys.GetSystemType("i64")
+				}
+			}
 		}
 	} else {
 		v.IsInitialized = false

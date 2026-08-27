@@ -527,10 +527,25 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 				if strings.HasPrefix(result, "R") {
 					result = "E" + result[1:]
 				}
+		}
+	}
+	// x86 32-bit: large immediate values outside int32 range cause NASM to
+	// treat them as unsigned, producing wrong bit patterns.
+	// E.g., mov DWORD[ebp-8], -2177481943 → NASM stores 0x7E364329 (unsigned 2117485353)
+	// instead of 0x81D24F97 (signed -2177481943).
+	// Fix: load through register first, then store to memory.
+	if c.arch.PointerSize() == 4 && strings.Contains(result, "[") && !strings.Contains(val, "[") {
+		if num, err := strconv.ParseFloat(val, 64); err == nil {
+			if num > 0x7FFFFFFF || num < -0x80000000 {
+				tmp := c.arch.ReturnReg()
+				code := utils.Format("mov " + tmp + ", " + val + "; large imm via reg")
+				code += utils.Format("mov " + result + ", " + matchMemWidth(result, tmp))
+				return code
 			}
 		}
-		return utils.Format("mov " + result + ", " + val)
 	}
+	return utils.Format("mov " + result + ", " + val)
+}
 	return ""
 }
 

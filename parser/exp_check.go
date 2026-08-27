@@ -597,7 +597,13 @@ func (exp *Expression) checkCmp(p *Parser) bool {
 func (exp *Expression) foldNum(value float64) {
 	exp.Num = value
 	if exp.Num == float64(int(exp.Num)) {
-		exp.Type = typeSys.GetSystemType("int")
+		// 值超出 int32 范围时使用 i64，避免 x86 上 mov DWORD[mem], imm 溢出
+		// (NASM 将超出 int32 范围的负数当作无符号处理，产生错误的位模式)
+		if exp.Num > 2147483647 || exp.Num < -2147483648 {
+			exp.Type = typeSys.GetSystemType("i64")
+		} else {
+			exp.Type = typeSys.GetSystemType("int")
+		}
 	} else {
 		exp.Type = typeSys.GetSystemType("f64")
 	}
