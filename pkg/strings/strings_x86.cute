@@ -155,3 +155,297 @@ fn parse(s string, base uint) int {
     }
     ret r
 }
+
+// notFound 返回 uint 最大值，表示"未找到"
+fn notFound() uint {
+    var v: int = 0 - 1
+    var p: ptr = &v
+    ret memory.load32(p)
+}
+
+// makeString 从底层组件构建 string 值
+fn makeString(ptr: ptr, length: uint, capVal: uint) string {
+    var result: string
+    var rp: ptr = &result
+    memory.store32(rp, ptr)
+    memory.store32(rp + 4, length)
+    memory.store32(rp + 8, capVal)
+    ret result
+}
+
+// indexFrom 从 startPos 开始搜索 substr，未找到返回 notFound
+fn indexFrom(sPtr: ptr, sLen: uint, tPtr: ptr, tLen: uint, startPos: uint) uint {
+    if tLen == 0 {
+        ret 0
+    }
+    if tLen > sLen {
+        ret notFound()
+    }
+    var i: uint = startPos
+    var limit: uint = sLen - tLen
+    for i <= limit {
+        var found: bool = true
+        var j: uint = 0
+        for j < tLen {
+            if memory.load8(sPtr + i + j) != memory.load8(tPtr + j) {
+                found = false
+                break
+            }
+            j = j + 1
+        }
+        if found {
+            ret i
+        }
+        i = i + 1
+    }
+    ret notFound()
+}
+
+// index 返回 substr 在 s 中首次出现的位置，未找到返回 -1
+fn index(s string, substr string) int {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var tPtr: ptr = toCstring(substr)
+    var tLen: uint = len(substr)
+    var nf: uint = notFound()
+    var r: uint = indexFrom(sPtr, sLen, tPtr, tLen, 0)
+    if r == nf {
+        ret 0 - 1
+    }
+    ret r
+}
+
+// contains 判断 s 是否包含 substr
+fn contains(s string, substr string) bool {
+    if index(s, substr) >= 0 {
+        ret true
+    }
+    ret false
+}
+
+// hasPrefix 判断 s 是否以 prefix 开头
+fn hasPrefix(s string, prefix string) bool {
+    var sLen: uint = len(s)
+    var tLen: uint = len(prefix)
+    if tLen > sLen {
+        ret false
+    }
+    if tLen == 0 {
+        ret true
+    }
+    var sPtr: ptr = toCstring(s)
+    var tPtr: ptr = toCstring(prefix)
+    var i: uint = 0
+    for i < tLen {
+        if memory.load8(sPtr + i) != memory.load8(tPtr + i) {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// hasSuffix 判断 s 是否以 suffix 结尾
+fn hasSuffix(s string, suffix string) bool {
+    var sLen: uint = len(s)
+    var tLen: uint = len(suffix)
+    if tLen > sLen {
+        ret false
+    }
+    if tLen == 0 {
+        ret true
+    }
+    var sPtr: ptr = toCstring(s)
+    var tPtr: ptr = toCstring(suffix)
+    var offset: uint = sLen - tLen
+    var i: uint = 0
+    for i < tLen {
+        if memory.load8(sPtr + offset + i) != memory.load8(tPtr + i) {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// toUpper 返回 s 的大写副本
+fn toUpper(s string) string {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var i: uint = 0
+    for i < sLen {
+        var ch: uint = memory.load8(sPtr + i)
+        if ch >= 97 && ch <= 122 {
+            ch = ch - 32
+        }
+        memory.store8(buf + i, ch)
+        i = i + 1
+    }
+    memory.store8(buf + sLen, 0)
+    ret makeString(buf, sLen, sLen)
+}
+
+// toLower 返回 s 的小写副本
+fn toLower(s string) string {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var i: uint = 0
+    for i < sLen {
+        var ch: uint = memory.load8(sPtr + i)
+        if ch >= 65 && ch <= 90 {
+            ch = ch + 32
+        }
+        memory.store8(buf + i, ch)
+        i = i + 1
+    }
+    memory.store8(buf + sLen, 0)
+    ret makeString(buf, sLen, sLen)
+}
+
+// trimSpace 返回去除两端空白字符的 s
+fn trimSpace(s string) string {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var start: uint = 0
+    for start < sLen {
+        var ch: uint = memory.load8(sPtr + start)
+        if ch != 32 && ch != 9 && ch != 10 && ch != 13 {
+            break
+        }
+        start = start + 1
+    }
+    var end: uint = sLen
+    for end > start {
+        var ch: uint = memory.load8(sPtr + end - 1)
+        if ch != 32 && ch != 9 && ch != 10 && ch != 13 {
+            break
+        }
+        end = end - 1
+    }
+    var newLen: uint = end - start
+    var buf: ptr = memory.malloc(newLen + 1)
+    var i: uint = 0
+    for i < newLen {
+        memory.store8(buf + i, memory.load8(sPtr + start + i))
+        i = i + 1
+    }
+    memory.store8(buf + newLen, 0)
+    ret makeString(buf, newLen, newLen)
+}
+
+// trimPrefix 返回去除 s 前缀 prefix 的字符串
+fn trimPrefix(s string, prefix string) string {
+    if hasPrefix(s, prefix) {
+        var sPtr: ptr = toCstring(s)
+        var sLen: uint = len(s)
+        var tLen: uint = len(prefix)
+        var newLen: uint = sLen - tLen
+        var buf: ptr = memory.malloc(newLen + 1)
+        var i: uint = 0
+        for i < newLen {
+            memory.store8(buf + i, memory.load8(sPtr + tLen + i))
+            i = i + 1
+        }
+        memory.store8(buf + newLen, 0)
+        ret makeString(buf, newLen, newLen)
+    }
+    ret s
+}
+
+// trimSuffix 返回去除 s 后缀 suffix 的字符串
+fn trimSuffix(s string, suffix string) string {
+    if hasSuffix(s, suffix) {
+        var sPtr: ptr = toCstring(s)
+        var sLen: uint = len(s)
+        var tLen: uint = len(suffix)
+        var newLen: uint = sLen - tLen
+        var buf: ptr = memory.malloc(newLen + 1)
+        var i: uint = 0
+        for i < newLen {
+            memory.store8(buf + i, memory.load8(sPtr + i))
+            i = i + 1
+        }
+        memory.store8(buf + newLen, 0)
+        ret makeString(buf, newLen, newLen)
+    }
+    ret s
+}
+
+// repeat 返回 s 重复 count 次的新字符串
+fn repeat(s string, count uint) string {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var total: uint = sLen * count
+    var buf: ptr = memory.malloc(total + 1)
+    var i: uint = 0
+    for i < count {
+        var j: uint = 0
+        for j < sLen {
+            memory.store8(buf + i * sLen + j, memory.load8(sPtr + j))
+            j = j + 1
+        }
+        i = i + 1
+    }
+    memory.store8(buf + total, 0)
+    ret makeString(buf, total, total)
+}
+
+// replace 返回将 s 中前 n 个 old 替换为 new 的字符串（n=0 替换全部）
+fn replace(s string, old string, new string, n uint) string {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var oPtr: ptr = toCstring(old)
+    var oLen: uint = len(old)
+    var nPtr: ptr = toCstring(new)
+    var nLen: uint = len(new)
+    var nf: uint = notFound()
+    if oLen == 0 {
+        ret s
+    }
+    var count: uint = 0
+    var scanPos: uint = 0
+    for n == 0 || count < n {
+        var idx: uint = indexFrom(sPtr, sLen, oPtr, oLen, scanPos)
+        if idx == nf {
+            break
+        }
+        count = count + 1
+        scanPos = idx + oLen
+    }
+    if count == 0 {
+        ret s
+    }
+    var newLen: uint = sLen + count * (nLen - oLen)
+    var buf: ptr = memory.malloc(newLen + 1)
+    var srcPos: uint = 0
+    var dstPos: uint = 0
+    var replaced: uint = 0
+    for replaced < count {
+        var idx: uint = indexFrom(sPtr, sLen, oPtr, oLen, srcPos)
+        var segLen: uint = idx - srcPos
+        var k: uint = 0
+        for k < segLen {
+            memory.store8(buf + dstPos + k, memory.load8(sPtr + srcPos + k))
+            k = k + 1
+        }
+        dstPos = dstPos + segLen
+        k = 0
+        for k < nLen {
+            memory.store8(buf + dstPos + k, memory.load8(nPtr + k))
+            k = k + 1
+        }
+        dstPos = dstPos + nLen
+        srcPos = idx + oLen
+        replaced = replaced + 1
+    }
+    var rest: uint = sLen - srcPos
+    var k: uint = 0
+    for k < rest {
+        memory.store8(buf + dstPos + k, memory.load8(sPtr + srcPos + k))
+        k = k + 1
+    }
+    memory.store8(buf + newLen, 0)
+    ret makeString(buf, newLen, newLen)
+}

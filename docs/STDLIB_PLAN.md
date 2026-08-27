@@ -78,11 +78,12 @@ pkg/strings/
 3. 方法接收者是否在本轮范围
 4. ~~实施顺序~~ → 已确定：数学 → hash/* → hashmap → 其余
 
-## Phase 1 — strings 工具函数补齐（不依赖新特性，可并行）
+## Phase 1 — strings 工具函数补齐 ✅ 已完成
 
-~15 个缺失函数，全部放 pkg/strings/ 新 .cute 文件，测试在 pkg/strings/test/。
+~15 个缺失函数，全部放 pkg/strings/ arch-specific 文件（strings_x86.cute + strings_x86_64.cute），测试在 pkg/strings/test/。
 
-Contains/Index/Split/Join/Replace/TrimSpace/TrimPrefix/TrimSuffix/Upper/Lower/Repeat/Fields/HasPrefix/HasSuffix
+已完成: Contains/Index/HasPrefix/HasSuffix/ToUpper/ToLower/TrimSpace/TrimPrefix/TrimSuffix/Repeat/Replace/ToString/Parse
+未完成（编译器限制）: Split/Join/Fields/AppendString — 需要编译器支持从 ptr 构造 []string
 
 ## Phase 2 — 标准库批次（依赖泛型+接口）
 
