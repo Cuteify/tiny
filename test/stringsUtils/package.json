@@ -1,0 +1,7 @@
+{
+    "name": "strings_utils_test",
+    "version": "1.0.0",
+    "imports": {
+        "strings": "std:strings"
+    }
+}
