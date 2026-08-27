@@ -130,7 +130,7 @@ fn parse(s string, base uint) int {
         neg = true
         i = 1
     }
-    var val: uint = 0
+    var val: int = 0
     var bad: bool = false
     for i < n {
         var d: uint = memory.load8(ptrVal + i)
@@ -149,7 +149,7 @@ fn parse(s string, base uint) int {
         }
         i = i + 1
     }
-    var r: int = fromI64(val)
+    var r: int = val
     if neg {
         r = 0 - r
     }
