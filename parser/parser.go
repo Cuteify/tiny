@@ -139,6 +139,11 @@ func (p *Parser) processControlToken(code lexer.Token) {
 	case "for":
 		block := &ForBlock{}
 		block.Parse(p)
+	case "break":
+		block := &BreakBlock{}
+		block.Parse(p)
+		node := &Node{Value: block}
+		p.ThisBlock.AddChild(node)
 	}
 }
 

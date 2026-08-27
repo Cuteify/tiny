@@ -184,6 +184,8 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		return c.compileExprBlock(n)
 	case *parser.ForBlock:
 		return c.compileForBlock(n)
+	case *parser.BreakBlock:
+		return c.compileBreakBlock(n)
 	case *parser.TypeBlock:
 		return c.compileTypeBlock(n)
 	case *parser.Build:
@@ -368,6 +370,28 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 	code += c.Compile(n)
 	code += c.Ctx.Arch.ForEnd(forBlock)
 	return code
+}
+
+func (c *Compiler) compileBreakBlock(n *parser.Node) string {
+	breakBlock := n.Value.(*parser.BreakBlock)
+	current := n.Father
+	forLevel := 0
+	var targetFor *parser.ForBlock
+	for current != nil {
+		if fb, ok := current.Value.(*parser.ForBlock); ok {
+			forLevel++
+			if forLevel == breakBlock.Level {
+				targetFor = fb
+				break
+			}
+		}
+		current = current.Father
+	}
+	if targetFor == nil {
+		return "; break: no enclosing for loop at level " + fmt.Sprintf("%d", breakBlock.Level) + "\n"
+	}
+	forLabel := "for_" + strconv.Itoa(targetFor.Offset)
+	return utils.Format("jmp " + forLabel + "_end")
 }
 
 func (c *Compiler) compileTypeBlock(n *parser.Node) string {
