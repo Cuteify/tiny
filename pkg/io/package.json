@@ -1,0 +1,9 @@
+{
+    "name": "io",
+    "version": "1.0.0",
+    "description": "I/O interfaces: Reader, Writer, Copy, ReadAll, LimitReader",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

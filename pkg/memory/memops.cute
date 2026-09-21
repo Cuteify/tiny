@@ -1,0 +1,52 @@
+// ===== Cuteify Memory Manager v3 — Memory Operations =====
+//
+// 底层内存操作：memcpy 和 memset。
+// 使用 word-size（8B）快拷 + byte 余量的方式，兼顾速度和对齐。
+
+// memcpy 将 src 的 n 字节复制到 dest，返回 dest
+// 先按 word（8B）对齐快拷，剩余按 byte 拷贝
+// 要求 dest 和 src 至少有 n 字节可访问
+fn memcpy(dest: ptr, src: ptr, n: uint) ptr {
+    // 先按 word（ptrSize=8）批量拷贝
+    var words: uint = n / ptrSize
+    var i: uint = 0
+    for ; i < words; {
+        var dstP: *ptr = dest + ptrSize * i
+        var srcP: *ptr = src + ptrSize * i
+        *dstP = *srcP
+        i = i + 1
+    }
+    // 剩余不足一个 word 的部分按 byte 拷贝
+    var rem: uint = n - ptrSize * words
+    var j: uint = 0
+    for ; j < rem; {
+        var dstB: *u8 = dest + ptrSize * words + j
+        var srcB: *u8 = src + ptrSize * words + j
+        *dstB = *srcB
+        j = j + 1
+    }
+    ret dest
+}
+
+// memset 将 s 指向的 n 字节设为值 c，返回 s
+// 先按 word 清零（对齐快路径），剩余按 byte 设置
+// 注意：当前实现 word 清零固定为 0，仅 byte 部分使用 c 值
+fn memset(s: ptr, c: u8, n: uint) ptr {
+    // 按 word 批量清零（假设 word 值为 0）
+    var words: uint = n / ptrSize
+    var i: uint = 0
+    for ; i < words; {
+        var p: *ptr = s + ptrSize * i
+        *p = 0
+        i = i + 1
+    }
+    // 剩余不足一个 word 的部分按 byte 设置
+    var rem: uint = n - ptrSize * words
+    var j: uint = 0
+    for ; j < rem; {
+        var bp: *u8 = s + ptrSize * words + j
+        *bp = c
+        j = j + 1
+    }
+    ret s
+}

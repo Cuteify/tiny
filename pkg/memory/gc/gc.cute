@@ -1,0 +1,37 @@
+var gLargeHead: ptr = 0
+
+// ===== Inline RC — RC counter at ptr-2*ptrSize =====
+// 每个 mallocRC 分配的块在数据区前有 [RC counter][flags]
+// rcInc/rcDec 直接读写 ptr-2*ptrSize 位置，无需 side-table
+
+// rcInc 增加引用计数
+fn rcInc(p: ptr) {
+    if p == 0 {
+        ret
+    }
+    var rc: uint = rcLoad(p)
+    rcStore(p, rc + 1)
+}
+
+// rcDec 减少引用计数；归零时释放并返回 true
+fn rcDec(p: ptr) bool {
+    if p == 0 {
+        ret true
+    }
+    var rc: uint = rcLoad(p)
+    if rc <= 1 {
+        rcStore(p, 0)
+        memory.freeRC(p)
+        ret true
+    }
+    rcStore(p, rc - 1)
+    ret false
+}
+
+// rcGet 读取当前引用计数
+fn rcGet(p: ptr) uint {
+    if p == 0 {
+        ret 0
+    }
+    ret rcLoad(p)
+}

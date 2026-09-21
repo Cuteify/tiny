@@ -1,0 +1,9 @@
+{
+    "name": "crc32",
+    "version": "1.0.0",
+    "description": "CRC-32 IEEE checksum package",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

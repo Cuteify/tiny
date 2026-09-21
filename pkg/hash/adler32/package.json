@@ -1,0 +1,9 @@
+{
+    "name": "adler32",
+    "version": "1.0.0",
+    "description": "Adler-32 checksum package",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

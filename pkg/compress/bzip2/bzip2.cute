@@ -1,0 +1,43 @@
+// pkg/compress/bzip2/bzip2.cute - Bzip2 解压缩（桩实现）
+// Bzip2 解压过于复杂，此处仅提供接口桩
+// 实际使用需完整实现 BWT/Huffman 解码
+
+// Reader bzip2 读取器
+type Reader struct {
+    data: ptr     // 输入数据指针
+    dataLen: uint // 输入数据总长度
+    pos: uint     // 当前读取位置
+    err: bool     // 是否发生错误
+}
+
+// NewReader 创建 bzip2 读取器（桩实现，返回错误状态）
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(32)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // layout: [data:8][dataLen:8][pos:8][err:8]
+    var _p1: *ptr = buf
+    *_p1 = unsafe.cast[ptr](rPtr)
+    var _p2: *ptr = buf + 8
+    *_p2 = unsafe.cast[ptr](rLen)
+    var _p3: *ptr = buf + 16
+    *_p3 = unsafe.cast[ptr](0)
+    // 标记为错误（bzip2 解压暂未实现）
+    var _p4: *ptr = buf + 24
+    *_p4 = unsafe.cast[ptr](1)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Read 从 bzip2 读取器中读取数据（桩实现，始终返回 0）
+fn Read(r *Reader, buf ptr, n int) int {
+    // bzip2 解压暂未实现
+    ret 0
+}
+
+// Err 返回是否发生错误
+fn Err(r *Reader) bool {
+    var _p5: *ptr = r + 24
+    ret *_p5 != 0
+}

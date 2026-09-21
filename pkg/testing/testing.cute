@@ -1,0 +1,257 @@
+// pkg/testing/testing.cute - 简化测试框架
+// 平台无关实现，底层复用 std:memory 和 std:strings
+
+// T 测试上下文结构体
+type T struct {
+    name: string
+    failed: bool
+    errors: string
+}
+
+// Run 运行一个命名测试
+fn Run(name string, f fn(*T)) {
+    var t: ptr = memory.malloc(24)
+    var _p1: *ptr = t
+    *_p1 = unsafe.cast[ptr](name         // name)
+    var _p2: *u8 = t + 16
+    *_p2 = unsafe.cast[u8](0        // failed = false)
+    var _p3: *ptr = t + 17
+    *_p3 = unsafe.cast[ptr](0       // errors = ""（空字符串指针为 0）)
+    var tp: *T
+    tp = t
+    f(tp)
+}
+
+// Fail 标记测试为失败
+fn Fail(t *T) {
+    var _p4: *u8 = t + 16
+    *_p4 = unsafe.cast[u8](1)
+}
+
+// Error 记录一条错误消息
+fn Error(t *T, msg string) {
+    var _p5: *u8 = t + 16
+    *_p5 = unsafe.cast[u8](1)
+    var _p6: *ptr = t + 17
+    var oldErr: string = *_p6
+    var oldLen: uint = strings.len(oldErr)
+    var newLen: uint = strings.len(msg)
+    var sep: uint = 0
+    if oldLen > 0 {
+        sep = 2
+    }
+    var totalLen: uint = oldLen + sep + newLen
+    var buf: ptr = memory.malloc(totalLen + 1)
+    var pos: uint = 0
+    // 拷贝旧错误消息
+    if oldLen > 0 {
+        var oldPtr: ptr = strings.toCstring(oldErr)
+        var k: uint = 0
+        for k < oldLen {
+            var _p7: *u8 = buf + k
+            var _p8: *u8 = oldPtr + k
+            *_p7 = unsafe.cast[u8](*_p8)
+            k = k + 1
+        }
+        pos = oldLen
+        var _p9: *u8 = buf + pos
+        *_p9 = unsafe.cast[u8](10   // '\n')
+        pos = pos + 1
+        var _p10: *u8 = buf + pos
+        *_p10 = unsafe.cast[u8](32   // ' ')
+        pos = pos + 1
+    }
+    // 拷贝新错误消息
+    var newPtr: ptr = strings.toCstring(msg)
+    var k: uint = 0
+    for k < newLen {
+        var _p11: *u8 = buf + pos + k
+        var _p12: *u8 = newPtr + k
+        *_p11 = unsafe.cast[u8](*_p12)
+        k = k + 1
+    }
+    pos = pos + newLen
+    var _p13: *u8 = buf + pos
+    *_p13 = unsafe.cast[u8](0)
+    var _p14: *ptr = t + 17
+    *_p14 = unsafe.cast[ptr](strings.makeString(buf, totalLen, totalLen))
+}
+
+// Equal 断言两个整数相等，不等则标记失败
+fn Equal(t *T, a int, b int) {
+    if a != b {
+        var msgBuf: ptr = memory.malloc(128)
+        var pos: uint = 0
+        // 写入 "expected "
+        var prefix: string = "expected "
+        var pp: ptr = strings.toCstring(prefix)
+        var pn: uint = strings.len(prefix)
+        var k: uint = 0
+        for k < pn {
+            var _p15: *u8 = msgBuf + k
+            var _p16: *u8 = pp + k
+            *_p15 = unsafe.cast[u8](*_p16)
+            k = k + 1
+        }
+        pos = pn
+        // 写入期望值
+        var aStr: string = strings.toString(a, 10)
+        var ap: ptr = strings.toCstring(aStr)
+        var an: uint = strings.len(aStr)
+        k = 0
+        for k < an {
+            var _p17: *u8 = msgBuf + pos + k
+            var _p18: *u8 = ap + k
+            *_p17 = unsafe.cast[u8](*_p18)
+            k = k + 1
+        }
+        pos = pos + an
+        // 写入 " got "
+        var got: string = " got "
+        var gp: ptr = strings.toCstring(got)
+        var gn: uint = strings.len(got)
+        k = 0
+        for k < gn {
+            var _p19: *u8 = msgBuf + pos + k
+            var _p20: *u8 = gp + k
+            *_p19 = unsafe.cast[u8](*_p20)
+            k = k + 1
+        }
+        pos = pos + gn
+        // 写入实际值
+        var bStr: string = strings.toString(b, 10)
+        var bp: ptr = strings.toCstring(bStr)
+        var bn: uint = strings.len(bStr)
+        k = 0
+        for k < bn {
+            var _p21: *u8 = msgBuf + pos + k
+            var _p22: *u8 = bp + k
+            *_p21 = unsafe.cast[u8](*_p22)
+            k = k + 1
+        }
+        pos = pos + bn
+        var _p23: *u8 = msgBuf + pos
+        *_p23 = unsafe.cast[u8](0)
+        Error(t, strings.makeString(msgBuf, pos, pos))
+    }
+}
+
+// EqualStr 断言两个字符串相等，不等则标记失败
+fn EqualStr(t *T, a string, b string) {
+    var aLen: uint = strings.len(a)
+    var bLen: uint = strings.len(b)
+    if aLen != bLen {
+        var msgBuf: ptr = memory.malloc(256)
+        var pos: uint = 0
+        var prefix: string = "expected \""
+        var pp: ptr = strings.toCstring(prefix)
+        var pn: uint = strings.len(prefix)
+        var k: uint = 0
+        for k < pn {
+            var _p24: *u8 = msgBuf + k
+            var _p25: *u8 = pp + k
+            *_p24 = unsafe.cast[u8](*_p25)
+            k = k + 1
+        }
+        pos = pn
+        var ap: ptr = strings.toCstring(a)
+        k = 0
+        for k < aLen {
+            var _p26: *u8 = msgBuf + pos + k
+            var _p27: *u8 = ap + k
+            *_p26 = unsafe.cast[u8](*_p27)
+            k = k + 1
+        }
+        pos = pos + aLen
+        var mid: string = "\" got \""
+        var mp: ptr = strings.toCstring(mid)
+        var mn: uint = strings.len(mid)
+        k = 0
+        for k < mn {
+            var _p28: *u8 = msgBuf + pos + k
+            var _p29: *u8 = mp + k
+            *_p28 = unsafe.cast[u8](*_p29)
+            k = k + 1
+        }
+        pos = pos + mn
+        var bp: ptr = strings.toCstring(b)
+        k = 0
+        for k < bLen {
+            var _p30: *u8 = msgBuf + pos + k
+            var _p31: *u8 = bp + k
+            *_p30 = unsafe.cast[u8](*_p31)
+            k = k + 1
+        }
+        pos = pos + bLen
+        var _p32: *u8 = msgBuf + pos
+        *_p32 = unsafe.cast[u8](34  // '"')
+        pos = pos + 1
+        var _p33: *u8 = msgBuf + pos
+        *_p33 = unsafe.cast[u8](0)
+        Error(t, strings.makeString(msgBuf, pos, pos))
+        ret
+    }
+    var ap: ptr = strings.toCstring(a)
+    var bp: ptr = strings.toCstring(b)
+    var k: uint = 0
+    for k < aLen {
+        var _p34: *u8 = ap + k
+        var _p35: *u8 = bp + k
+        if *_p34 != *_p35 {
+            var msgBuf: ptr = memory.malloc(256)
+            var pos: uint = 0
+            var prefix: string = "expected \""
+            var pp: ptr = strings.toCstring(prefix)
+            var pn: uint = strings.len(prefix)
+            var j: uint = 0
+            for j < pn {
+                var _p36: *u8 = msgBuf + j
+                var _p37: *u8 = pp + j
+                *_p36 = unsafe.cast[u8](*_p37)
+                j = j + 1
+            }
+            pos = pn
+            j = 0
+            for j < aLen {
+                var _p38: *u8 = msgBuf + pos + j
+                var _p39: *u8 = ap + j
+                *_p38 = unsafe.cast[u8](*_p39)
+                j = j + 1
+            }
+            pos = pos + aLen
+            var mid: string = "\" got \""
+            var mp: ptr = strings.toCstring(mid)
+            var mn: uint = strings.len(mid)
+            j = 0
+            for j < mn {
+                var _p40: *u8 = msgBuf + pos + j
+                var _p41: *u8 = mp + j
+                *_p40 = unsafe.cast[u8](*_p41)
+                j = j + 1
+            }
+            pos = pos + mn
+            j = 0
+            for j < bLen {
+                var _p42: *u8 = msgBuf + pos + j
+                var _p43: *u8 = bp + j
+                *_p42 = unsafe.cast[u8](*_p43)
+                j = j + 1
+            }
+            pos = pos + bLen
+            var _p44: *u8 = msgBuf + pos
+            *_p44 = unsafe.cast[u8](34  // '"')
+            pos = pos + 1
+            var _p45: *u8 = msgBuf + pos
+            *_p45 = unsafe.cast[u8](0)
+            Error(t, strings.makeString(msgBuf, pos, pos))
+            ret
+        }
+        k = k + 1
+    }
+}
+
+// Passed 返回测试是否通过（未标记失败）
+fn Passed(t *T) bool {
+    var _p46: *u8 = t + 16
+    ret *_p46 == 0
+}

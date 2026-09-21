@@ -1,0 +1,9 @@
+{
+    "name": "suffixarray",
+    "version": "1.0.0",
+    "description": "Suffix array for efficient string search",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

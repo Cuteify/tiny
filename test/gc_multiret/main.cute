@@ -1,0 +1,67 @@
+build os("linux")
+
+type User struct {
+    name: string
+    age: int
+    email: string
+}
+
+fn makeUser(name: string, age: int, email: string) *User {
+    var u: *User = new(User)
+    u.name = name
+    u.age = age
+    u.email = email
+    ret u
+}
+
+type Pair struct {
+    first: *User
+    second: *User
+}
+
+fn makePair(a: *User, b: *User) *Pair {
+    var p: *Pair = new(Pair)
+    p.first = a
+    p.second = b
+    ret p
+}
+
+fn swapPair(p: *Pair) {
+    var tmp: *User = p.first
+    p.first = p.second
+    p.second = tmp
+}
+
+fn main() int {
+    var ok: int = 0
+
+    // 1. 结构体包含多个拥有指针
+    var u1: *User = makeUser("alice", 25, "a@test.com")
+    var u2: *User = makeUser("bob", 30, "b@test.com")
+    var pair: *Pair = makePair(u1, u2)
+    if pair.first.age + pair.second.age == 55 {
+        ok = ok + 1
+    }
+
+    // 2. 交换后访问
+    swapPair(pair)
+    if pair.first.age == 30 && pair.second.age == 25 {
+        ok = ok + 1
+    }
+
+    // 3. 替换内部用户（旧的应被释放）
+    pair.first = makeUser("carol", 35, "c@test.com")
+    if pair.first.age == 35 {
+        ok = ok + 1
+    }
+
+    // 4. 多个 Pair 共享用户
+    var u3: *User = makeUser("dave", 40, "d@test.com")
+    var p1: *Pair = makePair(u3, u1)
+    var p2: *Pair = makePair(u3, u2)
+    if p1.first.age == 40 && p2.first.age == 40 {
+        ok = ok + 1
+    }
+
+    ret ok
+}

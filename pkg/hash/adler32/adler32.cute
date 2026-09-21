@@ -1,0 +1,41 @@
+// pkg/hash/adler32/adler32.cute - Adler-32 校验和
+// Adler-32 使用两个 16 位累加器：A（字节和）和 B（A 的累加和）
+// MOD = 65521（最大素数，小于 2^16）
+
+const MOD_ADLER: u32 = 65521
+
+// checksum 计算 data 的 Adler-32 校验和
+// 返回 32 位校验和：高 16 位为 B，低 16 位为 A
+fn checksum(data string) u32 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var a: u32 = 1
+    var b: u32 = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p1: *u8 = sPtr + i
+        var byteVal: u32 = *_p1
+        a = (a + byteVal) % MOD_ADLER
+        b = (b + a) % MOD_ADLER
+        i = i + 1
+    }
+    ret (b << 16) | a
+}
+
+// checksumWithInit 使用初始值计算 Adler-32（支持分块计算）
+// prev 为上一次计算的结果，返回新的校验和
+fn checksumWithInit(data string, prev u32) u32 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var a: u32 = prev & 0xFFFF
+    var b: u32 = (prev >> 16) & 0xFFFF
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p2: *u8 = sPtr + i
+        var byteVal: u32 = *_p2
+        a = (a + byteVal) % MOD_ADLER
+        b = (b + a) % MOD_ADLER
+        i = i + 1
+    }
+    ret (b << 16) | a
+}

@@ -1,0 +1,9 @@
+{
+    "name": "asn1",
+    "version": "1.0.0",
+    "description": "ASN.1 DER encoding stubs",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

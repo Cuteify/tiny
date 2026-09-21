@@ -1,0 +1,65 @@
+fn main() int {
+    var failures: int = 0
+
+    // Create a new min-heap
+    var h: *heap.Heap = heap.New()
+
+    // Test Len on empty heap
+    if heap.Len(h) != 0 {
+        failures = failures + 1
+    }
+
+    // Push several values
+    heap.Push(h, 5)
+    heap.Push(h, 3)
+    heap.Push(h, 8)
+    heap.Push(h, 1)
+    heap.Push(h, 4)
+
+    // Test Len after pushes
+    if heap.Len(h) != 5 {
+        failures = failures + 1
+    }
+
+    // Pop should return smallest first (min-heap property)
+    var v1: int = heap.Pop(h)
+    if v1 != 1 {
+        failures = failures + 1
+    }
+
+    var v2: int = heap.Pop(h)
+    if v2 != 3 {
+        failures = failures + 1
+    }
+
+    var v3: int = heap.Pop(h)
+    if v3 != 4 {
+        failures = failures + 1
+    }
+
+    var v4: int = heap.Pop(h)
+    if v4 != 5 {
+        failures = failures + 1
+    }
+
+    var v5: int = heap.Pop(h)
+    if v5 != 8 {
+        failures = failures + 1
+    }
+
+    // Test Len after all pops
+    if heap.Len(h) != 0 {
+        failures = failures + 1
+    }
+
+    // Pop from empty heap should return 0
+    var v6: int = heap.Pop(h)
+    if v6 != 0 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

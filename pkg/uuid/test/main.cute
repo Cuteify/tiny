@@ -1,0 +1,42 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test uuid.new() returns non-empty string
+    var id: string = uuid.new()
+    var idLen: uint = strings.len(id)
+
+    // UUID should be 36 characters: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+    if idLen != 36 {
+        failures = failures + 1
+    }
+
+    // Verify dash positions (4th, 7th, 11th, 14th chars are dashes)
+    if idLen == 36 {
+        var p: ptr = strings.toCstring(id)
+        // Position 8 (0-indexed) should be '-'
+        var _p1: *u8 = p + 8
+        if *_p1 != 45 {
+            failures = failures + 1
+        }
+        // Position 13 should be '-'
+        var _p2: *u8 = p + 13
+        if *_p2 != 45 {
+            failures = failures + 1
+        }
+        // Position 18 should be '-'
+        var _p3: *u8 = p + 18
+        if *_p3 != 45 {
+            failures = failures + 1
+        }
+        // Position 23 should be '-'
+        var _p4: *u8 = p + 23
+        if *_p4 != 45 {
+            failures = failures + 1
+        }
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

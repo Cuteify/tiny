@@ -5,7 +5,11 @@ import (
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"cuteify/utils"
+	"fmt"
+	"os"
+	"runtime/debug"
 	"strings"
 	"strconv"
 )
@@ -38,13 +42,24 @@ func NewSysV(ctx *context.Context) *SysV {
 // Info 返回调用约定的名称
 func (a *SysV) Info() string { return "x86_64 System V AMD64 ABI" }
 
+// rbpOffset 返回 rbp 相对地址（正偏移用 +，负偏移用 -）
+func rbpOffset(offset int) string {
+	if offset >= 0 {
+		return "[rbp+" + strconv.Itoa(offset) + "]"
+	}
+	return "[rbp-" + strconv.Itoa(-offset) + "]"
+}
+
+// SetArgsOffset 将参数偏移从调用者帧位置刷新为 callee-local 位置
+func (a *SysV) SetArgsOffset(fn *parser.FuncBlock) { setArgsOffset(fn) }
+
 // Prologue 函数前序代码
 func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	if fn == nil {
 		panic("内部错误")
 	}
 
-	// 设置参数偏移量（rbp+16 起）
+	// 设置参数偏移量（callee 局部变量区 rbp-48 起，如 C/Rust）
 	setArgsOffset(fn)
 
 	code += utils.Format("push rbp")
@@ -56,7 +71,16 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		code += utils.Format("push " + regName + "; 保存" + regName)
 	}
 
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs))
+	// 计算参数保存所需空间，将其纳入局部变量区（参数在 callee-saved regs 之下）
+	argSaveBytes := 0
+	if fn.Class != nil {
+		argSaveBytes += 8 // this 指针
+	}
+	for i := 0; i < len(fn.Args); i++ {
+		argSaveBytes += fn.Args[i].Type.Size()
+	}
+
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs)-argSaveBytes)
 
 	// 预留大值返回槽：容器 24B + R10 保存 8B；结构体按槽数（Size/8）计算
 	retBytes := 24
@@ -66,8 +90,16 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 8
 	a.ctx.StackSize += retBytes + 8
 
+	// 编译期 16 字节对齐：call 压返回地址(-8) + push rbp(-8) + 5 callee-save(-40) = -56
+	// RSP = RBP - 40 - StackSize，需 StackSize ≡ 8 (mod 16) 使 RSP ≡ 0 (mod 16)
+	totalPushed := 8 + 8 + 8*len(csRegs) // return addr + rbp + 5 callee-saves = 56
+	need := (16 - (totalPushed % 16)) % 16 // = 8
+	if a.ctx.StackSize%16 != need {
+		a.ctx.StackSize += (need - a.ctx.StackSize%16 + 16) % 16
+	}
+
 	if a.ctx.StackSize > 0 {
-		code += utils.Format("sub rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配局部变量空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
+		code += utils.Format("sub rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配局部变量空间(" + strconv.Itoa(a.ctx.StackSize) + "字节, 含对齐)")
 	}
 
 	// 大值返回函数：保存调用者传入的返回槽地址（R10）
@@ -75,19 +107,19 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		code += utils.Format("mov QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+retBytes) + "], R10; 保存返回槽地址")
 	}
 
-	// 将寄存器参数保存到栈上(SysV ABI: RDI, RSI, RDX, RCX, R8, R9)
+	// 将寄存器参数保存到栈上（SysV ABI: RDI, RSI, RDX, RCX, R8, R9）
+	// 保存到 callee 自己的局部变量区（如 C/Rust），不写入调用者栈帧
 	argRegIdx := 0
 	stackArgBase := 16
 	if fn.Class != nil {
-		// 如果有this指针,第一个寄存器是this，保存到 [rbp+16]
-		code += utils.Format("mov QWORD [rbp+16], " + sysvArgRegs[0] + "; this pointer")
+		// this 指针保存到 [rbp-48]（callee 局部变量区顶部）
+		code += utils.Format("mov QWORD " + rbpOffset(-48) + ", " + sysvArgRegs[0] + "; this pointer")
 		argRegIdx = 1
 		stackArgBase = 24
 	}
 
 	// 先搬移栈参数（SysV 第 7+ 个）：其原始位置在 [rbp+16]（含 this 时 [rbp+24]）起的
-	// 调用者栈参数区，与下方寄存器参数的保存槽（[rbp+16..56]）重叠，必须先把栈参数
-	// 搬到各自的编译器参数槽（arg.Offset），否则会被寄存器参数保存覆盖而丢失。
+	// 调用者栈参数区，搬到 callee 局部变量区的编译器参数槽（arg.Offset）。
 	{
 		stackSlot := 0
 		regIdx := argRegIdx
@@ -100,7 +132,7 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 			}
 			for j := 0; j < slots; j++ {
 				src := "[rbp+" + strconv.Itoa(stackArgBase+(stackSlot+j)*8) + "]"
-				dst := "[rbp+" + strconv.Itoa(arg.Offset+j*8) + "]"
+				dst := rbpOffset(arg.Offset + j*8)
 				code += utils.Format("mov RAX, " + src + "; 保存栈参数" + strconv.Itoa(i) + "槽" + strconv.Itoa(j) + "到栈")
 				code += utils.Format("mov " + dst + ", RAX")
 			}
@@ -117,7 +149,7 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 			if argRegIdx+slots-1 < len(sysvArgRegs) {
 				for j := 0; j < slots; j++ {
 					regName := sysvArgRegs[argRegIdx+j]
-					addr := "[rbp+" + strconv.Itoa(arg.Offset+j*8) + "]"
+					addr := rbpOffset(arg.Offset + j*8)
 					code += utils.Format("mov QWORD " + addr + ", " + regName + "; 保存参数" + strconv.Itoa(i) + "槽" + strconv.Itoa(j) + "到栈")
 				}
 			}
@@ -125,7 +157,7 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		} else {
 			if argRegIdx < len(sysvArgRegs) {
 				regName := sysvArgRegs[argRegIdx]
-				addr := "[rbp+" + strconv.Itoa(arg.Offset) + "]"
+				addr := rbpOffset(arg.Offset)
 				// 窄类型（i32 等）按宽度保存，避免越界覆盖下一参数槽
 				size := arg.Type.Size()
 				if size != 8 {
@@ -142,12 +174,12 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 
 // Epilogue 函数后序代码(公共返回点)
 func (a *SysV) Epilogue(fn *parser.FuncBlock) string {
-	funcName := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
 
-	// 清理局部变量栈空间
+	// 清理局部变量 + 对齐 padding（StackSize 已含编译期对齐）
 	if a.ctx.StackSize > 0 {
-		code += utils.Format("add rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 清理局部变量栈空间")
+		code += utils.Format("add rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 清理局部变量 + 对齐")
 	}
 
 	// 恢复 callee-save 寄存器(逆序)
@@ -187,17 +219,28 @@ func (a *SysV) Call(call *parser.CallBlock) (code string) {
 		return utils.Format("mov rax, QWORD " + addr + "; " + methodName + "()")
 	}
 
+	// Interface dispatch: if receiver is an interface type, dispatch via vtable
+	if call.ThisVar != nil && call.ThisVar.Type != nil {
+		if ifaceType, ok := call.ThisVar.Type.(*typeSys.InterfaceType); ok {
+			return a.interfaceDispatch(call, ifaceType)
+		}
+	}
+
 normalCall:
 	fn := call.Func
 
 	// 大值返回函数：预留调用者返回槽地址（R10）
 	isContainerRet := arch.FuncReturnsLarge(call.Func)
 
+	// 判断是否为函数指针间接调用
+	isIndirect := call.ThisVar != nil && call.ThisVar.Type != nil &&
+		call.ThisVar.Type.Kind() == "func"
+
 	// 统计需要压栈的参数个数（容器参数占 3 个寄存器/3 个栈槽）
 	argRegIdx := 0
 
-	// this 指针作为第一个寄存器参数
-	if call.ThisVar != nil {
+	// this 指针作为第一个寄存器参数（函数指针间接调用不压 this）
+	if call.ThisVar != nil && !isIndirect {
 		thisAddr := GenVarAddr(a.ctx, call.ThisVar)
 		if call.ThisVar.Type != nil && !call.ThisVar.Type.IsPointer() {
 			// 值语义：传结构体地址（lea 取地址）
@@ -255,16 +298,11 @@ normalCall:
 		}
 	}
 
-	// 寄存器参数：先算好暂存到栈（装载内部调用或容器三槽装载会覆盖前序参数寄存器，
-	// 且被调函数参数槽 [rbp+16] 落在调用者栈顶，内部调用参数区最大 64B（6 寄存器参数），
-	// 故每个参数 push 后统一下沉 80B 安全区（标量总下沉 88B、容器 104B），
-	// 全部算完后逆序 mov 到参数寄存器，最后 add rsp 恢复总量）
-	type regArg struct {
-		regs []string
-		size int
-	}
-	var regArgs []regArg
-	tempBytes := 0
+	// 寄存器参数：预分配固定 buffer，每个参数求值后直接写入 buffer[i]。
+	// buffer 在 RSP 下方，嵌套 call 的 buffer 也在 RSP 下方但各自平衡（sub/add 成对），
+	// 所以主 buffer 的偏移不受嵌套 call 影响。
+	// 装载到寄存器后释放 buffer。
+	numRegArgs := 0
 	cursor = argRegIdx
 	for i := 0; i < len(call.Args); i++ {
 		arg := call.Args[i]
@@ -272,46 +310,170 @@ normalCall:
 			continue
 		}
 		slots := arch.ArgSlots(arg.Type)
-		if slots > 1 {
-			if cursor+slots-1 < len(sysvArgRegs) {
-				code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
-				code += utils.Format("sub rsp, 80; 下沉暂存多槽参数")
-				tempBytes += 80 + slots*8
-				regArgs = append(regArgs, regArg{regs: sysvArgRegs[cursor : cursor+slots], size: 80 + slots*8})
-				cursor += slots
-			} else {
-				cursor += slots
-			}
-		} else {
-			if cursor < len(sysvArgRegs) {
-				code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
-				code += utils.Format("sub rsp, 80; 下沉暂存标量参数")
-				tempBytes += 88
-				regArgs = append(regArgs, regArg{regs: sysvArgRegs[cursor : cursor+1], size: 88})
-				cursor++
-			} else {
-				cursor++
-			}
+		if cursor+slots <= len(sysvArgRegs) {
+			numRegArgs += slots
 		}
+		cursor += slots
 	}
-	off := 80
-	for j := len(regArgs) - 1; j >= 0; j-- {
-		base := off
-		for k := 0; k < len(regArgs[j].regs); k++ {
-			code += utils.Format("mov " + regArgs[j].regs[k] + ", QWORD [rsp+" + strconv.Itoa(base+8*k) + "]; 装载暂存参数")
+	if numRegArgs > 0 {
+		bufferBytes := numRegArgs * 8
+		if bufferBytes%16 != 0 {
+			bufferBytes += 8
 		}
-		off += regArgs[j].size
-	}
-	if tempBytes > 0 {
-		code += utils.Format("add rsp, " + strconv.Itoa(tempBytes) + "; 清理暂存参数")
+		code += utils.Format("sub rsp, " + strconv.Itoa(bufferBytes) + "; register args buffer")
+		// 求值每个参数，直接写入 buffer 槽位
+		cursor = argRegIdx
+		bufIdx := 0
+		ps := a.ctx.PointerSize
+		ln := a.ctx.Arch.LengthName(ps)
+		for i := 0; i < len(call.Args); i++ {
+			arg := call.Args[i]
+			if arg == nil {
+				continue
+			}
+			slots := arch.ArgSlots(arg.Type)
+			if cursor+slots <= len(sysvArgRegs) {
+				bufOff := bufIdx * 8
+				if arch.IsListLikeType(arg.Type) {
+					// 容器直接写 buffer：ptr→[bufOff], len→[bufOff+8], cap→[bufOff+16]
+					exp := arg.Value
+					if exp == nil {
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff)+"], 0")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+8)+"], 0")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+16)+"], 0")
+					} else if exp.Call != nil {
+						// 嵌套调用：先 call（结果在 RetSlot），再从 RetSlot 写到 buffer
+						code += a.Call(exp.Call)
+						code += utils.Format("mov RAX, " + ln + " [rbp"+strconv.Itoa(a.ctx.RetSlot)+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff)+"], RAX")
+						code += utils.Format("mov RAX, " + ln + " [rbp"+strconv.Itoa(a.ctx.RetSlot+ps)+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff+ps)+"], RAX")
+						code += utils.Format("mov RAX, " + ln + " [rbp"+strconv.Itoa(a.ctx.RetSlot+2*ps)+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff+2*ps)+"], RAX")
+					} else if exp.IsConst() {
+						label := "0"
+						if exp.StringVal != "" {
+							label = a.stringLabel(exp.StringVal)
+						}
+						slen := len(exp.StringVal)
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff)+"], "+label+"; ptr")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+8)+"], "+strconv.Itoa(slen)+"; len")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+16)+"], "+strconv.Itoa(slen)+"; cap")
+					} else if exp.Var != nil {
+						src := stripOuterBrackets(GenVarAddr(a.ctx, exp.Var))
+						code += utils.Format("mov RAX, " + ln + " ["+src+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff)+"], RAX")
+						code += utils.Format("mov RAX, " + ln + " ["+src+"+"+strconv.Itoa(ps)+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff+ps)+"], RAX")
+						code += utils.Format("mov RAX, " + ln + " ["+src+"+"+strconv.Itoa(2*ps)+"]")
+						code += utils.Format("mov " + ln + " [rsp+"+strconv.Itoa(bufOff+2*ps)+"], RAX")
+					} else {
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff)+"], 0")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+8)+"], 0")
+						code += utils.Format("mov QWORD [rsp+"+strconv.Itoa(bufOff+16)+"], 0")
+					}
+					bufIdx += slots
+				} else {
+					// 标量直接写 buffer
+					code += a.Exp(arg.Value, "QWORD [rsp+"+strconv.Itoa(bufOff)+"]", "参数"+strconv.Itoa(i))
+					bufIdx += slots
+				}
+			}
+			cursor += slots
+		}
+		// 从 buffer 装载到寄存器
+		cursor = argRegIdx
+		bufIdx = 0
+		for i := 0; i < len(call.Args); i++ {
+			arg := call.Args[i]
+			if arg == nil {
+				continue
+			}
+			slots := arch.ArgSlots(arg.Type)
+			if cursor+slots <= len(sysvArgRegs) {
+				for k := 0; k < slots; k++ {
+					bufOff := (bufIdx + k) * 8
+					code += utils.Format("mov " + sysvArgRegs[cursor+k] + ", QWORD [rsp+" + strconv.Itoa(bufOff) + "]; 装载参数" + strconv.Itoa(i))
+				}
+				bufIdx += slots
+			}
+			cursor += slots
+		}
+		code += utils.Format("add rsp, " + strconv.Itoa(bufferBytes) + "; 释放寄存器参数 buffer")
 	}
 
 	if isContainerRet {
 		code += utils.Format("lea R10, [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址")
 	}
 
-	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
-	code += utils.Format("call " + name)
+	// 变参打包：将变参参数打包为 []T 传递（在 call 之前生成）
+	var variadicArrayBytes int
+	if call.IsVariadic && len(call.VariadicArgs) > 0 {
+		// 获取变参元素类型（call.VariadicType 是 []T，需要取 Elem()）
+		elemType := call.VariadicType
+		if lt, ok := elemType.(*typeSys.ListType); ok {
+			elemType = lt.Elem()
+		}
+		elemSize := elemType.Size()
+		if elemSize <= 0 {
+			elemSize = 8
+		}
+		count := len(call.VariadicArgs)
+		variadicArrayBytes = count * elemSize
+
+		// 在栈上分配临时数组
+		if variadicArrayBytes > 0 {
+			code += utils.Format("sub rsp, " + strconv.Itoa(variadicArrayBytes) + "; variadic array space")
+		}
+
+		// 将每个变参参数存入数组
+		for i, varg := range call.VariadicArgs {
+			offset := i * elemSize
+			expCode := a.Exp(varg.Value, "RAX", "variadic "+strconv.Itoa(i))
+			var storeCode string
+			if elemSize == 8 {
+				storeCode = utils.Format("mov QWORD [rsp+" + strconv.Itoa(offset) + "], RAX; variadic " + strconv.Itoa(i))
+			} else if elemSize == 4 {
+				storeCode = utils.Format("mov DWORD [rsp+" + strconv.Itoa(offset) + "], EAX; variadic " + strconv.Itoa(i))
+			}
+			code += expCode
+			code += storeCode
+		}
+
+		// 将 slice {ptr, len, cap} 放入下一个可用的寄存器或栈
+		// SysV ABI: RDI RSI RDX RCX R8 R9
+		// variadic slice 占 3 个 slots (ptr=8, len=8, cap=8)
+		sliceRegs := []string{"RDI", "RSI", "RDX", "RCX", "R8", "R9"}
+		usedRegs := 0
+		for i := 0; i < len(call.Args) && i < len(sliceRegs); i++ {
+			usedRegs++
+		}
+		if usedRegs+3 <= len(sliceRegs) {
+			code += utils.Format("lea " + sliceRegs[usedRegs] + ", [rsp]; variadic ptr")
+			code += utils.Format("mov " + sliceRegs[usedRegs+1] + ", " + strconv.Itoa(count) + "; variadic len")
+			code += utils.Format("mov " + sliceRegs[usedRegs+2] + ", " + strconv.Itoa(count) + "; variadic cap")
+		} else {
+			code += utils.Format("push " + strconv.Itoa(count) + "; variadic cap")
+			code += utils.Format("push " + strconv.Itoa(count) + "; variadic len")
+			code += utils.Format("push rsp; variadic ptr")
+			stackArgs += 3
+		}
+	}
+
+	if isIndirect {
+		thisAddr := GenVarAddr(a.ctx, call.ThisVar)
+		code += utils.Format("mov rax, QWORD " + thisAddr + "; 加载函数指针")
+		code += utils.Format("call rax; 间接调用")
+	} else {
+		name := formatFuncName(fn)
+		if name == "" {
+			// DEBUG: trace empty function name
+			fmt.Fprintf(os.Stderr, "[DEBUG-CALL] empty func name! fn=%p fn.Name=%v fn.Name.NASM()=%q fn.MangledOverride=%q fn.Args=%d\n",
+				fn, fn.Name, fn.Name.NASM(), fn.MangledOverride, len(fn.Args))
+			fmt.Fprintf(os.Stderr, "[DEBUG-CALL] stack:\n%s\n", string(debug.Stack()))
+		}
+		code += utils.Format("call " + name)
+	}
 
 	// 清理栈参数
 	if stackArgs > 0 {
@@ -320,6 +482,11 @@ normalCall:
 			totalStackArgs += 8
 		}
 		code += utils.Format("add rsp, " + strconv.Itoa(totalStackArgs) + "; clean stack args")
+	}
+
+	// 清理变参数组
+	if variadicArrayBytes > 0 {
+		code += utils.Format("add rsp, " + strconv.Itoa(variadicArrayBytes) + "; clean variadic array")
 	}
 
 	return code
@@ -331,6 +498,65 @@ func stripOuterBrackets(addr string) string {
 		return addr[1 : len(addr)-1]
 	}
 	return addr
+}
+
+// interfaceDispatch generates indirect call via vtable for interface method dispatch.
+// Layout: interface var = {vtable_ptr, data_ptr} at [rbp+offset].
+// Vtable layout: [type_info | method_0 | method_1 | ...].
+func (a *SysV) interfaceDispatch(call *parser.CallBlock, ifaceType *typeSys.InterfaceType) string {
+	ps := a.ctx.PointerSize
+	dq := "QWORD"
+	if ps == 4 {
+		dq = "DWORD"
+	}
+
+	// Get interface variable address
+	thisAddr := GenVarAddr(a.ctx, call.ThisVar)
+	thisBase := stripOuterBrackets(thisAddr)
+
+	// Method name from call
+	methodName := call.Name.Last()
+
+	// Find method index in interface
+	methodIdx := -1
+	for i, m := range ifaceType.InterfaceMethods {
+		if m.Name == methodName {
+			methodIdx = i
+			break
+		}
+	}
+	if methodIdx < 0 {
+		return "; interface dispatch: unknown method " + methodName + "\n"
+	}
+
+	// Vtable method offset: ps (type_info) + methodIdx * ps
+	vtableMethodOff := ps + methodIdx*ps
+
+	var code string
+
+	// 1. Load vtable_ptr from interface variable (first slot)
+	vtableReg := "R11"
+	code += utils.Format("mov " + vtableReg + ", " + dq + " [" + thisBase + "]; vtable_ptr")
+
+	// 2. Load data_ptr from interface variable (second slot) - this is the this pointer
+	thisReg := "RDI" // first argument in SysV
+	code += utils.Format("mov " + thisReg + ", " + dq + " [" + thisBase + "+" + strconv.Itoa(ps) + "]; data_ptr (this)")
+
+	// 3. Set R10 (return slot) for methods returning large values (string/list)
+	if methodIdx >= 0 && methodIdx < len(ifaceType.InterfaceMethods) {
+		mret := ifaceType.InterfaceMethods[methodIdx].Returns
+		if len(mret) > 0 && mret[0] != nil && arch.IsListLikeType(mret[0]) {
+			code += utils.Format("lea R10, [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址 (interface)")
+		} else if len(mret) > 0 && mret[0] != nil && mret[0].Size() > ps && !(mret[0].Size() == 8 && (mret[0].Type() == "i64" || mret[0].Type() == "u64" || mret[0].Type() == "f64")) {
+			code += utils.Format("lea R10, [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址 (interface)")
+		}
+	}
+
+	// 4. Load function pointer from vtable and call indirectly
+	code += utils.Format("call " + dq + " [" + vtableReg + "+" + strconv.Itoa(vtableMethodOff) + "]; interface dispatch: " + methodName)
+
+	code += utils.Format("; interface dispatch: " + methodName + "\n")
+	return code
 }
 
 // Return 函数返回
@@ -428,25 +654,6 @@ func (a *SysV) pushContainer(exp *parser.Expression, desc string) string {
 // Exp 编译表达式
 func (a *SysV) Exp(exp *parser.Expression, result, desc string) string {
 	return a.exp(exp, result, desc)
-}
-
-// expHasCall 递归判断表达式是否包含函数调用（含内建调用）
-func expHasCall(e *parser.Expression) bool {
-	if e == nil {
-		return false
-	}
-	if e.Call != nil {
-		return true
-	}
-	if expHasCall(e.Left) || expHasCall(e.Right) {
-		return true
-	}
-	for _, idx := range e.Index {
-		if expHasCall(idx) {
-			return true
-		}
-	}
-	return false
 }
 
 // sysvWidthName 返回寄存器指定宽度的名字（RDI→EDI/DIL/DI，R8→R8D/R8B/R8W）

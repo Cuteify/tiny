@@ -1,0 +1,9 @@
+{
+    "name": "bzip2",
+    "version": "1.0.0",
+    "description": "Bzip2 decompression (stub implementation)",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

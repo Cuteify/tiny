@@ -26,6 +26,9 @@ func NewStdcall(ctx *context.Context) *Stdcall {
 // Info 返回调用约定的名称
 func (a *Stdcall) Info() string { return "x86 stdcall" }
 
+// SetArgsOffset 将参数偏移从调用者帧位置刷新为 callee-local 位置
+func (a *Stdcall) SetArgsOffset(fn *parser.FuncBlock) { setArgsOffset(fn) }
+
 // Prologue 函数前序代码
 func (a *Stdcall) Prologue(fn *parser.FuncBlock) string {
 	return a.prologue(fn)
@@ -81,7 +84,7 @@ normalCall:
 	}
 
 	// 生成函数名
-	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	name := formatFuncName(fn)
 	code += utils.Format("call " + name)
 
 	// stdcall: 被调者清理参数栈，调用者无需 add esp

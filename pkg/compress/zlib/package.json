@@ -1,0 +1,10 @@
+{
+    "name": "zlib",
+    "version": "1.0.0",
+    "description": "Zlib compression/decompression wrapper around flate",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "flate": "std:compress/flate"
+    }
+}

@@ -1,0 +1,8 @@
+{
+    "name": "unicode",
+    "version": "1.0.0",
+    "description": "Unicode character classification package: letter, digit, space, case detection",
+    "imports": {
+        "strings": "std:strings"
+    }
+}

@@ -1,0 +1,8 @@
+{
+    "name": "slice_minimal",
+    "version": "1.0.0",
+    "imports": {
+        "slices": "std:slices",
+        "console": "std:console"
+    }
+}

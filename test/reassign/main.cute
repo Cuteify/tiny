@@ -1,0 +1,42 @@
+fn main() int {
+    // Test 1: var declaration with complex expression - should work
+    var up: string = strings.toUpper("hello")
+    var _p1: *u8 = strings.toCstring(up)
+    var ch0: u8 = *_p1
+    if ch0 != 72 {
+        println("FAIL: var decl")
+        ret 1
+    }
+
+    // Test 2: simple reassignment - should work
+    var x: int = 5
+    x = 10
+    if x != 10 {
+        println("FAIL: simple reassign")
+        ret 2
+    }
+
+    // Test 3: reassignment with function call - should work
+    var y: int = add5(x)
+    y = add5(y)
+    if y != 20 {
+        println("FAIL: func call reassign")
+        ret 3
+    }
+
+    // Test 4: reassignment with memory.load8 - THE BUG
+    var lo: string = strings.toLower("HELLO")
+    var _p2: *u8 = strings.toCstring(lo)
+    ch0 = *_p2
+    if ch0 != 104 {
+        println("FAIL: memory.load8 reassign")
+        ret 4
+    }
+
+    println("PASS: ALL")
+    ret 0
+}
+
+fn add5(n: int) int {
+    ret n + 5
+}

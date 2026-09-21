@@ -1,0 +1,9 @@
+{
+    "name": "testing",
+    "version": "1.0.0",
+    "description": "Simplified test framework: Run, Fail, Error, Equal, EqualStr, Passed",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

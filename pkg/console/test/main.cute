@@ -1,0 +1,19 @@
+fn main() int {
+    // Test 1: console.print returns correct byte count
+    var n: i32 = console.print("hello")
+    if n != 5 {
+        ret 1
+    }
+
+    // Test 2: console.println returns correct byte count (content + newline)
+    var n2: i32 = console.println("hi")
+    if n2 != 3 {
+        ret 2
+    }
+
+    // Test 3: console.print and console.println don't crash with empty string
+    console.print("")
+    console.println("")
+
+    ret 42
+}

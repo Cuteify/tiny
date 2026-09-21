@@ -1,0 +1,62 @@
+// pkg/container/ring/ring.cute - 环形缓冲区实现
+// 平台无关实现，固定容量的循环缓冲区
+
+// Ring 环形缓冲区结构
+type Ring struct {
+    data: ptr     // 数据数组指针
+    size: uint    // 缓冲区总容量
+    head: uint    // 读取位置（队首）
+    tail: uint    // 写入位置（队尾）
+    count: uint   // 当前元素数量
+}
+
+// New 创建并返回一个指定容量的环形缓冲区
+fn New(n int) *Ring {
+    var r: *Ring = memory.malloc(32)
+    var cap: uint = n
+    r.data = memory.malloc(cap * 8)
+    r.size = cap
+    r.head = 0
+    r.tail = 0
+    r.count = 0
+    ret r
+}
+
+// Len 返回环形缓冲区中当前元素数量
+fn Len(r *Ring) uint {
+    ret r.count
+}
+
+// Push 向环形缓冲区写入一个值，缓冲区满时覆盖最旧数据
+fn Push(r *Ring, value int) {
+    var _p1: *ptr = r.data + r.tail * 8
+    *_p1 = unsafe.cast[ptr](value)
+    r.tail = r.tail + 1
+    if r.tail >= r.size {
+        r.tail = 0
+    }
+    if r.count < r.size {
+        r.count = r.count + 1
+    } else {
+        // 缓冲区满，覆盖最旧数据，head 前移
+        r.head = r.head + 1
+        if r.head >= r.size {
+            r.head = 0
+        }
+    }
+}
+
+// Pop 从环形缓冲区读取并移除一个值，空缓冲区返回 0
+fn Pop(r *Ring) int {
+    if r.count == 0 {
+        ret 0
+    }
+    var _p2: *ptr = r.data + r.head * 8
+    var val: int = *_p2
+    r.head = r.head + 1
+    if r.head >= r.size {
+        r.head = 0
+    }
+    r.count = r.count - 1
+    ret val
+}

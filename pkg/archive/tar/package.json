@@ -1,0 +1,9 @@
+{
+    "name": "tar",
+    "version": "1.0.0",
+    "description": "Tar archive reader (USTAR format)",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

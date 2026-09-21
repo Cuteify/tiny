@@ -1,0 +1,8 @@
+{
+    "name": "heap",
+    "version": "1.0.0",
+    "description": "Min-heap implementation for integers",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

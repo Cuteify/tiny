@@ -1,0 +1,5 @@
+== main (2 vars)
+  s1 [string] site=call:makeGreeter off=-1
+  s2 [string] site=call:stringChain off=-1
+== stringChain (1 vars)
+  ab [string] site=string-concat off=-1

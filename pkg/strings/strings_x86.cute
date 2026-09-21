@@ -8,34 +8,55 @@ build arch("x86")
 fn len(s string) uint {
     build link("__string_len")
     var p: ptr = &s
-    ret memory.load32(p + 4)
+    var _p1: *uint = p + 4
+    ret *_p1
 }
 
 fn cap(s string) uint {
     build link("__string_cap")
     var p: ptr = &s
-    ret memory.load32(p + 8)
+    var _p2: *uint = p + 8
+    ret *_p2
 }
 
 fn eq(s string, t string) bool {
     build link("__string_eq")
     var p: ptr = &s
     var q: ptr = &t
-    var x: uint = memory.load32(p)
-    var y: uint = memory.load32(q)
-    if x == y {
-        ret true
+    // 比较 ptr + len（值相等的字符串必须长度和内容都相同）
+    var _p3: *uint = p
+    var x0: uint = *_p3
+    var _p4: *uint = q
+    var y0: uint = *_p4
+    if x0 != y0 {
+        ret false
     }
-    ret false
+    var _p5: *uint = p + 4
+    var x1: uint = *_p5
+    var _p6: *uint = q + 4
+    var y1: uint = *_p6
+    if x1 != y1 {
+        ret false
+    }
+    ret true
 }
 
 fn ne(s string, t string) bool {
     build link("__string_ne")
     var p: ptr = &s
     var q: ptr = &t
-    var x: uint = memory.load32(p)
-    var y: uint = memory.load32(q)
-    if x != y {
+    var _p7: *uint = p
+    var x0: uint = *_p7
+    var _p8: *uint = q
+    var y0: uint = *_p8
+    if x0 != y0 {
+        ret true
+    }
+    var _p9: *uint = p + 4
+    var x1: uint = *_p9
+    var _p10: *uint = q + 4
+    var y1: uint = *_p10
+    if x1 != y1 {
         ret true
     }
     ret false
@@ -44,13 +65,15 @@ fn ne(s string, t string) bool {
 fn toCstring(s string) uint {
     build link("__string_toCstring")
     var p: ptr = &s
-    ret memory.load32(p)
+    var _p11: *uint = p
+    ret *_p11
 }
 // toU64 int→u64 位模式桥（语言层无 int↔uint 转换，地址/位模式拷贝实现）
 fn toU64(n int) u64 {
     build link("__string_toU64")
     var p: ptr = &n
-    ret memory.load32(p)
+    var _p12: *uint = p
+    ret *_p12
 }
 
 // fromI64 u64→int 位模式桥
@@ -58,7 +81,8 @@ fn fromI64(n u64) int {
     build link("__string_fromI64")
     var x: int = 0
     var p: ptr = &x
-    memory.store32(p, n)
+    var _p13: *uint = p
+    *_p13 = unsafe.cast[uint](n)
     ret x
 }
 
@@ -86,7 +110,8 @@ fn toString(n int, base uint) string {
     var buf: ptr = memory.malloc(total + 1)
     var v: uint = num
     if v == 0 {
-        memory.store8(buf, 48)
+        var _p14: *u8 = buf
+        *_p14 = unsafe.cast[u8](48)
     } else {
         var i: uint = 0
         for v > 0 {
@@ -99,21 +124,27 @@ fn toString(n int, base uint) string {
             } else {
                 ch = digit + 65 - 36
             }
-            memory.store8(buf + (total - 1 - i), ch)
+            var _p15: *u8 = buf + (total - 1 - i)
+            *_p15 = unsafe.cast[u8](ch)
             v = v / base
             i = i + 1
         }
     }
     if neg {
-        memory.store8(buf, 45)
+        var _p16: *u8 = buf
+        *_p16 = unsafe.cast[u8](45)
     }
-    memory.store8(buf + total, 0)
+    var _p17: *u8 = buf + total
+    *_p17 = unsafe.cast[u8](0)
     var s: string
     var p: ptr = &s
     var b: uint = buf
-    memory.store32(p, b)
-    memory.store32(p + 4, total)
-    memory.store32(p + 8, total)
+    var _p18: *uint = p
+    *_p18 = unsafe.cast[uint](b)
+    var _p19: *uint = p + 4
+    *_p19 = unsafe.cast[uint](total)
+    var _p20: *uint = p + 8
+    *_p20 = unsafe.cast[uint](total)
     ret s
 }
 
@@ -121,11 +152,14 @@ fn toString(n int, base uint) string {
 fn parse(s string, base uint) int {
     build link("__string_parse")
     var p: ptr = &s
-    var ptrVal: ptr = memory.load32(p)
-    var n: uint = memory.load32(p + 4)
+    var _p21: *uint = p
+    var ptrVal: ptr = *_p21
+    var _p22: *uint = p + 4
+    var n: uint = *_p22
     var i: uint = 0
     var neg: bool = false
-    var c: uint = memory.load8(ptrVal)
+    var _p23: *u8 = ptrVal
+    var c: uint = *_p23
     if c == 45 {
         neg = true
         i = 1
@@ -133,7 +167,8 @@ fn parse(s string, base uint) int {
     var val: int = 0
     var bad: bool = false
     for i < n {
-        var d: uint = memory.load8(ptrVal + i)
+        var _p24: *u8 = ptrVal + i
+        var d: uint = *_p24
         var v: uint = 0
         if d >= 48 && d <= 57 {
             v = d - 48
@@ -160,16 +195,20 @@ fn parse(s string, base uint) int {
 fn notFound() uint {
     var v: int = 0 - 1
     var p: ptr = &v
-    ret memory.load32(p)
+    var _p25: *uint = p
+    ret *_p25
 }
 
 // makeString 从底层组件构建 string 值
 fn makeString(ptr: ptr, length: uint, capVal: uint) string {
     var result: string
     var rp: ptr = &result
-    memory.store32(rp, ptr)
-    memory.store32(rp + 4, length)
-    memory.store32(rp + 8, capVal)
+    var _p26: *uint = rp
+    *_p26 = unsafe.cast[uint](ptr)
+    var _p27: *uint = rp + 4
+    *_p27 = unsafe.cast[uint](length)
+    var _p28: *uint = rp + 8
+    *_p28 = unsafe.cast[uint](capVal)
     ret result
 }
 
@@ -187,7 +226,9 @@ fn indexFrom(sPtr: ptr, sLen: uint, tPtr: ptr, tLen: uint, startPos: uint) uint 
         var found: bool = true
         var j: uint = 0
         for j < tLen {
-            if memory.load8(sPtr + i + j) != memory.load8(tPtr + j) {
+            var _p29: *u8 = sPtr + i + j
+            var _p30: *u8 = tPtr + j
+            if *_p29 != *_p30 {
                 found = false
                 break
             }
@@ -237,7 +278,9 @@ fn hasPrefix(s string, prefix string) bool {
     var tPtr: ptr = toCstring(prefix)
     var i: uint = 0
     for i < tLen {
-        if memory.load8(sPtr + i) != memory.load8(tPtr + i) {
+        var _p31: *u8 = sPtr + i
+        var _p32: *u8 = tPtr + i
+        if *_p31 != *_p32 {
             ret false
         }
         i = i + 1
@@ -260,7 +303,9 @@ fn hasSuffix(s string, suffix string) bool {
     var offset: uint = sLen - tLen
     var i: uint = 0
     for i < tLen {
-        if memory.load8(sPtr + offset + i) != memory.load8(tPtr + i) {
+        var _p33: *u8 = sPtr + offset + i
+        var _p34: *u8 = tPtr + i
+        if *_p33 != *_p34 {
             ret false
         }
         i = i + 1
@@ -275,14 +320,17 @@ fn toUpper(s string) string {
     var buf: ptr = memory.malloc(sLen + 1)
     var i: uint = 0
     for i < sLen {
-        var ch: uint = memory.load8(sPtr + i)
+        var _p35: *u8 = sPtr + i
+        var ch: uint = *_p35
         if ch >= 97 && ch <= 122 {
             ch = ch - 32
         }
-        memory.store8(buf + i, ch)
+        var _p36: *u8 = buf + i
+        *_p36 = unsafe.cast[u8](ch)
         i = i + 1
     }
-    memory.store8(buf + sLen, 0)
+    var _p37: *u8 = buf + sLen
+    *_p37 = unsafe.cast[u8](0)
     ret makeString(buf, sLen, sLen)
 }
 
@@ -293,14 +341,17 @@ fn toLower(s string) string {
     var buf: ptr = memory.malloc(sLen + 1)
     var i: uint = 0
     for i < sLen {
-        var ch: uint = memory.load8(sPtr + i)
+        var _p38: *u8 = sPtr + i
+        var ch: uint = *_p38
         if ch >= 65 && ch <= 90 {
             ch = ch + 32
         }
-        memory.store8(buf + i, ch)
+        var _p39: *u8 = buf + i
+        *_p39 = unsafe.cast[u8](ch)
         i = i + 1
     }
-    memory.store8(buf + sLen, 0)
+    var _p40: *u8 = buf + sLen
+    *_p40 = unsafe.cast[u8](0)
     ret makeString(buf, sLen, sLen)
 }
 
@@ -310,7 +361,8 @@ fn trimSpace(s string) string {
     var sLen: uint = len(s)
     var start: uint = 0
     for start < sLen {
-        var ch: uint = memory.load8(sPtr + start)
+        var _p41: *u8 = sPtr + start
+        var ch: uint = *_p41
         if ch != 32 && ch != 9 && ch != 10 && ch != 13 {
             break
         }
@@ -318,7 +370,8 @@ fn trimSpace(s string) string {
     }
     var end: uint = sLen
     for end > start {
-        var ch: uint = memory.load8(sPtr + end - 1)
+        var _p42: *u8 = sPtr + end - 1
+        var ch: uint = *_p42
         if ch != 32 && ch != 9 && ch != 10 && ch != 13 {
             break
         }
@@ -328,10 +381,13 @@ fn trimSpace(s string) string {
     var buf: ptr = memory.malloc(newLen + 1)
     var i: uint = 0
     for i < newLen {
-        memory.store8(buf + i, memory.load8(sPtr + start + i))
+        var _p43: *u8 = buf + i
+        var _p44: *u8 = sPtr + start + i
+        *_p43 = unsafe.cast[u8](*_p44)
         i = i + 1
     }
-    memory.store8(buf + newLen, 0)
+    var _p45: *u8 = buf + newLen
+    *_p45 = unsafe.cast[u8](0)
     ret makeString(buf, newLen, newLen)
 }
 
@@ -345,10 +401,13 @@ fn trimPrefix(s string, prefix string) string {
         var buf: ptr = memory.malloc(newLen + 1)
         var i: uint = 0
         for i < newLen {
-            memory.store8(buf + i, memory.load8(sPtr + tLen + i))
+            var _p46: *u8 = buf + i
+            var _p47: *u8 = sPtr + tLen + i
+            *_p46 = unsafe.cast[u8](*_p47)
             i = i + 1
         }
-        memory.store8(buf + newLen, 0)
+        var _p48: *u8 = buf + newLen
+        *_p48 = unsafe.cast[u8](0)
         ret makeString(buf, newLen, newLen)
     }
     ret s
@@ -364,10 +423,13 @@ fn trimSuffix(s string, suffix string) string {
         var buf: ptr = memory.malloc(newLen + 1)
         var i: uint = 0
         for i < newLen {
-            memory.store8(buf + i, memory.load8(sPtr + i))
+            var _p49: *u8 = buf + i
+            var _p50: *u8 = sPtr + i
+            *_p49 = unsafe.cast[u8](*_p50)
             i = i + 1
         }
-        memory.store8(buf + newLen, 0)
+        var _p51: *u8 = buf + newLen
+        *_p51 = unsafe.cast[u8](0)
         ret makeString(buf, newLen, newLen)
     }
     ret s
@@ -383,12 +445,15 @@ fn repeat(s string, count uint) string {
     for i < count {
         var j: uint = 0
         for j < sLen {
-            memory.store8(buf + i * sLen + j, memory.load8(sPtr + j))
+            var _p52: *u8 = buf + i * sLen + j
+            var _p53: *u8 = sPtr + j
+            *_p52 = unsafe.cast[u8](*_p53)
             j = j + 1
         }
         i = i + 1
     }
-    memory.store8(buf + total, 0)
+    var _p54: *u8 = buf + total
+    *_p54 = unsafe.cast[u8](0)
     ret makeString(buf, total, total)
 }
 
@@ -427,13 +492,17 @@ fn replace(s string, old string, new string, n uint) string {
         var segLen: uint = idx - srcPos
         var k: uint = 0
         for k < segLen {
-            memory.store8(buf + dstPos + k, memory.load8(sPtr + srcPos + k))
+            var _p55: *u8 = buf + dstPos + k
+            var _p56: *u8 = sPtr + srcPos + k
+            *_p55 = unsafe.cast[u8](*_p56)
             k = k + 1
         }
         dstPos = dstPos + segLen
         k = 0
         for k < nLen {
-            memory.store8(buf + dstPos + k, memory.load8(nPtr + k))
+            var _p57: *u8 = buf + dstPos + k
+            var _p58: *u8 = nPtr + k
+            *_p57 = unsafe.cast[u8](*_p58)
             k = k + 1
         }
         dstPos = dstPos + nLen
@@ -443,9 +512,67 @@ fn replace(s string, old string, new string, n uint) string {
     var rest: uint = sLen - srcPos
     var k: uint = 0
     for k < rest {
-        memory.store8(buf + dstPos + k, memory.load8(sPtr + srcPos + k))
+        var _p59: *u8 = buf + dstPos + k
+        var _p60: *u8 = sPtr + srcPos + k
+        *_p59 = unsafe.cast[u8](*_p60)
         k = k + 1
     }
-    memory.store8(buf + newLen, 0)
+    var _p61: *u8 = buf + newLen
+    *_p61 = unsafe.cast[u8](0)
     ret makeString(buf, newLen, newLen)
+}
+
+// ===== 字符串连接 =====
+
+// join 用 sep 连接多个字符串，返回结果
+fn join(strs ptr, count int, sep string) string {
+    if count <= 0 {
+        ret makeString(nil, 0, 0)
+    }
+    var sepPtr: ptr = toCstring(sep)
+    var sepLen: uint = len(sep)
+
+    var totalLen: uint = 0
+    var i: int = 0
+    for ; i < count; {
+        var _p62: *uint = strs + i * 12 + 4
+        var sLen: uint = *_p62
+        totalLen = totalLen + sLen
+        i = i + 1
+    }
+    if count > 1 {
+        totalLen = totalLen + (count - 1) * sepLen
+    }
+
+    var buf: ptr = memory.malloc(totalLen + 1)
+    var dstPos: uint = 0
+    var j: int = 0
+    for ; j < count; {
+        var _p63: *uint = strs + j * 12
+        var sPtr: ptr = *_p63
+        var _p64: *uint = strs + j * 12 + 4
+        var sLen2: uint = *_p64
+        var k: uint = 0
+        for ; k < sLen2; {
+            var _p65: *u8 = buf + dstPos + k
+            var _p66: *u8 = sPtr + k
+            *_p65 = unsafe.cast[u8](*_p66)
+            k = k + 1
+        }
+        dstPos = dstPos + sLen2
+        if j < count - 1 {
+            k = 0
+            for ; k < sepLen; {
+                var _p67: *u8 = buf + dstPos + k
+                var _p68: *u8 = sepPtr + k
+                *_p67 = unsafe.cast[u8](*_p68)
+                k = k + 1
+            }
+            dstPos = dstPos + sepLen
+        }
+        j = j + 1
+    }
+    var _p69: *u8 = buf + totalLen
+    *_p69 = unsafe.cast[u8](0)
+    ret makeString(buf, totalLen, totalLen)
 }

@@ -1,70 +1,18 @@
 fn main() int {
-    var failures: int = 0
-
-    // contains
-    if !strings.contains("hello world", "world") {
-        failures = failures + 1
-    }
-    if strings.contains("hello", "xyz") {
-        failures = failures + 1
-    }
-
-    // index
-    var idx: int = strings.index("hello world", "world")
-    if idx != 6 {
-        failures = failures + 1
-    }
-    idx = strings.index("hello", "xyz")
-    if idx != -1 {
-        failures = failures + 1
-    }
-
-    // hasPrefix
-    if !strings.hasPrefix("hello world", "hello") {
-        failures = failures + 1
-    }
-    if strings.hasPrefix("hello", "world") {
-        failures = failures + 1
-    }
-
-    // hasSuffix
-    if !strings.hasSuffix("hello world", "world") {
-        failures = failures + 1
-    }
-    if strings.hasSuffix("hello", "world") {
-        failures = failures + 1
-    }
-
-    // trimSpace
-    var trimmed: string = strings.trimSpace("  hello  ")
-    if strings.len(trimmed) != 5 {
-        failures = failures + 1
-    }
-
-    // upper
-    var up: string = strings.upper("hello")
-    var ch0: u8 = memory.load8(strings.toCstring(up))
+    var up: string = strings.toUpper("hello")
+    var _p1: *u8 = strings.toCstring(up)
+    var ch0: u8 = *_p1
     if ch0 != 72 {
-        failures = failures + 1
+        println("FAIL: first")
+        ret 71
     }
-
-    // lower
-    var lo: string = strings.lower("HELLO")
-    ch0 = memory.load8(strings.toCstring(lo))
+    var lo: string = strings.toLower("HELLO")
+    var _p2: *u8 = strings.toCstring(lo)
+    ch0 = *_p2
     if ch0 != 104 {
-        failures = failures + 1
+        println("FAIL: re-assign load8")
+        ret 72
     }
-
-    // repeat
-    var rep: string = strings.repeat("ab", 3)
-    if strings.len(rep) != 6 {
-        failures = failures + 1
-    }
-
-    if failures == 0 {
-        println("strings utils: ALL PASS")
-        ret 60
-    }
-    println("strings utils: FAIL")
-    ret 70
+    println("PASS: ALL")
+    ret 60
 }

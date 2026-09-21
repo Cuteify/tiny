@@ -1,0 +1,9 @@
+{
+    "name": "zip",
+    "version": "1.0.0",
+    "description": "Zip archive reader",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

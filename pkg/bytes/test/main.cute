@@ -1,0 +1,28 @@
+// bytes package test
+
+fn main() int {
+    // newBuffer creates empty buffer
+    var b: *bytes.Buffer = bytes.newBuffer()
+
+    // len should be 0 initially
+    var l1: uint = bytes.len(b)
+    if l1 != 0 {
+        ret 1
+    }
+
+    // writeString adds data, len increases
+    bytes.writeString(b, "hello")
+    var l2: uint = bytes.len(b)
+    if l2 != 5 {
+        ret 2
+    }
+
+    // write more data
+    bytes.writeString(b, " world")
+    var l3: uint = bytes.len(b)
+    if l3 != 11 {
+        ret 3
+    }
+
+    ret 42
+}

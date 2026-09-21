@@ -1,0 +1,88 @@
+// pkg/console/caps.cute — 终端能力检测
+//
+// 检测终端支持的颜色、鼠标、Sixel等功能
+// 支持自动降级
+
+// 终端能力标志: 1=支持, -1=不支持, 0=未检测
+var gTrueColor: int = 0
+var g256Color: int = 0
+var gMouse: int = 0
+var gSixel: int = 0
+var gTermDetected: int = 0
+
+// 检测终端能力（基于常见终端名称）
+// 注意: 完整检测需要 getenv 支持，当前使用保守默认值
+fn detectAllCaps() {
+    if gTermDetected == 1 {
+        ret
+    }
+    // 默认值: 支持 256 色，不支持 TrueColor
+    // 用户可通过 setColorMode(3) 启用 TrueColor
+    g256Color = 1
+    gTrueColor = -1
+    gMouse = -1
+    gSixel = -1
+    gTermDetected = 1
+}
+
+// 强制重新检测终端能力
+fn redetectCaps() {
+    gTermDetected = 0
+    detectAllCaps()
+}
+
+// 获取 TrueColor 支持状态
+fn supportsTrueColor() int {
+    if gColorMode == 3 {
+        ret 1
+    }
+    if gColorMode == 2 || gColorMode == 1 {
+        ret -1
+    }
+    detectAllCaps()
+    ret gTrueColor
+}
+
+// 获取 256 色支持状态
+fn supports256Color() int {
+    if gColorMode == 2 || gColorMode == 3 {
+        ret 1
+    }
+    if gColorMode == 1 {
+        ret -1
+    }
+    detectAllCaps()
+    ret g256Color
+}
+
+// 获取鼠标支持状态
+fn supportsMouse() int {
+    if gMouseMode == 1 {
+        ret 1
+    }
+    if gMouseMode == -1 {
+        ret -1
+    }
+    detectAllCaps()
+    ret gMouse
+}
+
+// 获取 Sixel 支持状态
+fn supportsSixel() int {
+    if gSixelMode == 1 {
+        ret 1
+    }
+    if gSixelMode == -1 {
+        ret -1
+    }
+    detectAllCaps()
+    ret gSixel
+}
+
+// 判断是否应使用高级功能
+fn shouldUseAdvanced() int {
+    if gAdvancedEnabled == 0 {
+        ret 0
+    }
+    ret 1
+}

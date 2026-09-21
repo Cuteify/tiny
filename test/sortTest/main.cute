@@ -1,0 +1,224 @@
+// test/sortTest/main.cute - 排序算法测试
+// 快排（不稳定）+ Timsort（稳定）整数/字符串排序
+
+fn main() int {
+    var pass: int = 0
+    var fail: int = 0
+
+    // ===== 整数排序测试 =====
+
+    // test 1: quickSortInts 基本排序
+    var s1: *[]int = slices.new[int](8)
+    slices.push[int](s1, 34)
+    slices.push[int](s1, 7)
+    slices.push[int](s1, 23)
+    slices.push[int](s1, 32)
+    slices.push[int](s1, 5)
+    slices.push[int](s1, 62)
+    slices.push[int](s1, 14)
+    slices.push[int](s1, 8)
+    sort.quickSortInts(s1)
+    if !_checkIntSorted(s1) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 2: timsortInts 基本排序
+    var s2: *[]int = slices.new[int](8)
+    slices.push[int](s2, 55)
+    slices.push[int](s2, 12)
+    slices.push[int](s2, 99)
+    slices.push[int](s2, 3)
+    slices.push[int](s2, 47)
+    slices.push[int](s2, 28)
+    slices.push[int](s2, 76)
+    slices.push[int](s2, 1)
+    sort.timsortInts(s2)
+    if !_checkIntSorted(s2) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 3: insertionSortInts 基本排序
+    var s3: *[]int = slices.new[int](6)
+    slices.push[int](s3, 50)
+    slices.push[int](s3, 10)
+    slices.push[int](s3, 40)
+    slices.push[int](s3, 20)
+    slices.push[int](s3, 60)
+    slices.push[int](s3, 30)
+    sort.insertionSortInts(s3)
+    if !_checkIntSorted(s3) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 4: 空/单元素切片
+    var s4a: *[]int = slices.new[int](4)
+    sort.quickSortInts(s4a)
+    if slices.len[int](s4a) != 0 {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    var s4b: *[]int = slices.new[int](4)
+    slices.push[int](s4b, 42)
+    sort.timsortInts(s4b)
+    var v42: int = 0
+    slices.copyOut[int](s4b, 0, &v42)
+    if v42 != 42 {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 5: 逆序数组
+    var s5: *[]int = slices.new[int](10)
+    slices.push[int](s5, 100)
+    slices.push[int](s5, 90)
+    slices.push[int](s5, 80)
+    slices.push[int](s5, 70)
+    slices.push[int](s5, 60)
+    slices.push[int](s5, 50)
+    slices.push[int](s5, 40)
+    slices.push[int](s5, 30)
+    slices.push[int](s5, 20)
+    slices.push[int](s5, 10)
+    sort.quickSortInts(s5)
+    if !_checkIntSorted(s5) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 6: 已排序数组
+    var s6: *[]int = slices.new[int](5)
+    slices.push[int](s6, 1)
+    slices.push[int](s6, 2)
+    slices.push[int](s6, 3)
+    slices.push[int](s6, 4)
+    slices.push[int](s6, 5)
+    sort.timsortInts(s6)
+    if !_checkIntSorted(s6) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // test 7: 大量数据（100+ 元素触发多个 run）
+    var s7: *[]int = slices.new[int](128)
+    var i7: int = 0
+    for ; i7 < 128; {
+        var seed: int = i7 * 6364136223846793005 + 1442695040888963407
+        slices.push[int](s7, seed)
+        i7 = i7 + 1
+    }
+    sort.timsortInts(s7)
+    if !_checkIntSorted(s7) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+
+    // ===== 字符串排序测试 =====
+
+    // test 8: quickSortStrings
+    var strArr: ptr = memory.malloc(5 * 24)
+    _strPut(strArr, 0, "banana")
+    _strPut(strArr, 1, "apple")
+    _strPut(strArr, 2, "cherry")
+    _strPut(strArr, 3, "date")
+    _strPut(strArr, 4, "avocado")
+    sort.quickSortStrings(strArr, 5)
+    if !_checkStrSorted(strArr, 5) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+    memory.free(strArr)
+
+    // test 9: timsortStrings
+    var strArr2: ptr = memory.malloc(6 * 24)
+    _strPut(strArr2, 0, "zebra")
+    _strPut(strArr2, 1, "cat")
+    _strPut(strArr2, 2, "dog")
+    _strPut(strArr2, 3, "ant")
+    _strPut(strArr2, 4, "bat")
+    _strPut(strArr2, 5, "fish")
+    sort.timsortStrings(strArr2, 6)
+    if !_checkStrSorted(strArr2, 6) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+    memory.free(strArr2)
+
+    // test 10: 字符串前缀排序
+    var strArr3: ptr = memory.malloc(5 * 24)
+    _strPut(strArr3, 0, "abc")
+    _strPut(strArr3, 1, "ab")
+    _strPut(strArr3, 2, "abcd")
+    _strPut(strArr3, 3, "a")
+    _strPut(strArr3, 4, "abcde")
+    sort.insertionSortStrings(strArr3, 5)
+    if !_checkStrSorted(strArr3, 5) {
+        fail = fail + 1
+    } else {
+        pass = pass + 1
+    }
+    memory.free(strArr3)
+
+    // 结果：pass*10 + fail
+    ret pass * 10 + fail
+}
+
+// _checkIntSorted 检查 int 切片是否升序
+fn _checkIntSorted(s *[]int) bool {
+    var n: int = slices.len[int](s)
+    var i: int = 0
+    for ; i < n - 1; {
+        var a: int = 0
+        var b: int = 0
+        slices.copyOut[int](s, i, &a)
+        slices.copyOut[int](s, i + 1, &b)
+        if a > b {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// _checkStrSorted 检查字符串数组是否升序
+fn _checkStrSorted(a ptr, n int) bool {
+    var i: int = 0
+    for ; i < n - 1; {
+        var iOff: int = i * 24
+        var jOff: int = (i + 1) * 24
+        var _p1: *ptr = a + iOff
+        var _p2: *ptr = a + iOff + 8
+        var _p3: *ptr = a + iOff + 16
+        var _p4: *ptr = a + jOff
+        var _p5: *ptr = a + jOff + 8
+        var _p6: *ptr = a + jOff + 16
+        if sort.compareStrings(strings.makeString(*_p1, *_p2, *_p3), strings.makeString(*_p4, *_p5, *_p6)) > 0 {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+fn _strPut(a ptr, index int, s string) {
+    var off: int = index * 24
+    var _p7: *ptr = a + off
+    *_p7 = unsafe.cast[ptr](strings.toCstring(s))
+    var _p8: *ptr = a + off + 8
+    *_p8 = unsafe.cast[ptr](strings.len(s))
+    var _p9: *ptr = a + off + 16
+    *_p9 = unsafe.cast[ptr](strings.len(s))
+}

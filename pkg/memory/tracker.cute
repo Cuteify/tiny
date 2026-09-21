@@ -1,0 +1,100 @@
+// ===== Cuteify Memory Manager v3 — Leak Tracker =====
+//
+// 泄漏追踪器用于检测 RC 块的内存泄漏。
+// 在 debug/test 模式下，每个 mallocRC 调用 trackAlloc，
+// 每次释放调用 trackFree。
+// 程序退出前调用 reportLeaks() 检查是否有未释放的块。
+//
+// 追踪表 gLeaks 是一个简单的线性数组（最大 256 条），
+// 插入追加到末尾，删除时用最后一个元素覆盖被删位置（O(n) 查找，O(1) 删除）。
+
+var gAllocCount: uint = 0   // 总分配次数
+var gFreeCount: uint = 0    // 总释放次数
+var gLeaks: ptr             // 未释放的 RC 指针表（256*8=2048 字节，brk 直接分配）
+var gLeakCount: uint = 0    // 当前未释放数量
+
+// initLeakTracker 初始化泄漏追踪表（用 brk 直接分配，不走 malloc）
+fn initLeakTracker() {
+    if gLeaks != 0 {
+        ret  // 已初始化
+    }
+    var cur: ptr = syscall.brk(0)
+    var nb: ptr = syscall.brk(cur + 2048)
+    if nb < cur + 2048 {
+        ret
+    }
+    gLeaks = cur
+}
+
+// leakLoad 读取 gLeaks[idx]
+fn leakLoad(idx: uint) ptr {
+    var _p: *ptr = gLeaks + idx * 8
+    ret *_p
+}
+
+// leakStore 写入 gLeaks[idx]
+fn leakStore(idx: uint, v: ptr) {
+    var _p: *ptr = gLeaks + idx * 8
+    *_p = v
+}
+
+// trackAlloc 记录一次 RC 分配
+// 将指针追加到 gLeaks 表，并递增分配计数器
+fn trackAlloc(p: ptr) {
+    if p == 0 {
+        ret
+    }
+    initLeakTracker()
+    gAllocCount = gAllocCount + 1
+    // 表满则静默丢弃（不影响正常运行，仅丢失追踪）
+    if gLeakCount < 256 {
+        leakStore(gLeakCount, p)
+        gLeakCount = gLeakCount + 1
+    }
+}
+
+// trackFree 从泄漏追踪列表中移除
+// 线性查找 p，找到后用最后一个元素覆盖（避免移动大量元素）
+fn trackFree(p: ptr) {
+    if p == 0 {
+        ret
+    }
+    initLeakTracker()
+    gFreeCount = gFreeCount + 1
+    var i: uint = 0
+    for ; i < gLeakCount; {
+        if leakLoad(i) == p {
+            // 用最后一个元素覆盖当前位置（无序删除，O(1)）
+            var lastIdx: uint = gLeakCount - 1
+            var tmp: ptr = leakLoad(lastIdx)
+            leakStore(i, tmp)
+            gLeakCount = gLeakCount - 1
+            ret
+        }
+        i = i + 1
+    }
+    // 未找到：可能是重复释放或非 RC 块，静默忽略
+}
+
+// reportLeaks 报告泄漏数量（gLeakCount > 0 表示有泄漏）
+fn reportLeaks() uint {
+    ret gLeakCount
+}
+
+// reportAllocCount 返回总分配次数
+fn reportAllocCount() uint {
+    ret gAllocCount
+}
+
+// reportFreeCount 返回总释放次数
+fn reportFreeCount() uint {
+    ret gFreeCount
+}
+
+// resetLeakTracker 重置追踪器（测试前调用）
+// 清零所有计数器，但不清零 gLeaks 数组本身（不影响运行）
+fn resetLeakTracker() {
+    gAllocCount = 0
+    gFreeCount = 0
+    gLeakCount = 0
+}

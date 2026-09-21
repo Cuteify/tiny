@@ -3,7 +3,8 @@ build arch("x86_64")
 
 fn toU64(n int) u64 {
     var p: ptr = &n
-    ret memory.load64(p)
+    var _p1: *ptr = p
+    ret *_p1
 }
 
 fn toString(n int, base uint) string {
@@ -28,7 +29,8 @@ fn toString(n int, base uint) string {
     var buf: ptr = memory.malloc(total + 1)
     var v: uint = num
     if v == 0 {
-        memory.store8(buf, 48)
+        var _p2: *u8 = buf
+        *_p2 = unsafe.cast[u8](48)
     } else {
         var i: uint = 0
         for v > 0 {
@@ -41,21 +43,27 @@ fn toString(n int, base uint) string {
             } else {
                 ch = digit + 65 - 36
             }
-            memory.store8(buf + (total - 1 - i), ch)
+            var _p3: *u8 = buf + (total - 1 - i)
+            *_p3 = unsafe.cast[u8](ch)
             v = v / base
             i = i + 1
         }
     }
     if neg {
-        memory.store8(buf, 45)
+        var _p4: *u8 = buf
+        *_p4 = unsafe.cast[u8](45)
     }
-    memory.store8(buf + total, 0)
+    var _p5: *u8 = buf + total
+    *_p5 = unsafe.cast[u8](0)
     var s: string
     var p: ptr = &s
     var b: uint = buf
-    memory.store64(p, b)
-    memory.store64(p + 8, total)
-    memory.store64(p + 16, total)
+    var _p6: *ptr = p
+    *_p6 = unsafe.cast[ptr](b)
+    var _p7: *ptr = p + 8
+    *_p7 = unsafe.cast[ptr](total)
+    var _p8: *ptr = p + 16
+    *_p8 = unsafe.cast[ptr](total)
     ret s
 }
 

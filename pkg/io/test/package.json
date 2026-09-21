@@ -1,0 +1,10 @@
+{
+    "name": "io_test",
+    "version": "1.0.0",
+    "description": "io package tests",
+    "imports": {
+        "io": "std:io",
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

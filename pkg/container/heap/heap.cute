@@ -1,0 +1,131 @@
+// pkg/container/heap/heap.cute - 最小堆实现
+// 平台无关实现，使用数组存储 int 值
+
+// Heap 最小堆结构
+type Heap struct {
+    data: ptr     // 数据数组指针
+    len: uint     // 当前元素数量
+    cap: uint     // 数组总容量
+}
+
+// New 创建并返回一个空的最小堆（默认容量 16）
+fn New() *Heap {
+    var h: *Heap = memory.malloc(24)
+    h.data = memory.malloc(128) // 16 * 8 bytes
+    h.len = 0
+    h.cap = 16
+    ret h
+}
+
+// siftUp 上浮操作，维护最小堆性质
+fn siftUp(h *Heap, idx uint) {
+    var i: uint = idx
+    for ; i > 0; {
+        var parent: uint = (i - 1) / 2
+        var _p1: *ptr = h.data + i * 8
+        var childVal: int = *_p1
+        var _p2: *ptr = h.data + parent * 8
+        var parentVal: int = *_p2
+        if childVal < parentVal {
+            // 交换
+            var _p3: *ptr = h.data + i * 8
+            *_p3 = unsafe.cast[ptr](parentVal)
+            var _p4: *ptr = h.data + parent * 8
+            *_p4 = unsafe.cast[ptr](childVal)
+            i = parent
+        } else {
+            break
+        }
+    }
+}
+
+// siftDown 下沉操作，维护最小堆性质
+fn siftDown(h *Heap, idx uint) {
+    var i: uint = idx
+    var len: uint = h.len
+    for ; true; {
+        var smallest: uint = i
+        var left: uint = 2 * i + 1
+        var right: uint = 2 * i + 2
+        if left < len {
+            var _p5: *ptr = h.data + left * 8
+            var leftVal: int = *_p5
+            var _p6: *ptr = h.data + smallest * 8
+            var smallestVal: int = *_p6
+            if leftVal < smallestVal {
+                smallest = left
+            }
+        }
+        if right < len {
+            var _p7: *ptr = h.data + right * 8
+            var rightVal: int = *_p7
+            var _p8: *ptr = h.data + smallest * 8
+            var smallestVal: int = *_p8
+            if rightVal < smallestVal {
+                smallest = right
+            }
+        }
+        if smallest != i {
+            var _p9: *ptr = h.data + i * 8
+            var curVal: int = *_p9
+            var _p10: *ptr = h.data + smallest * 8
+            var smallVal: int = *_p10
+            var _p11: *ptr = h.data + i * 8
+            *_p11 = unsafe.cast[ptr](smallVal)
+            var _p12: *ptr = h.data + smallest * 8
+            *_p12 = unsafe.cast[ptr](curVal)
+            i = smallest
+        } else {
+            break
+        }
+    }
+}
+
+// heapGrow 扩容堆数组
+fn heapGrow(h *Heap) {
+    var newCap: uint = h.cap * 2
+    var newBuf: ptr = memory.malloc(newCap * 8)
+    var i: uint = 0
+    for ; i < h.len; {
+        var _p13: *ptr = newBuf + i * 8
+        var _p14: *ptr = h.data + i * 8
+        *_p13 = unsafe.cast[ptr](*_p14)
+        i = i + 1
+    }
+    h.data = newBuf
+    h.cap = newCap
+}
+
+// Push 向堆中插入一个整数值
+fn Push(h *Heap, value int) {
+    if h.len >= h.cap {
+        heapGrow(h)
+    }
+    var _p15: *ptr = h.data + h.len * 8
+    *_p15 = unsafe.cast[ptr](value)
+    h.len = h.len + 1
+    siftUp(h, h.len - 1)
+}
+
+// Pop 从堆中弹出最小值，空堆返回 0
+fn Pop(h *Heap) int {
+    if h.len == 0 {
+        ret 0
+    }
+    var _p16: *ptr = h.data
+    var root: int = *_p16
+    h.len = h.len - 1
+    if h.len > 0 {
+        var _p17: *ptr = h.data + h.len * 8
+        var last: int = *_p17
+        var _p18: *ptr = h.data
+        *_p18 = unsafe.cast[ptr](last)
+        siftDown(h, 0)
+    }
+    ret root
+}
+
+// Len 返回堆中元素数量
+fn Len(h *Heap) uint {
+    ret h.len
+}

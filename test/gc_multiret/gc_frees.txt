@@ -1,0 +1,7 @@
+== main (6 vars)
+  p1 [unknown] site=call:makePair off=-1
+  p2 [unknown] site=call:makePair off=-1
+  pair [unknown] site=call:makePair off=-1
+  u1 [unknown] site=call:makeUser off=-1
+  u2 [unknown] site=call:makeUser off=-1
+  u3 [unknown] site=call:makeUser off=-1

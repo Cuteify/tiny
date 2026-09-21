@@ -1,0 +1,85 @@
+// pkg/hash/fnv/fnv.cute - FNV-1 和 FNV-1a 哈希函数
+// FNV-1：先乘后异或
+// FNV-1a：先异或后乘（更好的分布特性）
+// 提供 32 位和 64 位两个版本
+
+// FNV 常量定义
+// FNV-1 32 位偏移基数
+const FNV1_32_OFFSET: u32 = 2166136261
+// FNV-1 32 位质数
+const FNV1_32_PRIME: u32 = 16777619
+
+// FNV-1 64 位偏移基数
+const FNV1_64_OFFSET: u64 = 14695981039346656037
+// FNV-1 64 位质数
+const FNV1_64_PRIME: u64 = 1099511628211
+
+// fnv1 计算 32 位 FNV-1 哈希值
+// 先乘后异或的顺序
+fn fnv1(data string) u32 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var hash: u32 = FNV1_32_OFFSET
+    var i: uint = 0
+    for ; i < sLen; {
+        // hash = hash * FNV_PRIME
+        hash = hash * FNV1_32_PRIME
+        // hash = hash XOR byte
+        var _p1: *u8 = sPtr + i
+        var byteVal: u32 = *_p1
+        hash = hash ^ byteVal
+        i = i + 1
+    }
+    ret hash
+}
+
+// fnv1a 计算 32 位 FNV-1a 哈希值
+// 先异或后乘的顺序（更好的雪崩特性）
+fn fnv1a(data string) u32 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var hash: u32 = FNV1_32_OFFSET
+    var i: uint = 0
+    for ; i < sLen; {
+        // hash = hash XOR byte
+        var _p2: *u8 = sPtr + i
+        var byteVal: u32 = *_p2
+        hash = hash ^ byteVal
+        // hash = hash * FNV_PRIME
+        hash = hash * FNV1_32_PRIME
+        i = i + 1
+    }
+    ret hash
+}
+
+// fnv1_64 计算 64 位 FNV-1 哈希值
+fn fnv1_64(data string) u64 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var hash: u64 = FNV1_64_OFFSET
+    var i: uint = 0
+    for ; i < sLen; {
+        hash = hash * FNV1_64_PRIME
+        var _p3: *u8 = sPtr + i
+        var byteVal: u64 = *_p3
+        hash = hash ^ byteVal
+        i = i + 1
+    }
+    ret hash
+}
+
+// fnv1a_64 计算 64 位 FNV-1a 哈希值
+fn fnv1a_64(data string) u64 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var hash: u64 = FNV1_64_OFFSET
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p4: *u8 = sPtr + i
+        var byteVal: u64 = *_p4
+        hash = hash ^ byteVal
+        hash = hash * FNV1_64_PRIME
+        i = i + 1
+    }
+    ret hash
+}

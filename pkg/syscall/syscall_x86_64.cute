@@ -64,3 +64,107 @@ fn open(pathname: u64, flags: i32, mode: u32) i32 {
 fn close(fd: i32) i32 {
     ret syscall(3, fd, 0, 0)
 }
+
+fn lseek(fd: i32, offset: i64, whence: i32) i64 {
+    ret syscall64(8, fd, offset, whence, 0, 0)
+}
+
+fn mkdir(pathname: u64, mode: u32) i32 {
+    ret syscall(83, pathname, mode, 0)
+}
+
+fn rmdir(pathname: u64) i32 {
+    ret syscall(84, pathname, 0, 0)
+}
+
+fn unlink(pathname: u64) i32 {
+    ret syscall(87, pathname, 0, 0)
+}
+
+fn rename(oldpath: u64, newpath: u64) i32 {
+    ret syscall(82, oldpath, newpath, 0)
+}
+
+fn stat(pathname: u64, statbuf: u64) i32 {
+    ret syscall(4, pathname, statbuf, 0)
+}
+
+fn fstat(fd: i32, statbuf: u64) i32 {
+    ret syscall(5, fd, statbuf, 0)
+}
+
+fn getdents(fd: i32, dirp: u64, count: u32) i32 {
+    ret syscall(217, fd, dirp, count)
+}
+
+// getcwd 获取当前工作目录到 buf，返回 buf 指针（失败返回 0）
+fn getcwd(buf: ptr, size: u64) ptr {
+    ret syscall64(79, buf, size, 0, 0, 0)
+}
+
+// getenvName 辅助函数: 比较字符串
+fn getenvName_eq(a ptr, b ptr, len u64) u64 {
+    var i: u64 = 0
+    for ; i < len; {
+        var _p1: *u8 = a + i
+        var _p2: *u8 = b + i
+        if *_p1 != *_p2 {
+            ret 0
+        }
+        i = i + 1
+    }
+    ret 1
+}
+
+// getenv 通过读取 /proc/self/environ 获取环境变量
+// 返回值: 找到返回指向值的指针, 未找到返回 0
+fn getenv(name ptr, namelen u64) ptr {
+    var path: string = "/proc/self/environ"
+    var _p3: *ptr = memory.ptrToStringHeader(path) + 16
+    var fd: i32 = open(*_p3, 0, 0)
+    if fd < 0 {
+        ret 0
+    }
+    var buf: ptr = brk(0)
+    var cap: u64 = 4096
+    var end: ptr = brk(buf + cap)
+    var total: u64 = 0
+    for ; total < cap - 1; {
+        var n: i32 = read(fd, buf + total, cap - total - 1)
+        if n <= 0 {
+            break
+        }
+        total = total + n
+    }
+    close(fd)
+    // 搜索 NAME=VALUE 格式
+    var p: u64 = 0
+    for ; p < total; {
+        // 检查是否匹配 name
+        var match: u64 = 1
+        var i: u64 = 0
+        for ; i < namelen; {
+            var _p4: *u8 = buf + p + i
+            var _p5: *u8 = name + i
+            if *_p4 != *_p5 {
+                match = 0
+                break
+            }
+            i = i + 1
+        }
+        // 确认后面是 '='
+        var _p6: *u8 = buf + p + namelen
+        if match == 1 && *_p6 == 61 {
+            ret buf + p + namelen + 1
+        }
+        // 跳到下一个 (以 0 结尾)
+        for ; p < total; {
+            p = p + 1
+            var _p7: *u8 = buf + p - 1
+            if *_p7 == 0 {
+                break
+            }
+        }
+    }
+    ret 0
+}

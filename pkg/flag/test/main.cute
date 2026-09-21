@@ -1,0 +1,32 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test string flag - should return default value
+    var name: string = flag.defineString("name", "default", "test flag")
+    if !strings.eq(name, "default") {
+        failures = failures + 1
+    }
+
+    // Test int flag - should return default value
+    var count: int = flag.defineInt("count", 42, "test int")
+    if count != 42 {
+        failures = failures + 1
+    }
+
+    // Test bool flag - should return default value (false)
+    var verbose: bool = flag.defineBool("verbose", false, "test bool")
+    if verbose {
+        failures = failures + 1
+    }
+
+    // Test bool flag with true default
+    var debug: bool = flag.defineBool("debug", true, "test bool true")
+    if !debug {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

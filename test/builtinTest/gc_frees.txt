@@ -1,0 +1,5 @@
+== main (4 vars)
+  a [list] site=new off=-1
+  b [list] site=new off=-1
+  c [list] site=new off=-1
+  s [string] site=expr off=-1

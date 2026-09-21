@@ -1,0 +1,7 @@
+fn main() int {
+    var s: *[]int = slices.new[int](8)
+    var l: int = slices.len[int](s)
+    testing.assertEq(l, 0)
+    slices.free[int](s)
+    ret 0
+}

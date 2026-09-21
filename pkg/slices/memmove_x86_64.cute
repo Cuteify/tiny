@@ -1,0 +1,12 @@
+// pkg/slices/memmove_x86_64.cute - x86_64 平台 memmove 包装
+build os("linux")
+build arch("x86_64")
+
+fn memmove(dst ptr, src ptr, n uint) {
+    build asm {
+        mov rdi, [$dst]
+        mov rsi, [$src]
+        mov rdx, [$n]
+        call _memmove
+    }
+}

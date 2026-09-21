@@ -1,0 +1,10 @@
+{
+    "name": "hashmap",
+    "version": "1.0.0",
+    "description": "Hash map implementation using FNV-1a hashing",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "fnv": "std:hash:fnv"
+    }
+}

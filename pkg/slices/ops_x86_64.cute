@@ -1,0 +1,25 @@
+// pkg/slices/slice_x86_64.cute - x86_64 平台指针/整数大小操作
+// ptrSize=8: 使用 store64/load64
+
+build os("linux")
+build arch("x86_64")
+
+fn storePtr(p: ptr, v: ptr) {
+    var _p1: *ptr = p
+    *_p1 = unsafe.cast[ptr](v)
+}
+
+fn loadPtr(p: ptr) ptr {
+    var _p2: *ptr = p
+    ret *_p2
+}
+
+fn storeInt(p: ptr, v: int) {
+    var _p3: *ptr = p
+    *_p3 = unsafe.cast[ptr](v)
+}
+
+fn loadInt(p: ptr) int {
+    var _p4: *ptr = p
+    ret *_p4
+}

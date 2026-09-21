@@ -1,0 +1,39 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test 1: os.STDOUT == 1
+    if os.STDOUT != 1 {
+        failures = failures + 1
+    }
+
+    // Test 2: os.STDERR == 2
+    if os.STDERR != 2 {
+        failures = failures + 1
+    }
+
+    // Test 3: os.STDIN == 0
+    if os.STDIN != 0 {
+        failures = failures + 1
+    }
+
+    // Test 4: os.isNotExist(2) == true (ENOENT=2)
+    if !os.isNotExist(2) {
+        failures = failures + 1
+    }
+
+    // Test 5: os.isExist(17) == true (EEXIST=17)
+    if !os.isExist(17) {
+        failures = failures + 1
+    }
+
+    // Test 6: os.getcwd() should return non-empty string
+    var cwd: string = os.getcwd()
+    if strings.len(cwd) == 0 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        ret 42
+    }
+    ret failures
+}

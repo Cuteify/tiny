@@ -12,7 +12,7 @@ fn Point.SetX(x: int) {
 }
 
 fn main() int {
-    p: Point
+    var p: Point
     p.x = 10
     p.y = 20
     x: int = p.GetX()

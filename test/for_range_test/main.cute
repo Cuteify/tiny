@@ -1,0 +1,8 @@
+fn main () int {
+	list := []int{10, 20, 30, 40, 50}
+	sum := 0
+	for i, v := range list {
+		sum = sum + v
+	}
+	ret sum
+}

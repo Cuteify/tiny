@@ -1,0 +1,168 @@
+// pkg/io/io.cute - I/O 接口包
+// 提供 Reader 和 Writer 结构体及常用 I/O 操作
+// 平台无关实现
+
+// Reader 可读数据源结构体
+type Reader struct {
+    data: ptr     // 数据指针
+    len: uint     // 数据总长度
+    pos: uint     // 当前读取位置
+}
+
+// Writer 可写数据汇结构体
+type Writer struct {
+    data: ptr     // 数据缓冲区指针
+    len: uint     // 当前已写入长度
+    cap: uint     // 缓冲区总容量
+}
+
+// NewReader 从字符串创建一个 Reader
+fn NewReader(data string) *Reader {
+    var r: *Reader = memory.malloc(24)
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    r.data = sPtr
+    r.len = sLen
+    r.pos = 0
+    ret r
+}
+
+// Read 从 Reader 读取 count 字节到 buf，返回实际读取的字节数
+fn Read(r *Reader, buf *u64, count int) int {
+    var available: uint = r.len - r.pos
+    var toRead: uint = count
+    if toRead > available {
+        toRead = available
+    }
+    var i: uint = 0
+    for ; i < toRead; {
+        var _p1: *u8 = buf + i
+        var _p2: *u8 = r.data + r.pos + i
+        *_p1 = unsafe.cast[u8](*_p2)
+        i = i + 1
+    }
+    r.pos = r.pos + toRead
+    ret toRead
+}
+
+// NewWriter 创建一个新的空 Writer（默认容量 128）
+fn NewWriter() *Writer {
+    var w: *Writer = memory.malloc(24)
+    var buf: ptr = memory.malloc(128)
+    w.data = buf
+    w.len = 0
+    w.cap = 128
+    ret w
+}
+
+// writerGrow 扩容 Writer 缓冲区
+fn writerGrow(w *Writer, need uint) {
+    var newCap: uint = w.cap * 2
+    if newCap < need {
+        newCap = need
+    }
+    var newBuf: ptr = memory.malloc(newCap)
+    var i: uint = 0
+    for ; i < w.len; {
+        var _p3: *u8 = newBuf + i
+        var _p4: *u8 = w.data + i
+        *_p3 = unsafe.cast[u8](*_p4)
+        i = i + 1
+    }
+    w.data = newBuf
+    w.cap = newCap
+}
+
+// Write 向 Writer 写入 count 字节数据，返回实际写入的字节数
+fn Write(w *Writer, data ptr, count int) int {
+    var toWrite: uint = count
+    if w.len + toWrite > w.cap {
+        writerGrow(w, w.len + toWrite)
+    }
+    var i: uint = 0
+    for ; i < toWrite; {
+        var _p5: *u8 = w.data + w.len + i
+        var _p6: *u8 = data + i
+        *_p5 = unsafe.cast[u8](*_p6)
+        i = i + 1
+    }
+    w.len = w.len + toWrite
+    ret toWrite
+}
+
+// WriteString 向 Writer 写入字符串，返回写入的字节数
+fn WriteString(w *Writer, s string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    ret Write(w, sPtr, sLen)
+}
+
+// String 将 Writer 中的内容转换为字符串
+fn String(w *Writer) string {
+    var buf: ptr = memory.malloc(w.len + 1)
+    var i: uint = 0
+    for ; i < w.len; {
+        var _p7: *u8 = buf + i
+        var _p8: *u8 = w.data + i
+        *_p7 = unsafe.cast[u8](*_p8)
+        i = i + 1
+    }
+    var _p9: *u8 = buf + w.len
+    *_p9 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, w.len, w.len)
+}
+
+// Copy 从 src Reader 复制数据到 dst Writer，返回复制的字节数
+fn Copy(dst *Writer, src *Reader) int {
+    var total: int = 0
+    var buf: ptr = memory.malloc(64)
+    for ; src.pos < src.len; {
+        var available: uint = src.len - src.pos
+        var chunk: uint = 64
+        if chunk > available {
+            chunk = available
+        }
+        var i: uint = 0
+        for ; i < chunk; {
+            var _p10: *u8 = buf + i
+            var _p11: *u8 = src.data + src.pos + i
+            *_p10 = unsafe.cast[u8](*_p11)
+            i = i + 1
+        }
+        src.pos = src.pos + chunk
+        Write(dst, buf, chunk)
+        total = total + chunk
+    }
+    ret total
+}
+
+// ReadAll 从 Reader 读取所有剩余数据并返回字符串
+fn ReadAll(r *Reader) string {
+    var remaining: uint = r.len - r.pos
+    var buf: ptr = memory.malloc(remaining + 1)
+    var i: uint = 0
+    for ; i < remaining; {
+        var _p12: *u8 = buf + i
+        var _p13: *u8 = r.data + r.pos + i
+        *_p12 = unsafe.cast[u8](*_p13)
+        i = i + 1
+    }
+    var _p14: *u8 = buf + remaining
+    *_p14 = unsafe.cast[u8](0)
+    r.pos = r.len
+    ret strings.makeString(buf, remaining, remaining)
+}
+
+// LimitReader 返回一个限制最多读取 n 字节的 Reader
+fn LimitReader(r *Reader, n int) *Reader {
+    var lr: *Reader = memory.malloc(24)
+    lr.data = r.data + r.pos
+    var maxLen: uint = r.len - r.pos
+    var limit: uint = n
+    if limit < maxLen {
+        maxLen = limit
+    }
+    lr.len = maxLen
+    lr.pos = 0
+    ret lr
+}

@@ -1,0 +1,84 @@
+// pkg/container/list/list.cute - 双向链表实现
+// 平台无关实现
+
+// Element 链表元素节点
+type Element struct {
+    value: ptr       // 值指针
+    prev: *Element   // 前一个元素
+    next: *Element   // 后一个元素
+}
+
+// List 双向链表结构
+type List struct {
+    root: *Element   // 哨兵头节点（root.next 是第一个元素）
+    len: uint        // 元素数量
+}
+
+// New 创建并返回一个新的空链表
+fn New() *List {
+    var l: *List = memory.malloc(16)
+    // 创建哨兵节点
+    var sentinel: *Element = memory.malloc(32)
+    sentinel.value = 0
+    sentinel.prev = sentinel
+    sentinel.next = sentinel
+    l.root = sentinel
+    l.len = 0
+    ret l
+}
+
+// Len 返回链表元素数量
+fn Len(l *List) uint {
+    ret l.len
+}
+
+// Front 返回链表第一个元素，空链表返回 nil(0)
+fn Front(l *List) *Element {
+    if l.len == 0 {
+        ret 0
+    }
+    ret l.root.next
+}
+
+// Back 返回链表最后一个元素，空链表返回 nil(0)
+fn Back(l *List) *Element {
+    if l.len == 0 {
+        ret 0
+    }
+    ret l.root.prev
+}
+
+// PushFront 在链表头部插入一个新元素
+fn PushFront(l *List, value ptr) {
+    var e: *Element = memory.malloc(32)
+    e.value = value
+    // 插入到 root 和 root.next 之间
+    var oldFirst: *Element = l.root.next
+    e.next = oldFirst
+    e.prev = l.root
+    oldFirst.prev = e
+    l.root.next = e
+    l.len = l.len + 1
+}
+
+// PushBack 在链表尾部插入一个新元素
+fn PushBack(l *List, value ptr) {
+    var e: *Element = memory.malloc(32)
+    e.value = value
+    // 插入到 root.prev 和 root 之间
+    var oldLast: *Element = l.root.prev
+    e.prev = oldLast
+    e.next = l.root
+    oldLast.next = e
+    l.root.prev = e
+    l.len = l.len + 1
+}
+
+// Remove 从链表中移除元素 e，返回其值
+fn Remove(l *List, e *Element) ptr {
+    var val: ptr = e.value
+    e.prev.next = e.next
+    e.next.prev = e.prev
+    l.len = l.len - 1
+    ret val
+}

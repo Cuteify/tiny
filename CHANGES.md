@@ -3,6 +3,15 @@
 > 本文件解释自基线提交 4a3dc25 以来所有未提交的代码更改：现象、根因、修复方案与验证结果。
 > 对应计划文件：`PLAN_m2_fix.md`（修复计划与状态）、`PLAN_string_list_heap_struct.md`（M2/M3/M4/M5 总计划）。
 
+## Recent Changes
+
+- Reverted orphan-free code in Assign() — fundamentally wrong: can't distinguish locally-allocated vs parameter-passed values at compile time
+- Fixed isGlobalTarget() — was always returning false
+- Fixed emitGCFrees x86 double stack cleanup
+- Deleted dead code: freeplan.go (394 lines)
+- Updated CLAUDE.md memory allocator description to match DOC_memory_gc.md
+- Verified rcLeak test passes (exit=0)
+
 ## 目录
 
 1. [列表/字符串三字段容器支持（M1 主干）](#一列表字符串三字段容器支持m1-主干)
@@ -22,6 +31,8 @@
 15. [else 块跨包调用修复 + toString 负数修复](#十五else-块跨包调用修复--tostring-负数修复本次会话)
 16. [M5 补强：\*T 函数参数/返回类型 + 嵌套 struct 字段](#十六m5-补强t-函数参数返回类型--嵌套-struct-字段本次会话)
 17. [堆对象内建 new(T[, v...])](#十七堆对象内建-newt-v本次会话)
+18. [函数指针间接调用修复](#二十三函数指针间接调用修复phase-05-完成)
+19. [标准库全量实施 Phase 1-13](#二十四标准库全量实施phase-1-13-完成)
 
 ---
 
@@ -243,7 +254,7 @@ add rsp, 8/4        ; 清理移位计数
 
 ### 7.3 编译器修复
 
-1. **parser/func.go ParseArgs**：SEPARATOR 分支支持 `*`/`[` 前缀类型（SetCursor 回退 + parseTypeAnnotation），`buf *u64` 可解析。
+1. **parser/func.go parseArgs**：SEPARATOR 分支支持 `*`/`[` 前缀类型（SetCursor 回退 + parseTypeAnnotation），`buf *u64` 可解析。
 2. **全局变量名含路径**：`__global_` + 完整 Name 的 NASM 名（compiler.go:75 生成端、x86/x86_64 utils.go 引用端统一，新增 globalVarName helper 从 v.Define.Value.(*parser.VarBlock) 取定义块名）。原实现只取 Name.First() 导致 9 个 const 同名重定义。
 3. **Name.First() 语义修复**（parser/name.go）：首段非 PkgPath 返回首段；首段 PkgPath 返回连续 PkgPath 段。
 4. **FixPathName 逐字节修复**（package/fmt/fmt.go）：原 range rune 按字节下标写字节，中文路径（如"代码"）产生 NUL 字节。
@@ -498,13 +509,13 @@ x86 cdecl 压栈此前对 string 实参只压 4 字节（ptr 槽），而 callee
 ### 16.2 根因
 
 1. **`parseTypeAnnotation` 断言错误**：`parser/var.go` 中对 Find 结果的断言为 `results[0].Value.(*TypeBlock)`，但 `parser/finder.go:233` 对 TypeBlock 统一返回 `Value: v.Type()`（求值后的 `*typeSys.StructType`），**断言永不成功**。凡走 parseTypeAnnotation 解析自定义类型的路径（func.go NAME 参数分支、struct.go 字段类型、跨包子类型）全部静默返回 nil；而 var 声明走 `parseTypeRef`（断言 `typeSys.Type`）、冒号参数走 `:` 分支（同断言），故此前未暴露。
-2. **`ParseRetType` 用 ParseName**：`*` 不是合法名字字符 → `name contains invalid characters`（func.go 原实现，另有 TODO 注释的指针参数处理为死代码）。
+2. **`parseRetType` 用 ParseName**：`*` 不是合法名字字符 → `name contains invalid characters`（func.go 原实现，另有 TODO 注释的指针参数处理为死代码）。
 3. **参数 `:` 分支用 ParseName 解析类型名**：`p: *Pair` 的 `*` 前缀同样报错。
 
 ### 16.3 修复
 
 1. `parser/var.go` `parseTypeAnnotation` 两处断言（跨包 fullName 分支 + 主 NAME 分支）兼容 `typeSys.Type`（与 finder 返回值对齐，`*TypeBlock` 分支保留）。
-2. `parser/func.go` `ParseRetType`：`*`/`[` token 回退游标走 `p.parseTypeAnnotation()`。
+2. `parser/func.go` `parseRetType`：`*`/`[` token 回退游标走 `p.parseTypeAnnotation()`。
 3. `parser/func.go` 参数 `:` 分支：下一 token 为 `*`/`[` 时走 `parseTypeAnnotation`，否则维持原 ParseName+Find 逻辑。
 
 ### 16.4 验证
@@ -540,3 +551,473 @@ x86 cdecl 压栈此前对 string 实参只压 4 字节（ptr 槽），而 callee
 ### 17.4 遗留
 
 - 初值参数仅支持 ≤指针宽度的标量；struct/list/string 字段初值与 `new` 嵌套（`r.x = mkPair(5).x` 调用结果字段访问）编译器 panic，后续再补。
+
+---
+
+## 十八、标准库全量实施计划启动（本次会话）
+
+### 18.1 计划文件
+
+- 新增 `PLAN_stdlib.md`：标准库全量实施计划（15 个 Phase，~86 个改动/包）
+- 新增 `TODO_stdlib.md`：详细任务清单
+
+### 18.2 设计决策
+
+| 决策 | 说明 |
+|------|------|
+| 平台无关优先 | 用 `ptr`/`int`/`uint`（自动适配 32/64）+ struct 字段访问 + 指针解引用，不手动 load32/store32 |
+| 多层目录 | `"std:hash/crc32"` → `pkg/hash/crc32/`，使用时 `crc32.Checksum(data)` |
+| cmp 不单独成包 | Compare/Less 可以是编译器内建或放到 strings/math 中 |
+| path 合并 filepath | 一个 `path` 包搞定 |
+| strconv 合并到 strings | Cuteify 的 strings 包已包含类型转换功能 |
+| hashmap 是 map[K]V 底层 | 编译器看到 `map[K]V` 时引入 hashmap 包 |
+| database + net 最后做 | 依赖 net 的包放到最后 |
+| reflection 依赖最后做 | json, xml, html/template 等 |
+| 不做 sync/sync-atomic | 需要 goroutine 支持 |
+
+### 18.3 实施顺序
+
+| Phase | 内容 | 包数 |
+|-------|------|------|
+| 0 | 编译器基础设施 | 7 改动 |
+| 1 | 修补现有包 | 6 包 |
+| 2 | 文本数据 | 5 包 |
+| 3 | 哈希 | 7 包 |
+| 4 | 数学 | 3 包 |
+| 5 | 排序 | 1 包 |
+| 6 | 操作系统 | 7 包 |
+| 7 | I/O | 1 包 |
+| 8 | 数据结构 | 5 包 |
+| 9 | 压缩归档 | 7 包 |
+| 10 | 图像处理 | 7 包 |
+| 11 | 运行时 | 5 包 |
+| 12 | 测试框架 | 1 包 |
+| 13 | 高级工具 | 8 包 |
+| 14 | 数据库 | 2 包 |
+| 15 | 网络 | 7 包 |
+
+### 18.4 平台特定代码清单（只有这些需要 `build arch()`）
+
+| 文件 | 内容 | 原因 |
+|------|------|------|
+| `memory_x86.cute` | load8/32/64, store8/32/64 | raw ptr 内存操作 |
+| `memory_x86_64.cute` | 同上 | 同上 |
+| `syscall_x86.cute` | syscall/syscall6/syscall64 + 包装 | int 0x80 vs syscall 指令 |
+| `syscall_x86_64.cute` | 同上 | 同上 |
+| `time_x86.cute` | now(), sleep() | 不同 syscall 号 + timespec 布局 |
+| `time_x86_64.cute` | 同上 | 同上 |
+
+**其他所有代码都是 100% 平台无关的。**
+
+## 十九、Phase 0.2 switch/case 实现（本次会话）
+
+### 19.1 概述
+
+实现完整的 switch/case 语句，包括：
+- parser: SwitchBlock, SwitchCase, SwitchCaseClause AST 节点
+- parser: switch 表达式解析 + case/default 作用域管理
+- compile: 比较 + 条件跳转 codegen（x86_64 + x86）
+- 隐式 break（每个 case body 结束自动跳转到 switch 结束标签）
+
+### 19.2 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `lexer/keywords.go` | 添加 `case`/`default` 为 PROCESSCONTROL |
+| `parser/switch.go` | SwitchBlock, SwitchCase, SwitchCaseClause 定义 + Parse/ParseCaseValues/ParseDefaultColon |
+| `parser/parser.go` | `case`/`default` 在 processControlToken 中的处理 + `}` 对 SwitchCaseClause 的双重回退 |
+| `compile/compiler.go` | compileSwitchBlock: 表达式编译 + 比较跳转 + case/default body 编译 |
+
+### 19.3 Bug 修复
+
+1. **Lexer SkipSep 缺少 tab 处理** — `.cute` 源文件中的 tab 导致 GetWord 包含 tab 字符，触发 "name contains invalid characters"。修复：SkipSep 同时跳过空格和 tab。
+
+2. **ParseCaseValues 无限循环** — `p.Lexer.SetCursor(code.Cursor)` + `p.ParseExp(p.Lexer.Cursor)` 导致游标回到 token 起始位置，ParseExp 立即返回 nil，循环永不前进。修复：使用 Has 找到 `:` 位置，然后 ParseExp 以 `:` 前位置作为 stopCursor。
+
+3. **SwitchBlock.Target 始终为 nil** — `p.ParseExp(p.Lexer.Cursor)` 使用当前游标作为 stopCursor（与起始位置相同），ParseExp 立即返回 nil。修复：先用 Has 找到 `{` 位置，然后 ParseExp 以 `{` 前位置作为 stopCursor。
+
+4. **`}` 对 SwitchCaseClause 的回退** — `}` 关闭 switch 时，p.ThisBlock 在 SwitchCaseClause 中，需要跳过 SwitchCaseClause → SwitchBlock 两层。修复：`}` 处理器检测 SwitchCaseClause 并双重回退。
+
+### 19.4 验证
+
+- switch_test (x86_64): exit=20 ✅ (x=2, case 2: ret 20)
+- switch_test (x86): exit=20 ✅
+- simpleVar (x86_64): exit=42 ✅
+- controlFlow (x86_64): exit=39 ✅
+- listTest (x86_64): exit=0 ✅
+- multi_return (x86_64): exit=0 ✅
+- generics (x86_64): exit=42 ✅
+- derefTest (x86_64): exit=7 ✅
+
+## 二十、Phase 0.3 for range 实现（本次会话）
+
+### 20.1 概述
+
+实现 for range 循环语法，支持遍历 list 和 string：
+- `for i, v := range list { ... }` — 双变量：索引 + 值
+- `for i := range list { ... }` — 单变量：只取索引
+
+### 20.2 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `lexer/keywords.go` | 添加 `range` 为 PROCESSCONTROL 关键字 |
+| `parser/for.go` | ForBlock 添加 Range + RangeNames 字段；Parse 检测 range 语法；parseRange 解析变量和表达式；Check 验证 range 目标类型 |
+| `compile/compiler.go` | compileForRangeBlock: 加载 list ptr/len → 循环索引 → 比较 len → 加载元素 → 编译 body → 递增索引 |
+
+### 20.3 实现细节
+
+- **变量声明**：range 变量（index、value）在 ForBlock 节点外声明，和普通 for 的 Init 一样
+- **list 内存布局**：[ptr, len, cap]，ptr 指向元素数组
+- **循环结构**：
+  1. 从 list 结构加载 ptr（offset 0）和 len（offset ps）
+  2. 初始化索引为 0
+  3. 循环：索引 < len → 加载元素 → 编译 body → 索引++ → 跳回
+  4. 索引 >= len → 退出
+
+### 20.4 验证
+
+- for_range_test (x86_64): exit=150 ✅ (10+20+30+40+50=150)
+- for_range_test (x86): exit=150 ✅
+- 所有回归测试通过（x86_64 + x86）
+
+---
+
+## 21. defer 语句支持（Phase 0.6）
+
+### 21.1 功能描述
+
+新增 `defer` 关键字，支持延迟执行函数调用，直到当前函数返回前执行。defer 按 LIFO（后进先出）顺序执行。
+
+语法：`defer funcName(args...)`
+
+### 21.2 实现细节
+
+#### 21.2.1 新增文件
+
+- **parser/defer.go** — DeferBlock AST 节点，解析 defer 语句
+- **compile/defer.go** — DeferBlock 编译逻辑，收集和执行 defer 调用
+
+#### 21.2.2 修改文件
+
+- **lexer/keywords.go** — 添加 "defer" 关键字（PROCESSCONTROL 类型）
+- **parser/parser.go** — processControlToken 中添加 defer 分支
+- **compile/compiler.go** — compileReturnBlock 在返回前执行所有 defer 调用
+
+#### 21.2.3 核心逻辑
+
+1. **解析**：defer 读取函数名 + 调用参数，创建 DeferBlock AST 节点
+2. **编译**：
+   - `compileDeferBlock` 仅生成注释（defer 本身不执行）
+   - `compileDeferCalls` 收集函数体内的所有 defer 节点
+   - `compileReturnBlock` 在生成返回代码前，按 LIFO 顺序编译所有 defer 调用
+3. **作用域**：递归遍历 if/for/switch 块收集 defer，支持嵌套作用域中的 defer
+
+### 21.3 验证
+
+- defer_test (x86): exit=0，输出 "maincleanup2cleanup1" ✅（LIFO 顺序正确）
+- 所有回归测试通过（x86 + x86_64）
+
+---
+
+## 22. map[K]V 类型支持（Phase 0.7）
+
+### 22.1 功能描述
+
+新增 `map[K]V` 类型定义，支持键值对映射的类型声明。当前阶段仅实现类型系统和 parser 支持，hash 表代码生成在 Phase1 L3。
+
+### 22.2 实现细节
+
+#### 22.2.1 新增文件
+
+- **type/map.go** — MapType 类型定义（嵌入 RType，Key()/Value() 访问键值类型）
+
+#### 22.2.2 修改文件
+
+- **parser/var.go** — parseTypeAnnotation 支持 `map[K]V` 语法
+- **parser/parser.go** — parseTypeRef 支持 `map[K]V` 语法（修复游标回退问题）
+
+#### 22.2.3 核心逻辑
+
+1. MapType 内存布局与 list 相同：[ptr, len, cap]，3 × pointerSize 字节
+2. `parseTypeAnnotation`/`parseTypeRef` 在 `map` NAME token 后读取 `[`、解析键类型、`]`、解析值类型
+3. 嵌入 RType 提供 Type 接口的默认实现（Type()/Fields()/Parent()/IsPointer()/Methods()）
+
+### 22.3 验证
+
+- map_test (x86): exit=0 ✅（`var m : map[string]int` 声明成功）
+- 所有回归测试通过（x86 + x86_64）
+
+---
+
+## 23. 函数指针间接调用修复（Phase 0.5 完成）
+
+### 23.1 问题
+
+函数指针调用 `f(3, 4)` 不生成任何汇编代码，`result` 变量得到垃圾值。
+
+### 23.2 根因
+
+1. **call.go 花括号嵌套错误**：函数指针检查（FindFuncPointerVar）被错误地嵌套在 `for` 循环内部，而该循环搜索 FuncBlock。由于 `f` 是 VarBlock（不是 FuncBlock），循环体永不执行，函数指针检查永不运行。
+
+2. **this 指针误推**：函数指针调用时 `call.ThisVar` 被设为函数指针变量，导致代码生成器错误地推入 this 指针。
+
+3. **参数栈大小计算错误**：`callArgsSize` 对函数指针调用额外加了 4 字节（this 指针），但实际未推入。
+
+### 23.3 修复
+
+#### 23.3.1 parser/call.go — 花括号嵌套修复
+
+将函数指针检查移到 `for` 循环外部，在常规函数查找失败后执行：
+
+```go
+// 常规函数查找（for 循环）
+if c.Func == nil {
+    results := p.Find(c.Name, FindTypeFunc)
+    for _, node := range results { ... c.Func = fb ... }
+}
+// 函数指针变量查找（for 循环外部）
+if c.Func == nil {
+    if fnPtrVar := p.FindFuncPointerVar(c.Name); fnPtrVar != nil {
+        c.ThisVar = fnPtrVar
+        c.Func = &FuncBlock{Args: ..., Return: ft.Returns}
+    }
+}
+```
+
+#### 23.3.2 compile/arch/x86/cdecl.go — this 指针与间接调用
+
+- `isIndirect` 判断提前到 this 指针推入之前
+- 函数指针调用跳过 this 指针推入
+- 间接调用：`mov eax, dword [addr]; call eax`
+
+#### 23.3.3 compile/arch/x86/ops.go — 参数栈大小
+
+`callArgsSize` 排除函数指针调用的 this 指针大小。
+
+#### 23.3.4 compile/arch/x86_64/linux_sysv.go — x86_64 适配
+
+同样跳过函数指针调用的 this 寄存器传参。
+
+### 23.4 验证
+
+生成的 x86 汇编（main 函数）：
+```asm
+mov dword DWORD[ebp-8], add2    ; f = add2
+push 4                           ; arg1
+push 3                           ; arg0
+mov eax, dword DWORD[ebp-8]     ; 加载函数指针
+call eax                         ; 间接调用
+add esp, 8                       ; cdecl 清理（2×4=8）
+mov DWORD[ebp-12], EAX          ; result = 返回值
+```
+
+- fnptr_test (x86): 编译成功 ✅
+- 所有 12 个回归测试编译成功 ✅
+- 删除 debug 输出（fmt.Printf + fmt import）
+
+---
+
+## 二十四、标准库全量实施（Phase 1-13 完成）
+
+### 24.1 概述
+
+从零构建了 Cuteify 标准库，共 40+ 包，覆盖文本处理、数学、哈希、I/O、数据结构、压缩归档、图像、运行时、测试框架和高级工具。
+
+### 24.2 Phase 1 — 修补现有包
+
+**syscall 包新增**（x86 + x86_64）：
+- `lseek`, `mkdir`, `rmdir`, `unlink`, `rename`, `stat`, `fstat`, `getdents`, `getcwd`
+
+**strings 包新增**（strings_common.cute）：
+- `count`, `trimLeft`, `trimRight`, `trim`, `lastIndex`, `indexByte`, `containsAny`, `containsRune`, `compare`
+
+**fs 包新增**：
+- `seek`, `mkdir`, `remove`, `rename`, `stat`, `fstat`, `create`, `readFile`, `writeFile`
+
+**time 包新增**：
+- `NANOSECOND`/`MICROSECOND`/`MILLISECOND` 常量
+- `durationString()`, `since()`(桩), `until()`(桩), `truncate()`, `round()`, `daysIn()`
+
+**console 包新增**：
+- `read()`, `readLine()`
+
+### 24.3 Phase 2 — 文本与数据
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| bytes | pkg/bytes/bytes.cute | Buffer: newBuffer/write/writeString/len/reset/String |
+| unicode | pkg/unicode/unicode.cute | isLetter/isDigit/isSpace/isUpper/isLower/toUpper/toLower |
+| utf8 | pkg/unicode/utf8/utf8.cute | encodeRune/decodeRune/runeCount/valid |
+| fmt | pkg/fmt/fmt.cute | itoa/itoaHex/itoaOct/appendInt/appendStr/appendChar |
+| tabwriter | pkg/text/tabwriter/tabwriter.cute | newWriter/write/flush |
+
+### 24.4 Phase 3 — 哈希
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| hash | pkg/hash/hash.cute | 接口包 |
+| crc32 | pkg/hash/crc32/crc32.cute | CRC-32 IEEE checksum |
+| crc64 | pkg/hash/crc64/crc64.cute | CRC-64 ECMA-182 checksum |
+| adler32 | pkg/hash/adler32/adler32.cute | Adler-32 checksum |
+| fnv | pkg/hash/fnv/fnv.cute | FNV-1/FNV-1a (32/64) |
+| maphash | pkg/hash/maphash/maphash.cute | MurmurHash3 风格 |
+| hashmap | pkg/hashmap/hashmap.cute | 链式哈希表: new/set/get/delete/has/size |
+
+### 24.5 Phase 4 — 数学
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| math | pkg/math/math.cute | abs/min/max/gcd/lcm/factorial/isPrime + 浮点(math via -lm) |
+| bits | pkg/math/bits/bits.cute | leadingZeros/trailingZeros/onesCount/rotate/reverse |
+| big | pkg/math/big/big.cute | 占位符 |
+
+### 24.6 Phase 5 — 排序
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| sort | pkg/sort/sort.cute | sortInts/sortStrings/binary search/isSorted |
+
+### 24.7 Phase 6 — 操作系统
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| os | pkg/os/os.cute | exit/getcwd/stdout/stderr/isExist/isNotExist/isPermission |
+| path | pkg/path/path.cute | base/dir/ext/join/clean/isAbs/split |
+| log | pkg/log/log.cute | log/logError |
+
+### 24.8 Phase 7 — I/O
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| io | pkg/io/io.cute | Reader/Writer/Copy/ReadAll/LimitReader |
+
+### 24.9 Phase 8 — 数据结构
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| container/list | pkg/container/list/list.cute | 双向链表 |
+| container/heap | pkg/container/heap/heap.cute | 最小堆 |
+| container/ring | pkg/container/ring/ring.cute | 环形缓冲区 |
+| slices | pkg/slices/slices.cute | contains/indexOf/reverse/max/min |
+| maps | pkg/maps/maps.cute | keys/values/hasKey/len |
+
+### 24.10 Phase 9 — 压缩归档
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| compress/flate | pkg/compress/flate/flate.cute | Store 模式 DEFLATE |
+| compress/gzip | pkg/compress/gzip/gzip.cute | Gzip 封装 |
+| compress/zlib | pkg/compress/zlib/zlib.cute | Zlib 封装 |
+| compress/bzip2 | pkg/compress/bzip2/bzip2.cute | 占位符 |
+| compress/lzw | pkg/compress/lzw/lzw.cute | LZW 压缩 |
+| archive/tar | pkg/archive/tar/tar.cute | USTAR 格式读取 |
+| archive/zip | pkg/archive/zip/zip.cute | Zip 格式读取 |
+
+### 24.11 Phase 10 — 图像处理
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| image | pkg/image/image.cute | RGBA 图像 |
+| image/color | pkg/image/color/color.cute | RGBA 颜色 |
+| image/png | pkg/image/png/png.cute | 简化 PNG 编解码 |
+| image/jpeg | pkg/image/jpeg/jpeg.cute | 占位符 |
+| image/gif | pkg/image/gif/gif.cute | 占位符 |
+
+### 24.12 Phase 11 — 运行时
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| runtime | pkg/runtime/runtime.cute | NumCPU/Version/Compiler |
+| runtime/debug | pkg/runtime/debug/debug.cute | Stack/ReadBuildInfo |
+
+### 24.13 Phase 12 — 测试框架
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| testing | pkg/testing/testing.cute | T/Run/Fail/Error/Equal/EqualStr/Passed |
+
+### 24.14 Phase 13 — 高级工具
+
+| 包 | 文件 | 主要功能 |
+|----|------|---------|
+| html | pkg/html/html.cute | escape/unescape |
+| text/template | pkg/text/template/template.cute | 简单模板引擎 |
+| mime | pkg/mime/mime.cute | MIME 类型检测 |
+| uuid | pkg/uuid/uuid.cute | UUID v4 生成 |
+| encoding/asn1 | pkg/encoding/asn1/asn1.cute | DER 编码 |
+| encoding/quotedprintable | pkg/encoding/quotedprintable/quotedprintable.cute | RFC 2045 编解码 |
+| encoding/ascii85 | pkg/encoding/ascii85/ascii85.cute | Ascii85 编解码 |
+| index/suffixarray | pkg/index/suffixarray/suffixarray.cute | 后缀数组搜索 |
+
+### 24.15 Phase 14 — 补充包（strconv 合并到 strings，filepath 合并到 path，flag，os/signal）
+
+**strings 包新增**（strconv 功能合并）：
+- `atoi`, `itoa`, `itoaBase`, `parseInt`, `parseUint`
+- `quote`, `unquote`, `quoteRune`
+- `parseBool`, `formatBool`
+- `appendInt`, `appendFloat`, `formatFloat`, `parseFloat`
+
+**path 包新增**（filepath 功能合并）：
+- `separator`, `listSeparator`, `volumeName`, `volumeNameLen`
+- `isLocal`, `localize`, `abs`, `rel`
+- `match`, `glob`, `evalSymlinks`
+- `joinMulti`, `walk`
+
+**新包 flag**：
+- `Flag` struct, `flagSet`, `init`, `string/int/bool`, `parse`, `arg/nArgs`
+- `printUsage`, `lookup`, `getString/getInt/getBool`
+
+**新包 os/signal**：
+- `Signal` 常量 (SIGINT/SIGTERM/SIGQUIT/SIGHUP/SIGUSR1/SIGUSR2)
+- `onSignal`, `handleOnce`, `reset`, `notify`, `stop`, `stopAll`
+
+### 24.16 待完成
+
+- Phase 15: database/sql + database/sql/driver（依赖 net，最后做）
+- Phase 16: net/net.http/net.url/net.mail/net.smtp/net.textproto/net.rpc（最后做）
+
+---
+
+## 二十五、标准库审计与文档整理（本次会话）
+
+### 25.1 审计范围
+
+对 pkg/ 下全部 34 个顶层目录（58 个子包）进行完整审计：
+- 检查 package.json 是否存在且正确
+- 检查 .cute 实现文件的完整度
+- 检查 test/ 目录和测试覆盖
+- 对比 Go 标准库对应包的 API 覆盖率
+- 识别代码问题和占位包
+
+### 25.2 审计结果摘要
+
+| 分类 | 包数 | 完成度范围 | 主要问题 |
+|------|------|-----------|----------|
+| 核心基础设施 | 4 | 100% | 无 |
+| 文本处理 | 8 | 50-95% | fmt 缺 Sprintf，unicode 仅 ASCII |
+| 哈希 | 8 | 80-100% | hashmap delete 内存泄漏 |
+| 数学 | 3 | 5-100% | math/big 仅占位 |
+| 排序 | 1 | 100% | 无 |
+| 操作系统 | 4 | 50-90% | log 过于简单，flag.parse 未实现 |
+| I/O | 1 | 85-95% | 无 |
+| 数据结构 | 5 | 50-100% | slices/hashmap 缺测试 |
+| 压缩归档 | 7 | 5-50% | 多数为简化/占位实现 |
+| 图像 | 5 | 5-80% | jpeg/gif 仅占位 |
+| 运行时 | 2 | 100% | 无 |
+| 测试框架 | 1 | 100% | 无 |
+| 高级工具 | 8 | 40-90% | flag 包 store32 存指针截断 |
+
+### 25.3 新增文档
+
+- `PLAN.md` — 标准库开发计划（各包完成度、下一步优先级、已知问题、里程碑）
+- `TODO.md` — 待办事项（P0/P1/P2 三级优先级排列）
+- `PROJECT.md` — 更新标准库部分描述
+
+### 25.4 发现的代码问题
+
+1. **flag 包 store32 存指针截断**：`pkg/flag/flag.cute` 用 `memory.store32` 存储指针（64 位系统上指针 8 字节），高位被截断。应改为 `memory.store64`。
+2. **hashmap delete 不释放节点**：`pkg/hashmap/hashmap.cute` 的 `delete()` 不释放删除节点的内存。
+3. **hashmap resize 不释放旧桶**：`resize()` 分配新桶后旧桶未释放。
+4. **flag.parse 函数体为空**：命令行参数解析无法工作。
+5. **strings_common.cute parseBool 嵌套过深**：逐字符比较嵌套 7 层 if，可简化。

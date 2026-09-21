@@ -1,0 +1,32 @@
+// pkg/hash/maphash/maphash.cute - 可种子化的哈希函数
+// 使用 MurmurHash3 的简化变体（64 位），适用于哈希表桶分配
+// 支持种子参数，防止哈希碰撞攻击
+
+// hash 使用种子对 data 计算 64 位哈希值
+// seed 用于防止哈希碰撞攻击，不同种子产生不同的哈希分布
+fn hash(seed u64, data string) u64 {
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var h: u64 = seed ^ 0x5BD1E995
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p1: *u8 = sPtr + i
+        var k: u64 = *_p1
+        // MurmurHash3 混合函数简化版
+        k = k * 0x5BD1E995
+        k = k ^ (k >> 15)
+        k = k * 0x5BD1E995
+        h = h ^ k
+        h = h * 0x1B873593
+        h = h ^ (h >> 13)
+        i = i + 1
+    }
+    // 最终混合
+    h = h ^ (sLen)
+    h = h ^ (h >> 16)
+    h = h * 0x85EBCA6B
+    h = h ^ (h >> 13)
+    h = h * 0xC2B2AE35
+    h = h ^ (h >> 16)
+    ret h
+}

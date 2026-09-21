@@ -1,0 +1,35 @@
+// test/thread/main.cute — Test function as value (native)
+var mtx: i32 = 0
+var counter: i32 = 0
+
+fn workerFn(arg: ptr) ptr {
+    var i: i32 = 0
+    for ; i < 100; {
+        thread.mutexLock(&mtx)
+        counter = counter + 1
+        thread.mutexUnlock(&mtx)
+        i = i + 1
+    }
+    ret 0
+}
+
+fn main() i32 {
+    console.println("start")
+    thread.mutexInit(&mtx)
+    counter = 0
+
+    // Native function as value — fn → ptr allowed via AutoType
+    var fnAddr: ptr = workerFn
+
+    // Sync call
+    workerFn(0)
+
+    // Create thread using native function as value
+    var t: ptr = thread.threadCreate(fnAddr, 0)
+    console.println("thread created")
+
+    thread.threadJoin(t)
+    console.println("thread joined")
+
+    ret 0
+}

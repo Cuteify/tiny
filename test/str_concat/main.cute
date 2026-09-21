@@ -1,0 +1,15 @@
+fn buildStr() string {
+    var s: string = "A"
+    var i: int = 0
+    for i < 50 {
+        s = s + "B"
+        i = i + 1
+    }
+    ret s
+}
+
+fn main() int {
+    var s: string = buildStr()
+    console.println(s)
+    ret 0
+}

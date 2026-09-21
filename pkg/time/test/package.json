@@ -1,0 +1,10 @@
+{
+    "name": "time_test",
+    "version": "1.0.0",
+    "description": "time package tests",
+    "imports": {
+        "time": "std:time",
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

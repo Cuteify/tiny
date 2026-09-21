@@ -1,0 +1,35 @@
+type Point struct {
+    x: int
+    y: int
+}
+
+// 局部 new(T) 应在函数出口被释放
+fn allocLocal() int {
+    var p: *Point = new(Point)
+    p.x = 3
+    p.y = 4
+    ret p.x + p.y
+}
+
+// 取局部地址 &a 是借用，绝不释放（否则 free 栈地址 → 崩溃）
+fn takeAddr() int {
+    var a: int = 42
+    var bp: *int = &a
+    ret *bp
+}
+
+// 别名共享同一对象，只应释放一次
+fn aliasShared() int {
+    var p: *Point = new(Point)
+    p.x = 1
+    var q: *Point = p
+    q.y = 2
+    ret p.x + p.y
+}
+
+fn main() int {
+    if allocLocal() != 7 { ret 1 }
+    if takeAddr() != 42 { ret 2 }
+    if aliasShared() != 3 { ret 3 }
+    ret 77
+}

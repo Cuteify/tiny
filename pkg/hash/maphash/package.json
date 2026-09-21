@@ -1,0 +1,9 @@
+{
+    "name": "maphash",
+    "version": "1.0.0",
+    "description": "Seedable hash function for hash maps",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

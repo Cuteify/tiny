@@ -1,0 +1,24 @@
+fn main() int {
+    // Test 1: checksum of empty string returns a deterministic value
+    var empty: u32 = crc32.checksum("")
+
+    // Test 2: checksum of "hello" is consistent across calls
+    var h1: u32 = crc32.checksum("hello")
+    var h2: u32 = crc32.checksum("hello")
+    if h1 != h2 {
+        ret 1
+    }
+
+    // Test 3: different inputs produce different checksums
+    var world: u32 = crc32.checksum("world")
+    if h1 == world {
+        ret 2
+    }
+
+    // Test 4: empty and non-empty are different
+    if empty == h1 {
+        ret 3
+    }
+
+    ret 42
+}

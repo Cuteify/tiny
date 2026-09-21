@@ -1,0 +1,10 @@
+{
+    "name": "path",
+    "version": "1.0.0",
+    "description": "Path manipulation: base, dir, ext, join, clean, isAbs, split, abs, rel, match, glob, walk",
+    "imports": {
+        "strings": "std:strings",
+        "memory": "std:memory",
+        "syscall": "std:syscall"
+    }
+}

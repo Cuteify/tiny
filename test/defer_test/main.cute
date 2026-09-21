@@ -1,0 +1,14 @@
+fn cleanup1() {
+	print("cleanup1")
+}
+
+fn cleanup2() {
+	print("cleanup2")
+}
+
+fn main () int {
+	defer cleanup1()
+	defer cleanup2()
+	print("main")
+	ret 0
+}

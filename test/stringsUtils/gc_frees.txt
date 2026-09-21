@@ -1,0 +1,2 @@
+== main (1 vars)
+  ts [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimSpace off=-1

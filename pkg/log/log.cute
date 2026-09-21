@@ -1,0 +1,17 @@
+// pkg/log/log.cute - 日志库：输出到 stdout 和 stderr
+// 平台无关实现，底层复用 std:syscall
+
+const STDOUT: i32 = 1
+const STDERR: i32 = 2
+
+// log 打印消息到标准输出并换行
+fn log(msg string) {
+    syscall.write(STDOUT, strings.toCstring(msg), strings.len(msg))
+    syscall.write(STDOUT, strings.toCstring("\n"), 1)
+}
+
+// logError 打印消息到标准错误并换行
+fn logError(msg string) {
+    syscall.write(STDERR, strings.toCstring(msg), strings.len(msg))
+    syscall.write(STDERR, strings.toCstring("\n"), 1)
+}

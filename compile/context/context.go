@@ -4,7 +4,16 @@ import (
 	"cuteify/compile/arch"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 )
+
+// VtableEntry represents a vtable for a concrete type implementing an interface.
+type VtableEntry struct {
+	Label     string                   // assembly label (e.g., __vtable_Dog_Stringer)
+	Concrete  typeSys.Type             // concrete struct type
+	Interface *typeSys.InterfaceType   // interface type
+	Methods   []string                 // function labels for each method in order
+}
 
 // Context 编译器上下文，统一管理编译状态
 type Context struct {
@@ -44,6 +53,7 @@ type Context struct {
 	ArgOffset    int // 参数偏移量，用于跟踪函数参数在栈中的位置
 	IfCount      int // if 块数量计数，用于生成唯一的if标签
 	ForCount     int // for 块数量计数，用于生成唯一的for标签
+	SwitchCount  int // switch 块数量计数，用于生成唯一的switch标签
 
 	// 结构体相关
 	// TODO: Structs map[string]*parser.StructBlock // 存储结构体定义
@@ -59,10 +69,31 @@ type Context struct {
 	// 编译器内建 len/cap 检测到后改为调用该符号
 	StringSyms map[string]bool
 
+	// build link 重定向表（link name → FuncBlock）：由 parser.LinkProviders 填充
+	// 编译器在 Find 级别和 builtinNew 中检查此表进行函数重定向
+	LinkProviders map[string]*parser.FuncBlock
+
+	// 单态化类型替换表（TypeParam name → concrete Type）：单态化时填充
+	// sizeof 等内建在 codegen 时用此表解析 TypeParam 的具体大小
+	TypeSubst map[string]typeSys.Type
+
 	ListDataCount int // list数据段标签计数
 
 	PointerSize int
 	Is64Bit     bool
+
+	// Vtable registry for interface dispatch
+	VtableEntries []VtableEntry // registered vtables
+	VtableSeen    map[string]bool
+
+	// External C function declarations (for build ext)
+	Externs map[string]bool
+
+	// Function export aliases (for build export) — exportName → mangledFuncName
+	Exports map[string]string
+
+	// Monomorphize callback: set by Compiler, called by expression compiler for generic calls.
+	MonomorphizeCall func(call *parser.CallBlock) string
 }
 
 // NewContext 创建新的编译器上下文
@@ -86,7 +117,7 @@ func NewContext() *Context {
 		StrCount:       0,
 		PointerSize:    4,
 		Is64Bit:        false,
-		// TODO: Structs:        make(map[string]*parser.StructBlock),
+		VtableSeen:     make(map[string]bool),
 	}
 }
 
@@ -101,8 +132,8 @@ func (ctx *Context) Reset() {
 	ctx.EbxOccupied = false
 	ctx.ExpType = 0
 	ctx.VarStackSize = 0
-	ctx.PointerSize = 4
-	ctx.Is64Bit = false
+	// Note: Is64Bit and PointerSize are NOT reset - they are arch-level settings
+	// Note: VtableEntries and VtableSeen are NOT reset here - they persist across functions
 }
 
 // Clone 克隆当前上下文（用于保存和恢复状态）
@@ -126,7 +157,8 @@ func (ctx *Context) Clone() *Context {
 		ForCount:       ctx.ForCount,
 		PointerSize:    ctx.PointerSize,
 		Is64Bit:        ctx.Is64Bit,
-		// TODO: Structs:        ctx.Structs, // 共享结构体映射
+		VtableEntries:  ctx.VtableEntries, // shared slice (append-only, safe)
+		VtableSeen:     ctx.VtableSeen,    // shared map (safe for reads)
 	}
 }
 
@@ -156,3 +188,71 @@ func (ctx *Context) Clone() *Context {
 // TODO:
 // TODO: 	return 0, false
 // TODO: }
+
+// vtableKey returns a unique key for a (concrete, interface) pair.
+func vtableKey(concrete typeSys.Type, iface *typeSys.InterfaceType) string {
+	return concrete.Type() + ":" + iface.Type()
+}
+
+// RegisterVtable registers a vtable for a concrete type implementing an interface.
+// Returns the assembly label for the vtable.
+func (ctx *Context) RegisterVtable(concrete typeSys.Type, iface *typeSys.InterfaceType, methodLabels []string) string {
+	key := vtableKey(concrete, iface)
+	if ctx.VtableSeen[key] {
+		for _, e := range ctx.VtableEntries {
+			if vtableKey(e.Concrete, e.Interface) == key {
+				return e.Label
+			}
+		}
+	}
+	ctx.VtableSeen[key] = true
+
+	// Build label from type names
+	concreteName := concrete.Type()
+	if st, ok := concrete.(*typeSys.StructType); ok {
+		concreteName = st.TypeName
+	}
+	ifaceName := iface.TypeName
+	label := "__vtable_" + concreteName + "_" + ifaceName
+
+	entry := VtableEntry{
+		Label:     label,
+		Concrete:  concrete,
+		Interface: iface,
+		Methods:   methodLabels,
+	}
+	ctx.VtableEntries = append(ctx.VtableEntries, entry)
+	return label
+}
+
+// LookupVtable finds the vtable label for a concrete type implementing an interface.
+func (ctx *Context) LookupVtable(concrete typeSys.Type, iface *typeSys.InterfaceType) string {
+	key := vtableKey(concrete, iface)
+	for _, e := range ctx.VtableEntries {
+		if vtableKey(e.Concrete, e.Interface) == key {
+			return e.Label
+		}
+	}
+	return ""
+}
+
+// GetVtableMethodOffset returns the byte offset of a method in the vtable.
+// Vtable layout: [type_info_ptr | method_0 | method_1 | ...]
+// Each slot is pointerSize bytes. methodIndex 0 is at offset pointerSize.
+func (ctx *Context) GetVtableMethodOffset(methodIndex int) int {
+	ps := ctx.PointerSize
+	if ps == 0 {
+		ps = 4
+	}
+	return ps + methodIndex*ps
+}
+
+// GetMethodIndex returns the index of a method in the interface's method list.
+func GetMethodIndex(iface *typeSys.InterfaceType, methodName string) int {
+	for i, m := range iface.InterfaceMethods {
+		if m.Name == methodName {
+			return i
+		}
+	}
+	return -1
+}

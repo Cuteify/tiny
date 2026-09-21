@@ -1,7 +1,7 @@
 build os("linux")
 
 fn main() int {
-    var p: ptr = memory.malloc(32)
+    var p: ptr = memory.mallocRC(32)
     if p == 0 {
         ret 1
     }

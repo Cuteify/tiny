@@ -1,0 +1,9 @@
+{
+    "name": "log",
+    "version": "1.0.0",
+    "description": "Logging: log to stdout, logError to stderr",
+    "imports": {
+        "syscall": "std:syscall",
+        "strings": "std:strings"
+    }
+}

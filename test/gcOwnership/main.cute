@@ -1,0 +1,183 @@
+build os("linux")
+
+type Node struct {
+    val: int
+    next: *Node
+}
+
+type Box struct {
+    data: int
+    child: *Box
+}
+
+// === 测试 1: 局部分配，函数退出时自动释放 ===
+// LLR 应标记 a, b, c 为 FRAME_OWN，emitGCFrees 直接 free
+fn testLocalAlloc() int {
+    var a: *Node = new(Node)
+    a.val = 10
+    var b: *Node = new(Node)
+    b.val = 20
+    var c: *Node = new(Node)
+    c.val = 30
+    ret a.val + b.val + c.val
+}
+
+// === 测试 2: 循环内重复分配 ===
+// LLR 应标记 tmp 为 FRAME_OWN (scope=1)，每次循环结束 free
+fn testLoopAlloc() int {
+    var sum: int = 0
+    var i: int = 0
+    for ; i < 10; {
+        var tmp: *Node = new(Node)
+        tmp.val = i
+        sum = sum + tmp.val
+        i = i + 1
+    }
+    ret sum
+}
+
+// === 测试 3: 链表遍历（参数指针，不应 free）===
+fn testListWalk(head: *Node) int {
+    var sum: int = 0
+    var c: *Node = head
+    for ; c != nil; {
+        sum = sum + c.val
+        c = c.next
+    }
+    ret sum
+}
+
+// === 测试 4: 字段赋值产生 orphan ===
+// LLR 应标记 root, b1, b2, b3 为 FRAME_OWN
+fn testFieldOrphan() int {
+    var root: *Box = new(Box)
+    root.data = 1
+    var b1: *Box = new(Box)
+    b1.data = 10
+    root.child = b1
+    var b2: *Box = new(Box)
+    b2.data = 20
+    root.child = b2
+    var b3: *Box = new(Box)
+    b3.data = 30
+    root.child = b3
+    ret root.child.data
+}
+
+// === 测试 5: 多层嵌套分配 ===
+// LLR 应标记 a, b, c 为 FRAME_OWN (site=call:makeBox)
+fn makeBox(v int) *Box {
+    var b: *Box = new(Box)
+    b.data = v
+    ret b
+}
+
+fn testNestedAlloc() int {
+    var a: *Box = makeBox(1)
+    var b: *Box = makeBox(2)
+    var c: *Box = makeBox(3)
+    ret a.data + b.data + c.data
+}
+
+// === 测试 6: 条件分支分配 ===
+// LLR 应标记 n 为 FRAME_OWN (scope=1)
+fn testBranchAlloc(flag: int) int {
+    var result: *Node
+    if flag == 1 {
+        var n: *Node = new(Node)
+        n.val = 100
+        result = n
+    } else {
+        var n: *Node = new(Node)
+        n.val = 200
+        result = n
+    }
+    ret result.val
+}
+
+// === 测试 7: 大量循环分配（压力测试）===
+fn testMassiveLoop() int {
+    var bigSum: int = 0
+    var m: int = 0
+    for ; m < 100; {
+        var tmp: *Node = new(Node)
+        tmp.val = m
+        bigSum = bigSum + tmp.val
+        m = m + 1
+    }
+    ret bigSum
+}
+
+// === 测试 8: 泄漏检测（使用 reportLeaks）===
+fn testLeakDetection() int {
+    var before: uint = memory.reportLeaks()
+    var i: int = 0
+    for ; i < 50; {
+        var tmp: *Node = new(Node)
+        tmp.val = i
+        i = i + 1
+    }
+    var after: uint = memory.reportLeaks()
+    if after <= before {
+        ret 1
+    }
+    ret 0
+}
+
+fn main() int {
+    var pass: int = 0
+
+    // 测试 1: 局部分配
+    if testLocalAlloc() == 60 {
+        pass = pass + 1
+    }
+
+    // 测试 2: 循环分配
+    if testLoopAlloc() == 45 {
+        pass = pass + 1
+    }
+
+    // 测试 3: 链表遍历
+    var head: *Node = nil
+    var k: int = 5
+    for ; k > 0; {
+        var n: *Node = new(Node)
+        n.val = k * 10
+        n.next = head
+        head = n
+        k = k - 1
+    }
+    if testListWalk(head) == 150 {
+        pass = pass + 1
+    }
+
+    // 测试 4: 字段 orphan
+    if testFieldOrphan() == 30 {
+        pass = pass + 1
+    }
+
+    // 测试 5: 嵌套分配
+    if testNestedAlloc() == 6 {
+        pass = pass + 1
+    }
+
+    // 测试 6: 条件分支
+    if testBranchAlloc(1) == 100 {
+        pass = pass + 1
+    }
+    if testBranchAlloc(2) == 200 {
+        pass = pass + 1
+    }
+
+    // 测试 7: 大规模循环
+    if testMassiveLoop() == 4950 {
+        pass = pass + 1
+    }
+
+    // 测试 8: 泄漏检测
+    if testLeakDetection() == 1 {
+        pass = pass + 1
+    }
+
+    ret pass
+}

@@ -1,0 +1,28 @@
+// test/sortIntOnly/main.cute - 仅整数排序测试
+fn main() int {
+    var s: *[]int = slices.new[int](8)
+    slices.push[int](s, 34)
+    slices.push[int](s, 7)
+    slices.push[int](s, 23)
+    slices.push[int](s, 32)
+    slices.push[int](s, 5)
+    slices.push[int](s, 62)
+    slices.push[int](s, 14)
+    slices.push[int](s, 8)
+
+    sort.quickSortInts(s)
+
+    var i: int = 0
+    var prev: int = -999999
+    for ; i < slices.len[int](s); {
+        var v: int = 0
+        slices.copyOut[int](s, i, &v)
+        if v < prev {
+            ret 1
+        }
+        prev = v
+        i = i + 1
+    }
+    slices.free[int](s)
+    ret 0
+}

@@ -37,6 +37,9 @@ func NewWin64(ctx *context.Context) *Win64 {
 // Info 返回调用约定的名称
 func (a *Win64) Info() string { return "x86_64 Microsoft x64 ABI" }
 
+// SetArgsOffset 将参数偏移从调用者帧位置刷新为 callee-local 位置
+func (a *Win64) SetArgsOffset(fn *parser.FuncBlock) { setArgsOffset(fn) }
+
 // Prologue 函数前序代码
 func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 	if fn == nil {
@@ -60,8 +63,12 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 	// Win64 调用者需要 32 字节 shadow space
 	a.ctx.StackSize += 32
 
-	if a.ctx.StackSize%16 != 0 {
-		a.ctx.StackSize = (a.ctx.StackSize + 15) & ^15
+	// 编译期 16 字节对齐：call 压返回地址(-8) + push rbp(-8) + 7 callee-save(-56) = -72
+	// RSP = RBP - 56 - StackSize，需 StackSize ≡ 8 (mod 16) 使 RSP ≡ 0 (mod 16)
+	totalPushed := 8 + 8 + 8*len(csRegs) // return addr + rbp + 7 callee-saves = 72
+	need := (16 - (totalPushed % 16)) % 16 // = 8
+	if a.ctx.StackSize%16 != need {
+		a.ctx.StackSize += (need - a.ctx.StackSize%16 + 16) % 16
 	}
 
 	if a.ctx.StackSize > 0 {
@@ -90,7 +97,7 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 
 // Epilogue 函数后序代码(公共返回点)
 func (a *Win64) Epilogue(fn *parser.FuncBlock) string {
-	funcName := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
 
 	// 清理局部变量栈空间
@@ -186,7 +193,7 @@ normalCall:
 	// shadow space
 	code += utils.Format("sub rsp, 32; shadow space")
 
-	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	name := formatFuncName(fn)
 	code += utils.Format("call " + name)
 
 	// 清理 shadow space + 栈参数

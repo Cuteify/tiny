@@ -1,0 +1,8 @@
+{
+    "name": "list",
+    "version": "1.0.0",
+    "description": "Doubly linked list implementation",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

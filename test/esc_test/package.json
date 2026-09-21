@@ -1,0 +1,9 @@
+{
+    "name": "esc_test",
+    "version": "1.0.0",
+    "imports": {
+        "console": "std:console",
+        "memory": "std:memory",
+        "syscall": "std:syscall"
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "name": "signal",
+    "version": "1.0.0",
+    "description": "Signal handling package",
+    "imports": {
+        "strings": "std:strings",
+        "memory": "std:memory",
+        "syscall": "std:syscall"
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "name": "crc64",
+    "version": "1.0.0",
+    "description": "CRC-64 ECMA-182 checksum package",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

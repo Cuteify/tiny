@@ -1,0 +1,242 @@
+// ===== Cuteify Memory Manager v3 — Reference Counting =====
+//
+// RC（引用计数）用于 *T 类型的结构体指针，管理跨函数/跨作用域的生命周期。
+//
+// RC block 内存布局：
+//   [header: ptrSize] [RC: ptrSize] [flags: ptrSize] [user data ...] [footer: ptrSize]
+//   用户指针 ptr 指向 data 起始位置
+//   RC 位于 ptr - 2*ptrSize（通过 rcLoad/rcStore 访问）
+//   flags 位于 ptr - ptrSize（通过 flagLoad/flagStore 访问）
+//   flags 值为 IS_RC_TAG (0x18000) 标识这是一个 RC 块
+//
+// 与普通 malloc 块的区别：
+//   - 普通块：[header] [data...] [footer] — 2*ptrSize 开销
+//   - RC 块：[header] [RC] [flags] [data...] [footer] — 5*ptrSize 开销
+//
+// free() 运行时通过读取 flags 字段自动区分两种块：
+//   flags == IS_RC_TAG → rcDec（引用计数释放）
+//   否则 → freeAt（直接释放）
+
+// ===== mallocRC / freeRC — 带 RC 前缀的分配 =====
+
+// mallocRC 分配带 RC 前缀的内存，初始 RC=1，flags=IS_RC_TAG
+// 与 malloc 类似，但多了 RC 和 flags 字段
+fn mallocRC(size: uint) ptr {
+    // RC 前缀开销：header + RC + flags = 3 * ptrSize
+    var rcPrefix: uint = ptrSize * 3
+    var req: uint = size + rcPrefix
+    // 最小 5 * ptrSize（header + RC + flags + data + footer）
+    var minReq: uint = ptrSize * 5
+    if req < minReq {
+        req = minReq
+    }
+
+    // === 路径 1: HUGE 块 ===
+    if req > LARGE_MAX {
+        var old: ptr = syscall.brk(0)
+        var nb: ptr = syscall.brk(old + req)
+        if nb < old + req {
+            ret 0
+        }
+        hdrSetSizeRaw(old, req)
+        hdrSetFooter(old, req)
+        // 在 data 起始位置设置 RC=1 和 flags=IS_RC_TAG
+        var p: ptr = old + rcPrefix
+        rcStore(p, 1)
+        flagStore(p, IS_RC_TAG)
+        trackAlloc(p)
+        ret p
+    }
+
+    // === 路径 2: LARGE 块 — brk + coalesce ===
+    if req > MIDDLE_MAX {
+        var aligned: uint = (req + ptrSize - 1) & ~(ptrSize - 1)
+        var old: ptr = syscall.brk(0)
+        var nb: ptr = syscall.brk(old + aligned)
+        if nb < old + aligned {
+            ret 0
+        }
+        hdrSetSizeRaw(old, aligned | IS_FREE)
+        hdrSetFooter(old, aligned | IS_FREE)
+        var merged: ptr = coalesce(old)
+        var mRaw: uint = hdrSizeRaw(merged)
+        var mPure: uint = mRaw & ~FLAG_MASK
+        hdrSetSizeRaw(merged, mPure)
+        hdrSetFooter(merged, mPure)
+        // 清除后继块的 PREV_FREE
+        var nextM: ptr = merged + mPure
+        var brkTop: ptr = syscall.brk(0)
+        if nextM + ptrSize <= brkTop {
+            var ns: uint = hdrSizeRaw(nextM)
+            if ns != 0 {
+                hdrSetSizeRaw(nextM, ns & ~PREV_FREE)
+                hdrSetFooter(nextM, ns & ~PREV_FREE)
+            }
+        }
+        var p: ptr = merged + rcPrefix
+        rcStore(p, 1)
+        flagStore(p, IS_RC_TAG)
+        trackAlloc(p)
+        ret p
+    }
+
+    // === 路径 3: TINY/SMALL 块 — 空闲链表 ===
+    var cls: uint = slotOf(req)
+    var blkSize: uint = blkSizeOf(cls)
+    var head: ptr = headOf(cls)
+    if head == 0 {
+        head = commit(cls, blkSize)
+        if head == 0 {
+            ret 0
+        }
+    }
+
+    // 从链表头取块
+    var next: ptr = freeNext(head)
+    setHead(cls, next)
+    if next != 0 {
+        freeSetPrev(next, 0)
+    }
+
+    hdrSetSizeRaw(head, blkSize)
+    hdrSetFooter(head, blkSize)
+
+    // 清除后继块的 PREV_FREE
+    var nextBlk: ptr = head + blkSize
+    var brkTop: ptr = syscall.brk(0)
+    if nextBlk + ptrSize <= brkTop {
+        var ns: uint = hdrSizeRaw(nextBlk)
+        if ns != 0 {
+            hdrSetSizeRaw(nextBlk, ns & ~PREV_FREE)
+            hdrSetFooter(nextBlk, ns & ~PREV_FREE)
+        }
+    }
+
+    // 设置 RC=1 和 flags=IS_RC_TAG
+    var p: ptr = head + rcPrefix
+    rcStore(p, 1)
+    flagStore(p, IS_RC_TAG)
+    trackAlloc(p)
+    ret p
+}
+
+// freeRC 释放带 RC 前缀的内存
+// 将用户指针转换为块起始地址（ptr - 3*ptrSize），调用 freeAt
+fn freeRC(ptr: ptr) {
+    if ptr == 0 {
+        ret
+    }
+    freeAt(ptr - ptrSize * 3)
+}
+
+// ===== RC 操作 — 引用计数管理 =====
+
+// rcInc 增加引用计数（+1）
+// 用于赋值、传参等场景，表示"多了一个所有者"
+fn rcInc(p: ptr) {
+    if p == 0 {
+        ret
+    }
+    gDbgC = p
+    var rc: uint = rcLoad(p)
+    rcStore(p, rc + 1)
+}
+
+// rcDec 减少引用计数（-1）；归零时释放内存并返回 true
+// 用于函数退出、变量离开作用域等场景
+// 返回 true = 已释放（调用者不再持有有效指针）
+// 返回 false = 仍有其他引用，不释放
+fn rcDec(p: ptr) bool {
+    gDbgA = p
+    if p == 0 {
+        ret true
+    }
+    var rc: uint = rcLoad(p)
+    gDbgD = p
+    if rc == 0 {
+        ret true  // 已经归零，无需操作
+    }
+    if rc <= 1 {
+        // RC=1 → 归零，释放内存
+        rcStore(p, 0)
+        trackFree(p)
+        freeRC(p)
+        ret true
+    }
+    // RC > 1 → 仅减一，不释放
+    rcStore(p, rc - 1)
+    ret false
+}
+
+// rcGet 读取当前引用计数
+// 用于调试和检查，不修改 RC
+fn rcGet(p: ptr) uint {
+    if p == 0 {
+        ret 0
+    }
+    ret rcLoad(p)
+}
+
+// rcTryRelease 尝试减少引用计数但不实际释放（用户自行管理生命周期）
+// 返回 true 表示 RC 已归零（调用者负责决定是否释放）
+// 与 rcDec 的区别：不会调用 freeRC，适用于需要延迟释放的场景
+fn rcTryRelease(p: ptr) bool {
+    if p == 0 {
+        ret true
+    }
+    var rc: uint = rcLoad(p)
+    if rc <= 1 {
+        rcStore(p, 0)
+        ret true
+    }
+    rcStore(p, rc - 1)
+    ret false
+}
+
+// rcIsOne 检查是否只有一个拥有者（RC == 1）
+// 用于判断是否可以安全地移动或偷取所有权（无需 rcInc）
+fn rcIsOne(p: ptr) bool {
+    if p == 0 {
+        ret false
+    }
+    ret rcLoad(p) == 1
+}
+
+// rcSet 直接设置引用计数（用于初始化或重置）
+// 不做安全检查，调用者需确保 p 非空
+fn rcSet(p: ptr, n: uint) {
+    if p == 0 {
+        ret
+    }
+    rcStore(p, n)
+}
+
+// rcAdd 批量增加引用计数（如同时添加多个引用）
+// 等价于调用 n 次 rcInc，但只做一次 load/store
+fn rcAdd(p: ptr, n: uint) {
+    if p == 0 {
+        ret
+    }
+    var rc: uint = rcLoad(p)
+    rcStore(p, rc + n)
+}
+
+// rcSub 批量减少引用计数；归零时自动释放并返回 true
+// 等价于调用 n 次 rcDec，但只做一次 load/store
+// 典型场景：从列表中移除 n 个指向同一对象的引用
+fn rcSub(p: ptr, n: uint) bool {
+    if p == 0 {
+        ret true
+    }
+    var rc: uint = rcLoad(p)
+    if rc <= n {
+        // RC <= n → 归零，释放内存
+        rcStore(p, 0)
+        trackFree(p)
+        freeRC(p)
+        ret true
+    }
+    // RC > n → 仅减 n，不释放
+    rcStore(p, rc - n)
+    ret false
+}

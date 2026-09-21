@@ -1,0 +1,12 @@
+== buildStr (0 vars)
+  s [string] scope=1
+== main (7 vars)
+  big [string] site=call:buildStr off=-1
+  final [string] site=call:repeatStr off=-1
+  s1 [string] site=call:buildStr off=-1
+  s2 [string] site=call:buildStr off=-1
+  s3 [string] site=call:concat3 off=-1
+  s4 [string] site=call:repeatStr off=-1
+  tmp [string] site=call:buildStr off=-1
+== repeatStr (0 vars)
+  result [string] scope=1

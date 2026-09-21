@@ -1,0 +1,9 @@
+{
+    "name": "utf8",
+    "version": "1.0.0",
+    "description": "UTF-8 encoding/decoding package: rune operations on UTF-8 strings",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

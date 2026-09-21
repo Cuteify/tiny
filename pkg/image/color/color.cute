@@ -1,0 +1,27 @@
+// pkg/image/color/color.cute - 颜色模型与预定义颜色
+// 平台无关实现
+
+// RGBA 颜色结构体
+type RGBA struct {
+    R: u8
+    G: u8
+    B: u8
+    A: u8
+}
+
+// RGBAModel 创建 RGBA 颜色值
+fn RGBAModel(r u8, g u8, b u8, a u8) RGBA {
+    var c: RGBA
+    c.R = r
+    c.G = g
+    c.B = b
+    c.A = a
+    ret c
+}
+
+// 预定义颜色常量
+var Black: RGBA = RGBA{0, 0, 0, 255}
+var White: RGBA = RGBA{255, 255, 255, 255}
+var Red: RGBA = RGBA{255, 0, 0, 255}
+var Green: RGBA = RGBA{0, 255, 0, 255}
+var Blue: RGBA = RGBA{0, 0, 255, 255}

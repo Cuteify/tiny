@@ -1,0 +1,375 @@
+// pkg/sort/str_sort.cute - 字符串排序（快排 + Timsort）
+
+// ========== 字符串辅助 ==========
+
+var _STR_ELEM: int = 24
+
+fn _strLoad(a ptr, index int) string {
+    var off: int = index * _STR_ELEM
+    ret strings.makeString(memory.load64(a + off), memory.load64(a + off + 8), memory.load64(a + off + 16))
+}
+
+fn _strStore(a ptr, index int, s string) {
+    var off: int = index * _STR_ELEM
+    memory.store64(a + off, strings.toCstring(s))
+    memory.store64(a + off + 8, strings.len(s))
+    memory.store64(a + off + 16, strings.len(s))
+}
+
+fn _strSwap(a ptr, i int, j int) {
+    var off1: int = i * _STR_ELEM
+    var off2: int = j * _STR_ELEM
+    var k: int = 0
+    for ; k < _STR_ELEM; {
+        var tmp: u8 = memory.load8(a + off1 + k)
+        memory.store8(a + off1 + k, memory.load8(a + off2 + k))
+        memory.store8(a + off2 + k, tmp)
+        k = k + 1
+    }
+}
+
+fn _strLess(a ptr, i int, j int) bool {
+    ret compareStrings(_strLoad(a, i), _strLoad(a, j)) < 0
+}
+
+// compareStrings 比较两个字符串：返回 -1、0、1
+fn compareStrings(a string, b string) int {
+    var aLen: uint = strings.len(a)
+    var bLen: uint = strings.len(b)
+    var aPtr: ptr = strings.toCstring(a)
+    var bPtr: ptr = strings.toCstring(b)
+    var minLen: uint = aLen
+    if bLen < aLen {
+        minLen = bLen
+    }
+    var i: uint = 0
+    for ; i < minLen; {
+        var ca: u8 = memory.load8(aPtr + i)
+        var cb: u8 = memory.load8(bPtr + i)
+        if ca < cb {
+            ret -1
+        }
+        if ca > cb {
+            ret 1
+        }
+        i = i + 1
+    }
+    if aLen < bLen {
+        ret -1
+    }
+    if aLen > bLen {
+        ret 1
+    }
+    ret 0
+}
+
+// ========== 快速排序（不稳定 O(n log n) 平均） ==========
+
+fn quickSortStrings(a ptr, n int) {
+    if n <= 1 {
+        ret
+    }
+    _quickSortStrRange(a, 0, n - 1)
+}
+
+fn _quickSortStrRange(a ptr, lo int, hi int) {
+    for ; lo < hi; {
+        var pivotIdx: int = _partitionStrings(a, lo, hi)
+        if pivotIdx - 1 - lo < hi - pivotIdx - 1 {
+            if lo < pivotIdx - 1 {
+                _insertionSortStrRange(a, lo, pivotIdx - 1)
+            }
+            lo = pivotIdx + 1
+        } else {
+            if pivotIdx + 1 < hi {
+                _insertionSortStrRange(a, pivotIdx + 1, hi)
+            }
+            hi = pivotIdx - 1
+        }
+    }
+}
+
+fn _partitionStrings(a ptr, lo int, hi int) int {
+    // 三数取中
+    var mid: int = lo + (hi - lo) / 2
+    if _strLess(a, mid, lo) {
+        _strSwap(a, lo, mid)
+    }
+    if _strLess(a, hi, lo) {
+        _strSwap(a, lo, hi)
+    }
+    if _strLess(a, hi, mid) {
+        _strSwap(a, mid, hi)
+    }
+    _strSwap(a, mid, hi)
+
+    var pivot: string = _strLoad(a, hi)
+    var i: int = lo - 1
+    var j: int = lo
+    for ; j < hi; {
+        if compareStrings(_strLoad(a, j), pivot) < 0 {
+            i = i + 1
+            _strSwap(a, i, j)
+        }
+        j = j + 1
+    }
+    _strSwap(a, i + 1, hi)
+    ret i + 1
+}
+
+// ========== 插入排序（小数组辅助） ==========
+
+fn insertionSortStrings(a ptr, n int) {
+    _insertionSortStrRange(a, 0, n - 1)
+}
+
+fn _insertionSortStrRange(a ptr, lo int, hi int) {
+    var i: int = lo + 1
+    for ; i <= hi; {
+        var key: string = _strLoad(a, i)
+        var j: int = i - 1
+        for ; j >= lo; {
+            if compareStrings(_strLoad(a, j), key) > 0 {
+                _strSwap(a, j, j + 1)
+                j = j - 1
+            } else {
+                break
+            }
+        }
+        // 插入到 j+1 位置
+        var insertPos: int = j + 1
+        if insertPos != i {
+            // 右移 [insertPos, i-1] 到 [insertPos+1, i]
+            var m: int = i
+            for ; m > insertPos; {
+                var srcOff: int = (m - 1) * _STR_ELEM
+                var dstOff: int = m * _STR_ELEM
+                var k: int = 0
+                for ; k < _STR_ELEM; {
+                    memory.store8(a + dstOff + k, memory.load8(a + srcOff + k))
+                    k = k + 1
+                }
+                m = m - 1
+            }
+            _strStore(a, insertPos, key)
+        }
+        i = i + 1
+    }
+}
+
+// ========== Timsort（稳定 O(n log n)） ==========
+
+var _STR_MIN_RUN: int = 32
+
+fn timsortStrings(a ptr, n int) {
+    if n <= 1 {
+        ret
+    }
+    if n <= _STR_MIN_RUN {
+        insertionSortStrings(a, n)
+        ret
+    }
+
+    // 预分配 merge 临时缓冲区（最大 n/2 个字符串元素）
+    var halfN: int = n / 2
+    var buf: ptr = memory.malloc(uint(halfN * _STR_ELEM))
+
+    // run 栈（parallel arrays: lo + hi）
+    var stackLo: *[]int = slices.new[int](16)
+    var stackHi: *[]int = slices.new[int](16)
+    var pos: int = 0
+    for ; pos < n; {
+        var runStart: int = pos
+        var runEnd: int = pos + 1
+        for ; runEnd < n; {
+            if compareStrings(_strLoad(a, runEnd - 1), _strLoad(a, runEnd)) <= 0 {
+                runEnd = runEnd + 1
+            } else {
+                break
+            }
+        }
+        var runLen: int = runEnd - runStart
+        var target: int = runStart + _STR_MIN_RUN
+        if target > n {
+            target = n
+        }
+        if runLen < _STR_MIN_RUN && runEnd < n {
+            _insertionSortStrRange(a, runStart, target - 1)
+            runEnd = target
+        }
+        slices.push[int](stackLo, runStart)
+        slices.push[int](stackHi, runEnd)
+        var sl: int = slices.len[int](stackLo)
+        for ; sl >= 3; {
+            var p: int = sl - 3
+            var q: int = sl - 2
+            var r: int = sl - 1
+            var pLo: int = *int(slices.getPtr[int](stackLo, p))
+            var pHi: int = *int(slices.getPtr[int](stackHi, p))
+            var qLo: int = *int(slices.getPtr[int](stackLo, q))
+            var qHi: int = *int(slices.getPtr[int](stackHi, q))
+            var rLo: int = *int(slices.getPtr[int](stackLo, r))
+            var rHi: int = *int(slices.getPtr[int](stackHi, r))
+            var pLen: int = pHi - pLo
+            var qLen: int = qHi - qLo
+            var rLen: int = rHi - rLo
+            if pLen <= qLen + rLen {
+                if pLen < rLen {
+                    _mergeStrRuns(a, pLo, pHi, qLo, qHi, buf)
+                    _strStackRemove(stackLo, stackHi, q)
+                } else {
+                    _mergeStrRuns(a, qLo, qHi, rLo, rHi, buf)
+                    _strStackRemove(stackLo, stackHi, r)
+                }
+                sl = slices.len[int](stackLo)
+            } else if qLen <= rLen {
+                _mergeStrRuns(a, qLo, qHi, rLo, rHi, buf)
+                _strStackRemove(stackLo, stackHi, r)
+                sl = slices.len[int](stackLo)
+            } else {
+                break
+            }
+        }
+        pos = runEnd
+    }
+    var remaining: int = slices.len[int](stackLo)
+    for ; remaining > 1; {
+        var r2: int = remaining - 1
+        var q2: int = remaining - 2
+        var qLo2: int = *int(slices.getPtr[int](stackLo, q2))
+        var qHi2: int = *int(slices.getPtr[int](stackHi, q2))
+        var rLo2: int = *int(slices.getPtr[int](stackLo, r2))
+        var rHi2: int = *int(slices.getPtr[int](stackHi, r2))
+        _mergeStrRuns(a, qLo2, qHi2, rLo2, rHi2, buf)
+        slices.remove[int](stackHi, r2)
+        slices.remove[int](stackLo, r2)
+        remaining = slices.len[int](stackLo)
+    }
+    slices.free[int](stackLo)
+    slices.free[int](stackHi)
+    memory.free(buf)
+}
+
+// _mergeStrRuns 将相邻两个有序字符串 run 就地合并（稳定）
+fn _mergeStrRuns(a ptr, leftStart int, leftEnd int, rightStart int, rightEnd int, buf ptr) {
+    var leftLen: int = leftEnd - leftStart
+    var rightLen: int = rightEnd - rightStart
+    // 拷贝左 run 到缓冲区
+    var i: int = 0
+    for ; i < leftLen; {
+        var srcOff: int = (leftStart + i) * _STR_ELEM
+        var dstOff: int = i * _STR_ELEM
+        var k: int = 0
+        for ; k < _STR_ELEM; {
+            memory.store8(buf + dstOff + k, memory.load8(a + srcOff + k))
+            k = k + 1
+        }
+        i = i + 1
+    }
+    // 双指针合并回原位（稳定：左 run 元素优先 → <= 时取左）
+    var li: int = 0
+    var ri: int = 0
+    var ai: int = leftStart
+    for ; li < leftLen && ri < rightLen; {
+        var lv: string = strings.makeString(memory.load64(buf + li * _STR_ELEM), memory.load64(buf + li * _STR_ELEM + 8), memory.load64(buf + li * _STR_ELEM + 16))
+        var rv: string = _strLoad(a, rightStart + ri)
+        if compareStrings(lv, rv) <= 0 {
+            var dstOff2: int = ai * _STR_ELEM
+            var srcOff2: int = li * _STR_ELEM
+            var k2: int = 0
+            for ; k2 < _STR_ELEM; {
+                memory.store8(a + dstOff2 + k2, memory.load8(buf + srcOff2 + k2))
+                k2 = k2 + 1
+            }
+            li = li + 1
+        } else {
+            if ai != rightStart + ri {
+                _strSwap(a, ai, rightStart + ri)
+            }
+            ri = ri + 1
+        }
+        ai = ai + 1
+    }
+    // 拷贝左 run 剩余
+    for ; li < leftLen; {
+        var dstOff3: int = ai * _STR_ELEM
+        var srcOff3: int = li * _STR_ELEM
+        var k3: int = 0
+        for ; k3 < _STR_ELEM; {
+            memory.store8(a + dstOff3 + k3, memory.load8(buf + srcOff3 + k3))
+            k3 = k3 + 1
+        }
+        li = li + 1
+        ai = ai + 1
+    }
+}
+
+fn _strStackRemove(stackLo *[]int, stackHi *[]int, index int) {
+    var n: int = slices.len[int](stackLo)
+    var i: int = index
+    for ; i < n - 1; {
+        *int(slices.getPtr[int](stackLo, i)) = *int(slices.getPtr[int](stackLo, i + 1))
+        *int(slices.getPtr[int](stackHi, i)) = *int(slices.getPtr[int](stackHi, i + 1))
+        i = i + 1
+    }
+    slices.remove[int](stackLo, n - 1)
+    slices.remove[int](stackHi, n - 1)
+}
+
+// ========== 搜索 ==========
+
+// searchInts 在已排序整数数组中查找 x 的插入位置
+fn searchInts(a ptr, n int, x int) int {
+    var low: int = 0
+    var high: int = n
+    for ; low < high; {
+        var mid: int = low + (high - low) / 2
+        var val: int = memory.load64(a + mid * 8)
+        if val < x {
+            low = low + 1
+        } else {
+            high = mid
+        }
+    }
+    ret low
+}
+
+// searchStrings 在已排序字符串数组中查找 s 的插入位置
+fn searchStrings(a ptr, n int, s string) int {
+    var low: int = 0
+    var high: int = n
+    for ; low < high; {
+        var mid: int = low + (high - low) / 2
+        var ms: string = _strLoad(a, mid)
+        if compareStrings(ms, s) < 0 {
+            low = low + 1
+        } else {
+            high = mid
+        }
+    }
+    ret low
+}
+
+// ========== 检查 ==========
+
+fn isSortedInts(a ptr, n int) bool {
+    var i: int = 0
+    for ; i < n - 1; {
+        if memory.load64(a + i * 8) > memory.load64(a + (i + 1) * 8) {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+fn isSortedStrings(a ptr, n int) bool {
+    var i: int = 0
+    for ; i < n - 1; {
+        if compareStrings(_strLoad(a, i), _strLoad(a, i + 1)) > 0 {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}

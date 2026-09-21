@@ -18,7 +18,6 @@ func main() {
 
 	// 定义命令行参数
 	genAST := flag.Bool("ast", false, "生成 AST 文本表示")
-	gcDump := flag.Bool("gc-dump", false, "输出 GC 函数摘要")
 	asmOnly := flag.Bool("S", false, "仅编译生成汇编文件，不进行汇编和链接")
 	asmOnlyLong := flag.Bool("asm", false, "仅编译生成汇编文件（同 -S）")
 	objOnly := flag.Bool("c", false, "编译并汇编生成目标文件，不进行链接")
@@ -39,15 +38,23 @@ func main() {
 
 	// GC 摘要分析：包合并 + Check 重试完成后、代码生成之前执行
 	gc.Build(tmp.AST.(*parser.Node))
-	if *gcDump {
-		fmt.Println("\n=== GC 函数摘要 ===")
-		if err := gc.DumpAll(os.Stdout); err != nil {
-			panic(err)
+	fmt.Println("\n=== GC 函数摘要 ===")
+	if err := gc.DumpAll(os.Stdout); err != nil {
+		panic(err)
+	}
+	fmt.Println("\n=== GC LLR 分析 ===")
+	fmt.Print(gc.DumpLLRs())
+
+	// 写入 GC 摘要文件到测试目录
+	gcDir := path
+	if err := os.MkdirAll(gcDir, 0755); err == nil {
+		// gc_summary.json — 全部函数摘要
+		if f, err := os.Create(gcDir + "/gc_summary.json"); err == nil {
+			gc.DumpAll(f)
+			f.Close()
 		}
-		fmt.Println("\n=== GC 出口释放计划 ===")
-		fmt.Print(gc.DumpFrees())
-		fmt.Println("\n=== GC LLR 分析 ===")
-		fmt.Print(gc.DumpLLRs())
+		// gc_llr.txt — LLR 分析结果
+		os.WriteFile(gcDir+"/gc_llr.txt", []byte(gc.DumpLLRs()), 0644)
 	}
 
 	// AST 模式

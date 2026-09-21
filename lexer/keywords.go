@@ -12,6 +12,9 @@ var (
 		"else":      PROCESSCONTROL,
 		"switch":    PROCESSCONTROL,
 		"case":      PROCESSCONTROL,
+		"default":   PROCESSCONTROL,
+		"range":     PROCESSCONTROL,
+		"defer":     PROCESSCONTROL,
 		"try":       PROCESSCONTROL,
 		"except":    PROCESSCONTROL,
 		"finally":   PROCESSCONTROL,
@@ -55,6 +58,7 @@ var (
 		"++":        SEPARATOR,
 		"--":        SEPARATOR,
 		"->":        SEPARATOR,
+		"...":       SEPARATOR,
 		"&&":        SEPARATOR,
 		"||":        SEPARATOR,
 		"<<":        SEPARATOR,
@@ -76,6 +80,7 @@ var (
 		"self":      NAME,
 		"true":      BOOL,
 		"false":     BOOL,
+		"nil":       BOOL,
 		"fn":        FUNC,
 		"const":     VAR,
 		"var":       VAR,
@@ -119,7 +124,7 @@ const (
 var SepListLength = 32
 var FuncListLength = 1
 var VarListLength = 3
-var ProcessControlListLength = 14
+var ProcessControlListLength = 16
 var TypeListLength = 2
 var BoolListLength = 2
 var BuildListLength = 1

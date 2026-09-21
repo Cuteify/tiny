@@ -1,70 +1,100 @@
+// ===== Cuteify Memory Manager v3 — x86_64 平台原语 =====
+// load8/store8/load32/store32/load64/store64 已废弃
+// 改用类型化指针: var p: *u8 = ptr; *p (读) / *p = val (写)
+// 以下仅保留块操作：hdrSizeRaw/hdrSetSizeRaw/hdrFooter/hdrSetFooter
+// 空闲链表指针：freeNext/freeSetNext/freePrev/freeSetPrev
+
 build os("linux")
 build arch("x86_64")
 
 const ptrSize: uint = 8
 
-fn load8(addr: ptr) u8 {
-    build asm {
-        mov RAX, $addr
-        movzx EAX, byte[RAX]
-    }
+// ===== 加载/存储原语（已废弃，改用类型化指针）=====
+// fn load8(addr: ptr) u8 { ... }
+// fn load32(addr: ptr) u32 { ... }
+// fn load64(addr: ptr) u64 { ... }
+// fn store8(addr: ptr, val: u8) { ... }
+// fn store32(addr: ptr, val: u32) { ... }
+// fn store64(addr: ptr, val: u64) { ... }
+
+// ===== 块头/尾操作（用类型化指针实现）=====
+
+// hdrSizeRaw 读块头原始 size（含标志位）
+fn hdrSizeRaw(p: ptr) uint {
+    var _p: *ptr = p
+    ret *_p
 }
 
-fn load32(addr: ptr) u32 {
-    build asm {
-        mov RAX, $addr
-        mov EAX, [RAX]
-    }
+// hdrSetSizeRaw 写块头原始 size（含标志位）
+fn hdrSetSizeRaw(p: ptr, s: uint) {
+    var _p: *ptr = p
+    *_p = s
 }
 
-fn load64(addr: ptr) u64 {
-    build asm {
-        mov RAX, $addr
-        mov RAX, [RAX]
-    }
+// hdrFooter 读 footer（块尾部的 size 副本）
+fn hdrFooter(p: ptr, size: uint) uint {
+    var pureSize: uint = size & ~3
+    var _p: *ptr = p + pureSize - ptrSize
+    ret *_p
 }
 
-fn store8(addr: ptr, val: u8) {
-    build asm {
-        mov RAX, $addr
-        mov CL, $val
-        mov [RAX], CL
-    }
+// hdrSetFooter 写 footer
+fn hdrSetFooter(p: ptr, size: uint) {
+    var pureSize: uint = size & ~3
+    var _p: *ptr = p + pureSize - ptrSize
+    *_p = size
 }
 
-fn store32(addr: ptr, val: u32) {
-    build asm {
-        mov RAX, $addr
-        mov ECX, $val
-        mov [RAX], ECX
-    }
+// ===== RC/Flags 操作（仅用于 mallocRC 分配的块）=====
+// RC block 布局: [header] [RC at p-2*ptrSize] [flags at p-ptrSize] [data at p]
+// 用户指针 ptr 指向 data，RC 在 ptr-16，flags 在 ptr-8
+
+// rcLoad 读 RC 计数器（ptr-16）
+fn rcLoad(p: ptr) uint {
+    var _p: *ptr = p - 2 * ptrSize
+    ret *_p
 }
 
-fn store64(addr: ptr, val: u64) {
-    build asm {
-        mov RAX, $addr
-        mov RCX, $val
-        mov [RAX], RCX
-    }
-}
-// ---- 块头字段访问（x86_64 布局：next@p(8B)，size@p+ptrSize(8B)）----
-
-// hdrNext 读块头 next 字段
-fn hdrNext(p: ptr) ptr {
-    ret load64(p)
+// rcStore 写 RC 计数器
+fn rcStore(p: ptr, v: uint) {
+    var _p: *ptr = p - 2 * ptrSize
+    *_p = v
 }
 
-// hdrSetNext 写块头 next 字段
-fn hdrSetNext(p: ptr, v: ptr) {
-    store64(p, v)
+// flagLoad 读 flags 字段（ptr-8）
+fn flagLoad(p: ptr) uint {
+    var _p: *ptr = p - ptrSize
+    ret *_p
 }
 
-// hdrSizeOf 读块头 size 字段
-fn hdrSizeOf(p: ptr) uint {
-    ret load64(p + ptrSize)
+// flagStore 写 flags 字段
+fn flagStore(p: ptr, v: uint) {
+    var _p: *ptr = p - ptrSize
+    *_p = v
 }
 
-// hdrSetSize 写块头 size 字段
-fn hdrSetSize(p: ptr, s: uint) {
-    store64(p + ptrSize, s)
+// ===== 空闲链表指针操作 =====
+
+// freeNext 读空闲块链表 next 指针（数据区起始）
+fn freeNext(p: ptr) ptr {
+    var _p: *ptr = p + ptrSize
+    ret *_p
+}
+
+// freeSetNext 写空闲块链表 next 指针
+fn freeSetNext(p: ptr, v: ptr) {
+    var _p: *ptr = p + ptrSize
+    *_p = v
+}
+
+// freePrev 读空闲块链表 prev 指针（数据区 +ptrSize）
+fn freePrev(p: ptr) ptr {
+    var _p: *ptr = p + 2 * ptrSize
+    ret *_p
+}
+
+// freeSetPrev 写空闲块链表 prev 指针
+fn freeSetPrev(p: ptr, v: ptr) {
+    var _p: *ptr = p + 2 * ptrSize
+    *_p = v
 }

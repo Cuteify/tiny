@@ -1,0 +1,8 @@
+{
+    "name": "heap_test",
+    "version": "1.0.0",
+    "imports": {
+        "heap": "std:container/heap",
+        "memory": "std:memory"
+    }
+}

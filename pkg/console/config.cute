@@ -1,0 +1,130 @@
+// pkg/console/config.cute — 全局开关配置
+//
+// 控制台高级功能全局开关
+// 通过环境变量或函数调用控制
+
+// ===== 颜色模式常量 =====
+var COLOR_AUTO: int = 0
+var COLOR_16: int = 1
+var COLOR_256: int = 2
+var COLOR_TRUE: int = 3
+
+// ===== 鼠标/Sixel 模式常量 =====
+var FEATURE_AUTO: int = 0
+var FEATURE_ON: int = 1
+var FEATURE_OFF: int = -1
+
+// ===== 16 色前景色常量 =====
+var FG_BLACK: int = 0
+var FG_RED: int = 1
+var FG_GREEN: int = 2
+var FG_YELLOW: int = 3
+var FG_BLUE: int = 4
+var FG_MAGENTA: int = 5
+var FG_CYAN: int = 6
+var FG_WHITE: int = 7
+var FG_BRIGHT_BLACK: int = 8
+var FG_BRIGHT_RED: int = 9
+var FG_BRIGHT_GREEN: int = 10
+var FG_BRIGHT_YELLOW: int = 11
+var FG_BRIGHT_BLUE: int = 12
+var FG_BRIGHT_MAGENTA: int = 13
+var FG_BRIGHT_CYAN: int = 14
+var FG_BRIGHT_WHITE: int = 15
+
+// ===== 16 色背景色常量 =====
+var BG_BLACK: int = 0
+var BG_RED: int = 1
+var BG_GREEN: int = 2
+var BG_YELLOW: int = 3
+var BG_BLUE: int = 4
+var BG_MAGENTA: int = 5
+var BG_CYAN: int = 6
+var BG_WHITE: int = 7
+var BG_BRIGHT_BLACK: int = 8
+var BG_BRIGHT_RED: int = 9
+var BG_BRIGHT_GREEN: int = 10
+var BG_BRIGHT_YELLOW: int = 11
+var BG_BRIGHT_BLUE: int = 12
+var BG_BRIGHT_MAGENTA: int = 13
+var BG_BRIGHT_CYAN: int = 14
+var BG_BRIGHT_WHITE: int = 15
+
+// ===== 256 色常用色 =====
+var C256_RED: int = 196
+var C256_GREEN: int = 46
+var C256_BLUE: int = 21
+var C256_YELLOW: int = 226
+var C256_MAGENTA: int = 201
+var C256_CYAN: int = 51
+var C256_ORANGE: int = 208
+var C256_PINK: int = 213
+var C256_LIME: int = 154
+var C256_SKY: int = 117
+var C256_WHITE: int = 231
+var C256_GRAY: int = 243
+
+// 全局开关: 1=启用(默认), 0=禁用
+var gAdvancedEnabled: int = 1
+
+// 颜色模式: 0=自动检测(默认), 1=16色, 2=256色, 3=TrueColor
+var gColorMode: int = 0
+
+// 鼠标支持: 0=自动检测(默认), 1=启用, -1=禁用
+var gMouseMode: int = 0
+
+// Sixel支持: 0=自动检测(默认), 1=启用, -1=禁用
+var gSixelMode: int = 0
+
+// 设置高级模式开关
+fn setAdvancedMode(enabled int) {
+    gAdvancedEnabled = enabled
+}
+
+// 获取高级模式开关状态
+fn getAdvancedMode() int {
+    ret gAdvancedEnabled
+}
+
+// 设置颜色模式
+fn setColorMode(mode int) {
+    gColorMode = mode
+}
+
+// 获取当前颜色模式
+fn getColorMode() int {
+    ret gColorMode
+}
+
+// 设置鼠标模式
+fn setMouseMode(mode int) {
+    gMouseMode = mode
+}
+
+// 获取鼠标模式
+fn getMouseMode() int {
+    ret gMouseMode
+}
+
+// 设置Sixel模式
+fn setSixelMode(mode int) {
+    gSixelMode = mode
+}
+
+// 获取Sixel模式
+fn getSixelMode() int {
+    ret gSixelMode
+}
+
+// 禁用所有高级功能
+fn disableAll() {
+    gAdvancedEnabled = 0
+}
+
+// 启用所有高级功能
+fn enableAll() {
+    gAdvancedEnabled = 1
+    gColorMode = 0
+    gMouseMode = 0
+    gSixelMode = 0
+}

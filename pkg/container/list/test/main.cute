@@ -1,0 +1,85 @@
+fn main() int {
+    var failures: int = 0
+
+    // Create a new list
+    var l: *list.List = list.New()
+
+    // Test Len on empty list
+    if list.Len(l) != 0 {
+        failures = failures + 1
+    }
+
+    // PushBack some values using malloc'd storage
+    var vp1: ptr = memory.malloc(8)
+    var _p1: *ptr = vp1
+    *_p1 = unsafe.cast[ptr](10)
+    list.PushBack(l, vp1)
+
+    var vp2: ptr = memory.malloc(8)
+    var _p2: *ptr = vp2
+    *_p2 = unsafe.cast[ptr](20)
+    list.PushBack(l, vp2)
+
+    var vp3: ptr = memory.malloc(8)
+    var _p3: *ptr = vp3
+    *_p3 = unsafe.cast[ptr](30)
+    list.PushBack(l, vp3)
+
+    // Test Len
+    if list.Len(l) != 3 {
+        failures = failures + 1
+    }
+
+    // Test Front value
+    var front: *list.Element = list.Front(l)
+    var _p4: *ptr = front.value
+    var frontVal: u64 = *_p4
+    if frontVal != 10 {
+        failures = failures + 1
+    }
+
+    // Test Back value
+    var back: *list.Element = list.Back(l)
+    var _p5: *ptr = back.value
+    var backVal: u64 = *_p5
+    if backVal != 30 {
+        failures = failures + 1
+    }
+
+    // PushFront a value
+    var vp0: ptr = memory.malloc(8)
+    var _p6: *ptr = vp0
+    *_p6 = unsafe.cast[ptr](5)
+    list.PushFront(l, vp0)
+
+    // Len should be 4 now
+    if list.Len(l) != 4 {
+        failures = failures + 1
+    }
+
+    // Front should now be 5
+    var newFront: *list.Element = list.Front(l)
+    var _p7: *ptr = newFront.value
+    var newFrontVal: u64 = *_p7
+    if newFrontVal != 5 {
+        failures = failures + 1
+    }
+
+    // Remove front element
+    var removed: ptr = list.Remove(l, newFront)
+    var _p8: *ptr = removed
+    var removedVal: u64 = *_p8
+    if removedVal != 5 {
+        failures = failures + 1
+    }
+
+    // Len should be 3 after removal
+    if list.Len(l) != 3 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

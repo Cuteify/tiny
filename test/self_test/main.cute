@@ -1,0 +1,18 @@
+// Test: struct + method with self
+struct Dog {
+    name: string
+    age: int
+}
+
+fn Dog.stringify() string {
+    ret self.name
+}
+
+fn main() int {
+    var d: Dog
+    d.name = "Rex"
+    d.age = 5
+    result := d.stringify()
+    println(result)
+    ret 0
+}

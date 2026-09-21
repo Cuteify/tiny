@@ -1,0 +1,51 @@
+// pkg/thread/cond.cute — Condition variable using Linux futex
+
+fn condInit(c: ptr) {
+    var _p1: *uint = c
+    *_p1 = unsafe.cast[uint](0)
+}
+
+fn condWait(c: ptr, m: ptr) {
+    mutexUnlock(m)
+    // FUTEX_WAIT: rdi=addr, rsi=expected
+    build asm {
+        mov rdi, $c
+        mov esi, [rdi]
+        xor edx, edx
+        xor r10d, r10d
+        xor r8d, r8d
+        mov eax, 0
+        syscall
+    }
+    mutexLock(m)
+}
+
+fn condSignal(c: ptr) {
+    // Increment counter then FUTEX_WAKE 1
+    build asm {
+        mov rdi, $c
+        mov eax, 1
+        lock add dword [rdi], eax
+        mov eax, 1
+        mov esi, 1
+        xor edx, edx
+        xor r10d, r10d
+        xor r8d, r8d
+        syscall
+    }
+}
+
+fn condBroadcast(c: ptr) {
+    // Increment counter then FUTEX_WAKE INT_MAX
+    build asm {
+        mov rdi, $c
+        mov eax, 1
+        lock add dword [rdi], eax
+        mov eax, 1
+        mov esi, 2147483647
+        xor edx, edx
+        xor r10d, r10d
+        xor r8d, r8d
+        syscall
+    }
+}

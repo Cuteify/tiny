@@ -1,0 +1,221 @@
+// pkg/html/html.cute - HTML 转义/反转义工具
+// 平台无关实现，提供 HTML 实体的转义和反转义功能
+
+// escape 转义 HTML 特殊字符
+// < → &lt;  > → &gt;  & → &amp;  " → &quot;  ' → &#39;
+fn escape(s string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    // 最坏情况：每个字符都被转义为最多 6 字节
+    var buf: ptr = memory.malloc(sLen * 6 + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p1: *u8 = sPtr + i
+        var ch: u8 = *_p1
+        if ch == 60 {
+            // '<'
+            var _p2: *u8 = buf + outPos
+            *_p2 = unsafe.cast[u8](38)
+            var _p3: *u8 = buf + outPos + 1
+            *_p3 = unsafe.cast[u8](108)
+            var _p4: *u8 = buf + outPos + 2
+            *_p4 = unsafe.cast[u8](116)
+            var _p5: *u8 = buf + outPos + 3
+            *_p5 = unsafe.cast[u8](59)
+            outPos = outPos + 4
+        } else if ch == 62 {
+            // '>'
+            var _p6: *u8 = buf + outPos
+            *_p6 = unsafe.cast[u8](38)
+            var _p7: *u8 = buf + outPos + 1
+            *_p7 = unsafe.cast[u8](103)
+            var _p8: *u8 = buf + outPos + 2
+            *_p8 = unsafe.cast[u8](116)
+            var _p9: *u8 = buf + outPos + 3
+            *_p9 = unsafe.cast[u8](59)
+            outPos = outPos + 4
+        } else if ch == 38 {
+            // '&'
+            var _p10: *u8 = buf + outPos
+            *_p10 = unsafe.cast[u8](38)
+            var _p11: *u8 = buf + outPos + 1
+            *_p11 = unsafe.cast[u8](97)
+            var _p12: *u8 = buf + outPos + 2
+            *_p12 = unsafe.cast[u8](109)
+            var _p13: *u8 = buf + outPos + 3
+            *_p13 = unsafe.cast[u8](112)
+            var _p14: *u8 = buf + outPos + 4
+            *_p14 = unsafe.cast[u8](59)
+            outPos = outPos + 5
+        } else if ch == 34 {
+            // '"'
+            var _p15: *u8 = buf + outPos
+            *_p15 = unsafe.cast[u8](38)
+            var _p16: *u8 = buf + outPos + 1
+            *_p16 = unsafe.cast[u8](113)
+            var _p17: *u8 = buf + outPos + 2
+            *_p17 = unsafe.cast[u8](117)
+            var _p18: *u8 = buf + outPos + 3
+            *_p18 = unsafe.cast[u8](111)
+            var _p19: *u8 = buf + outPos + 4
+            *_p19 = unsafe.cast[u8](116)
+            var _p20: *u8 = buf + outPos + 5
+            *_p20 = unsafe.cast[u8](59)
+            outPos = outPos + 6
+        } else if ch == 39 {
+            // '\''
+            var _p21: *u8 = buf + outPos
+            *_p21 = unsafe.cast[u8](38)
+            var _p22: *u8 = buf + outPos + 1
+            *_p22 = unsafe.cast[u8](35)
+            var _p23: *u8 = buf + outPos + 2
+            *_p23 = unsafe.cast[u8](51)
+            var _p24: *u8 = buf + outPos + 3
+            *_p24 = unsafe.cast[u8](57)
+            var _p25: *u8 = buf + outPos + 4
+            *_p25 = unsafe.cast[u8](59)
+            outPos = outPos + 5
+        } else {
+            var _p26: *u8 = buf + outPos
+            *_p26 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+        }
+        i = i + 1
+    }
+    var _p27: *u8 = buf + outPos
+    *_p27 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}
+
+// unescape 反转义 HTML 实体
+// &lt; → <  &gt; → >  &amp; → &  &quot; → "  &#39; → '  &#60; → <  &#62; → >
+fn unescape(s string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p28: *u8 = sPtr + i
+        var ch: u8 = *_p28
+        if ch == 38 && i + 1 < sLen {
+            // '&' 开始的实体
+            // 检查 &lt;
+            var _p29: *u8 = sPtr + i + 1
+            var _p30: *u8 = sPtr + i + 2
+            var _p31: *u8 = sPtr + i + 3
+            if i + 3 < sLen && *_p29 == 108 && *_p30 == 116 && *_p31 == 59 {
+                var _p32: *u8 = buf + outPos
+                *_p32 = unsafe.cast[u8](60)
+                outPos = outPos + 1
+                i = i + 4
+            var _p33: *u8 = sPtr + i + 1
+            var _p34: *u8 = sPtr + i + 2
+            var _p35: *u8 = sPtr + i + 3
+            } else if i + 3 < sLen && *_p33 == 103 && *_p34 == 116 && *_p35 == 59 {
+                // &gt;
+                var _p36: *u8 = buf + outPos
+                *_p36 = unsafe.cast[u8](62)
+                outPos = outPos + 1
+                i = i + 4
+            var _p37: *u8 = sPtr + i + 1
+            var _p38: *u8 = sPtr + i + 2
+            var _p39: *u8 = sPtr + i + 3
+            var _p40: *u8 = sPtr + i + 4
+            } else if i + 4 < sLen && *_p37 == 97 && *_p38 == 109 && *_p39 == 112 && *_p40 == 59 {
+                // &amp;
+                var _p41: *u8 = buf + outPos
+                *_p41 = unsafe.cast[u8](38)
+                outPos = outPos + 1
+                i = i + 5
+            var _p42: *u8 = sPtr + i + 1
+            var _p43: *u8 = sPtr + i + 2
+            var _p44: *u8 = sPtr + i + 3
+            var _p45: *u8 = sPtr + i + 4
+            var _p46: *u8 = sPtr + i + 5
+            } else if i + 5 < sLen && *_p42 == 113 && *_p43 == 117 && *_p44 == 111 && *_p45 == 116 && *_p46 == 59 {
+                // &quot;
+                var _p47: *u8 = buf + outPos
+                *_p47 = unsafe.cast[u8](34)
+                outPos = outPos + 1
+                i = i + 6
+            var _p48: *u8 = sPtr + i + 1
+            var _p49: *u8 = sPtr + i + 2
+            var _p50: *u8 = sPtr + i + 3
+            var _p51: *u8 = sPtr + i + 4
+            } else if i + 4 < sLen && *_p48 == 35 && *_p49 == 51 && *_p50 == 57 && *_p51 == 59 {
+                // &#39;
+                var _p52: *u8 = buf + outPos
+                *_p52 = unsafe.cast[u8](39)
+                outPos = outPos + 1
+                i = i + 5
+            } else {
+                var _p53: *u8 = buf + outPos
+                *_p53 = unsafe.cast[u8](ch)
+                outPos = outPos + 1
+                i = i + 1
+            }
+        } else {
+            var _p54: *u8 = buf + outPos
+            *_p54 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+            i = i + 1
+        }
+    }
+    var _p55: *u8 = buf + outPos
+    *_p55 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}
+
+// escapeAll 转义所有非 ASCII 字符（值 > 127 的字节）为 &#xHH; 格式
+fn escapeAll(s string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    // 最坏情况：每个字节 8 字节 (&#xHH;)
+    var buf: ptr = memory.malloc(sLen * 8 + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p56: *u8 = sPtr + i
+        var ch: u8 = *_p56
+        if ch > 127 {
+            // &#xHH;
+            var _p57: *u8 = buf + outPos
+            *_p57 = unsafe.cast[u8](38)
+            var _p58: *u8 = buf + outPos + 1
+            *_p58 = unsafe.cast[u8](35)
+            var _p59: *u8 = buf + outPos + 2
+            *_p59 = unsafe.cast[u8](120)
+            var hi: u8 = ch >> 4
+            var lo: u8 = ch & 15
+            var hiChar: u8 = 48
+            if hi > 9 {
+                hiChar = 97 + hi - 10
+            } else {
+                hiChar = 48 + hi
+            }
+            var loChar: u8 = 48
+            if lo > 9 {
+                loChar = 97 + lo - 10
+            } else {
+                loChar = 48 + lo
+            }
+            var _p60: *u8 = buf + outPos + 3
+            *_p60 = unsafe.cast[u8](hiChar)
+            var _p61: *u8 = buf + outPos + 4
+            *_p61 = unsafe.cast[u8](loChar)
+            var _p62: *u8 = buf + outPos + 5
+            *_p62 = unsafe.cast[u8](59)
+            outPos = outPos + 6
+        } else {
+            var _p63: *u8 = buf + outPos
+            *_p63 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+        }
+        i = i + 1
+    }
+    var _p64: *u8 = buf + outPos
+    *_p64 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}

@@ -1,0 +1,75 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test 1: path.base
+    var b: string = path.base("/home/user/file.txt")
+    if !strings.eq(b, "file.txt") {
+        failures = failures + 1
+    }
+
+    // Test 2: path.dir
+    var d: string = path.dir("/home/user/file.txt")
+    if !strings.eq(d, "/home/user") {
+        failures = failures + 1
+    }
+
+    // Test 3: path.ext
+    var e: string = path.ext("file.txt")
+    if !strings.eq(e, ".txt") {
+        failures = failures + 1
+    }
+
+    // Test 4: path.clean
+    var c: string = path.clean("/home//user/../user/./file.txt")
+    // clean removes double slashes and processes . and ..
+    // Expected: /home/user/file.txt
+    if !strings.eq(c, "/home/user/file.txt") {
+        failures = failures + 1
+    }
+
+    // Test 5: path.isAbs (absolute)
+    var abs1: bool = path.isAbs("/home/user")
+    if !abs1 {
+        failures = failures + 1
+    }
+
+    // Test 6: path.isAbs (relative)
+    var abs2: bool = path.isAbs("relative/path")
+    if abs2 {
+        failures = failures + 1
+    }
+
+    // Test 7: path.split
+    var dirPart: string
+    var filePart: string
+    dirPart, filePart = path.split("/home/user/file.txt")
+    if !strings.eq(dirPart, "/home/user") {
+        failures = failures + 1
+    }
+    if !strings.eq(filePart, "file.txt") {
+        failures = failures + 1
+    }
+
+    // Test 8: path.match (true case)
+    var m1: bool = path.match("*.txt", "file.txt")
+    if !m1 {
+        failures = failures + 1
+    }
+
+    // Test 9: path.match (false case)
+    var m2: bool = path.match("*.txt", "file.go")
+    if m2 {
+        failures = failures + 1
+    }
+
+    // Test 10: path.separator
+    var sep: u8 = path.separator()
+    if sep != 47 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        ret 42
+    }
+    ret failures
+}

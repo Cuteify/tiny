@@ -1,0 +1,9 @@
+fn add (a int, b int) int {
+	ret a + b
+}
+
+fn main () int {
+	var f : fn(int, int) int = add
+	var result : int = f(3, 4)
+	ret result
+}

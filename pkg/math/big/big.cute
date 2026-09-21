@@ -1,0 +1,122 @@
+// pkg/math/big/big.cute - 任意精度整数/浮点占位包
+// TODO: 实现任意精度算术
+
+// Int 大整数结构体（占位）
+type Int struct {
+    sign: int      // 符号：1=正，-1=负，0=零
+    abs: []uint32  // 绝对值的 32 位块（小端序）
+}
+
+// Float 大浮点结构体（占位）
+type Float struct {
+    sign: int      // 符号
+    mantissa: []uint32  // 尾数
+    exponent: int  // 指数
+}
+
+// NewInt 从 int 创建大整数
+fn NewInt(x int) Int {
+    var r: Int
+    r.sign = 0
+    if x < 0 {
+        r.sign = -1
+    } else if x > 0 {
+        r.sign = 1
+    }
+    r.abs = []uint32{}
+    if x != 0 {
+        var v: uint = 0
+        if x < 0 {
+            v = strings.toU64(0 - x)
+        } else {
+            v = strings.toU64(x)
+        }
+        r.abs = append(r.abs, v & 0xFFFFFFFF)
+        if v > 0xFFFFFFFF {
+            r.abs = append(r.abs, v >> 32)
+        }
+    }
+    ret r
+}
+
+// NewFloat 从 f64 创建大浮点（占位实现）
+fn NewFloat(x f64) Float {
+    var r: Float
+    r.sign = 0
+    r.mantissa = []uint32{}
+    r.exponent = 0
+    // TODO: 实现 IEEE 754 解析
+    ret r
+}
+
+// Add 两个大整数相加（占位）
+fn Add(a Int, b Int) Int {
+    // TODO: 实现
+    ret a
+}
+
+// Sub 两个大整数相减（占位）
+fn Sub(a Int, b Int) Int {
+    // TODO: 实现
+    ret a
+}
+
+// Mul 两个大整数相乘（占位）
+fn Mul(a Int, b Int) Int {
+    // TODO: 实现
+    ret a
+}
+
+// Div 两个大整数相除（占位）
+fn Div(a Int, b Int) Int {
+    // TODO: 实现
+    ret a
+}
+
+// Mod 两个大整数取模（占位）
+fn Mod(a Int, b Int) Int {
+    // TODO: 实现
+    ret a
+}
+
+// Eq 判断两个大整数是否相等（占位）
+fn Eq(a Int, b Int) bool {
+    // TODO: 实现
+    ret true
+}
+
+// Cmp 比较两个大整数（占位）
+fn Cmp(a Int, b Int) int {
+    // TODO: 实现
+    ret 0
+}
+
+// String 将大整数转换为字符串（占位）
+fn String(x Int) string {
+    // TODO: 实现
+    ret "0"
+}
+
+// Bytes 将大整数转换为字节切片（占位）
+fn Bytes(x Int) []uint8 {
+    // TODO: 实现
+    ret []uint8{}
+}
+
+// SetBytes 从字节切片设置大整数（占位）
+fn SetBytes(buf []uint8) Int {
+    // TODO: 实现
+    ret NewInt(0)
+}
+
+// BitLen 返回大整数的位长度（占位）
+fn BitLen(x Int) int {
+    // TODO: 实现
+    ret 0
+}
+
+// GCD 返回两个大整数的最大公约数（占位）
+fn GCD(a Int, b Int) Int {
+    // TODO: 实现
+    ret NewInt(1)
+}

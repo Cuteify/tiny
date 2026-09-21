@@ -5,6 +5,8 @@ import (
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"cuteify/utils"
+	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
@@ -44,7 +46,12 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 		switch v.Define.Type {
 		case parser.FindTypeVar:
 			if vb, ok := v.Define.Value.(*parser.VarBlock); ok {
-				v.Offset = vb.Offset
+				// 多返回值引用：使用正确的偏移量索引
+				if len(vb.MultiNames) > 0 && v.MultiIndex >= 0 && len(vb.MultiOffsets) > v.MultiIndex {
+					v.Offset = vb.MultiOffsets[v.MultiIndex]
+				} else {
+					v.Offset = vb.Offset
+				}
 			}
 		case parser.FindTypeArg:
 			isDefineInArg = true
@@ -87,6 +94,9 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 		addr = "[rbp]"
 	} else {
 		addr = "[rbp+" + offsetStr + "]"
+	}
+	if v.Type == nil {
+		panic(fmt.Sprintf("GenVarAddr: nil type for var '%s' define=%v\n%s", v.Name.String(), v.Define, debug.Stack()))
 	}
 	sizePrefix := GetLenName(v.Type.Size())
 	return sizePrefix + addr

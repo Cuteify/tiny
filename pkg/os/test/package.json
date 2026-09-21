@@ -1,0 +1,10 @@
+{
+    "name": "os_test",
+    "version": "1.0.0",
+    "description": "os package tests",
+    "imports": {
+        "os": "std:os",
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

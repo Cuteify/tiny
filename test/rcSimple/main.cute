@@ -1,0 +1,145 @@
+build os("linux")
+
+var gTestNum: int = 0
+var gPassed: int = 0
+
+fn check(condition: int, testNum: int) {
+    gTestNum = gTestNum + 1
+    if condition != 0 {
+        gPassed = gPassed + 1
+    }
+}
+
+fn main() int {
+    memory.resetLeakTracker()
+
+    // T1: rcGet basic
+    var p1: ptr = memory.mallocRC(32)
+    var rc1: uint = memory.rcGet(p1)
+    var t1: int = 0
+    if rc1 == 1 {
+        t1 = 1
+    }
+    check(t1, 1)
+    if t1 == 0 { ret 10 }
+
+    // T2: rcInc/rcGet
+    memory.rcInc(p1)
+    var rc2: uint = memory.rcGet(p1)
+    var t2: int = 0
+    if rc2 == 2 {
+        t2 = 1
+    }
+    check(t2, 2)
+    if t2 == 0 { ret 20 }
+
+    // T3: rcDec brings back to 1
+    memory.rcDec(p1)
+    var rc3: uint = memory.rcGet(p1)
+    var t3: int = 0
+    if rc3 == 1 {
+        t3 = 1
+    }
+    check(t3, 3)
+    if t3 == 0 { ret 30 }
+    memory.rcDec(p1)
+
+    // T4: rcAdd/rcSub
+    var p4: ptr = memory.mallocRC(32)
+    memory.rcAdd(p4, 4)
+    var rc4: uint = memory.rcGet(p4)
+    var t4: int = 0
+    if rc4 == 5 {
+        t4 = 1
+    }
+    check(t4, 4)
+    if t4 == 0 { ret 40 }
+    memory.rcSub(p4, 3)
+    var rc4b: uint = memory.rcGet(p4)
+    var t4b: int = 0
+    if rc4b == 2 {
+        t4b = 1
+    }
+    check(t4b, 5)
+    if t4b == 0 { ret 50 }
+    memory.rcSub(p4, 2)
+
+    // T5: rcTryRelease
+    var p5: ptr = memory.mallocRC(32)
+    memory.rcInc(p5)
+    memory.rcInc(p5)
+    var rc5: uint = memory.rcGet(p5)
+    var t5a: int = 0
+    if rc5 == 3 {
+        t5a = 1
+    }
+    check(t5a, 6)
+    if t5a == 0 { ret 60 }
+    var freed5: int = 0
+    if memory.rcTryRelease(p5) {
+        freed5 = 1
+    }
+    var t5b: int = 0
+    if freed5 == 0 {
+        t5b = 1
+    }
+    check(t5b, 7)
+    if t5b == 0 { ret 70 }
+    memory.rcTryRelease(p5)
+    memory.rcDec(p5)
+
+    // T6: rcIsOne
+    var p6: ptr = memory.mallocRC(32)
+    var t6a: int = 0
+    if memory.rcIsOne(p6) {
+        t6a = 1
+    }
+    check(t6a, 8)
+    if t6a == 0 { ret 80 }
+    memory.rcInc(p6)
+    var t6b: int = 0
+    if memory.rcIsOne(p6) {
+        t6b = 1
+    }
+    var t6c: int = 0
+    if t6b == 0 {
+        t6c = 1
+    }
+    check(t6c, 9)
+    if t6c == 0 { ret 90 }
+    memory.rcDec(p6)
+    memory.rcDec(p6)
+
+    // T7: leak tracker balanced
+    var t7: int = 0
+    if memory.reportLeaks() == 0 {
+        t7 = 1
+    }
+    check(t7, 10)
+    if t7 == 0 { ret 100 }
+
+    // T8: intentional leak detection
+    memory.resetLeakTracker()
+    var leak1: ptr = memory.mallocRC(32)
+    var leak2: ptr = memory.mallocRC(32)
+    memory.rcDec(leak1)
+    var afterFree: uint = memory.reportLeaks()
+    var t8: int = 0
+    if afterFree == 1 {
+        t8 = 1
+    }
+    check(t8, 11)
+    if t8 == 0 { ret 110 }
+    memory.rcDec(leak2)
+
+    // T9: alloc/free balance
+    var allocs: uint = memory.reportAllocCount()
+    var frees: uint = memory.reportFreeCount()
+    var t9: int = 0
+    if allocs == frees {
+        t9 = 1
+    }
+    check(t9, 12)
+
+    ret gPassed
+}

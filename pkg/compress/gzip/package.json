@@ -1,0 +1,10 @@
+{
+    "name": "gzip",
+    "version": "1.0.0",
+    "description": "Gzip compression/decompression wrapper around flate",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "flate": "std:compress/flate"
+    }
+}

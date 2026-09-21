@@ -1,0 +1,91 @@
+fn add(a: int, b: int) int {
+    ret a + b
+}
+
+fn double(x: int) int {
+    ret x + x
+}
+
+fn applyTwice(f: int, x: int) int {
+    ret f + x
+}
+
+fn makeGreeter(name: string) string {
+    var greeting: string = "Hello, " + name + "!"
+    ret greeting
+}
+
+fn recursiveSum(n: int) int {
+    if n <= 0 {
+        ret 0
+    }
+    ret n + recursiveSum(n - 1)
+}
+
+fn fibonacci(n: int) int {
+    if n <= 1 {
+        ret n
+    }
+    ret fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn nestedCalls(a: int, b: int) int {
+    var x: int = add(double(a), b)
+    var y: int = add(x, applyTwice(x, b))
+    ret y
+}
+
+var globalCounter: int = 0
+
+fn mutateGlobal(val: int) {
+    globalCounter = val
+}
+
+fn stringChain(a: string, b: string, c: string) string {
+    var ab: string = a + b
+    var abc: string = ab + c
+    ret abc
+}
+
+fn ifBranch(x: int) int {
+    if x > 10 {
+        ret double(x)
+    }
+    ret add(x, 1)
+}
+
+fn forLoop(n: int) int {
+    var sum: int = 0
+    var i: int = 0
+    for ; i < n; {
+        sum = add(sum, i)
+        i = i + 1
+    }
+    ret sum
+}
+
+fn main() int {
+    var a: int = add(3, 4)
+    var b: int = double(a)
+    var c: int = nestedCalls(a, b)
+
+    var s1: string = makeGreeter("World")
+    var s2: string = stringChain("foo", "bar", "baz")
+
+    var sum10: int = recursiveSum(10)
+    var fib10: int = fibonacci(10)
+
+    mutateGlobal(42)
+
+    var branch: int = ifBranch(15)
+    var loopSum: int = forLoop(100)
+
+    var result: int = add(sum10, fib10)
+    result = add(result, branch)
+    result = add(result, loopSum)
+    result = add(result, c)
+
+    println(s1)
+    println(s2)
+    ret 0
+}

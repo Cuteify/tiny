@@ -1,0 +1,10 @@
+fn main() int {
+    var s: *[]int = slices.new[int](4)
+    slices.set[int](s, 0, 10)
+    slices.set[int](s, 1, 20)
+    slices.set[int](s, 2, 30)
+    var v: int = 0
+    slices.copyOut[int](s, -1, &v)
+    slices.free[int](s)
+    ret v
+}

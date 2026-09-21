@@ -76,32 +76,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content"><span class="tag tag-expr">root</span></span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="1">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">gbuf</span>
-    <span class="node-type">[]int</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="2">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">store</span>
-    <span class="node-detail">(x: []int)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="3">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">gbuf</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= x</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="4">
+  <span class="node-content collapsible" data-id="1">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
     <span class="node-name">main</span>
@@ -110,30 +85,216 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="5">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">loc</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= new( = 8)</span>
+  <span class="node-content" data-id="2">
+    <span class="tag tag-call">call</span>
+    <span class="node-name">print</span>
+    <span class="node-detail">(s = &#34;builtin: &#34;)</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="6">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">nil[loc][] = </span>
+  <span class="node-content" data-id="3">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">s</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= &#34;hello&#34;</span>
   </span>
 </li>
+<li class="node">
+  <span class="node-content collapsible" data-id="4">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(len( = s) != 5)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="5">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">1</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="6">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(cap( = s) != 5)</span>
+  </span>
+  <ul class="children">
 <li class="node">
   <span class="node-content" data-id="7">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">store</span>
-    <span class="node-detail">(x = loc)</span>
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">2</span>
   </span>
+</li>
+  </ul>
 </li>
 <li class="node">
   <span class="node-content" data-id="8">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">a</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= new( = 3,  = 8)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="9">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(len( = a) != 3)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="10">
     <span class="tag tag-return">ret</span>
-    <span class="node-detail">nil[gbuf]</span>
+    <span class="node-detail">3</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="11">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(cap( = a) != 8)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="12">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">4</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="13">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[a][] = </span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="14">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[a][] = </span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="15">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">nil[a][] = </span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="16">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">b</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= new( = 2,  = 2)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="17">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">n</span>
+    <span class="node-type">int</span>
+    <span class="node-detail">= copy( = b,  = a)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="18">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(n != 2)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="19">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">5</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="20">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(nil[b] != 10)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="21">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">6</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="22">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(nil[b] != 20)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="23">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">7</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="24">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">c</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= new( = 4)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="25">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(len( = c) != 4)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="26">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">8</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="27">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(cap( = c) != 4)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="28">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">9</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="29">
+    <span class="tag tag-call">call</span>
+    <span class="node-name">println</span>
+    <span class="node-detail">(s = &#34;ok&#34;)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="30">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">0</span>
   </span>
 </li>
   </ul>
@@ -141,7 +302,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">9 nodes · 2 functions · 3 variables</div>
+<div class="subtitle" style="margin-top:20px">31 nodes · 1 functions · 5 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{

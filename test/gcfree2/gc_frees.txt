@@ -1,0 +1,2 @@
+== useTemp (1 vars)
+  t [string] site=call:makeGreeting off=-1

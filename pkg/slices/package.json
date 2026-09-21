@@ -1,0 +1,6 @@
+{
+    "name": "slices",
+    "version": "1.0.0",
+    "description": "Go-style dynamic arrays: push/pop/get/set/len/cap/free",
+    "imports": {}
+}

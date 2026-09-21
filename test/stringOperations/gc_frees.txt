@@ -1,0 +1,4 @@
+== string_concat (3 vars)
+  s1 [string] site=expr off=-1
+  s2 [string] site=expr off=-1
+  s3 [string] site=string-concat off=-1

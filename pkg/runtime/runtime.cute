@@ -1,0 +1,17 @@
+// pkg/runtime/runtime.cute - 运行时信息包
+// 平台无关实现
+
+// NumCPU 返回可用 CPU 核心数（简化：返回 1）
+fn NumCPU() int {
+    ret 1
+}
+
+// Version 返回 Cuteify 版本号
+fn Version() string {
+    ret "0.1.0"
+}
+
+// Compiler 返回编译器名称
+fn Compiler() string {
+    ret "cuteify"
+}

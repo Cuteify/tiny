@@ -1,0 +1,25 @@
+== buildStr (0 vars)
+  s [string] scope=1
+== deepAlloc1 (1 vars)
+  u1 [unknown] site=call:makeUser off=-1
+== deepAlloc2 (1 vars)
+  u1 [unknown] site=call:makeUser off=-1
+== main (14 vars)
+  b1 [unknown] site=call:branchPick off=-1
+  b2 [unknown] site=call:branchPick off=-1
+  b3 [unknown] site=call:branchPick off=-1
+  b4 [unknown] site=call:branchPick off=-1
+  big [string] site=call:buildStr off=-1
+  c1 [unknown] site=call:branchPick off=-1
+  c2 [unknown] site=call:branchPick off=-1
+  deep [unknown] site=call:deepAlloc1 off=-1
+  s1 [string] site=call:buildStr off=-1
+  s2 [string] site=call:buildStr off=-1
+  s3 [string] site=call:buildStr off=-1
+  u1 [unknown] site=call:makeUser off=-1
+  u2 [unknown] site=call:makeUser off=-1
+  u3 [unknown] site=call:makeUser off=-1
+  -- block frees --
+  head [unknown] scope=1
+  tmp [unknown] scope=1
+  bigTree [unknown] scope=1

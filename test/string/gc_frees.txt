@@ -1,0 +1,15 @@
+== main (12 vars)
+  chinese [string] site=expr off=-1
+  concat1 [string] site=call:stringConcat off=-1
+  concat2 [string] site=call:stringConcat off=-1
+  concat3 [string] site=call:stringConcat off=-1
+  empty [string] site=expr off=-1
+  long [string] site=expr off=-1
+  normal [string] site=expr off=-1
+  repeat1 [string] site=call:stringRepeat off=-1
+  repeat2 [string] site=call:stringRepeat off=-1
+  repeat3 [string] site=call:stringRepeat off=-1
+  single [string] site=expr off=-1
+  special [string] site=expr off=-1
+== stringRepeat (0 vars)
+  result [string] scope=1

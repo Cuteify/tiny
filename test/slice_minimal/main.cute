@@ -1,0 +1,5 @@
+fn main() int {
+    var s: *slices.IntSlice = slices.newIntSlice(4)
+    console.println("ok")
+    ret 0
+}

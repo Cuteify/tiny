@@ -116,6 +116,10 @@ type FnSummary struct {
 	// 此类函数禁用自动释放优化（保守门槛，防止 use-after-free）。
 	HasGlobalOwnStore bool `json:"hasGlobalOwnStore,omitempty"`
 
+	// HasHeapAllocs 函数体内存在堆分配（RetOwned 调用 / 字符串拼接 / new / make）。
+	// 无堆分配的函数可直接跳过 LLR 分析和出口释放计划。
+	HasHeapAllocs bool `json:"hasHeapAllocs,omitempty"`
+
 	Sorted bool `json:"-"` // Params 是否已按 Index 排序
 }
 

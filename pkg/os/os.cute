@@ -1,0 +1,61 @@
+// pkg/os/os.cute - 操作系统库：进程控制、路径、错误检查
+// 平台无关实现，底层复用 std:syscall
+
+// 标准文件描述符
+const STDOUT: i32 = 1
+const STDERR: i32 = 2
+const STDIN: i32 = 0
+
+// exit 终止进程
+fn exit(code: i32) {
+    syscall.exit(code)
+}
+
+// getcwd 获取当前工作目录
+fn getcwd() string {
+    var buf: ptr = memory.malloc(4096)
+    var result: ptr = syscall.getcwd(buf, 4096)
+    // getcwd 失败返回 0
+    if result == 0 {
+        memory.free(buf)
+        ret ""
+    }
+    // 计算长度
+    var len: uint = 0
+    var _p1: *u8 = result + len
+    for ; *_p1 != 0; {
+        len = len + 1
+    }
+    ret strings.makeString(result, len, len)
+}
+
+// Linux errno 值（syscall 返回 -errno）
+const ENOENT: int = 2
+const EACCES: int = 13
+const EEXIST: int = 17
+const ENOTDIR: int = 20
+
+// errnoOf 从 syscall 返回值提取 errno（正数）
+fn errnoOf(ret: int) int {
+    if ret >= 0 {
+        ret 0
+    }
+    // -ret
+    var e: int = 0 - ret
+    ret e
+}
+
+// isExist 判断错误码是否表示文件已存在 (EEXIST)
+fn isExist(err int) bool {
+    ret err == EEXIST
+}
+
+// isNotExist 判断错误码是否表示文件不存在 (ENOENT)
+fn isNotExist(err int) bool {
+    ret err == ENOENT
+}
+
+// isPermission 判断错误码是否表示权限不足 (EACCES)
+fn isPermission(err int) bool {
+    ret err == EACCES
+}

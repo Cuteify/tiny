@@ -1,0 +1,17 @@
+// test/esc_test/main.cute
+
+fn main() int {
+    var buf: ptr = memory.malloc(4)
+    var _p1: *u8 = buf
+    *_p1 = unsafe.cast[u8](27)
+    var _p2: *u8 = buf + 1
+    *_p2 = unsafe.cast[u8](91)
+    var _p3: *u8 = buf + 2
+    *_p3 = unsafe.cast[u8](51)
+    var _p4: *u8 = buf + 3
+    *_p4 = unsafe.cast[u8](49)
+    syscall.write(1, buf, 4)
+    syscall.write(1, buf, 0)
+    memory.free(buf)
+    ret 0
+}

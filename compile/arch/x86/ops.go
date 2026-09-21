@@ -138,6 +138,26 @@ func (a *x86Ops) InstUnary(op, reg string) string {
 	}
 }
 
+// lo8 返回寄存器名的低8位寄存器名（setXX/movzx 需要）
+func lo8(name string) string {
+	switch strings.ToUpper(name) {
+	case "EAX":
+		return "al"
+	case "EBX":
+		return "bl"
+	case "ECX":
+		return "cl"
+	case "EDX":
+		return "dl"
+	case "ESI":
+		return "sil"
+	case "EDI":
+		return "dil"
+	default:
+		return "al"
+	}
+}
+
 // InstBinary 生成二元运算指令。
 // dst 可以是寄存器或内存地址（如 DWORD[ebp-8]）。
 // 除法/取模通过 push 除数到栈上避免寄存器冲突（EAX/EDX 被 cdq 占用）。
@@ -214,6 +234,24 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 			return code
 		}
 		return utils.Format("sar " + dst + ", " + src)
+	case "==", "!=", "<", ">", "<=", ">=":
+		code := utils.Format("cmp " + dst + ", " + src)
+		switch op {
+		case "==":
+			code += utils.Format("sete " + lo8(dst))
+		case "!=":
+			code += utils.Format("setne " + lo8(dst))
+		case "<":
+			code += utils.Format("setl " + lo8(dst))
+		case ">":
+			code += utils.Format("setg " + lo8(dst))
+		case "<=":
+			code += utils.Format("setle " + lo8(dst))
+		case ">=":
+			code += utils.Format("setge " + lo8(dst))
+		}
+		code += utils.Format("movzx " + dst + ", " + lo8(dst))
+		return code
 	default:
 		return ""
 	}
@@ -236,12 +274,61 @@ func (a *x86Ops) VarDecl(varBlock *parser.VarBlock) string {
 	if varBlock.Value == nil {
 		return exppkg.New(a.ctx).ZeroVar(varBlock)
 	}
+	// Check if this is an interface assignment (boxing required)
+	if _, isIface := varBlock.Type.(*typeSys.InterfaceType); isIface {
+		return exppkg.New(a.ctx).BoxInterface(varBlock)
+	}
+	// 函数指针赋值：将函数名地址存入变量
+	if ft, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
+		if varBlock.Value.Var != nil && varBlock.Value.Var.Type != nil {
+			// 变量引用：加载变量地址
+			addr := genVarAddr(a.ctx, varBlock.Value.Var)
+			varAddr := genVarAddr(a.ctx, varBlock)
+			return utils.Format("lea eax, " + addr + "; 函数指针地址\n") +
+				utils.Format("mov dword " + varAddr + ", eax; 设置函数指针变量" + varBlock.Name.String())
+		}
+		// 函数名引用：直接加载函数地址
+		if varBlock.Value.Var != nil {
+			fnName := formatFuncNameRaw(varBlock.Value.Var.Name.NASM(), len(ft.Args))
+			varAddr := genVarAddr(a.ctx, varBlock)
+			return utils.Format("mov dword " + varAddr + ", " + fnName + "; 设置函数指针变量" + varBlock.Name.String())
+		}
+	}
 	return exppkg.New(a.ctx).Assign(varBlock)
 }
 
 // VarAddr 变量地址
 func (a *x86Ops) VarAddr(v *parser.VarBlock) string {
 	return genVarAddr(a.ctx, v)
+}
+
+// MultiVarDecl 多返回值解构（a, b := foo()）- x86 版本
+func (a *x86Ops) MultiVarDecl(varBlock *parser.VarBlock) string {
+	if varBlock.Value == nil || len(varBlock.MultiNames) == 0 {
+		return ""
+	}
+
+	// 编译函数调用，结果在 EAX（第一个返回值）和 EDX（第二个返回值）
+	code := a.exp(varBlock.Value, "", "multi-return call")
+
+	for i, name := range varBlock.MultiNames {
+		offset := varBlock.MultiOffsets[i]
+		addr := a.FormatAddr(offset)
+		ln := a.LengthName(a.PointerSize())
+
+		switch i {
+		case 0:
+			// 第一个返回值在 EAX
+			code += utils.Format("mov " + addr + ", " + ln + " EAX; multi-return: " + name.First())
+		case 1:
+			// 第二个返回值在 EDX
+			code += utils.Format("mov " + addr + ", " + ln + " EDX; multi-return: " + name.First())
+		default:
+			code += utils.Format("; TODO: third+ return value not yet supported")
+		}
+	}
+
+	return code
 }
 
 // ForBegin 生成 for 循环起始代码
@@ -403,6 +490,13 @@ func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
 
 			code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
 
+			// 判断是否为无符号类型比较
+			isUnsigned := false
+			if cond.Left != nil && cond.Left.Type != nil {
+				isUnsigned = typeSys.CheckKind(cond.Left.Type, "uint")
+			} else if cond.Right != nil && cond.Right.Type != nil {
+				isUnsigned = typeSys.CheckKind(cond.Right.Type, "uint")
+			}
 			var jumpOp string
 			switch cond.Separator {
 			case "==":
@@ -410,13 +504,29 @@ func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
 			case "!=":
 				jumpOp = "je"
 			case "<":
-				jumpOp = "jge"
+				if isUnsigned {
+					jumpOp = "jnb"
+				} else {
+					jumpOp = "jge"
+				}
 			case ">":
-				jumpOp = "jle"
+				if isUnsigned {
+					jumpOp = "jbe"
+				} else {
+					jumpOp = "jle"
+				}
 			case "<=":
-				jumpOp = "jg"
+				if isUnsigned {
+					jumpOp = "jnbe"
+				} else {
+					jumpOp = "jg"
+				}
 			case ">=":
-				jumpOp = "jl"
+				if isUnsigned {
+					jumpOp = "jb"
+				} else {
+					jumpOp = "jl"
+				}
 			}
 			code += utils.Format(jumpOp + " " + jumpLabel)
 			break
@@ -455,8 +565,16 @@ func (a *x86Ops) GenerateStartEntry() string {
 	return code
 }
 
-// formatFuncName 生成汇编函数名（非 main 函数附加参数个数）
-func formatFuncName(name string, argsLen int) string {
+// formatFuncName 生成汇编函数名（非 main 函数使用 MangledName）
+func formatFuncName(fb *parser.FuncBlock) string {
+	if fb.Name.NASM() == "main" {
+		return "main"
+	}
+	return fb.MangledName()
+}
+
+// formatFuncNameRaw 为函数指针间接调用生成汇编函数名（无 FuncBlock 时使用旧 scheme）
+func formatFuncNameRaw(name string, argsLen int) string {
 	if name != "main" {
 		name = name + strconv.Itoa(argsLen)
 	}
@@ -538,7 +656,7 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 
 // epilogue 生成函数后序公共返回点
 func (a *x86Ops) epilogue(fn *parser.FuncBlock, stdcallCleanup bool) string {
-	funcName := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
 
 	// 清理局部变量栈空间
@@ -580,6 +698,14 @@ func (a *x86Ops) epilogue(fn *parser.FuncBlock, stdcallCleanup bool) string {
 func (a *x86Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 	if ret == nil || len(ret.Value) == 0 {
 		return ""
+	}
+	// 多返回值：将值放入 EAX 和 EDX
+	if len(ret.Value) == 2 {
+		// 第一个返回值放入 EAX
+		code += a.exp(ret.Value[0], "EAX", "return值存入EAX")
+		// 第二个返回值放入 EDX
+		code += a.exp(ret.Value[1], "EDX", "return值存入EDX")
+		return code
 	}
 	// 大值（容器 3 槽 / 结构体多槽）返回值：装载到本帧返回槽，再拷到隐藏参数（[ebp+8]）指向的调用者返回槽
 	if ret.Value[0].Type != nil && arch.FuncReturnsLarge(a.ctx.CurrentFunc) {
@@ -625,7 +751,7 @@ func (a *x86Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 
 // returnJump 生成跳转到公共返回点的代码
 func (a *x86Ops) returnJump() string {
-	funcName := formatFuncName(a.ctx.CurrentFunc.Name.NASM(), len(a.ctx.CurrentFunc.Args))
+	funcName := formatFuncName(a.ctx.CurrentFunc)
 	return utils.Format("jmp func_end_" + funcName + "; 跳转到公共返回点")
 }
 
@@ -642,11 +768,30 @@ func (a *x86Ops) exp(exp *parser.Expression, result, desc string) string {
 func callArgsSize(call *parser.CallBlock) int {
 	argSize := 0
 	for _, arg := range call.Args {
-		if arg != nil && arg.Type != nil {
-			argSize += arg.Type.Size()
+		if arg == nil || arg.Type == nil {
+			continue
 		}
+		sz := arg.Type.Size()
+		// 泛型函数调用：形参类型为 TypeParam（Size()=-1），
+		// 用实参的实际类型大小替代
+		if sz <= 0 && arg.Value != nil && arg.Value.Type != nil {
+			sz = arg.Value.Type.Size()
+		}
+		if sz <= 0 {
+			sz = 4 // 安全回退：32 位模式指针/int 默认 4 字节
+		}
+		// x86 cdecl 参数按 4 字节对齐压栈
+		if sz < 4 {
+			sz = 4
+		}
+		argSize += sz
 	}
-	if call.ThisVar != nil {
+	// 变参参数：slice 结构 {ptr, len, cap} = 12 字节
+	if call.IsVariadic {
+		argSize += 12
+	}
+	// 函数指针间接调用不压 this 指针
+	if call.ThisVar != nil && !(call.ThisVar.Type != nil && call.ThisVar.Type.Kind() == "func") {
 		argSize += 4 // this 指针
 	}
 	return argSize

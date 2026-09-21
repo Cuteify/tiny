@@ -1,0 +1,71 @@
+// pkg/maps/maps.cute - HashMap 工具函数
+// 平台无关实现，依赖 hashmap 包
+
+// keys 返回 HashMap 中所有键的切片
+// 返回值: ptr (字符串数组指针), count (元素数量)
+fn keys(m *hashmap.HashMap) ptr {
+    var count: uint = hashmap.size(m)
+    if count == 0 {
+        ret 0
+    }
+    var result: ptr = memory.malloc(count * 8)
+    // 遍历所有桶收集键
+    var bucketCount: uint = m.cap
+    var idx: uint = 0
+    var pos: uint = 0
+    for ; idx < bucketCount; {
+        var _p1: *ptr = m.buckets + idx * 8
+        var entry: ptr = *_p1
+        var e: ptr = entry
+        for ; e != 0; {
+            // hashEntry 结构: key(string,8bytes) + value(ptr,8bytes) + next(ptr,8bytes)
+            var _p2: *ptr = e
+            var key: string = *_p2
+            var _p3: *ptr = result + pos * 8
+            *_p3 = unsafe.cast[ptr](key)
+            pos = pos + 1
+            var _p4: *ptr = e + 16
+            e = *_p4 // next
+        }
+        idx = idx + 1
+    }
+    ret result
+}
+
+// values 返回 HashMap 中所有值的切片
+fn values(m *hashmap.HashMap) ptr {
+    var count: uint = hashmap.size(m)
+    if count == 0 {
+        ret 0
+    }
+    var result: ptr = memory.malloc(count * 8)
+    var bucketCount: uint = m.cap
+    var idx: uint = 0
+    var pos: uint = 0
+    for ; idx < bucketCount; {
+        var _p5: *ptr = m.buckets + idx * 8
+        var entry: ptr = *_p5
+        var e: ptr = entry
+        for ; e != 0; {
+            var _p6: *ptr = e + 8
+            var val: ptr = *_p6 // value
+            var _p7: *ptr = result + pos * 8
+            *_p7 = unsafe.cast[ptr](val)
+            pos = pos + 1
+            var _p8: *ptr = e + 16
+            e = *_p8 // next
+        }
+        idx = idx + 1
+    }
+    ret result
+}
+
+// hasKey 检查 HashMap 中是否存在指定键
+fn hasKey(m *hashmap.HashMap, key string) bool {
+    ret hashmap.has(m, key)
+}
+
+// len 返回 HashMap 中的元素数量
+fn len(m *hashmap.HashMap) uint {
+    ret hashmap.size(m)
+}

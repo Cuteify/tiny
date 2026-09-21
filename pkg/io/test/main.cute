@@ -1,0 +1,94 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test 1: NewReader from string, read contents
+    var r: *io.Reader = io.NewReader("hello world")
+    var buf: ptr = memory.malloc(16)
+    var n: int = io.Read(r, buf, 5)
+    if n != 5 {
+        failures = failures + 1
+    }
+    // Check first 5 bytes are "hello"
+    var _p1: *u8 = buf
+    if *_p1 != 104 {
+        failures = failures + 1
+    }
+    var _p2: *u8 = buf + 1
+    if *_p2 != 101 {
+        failures = failures + 1
+    }
+    var _p3: *u8 = buf + 2
+    if *_p3 != 108 {
+        failures = failures + 1
+    }
+    var _p4: *u8 = buf + 3
+    if *_p4 != 108 {
+        failures = failures + 1
+    }
+    var _p5: *u8 = buf + 4
+    if *_p5 != 111 {
+        failures = failures + 1
+    }
+
+    // Test 2: ReadAll from reader
+    var r2: *io.Reader = io.NewReader("abc")
+    var all: string = io.ReadAll(r2)
+    if !strings.eq(all, "abc") {
+        failures = failures + 1
+    }
+
+    // Test 3: NewWriter, write data, check String()
+    var w: *io.Writer = io.NewWriter()
+    var src: ptr = strings.toCstring("test")
+    io.Write(w, src, 4)
+    var result: string = io.String(w)
+    if !strings.eq(result, "test") {
+        failures = failures + 1
+    }
+
+    // Test 4: WriteString
+    var w2: *io.Writer = io.NewWriter()
+    io.WriteString(w2, "hello")
+    var result2: string = io.String(w2)
+    if !strings.eq(result2, "hello") {
+        failures = failures + 1
+    }
+
+    // Test 5: Copy from Reader to Writer
+    var r3: *io.Reader = io.NewReader("copy me")
+    var w3: *io.Writer = io.NewWriter()
+    var copied: int = io.Copy(w3, r3)
+    if copied != 7 {
+        failures = failures + 1
+    }
+    var result3: string = io.String(w3)
+    if !strings.eq(result3, "copy me") {
+        failures = failures + 1
+    }
+
+    // Test 6: LimitReader
+    var r4: *io.Reader = io.NewReader("abcdefgh")
+    var lr: *io.Reader = io.LimitReader(r4, 3)
+    var lbuf: ptr = memory.malloc(8)
+    var ln: int = io.Read(lr, lbuf, 8)
+    if ln != 3 {
+        failures = failures + 1
+    }
+    var _p6: *u8 = lbuf
+    if *_p6 != 97 {
+        failures = failures + 1
+    }
+    var _p7: *u8 = lbuf + 1
+    if *_p7 != 98 {
+        failures = failures + 1
+    }
+    var _p8: *u8 = lbuf + 2
+    if *_p8 != 99 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        ret 42
+    }
+    ret failures
+}

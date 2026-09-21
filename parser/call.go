@@ -13,6 +13,7 @@ type CallBlock struct {
 	Node    *Node
 	ThisVar *VarBlock
 	NewType typeSys.Type // new(T) 的目标类型（内建堆对象创建）
+	IsRC    bool         // 是否为 RC（引用计数）调用
 }
 
 

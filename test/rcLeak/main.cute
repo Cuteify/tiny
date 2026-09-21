@@ -1,0 +1,169 @@
+build os("linux")
+
+type Node struct {
+    value: int
+    left: *Node
+    right: *Node
+}
+
+var gTestNum: int = 0
+var gPassed: int = 0
+
+fn check(condition: bool, testNum: int) {
+    gTestNum = gTestNum + 1
+    if condition {
+        gPassed = gPassed + 1
+    }
+}
+
+fn newLeaf(val: int) *Node {
+    var n: *Node = newRC(Node)
+    n.value = val
+    n.left = nil
+    n.right = nil
+    ret n
+}
+
+fn buildTree() *Node {
+    var root: *Node = newLeaf(100)
+    var left: *Node = newLeaf(200)
+    var right: *Node = newLeaf(300)
+    memory.rcInc(left)
+    memory.rcInc(right)
+    root.left = left
+    root.right = right
+    memory.rcDec(left)
+    memory.rcDec(right)
+    ret root
+}
+
+fn subtreeSum(node: *Node) int {
+    if node == nil {
+        ret 0
+    }
+    memory.rcInc(node)
+    var s: int = node.value
+    var ls: int = subtreeSum(node.left)
+    var rs: int = subtreeSum(node.right)
+    memory.rcDec(node)
+    ret s + ls + rs
+}
+
+fn countNodes(node: *Node) int {
+    if node == nil {
+        ret 0
+    }
+    memory.rcInc(node)
+    var c: int = 1 + countNodes(node.left) + countNodes(node.right)
+    memory.rcDec(node)
+    ret c
+}
+
+fn treeHeight(node: *Node) int {
+    if node == nil {
+        ret 0
+    }
+    memory.rcInc(node)
+    var lh: int = treeHeight(node.left)
+    var rh: int = treeHeight(node.right)
+    memory.rcDec(node)
+    if lh > rh {
+        ret lh + 1
+    }
+    ret rh + 1
+}
+
+fn deepClone(node: *Node) *Node {
+    if node == nil {
+        ret nil
+    }
+    memory.rcInc(node)
+    var c: *Node = newLeaf(node.value)
+    var cl: *Node = deepClone(node.left)
+    var cr: *Node = deepClone(node.right)
+    memory.rcInc(c)
+    memory.rcInc(cl)
+    memory.rcInc(cr)
+    c.left = cl
+    c.right = cr
+    memory.rcDec(c)
+    memory.rcDec(cl)
+    memory.rcDec(cr)
+    memory.rcDec(node)
+    ret c
+}
+
+fn findNode(node: *Node, target: int) *Node {
+    if node == nil {
+        ret nil
+    }
+    memory.rcInc(node)
+    if node.value == target {
+        memory.rcDec(node)
+        ret node
+    }
+    var found: *Node = findNode(node.left, target)
+    if found != nil {
+        memory.rcDec(node)
+        ret found
+    }
+    found = findNode(node.right, target)
+    memory.rcDec(node)
+    ret found
+}
+
+fn swapChildren(node: *Node) {
+    if node == nil {
+        ret
+    }
+    memory.rcInc(node)
+    var tmp: *Node = node.left
+    node.left = node.right
+    node.right = tmp
+    memory.rcDec(node)
+}
+
+fn main() int {
+    memory.resetLeakTracker()
+
+    var tree: *Node = buildTree()
+    check(tree.value == 100, 1)
+    check(tree.left.value == 200, 2)
+    check(tree.right.value == 300, 3)
+
+    var sum: int = subtreeSum(tree)
+    check(sum == 600, 4)
+
+    var cnt: int = countNodes(tree)
+    check(cnt == 3, 5)
+
+    var h: int = treeHeight(tree)
+    check(h == 2, 6)
+
+    var found: *Node = findNode(tree, 300)
+    check(found != nil, 7)
+    check(found.value == 300, 8)
+
+    var notfound: *Node = findNode(tree, 999)
+    check(notfound == nil, 9)
+
+    swapChildren(tree)
+    check(tree.left.value == 300, 10)
+    check(tree.right.value == 200, 11)
+    swapChildren(tree)
+
+    var clone: *Node = deepClone(tree)
+    check(clone.value == 100, 12)
+    check(clone.left.value == 200, 13)
+    check(clone.right.value == 300, 14)
+
+    var cloneSum: int = subtreeSum(clone)
+    check(cloneSum == 600, 15)
+
+    var leaks: uint = memory.reportLeaks()
+    var allocs: uint = memory.reportAllocCount()
+    var frees: uint = memory.reportFreeCount()
+
+    var result: int = gPassed * 65536 + gTestNum * 256 + leaks.toInt()
+    ret result
+}

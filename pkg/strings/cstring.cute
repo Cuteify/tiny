@@ -4,7 +4,8 @@
 // strlen 返回 NUL 结尾字符串长度（不含结尾 NUL）
 fn strlen(p: ptr) uint {
     var n: uint = 0
-    for ; memory.load8(p + n) != 0; {
+    var _p1: *u8 = p + n
+    for ; *_p1 != 0; {
         n = n + 1
     }
     ret n
@@ -13,11 +14,15 @@ fn strlen(p: ptr) uint {
 // strcpy 拷贝 NUL 结尾字符串（含结尾 NUL）到 dest，返回 dest
 fn strcpy(dest: ptr, src: ptr) ptr {
     var i: uint = 0
-    for ; memory.load8(src + i) != 0; {
-        memory.store8(dest + i, memory.load8(src + i))
+    var _p2: *u8 = src + i
+    for ; *_p2 != 0; {
+        var _p3: *u8 = dest + i
+        var _p4: *u8 = src + i
+        *_p3 = unsafe.cast[u8](*_p4)
         i = i + 1
     }
-    memory.store8(dest + i, 0)
+    var _p5: *u8 = dest + i
+    *_p5 = unsafe.cast[u8](0)
     ret dest
 }
 
@@ -25,8 +30,10 @@ fn strcpy(dest: ptr, src: ptr) ptr {
 fn strcmp(s1: ptr, s2: ptr) i32 {
     var i: uint = 0
     for ; ; {
-        var a: u8 = memory.load8(s1 + i)
-        var b: u8 = memory.load8(s2 + i)
+        var _p6: *u8 = s1 + i
+        var a: u8 = *_p6
+        var _p7: *u8 = s2 + i
+        var b: u8 = *_p7
         if a != b {
             if a < b {
                 ret 0 - 1

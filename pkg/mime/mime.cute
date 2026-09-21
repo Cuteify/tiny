@@ -1,0 +1,242 @@
+// pkg/mime/mime.cute - MIME 类型检测
+// 平台无关实现，基于文件扩展名返回 MIME 类型
+
+// mimeEntry 扩展名-MIME 类型映射条目
+type mimeEntry struct {
+    ext: string
+    mime: string
+}
+
+// mimeTable 存储已知的扩展名-MIME 类型映射
+// 使用静态数组，编译时已知
+var mimeTable: ptr = 0
+var mimeTableLen: int = 0
+var mimeTableReady: bool = false
+
+// initTable 初始化 MIME 类型映射表
+fn initTable() {
+    if mimeTableReady {
+        ret
+    }
+    var count: int = 32
+    mimeTable = memory.malloc(strings.toU64(count * 16))
+    mimeTableLen = 0
+
+    // html
+    setEntry(mimeTableLen, ".html", "text/html")
+    mimeTableLen = mimeTableLen + 1
+    // htm
+    setEntry(mimeTableLen, ".htm", "text/html")
+    mimeTableLen = mimeTableLen + 1
+    // css
+    setEntry(mimeTableLen, ".css", "text/css")
+    mimeTableLen = mimeTableLen + 1
+    // js
+    setEntry(mimeTableLen, ".js", "application/javascript")
+    mimeTableLen = mimeTableLen + 1
+    // json
+    setEntry(mimeTableLen, ".json", "application/json")
+    mimeTableLen = mimeTableLen + 1
+    // xml
+    setEntry(mimeTableLen, ".xml", "application/xml")
+    mimeTableLen = mimeTableLen + 1
+    // txt
+    setEntry(mimeTableLen, ".txt", "text/plain")
+    mimeTableLen = mimeTableLen + 1
+    // png
+    setEntry(mimeTableLen, ".png", "image/png")
+    mimeTableLen = mimeTableLen + 1
+    // jpg
+    setEntry(mimeTableLen, ".jpg", "image/jpeg")
+    mimeTableLen = mimeTableLen + 1
+    // jpeg
+    setEntry(mimeTableLen, ".jpeg", "image/jpeg")
+    mimeTableLen = mimeTableLen + 1
+    // gif
+    setEntry(mimeTableLen, ".gif", "image/gif")
+    mimeTableLen = mimeTableLen + 1
+    // svg
+    setEntry(mimeTableLen, ".svg", "image/svg+xml")
+    mimeTableLen = mimeTableLen + 1
+    // ico
+    setEntry(mimeTableLen, ".ico", "image/x-icon")
+    mimeTableLen = mimeTableLen + 1
+    // webp
+    setEntry(mimeTableLen, ".webp", "image/webp")
+    mimeTableLen = mimeTableLen + 1
+    // pdf
+    setEntry(mimeTableLen, ".pdf", "application/pdf")
+    mimeTableLen = mimeTableLen + 1
+    // zip
+    setEntry(mimeTableLen, ".zip", "application/zip")
+    mimeTableLen = mimeTableLen + 1
+    // gz
+    setEntry(mimeTableLen, ".gz", "application/gzip")
+    mimeTableLen = mimeTableLen + 1
+    // tar
+    setEntry(mimeTableLen, ".tar", "application/x-tar")
+    mimeTableLen = mimeTableLen + 1
+    // mp3
+    setEntry(mimeTableLen, ".mp3", "audio/mpeg")
+    mimeTableLen = mimeTableLen + 1
+    // mp4
+    setEntry(mimeTableLen, ".mp4", "video/mp4")
+    mimeTableLen = mimeTableLen + 1
+    // webm
+    setEntry(mimeTableLen, ".webm", "video/webm")
+    mimeTableLen = mimeTableLen + 1
+    // woff
+    setEntry(mimeTableLen, ".woff", "font/woff")
+    mimeTableLen = mimeTableLen + 1
+    // woff2
+    setEntry(mimeTableLen, ".woff2", "font/woff2")
+    mimeTableLen = mimeTableLen + 1
+    // ttf
+    setEntry(mimeTableLen, ".ttf", "font/ttf")
+    mimeTableLen = mimeTableLen + 1
+    // otf
+    setEntry(mimeTableLen, ".otf", "font/otf")
+    mimeTableLen = mimeTableLen + 1
+    // csv
+    setEntry(mimeTableLen, ".csv", "text/csv")
+    mimeTableLen = mimeTableLen + 1
+    // md
+    setEntry(mimeTableLen, ".md", "text/markdown")
+    mimeTableLen = mimeTableLen + 1
+    // yaml
+    setEntry(mimeTableLen, ".yaml", "text/yaml")
+    mimeTableLen = mimeTableLen + 1
+    // yml
+    setEntry(mimeTableLen, ".yml", "text/yaml")
+    mimeTableLen = mimeTableLen + 1
+    // svg
+    setEntry(mimeTableLen, ".svg", "image/svg+xml")
+    mimeTableLen = mimeTableLen + 1
+
+    mimeTableReady = true
+}
+
+// setEntry 设置 MIME 表中指定索引的条目
+fn setEntry(idx: int, ext: string, mime: string) {
+    var offset: int = idx * 16
+    var _p1: *ptr = mimeTable + strings.toU64(offset)
+    *_p1 = unsafe.cast[ptr](strings.toCstring(ext))
+    var _p2: *ptr = mimeTable + strings.toU64(offset + 8)
+    *_p2 = unsafe.cast[ptr](strings.toCstring(mime))
+}
+
+// typeByExtension 根据文件扩展名返回 MIME 类型
+// ext: 扩展名（如 ".html", "html", "html"）
+// 返回 MIME 类型字符串，未找到返回空字符串
+fn typeByExtension(ext string) string {
+    initTable()
+    var extLen: uint = strings.len(ext)
+    // 确保扩展名以 '.' 开头
+    var lookupExt: string = ext
+    if extLen > 0 {
+        var _p3: *u8 = strings.toCstring(ext)
+        var first: u8 = *_p3
+        if first != 46 {
+            // 不以 '.' 开头，添加前缀
+            var buf: ptr = memory.malloc(extLen + 2)
+            var _p4: *u8 = buf
+            *_p4 = unsafe.cast[u8](46)
+            var i: uint = 0
+            for ; i < extLen; {
+                var _p5: *u8 = buf + 1 + i
+                var _p6: *u8 = strings.toCstring(ext) + i
+                *_p5 = unsafe.cast[u8](*_p6)
+                i = i + 1
+            }
+            var _p7: *u8 = buf + extLen + 1
+            *_p7 = unsafe.cast[u8](0)
+            lookupExt = strings.makeString(buf, extLen + 1, extLen + 1)
+        }
+    }
+    var lookupPtr: ptr = strings.toCstring(lookupExt)
+    var lookupLen: uint = strings.len(lookupExt)
+    var i: int = 0
+    for ; i < mimeTableLen; {
+        var offset: int = i * 16
+        var _p8: *ptr = mimeTable + strings.toU64(offset)
+        var entryExtPtr: ptr = *_p8
+        var _p9: *ptr = mimeTable + strings.toU64(offset + 8)
+        var entryMimePtr: ptr = *_p9
+        // 简单逐字节比较扩展名
+        var match: bool = true
+        var j: uint = 0
+        var entryExtLen: uint = 0
+        // 计算 entryExt 长度
+        var _p10: *u8 = entryExtPtr + entryExtLen
+        for ; *_p10 != 0; {
+            entryExtLen = entryExtLen + 1
+        }
+        if entryExtLen != lookupLen {
+            match = false
+        } else {
+            for ; j < lookupLen; {
+                var _p11: *u8 = entryExtPtr + j
+                var _p12: *u8 = lookupPtr + j
+                if *_p11 != *_p12 {
+                    match = false
+                    break
+                }
+                j = j + 1
+            }
+        }
+        if match {
+            // 计算 entryMime 长度并构造字符串
+            var mimeLen: uint = 0
+            var _p13: *u8 = entryMimePtr + mimeLen
+            for ; *_p13 != 0; {
+                mimeLen = mimeLen + 1
+            }
+            var mimeBuf: ptr = memory.malloc(mimeLen + 1)
+            var k: uint = 0
+            for ; k < mimeLen; {
+                var _p14: *u8 = mimeBuf + k
+                var _p15: *u8 = entryMimePtr + k
+                *_p14 = unsafe.cast[u8](*_p15)
+                k = k + 1
+            }
+            var _p16: *u8 = mimeBuf + mimeLen
+            *_p16 = unsafe.cast[u8](0)
+            ret strings.makeString(mimeBuf, mimeLen, mimeLen)
+        }
+        i = i + 1
+    }
+    ret ""
+}
+
+// Extensions 返回所有已知的扩展名列表
+// 返回格式为逗号分隔的扩展名字符串
+fn Extensions() string {
+    initTable()
+    // 估算总长度：每个扩展名平均 6 字节 + 逗号
+    var buf: ptr = memory.malloc(256)
+    var outPos: uint = 0
+    var i: int = 0
+    for ; i < mimeTableLen; {
+        var offset: int = i * 16
+        var _p17: *ptr = mimeTable + strings.toU64(offset)
+        var entryExtPtr: ptr = *_p17
+        var j: uint = 0
+        var _p18: *u8 = entryExtPtr + j
+        for ; *_p18 != 0; {
+            var _p19: *u8 = buf + outPos
+            var _p20: *u8 = entryExtPtr + j
+            *_p19 = unsafe.cast[u8](*_p20)
+            outPos = outPos + 1
+            j = j + 1
+        }
+        if i < mimeTableLen - 1 {
+            var _p21: *u8 = buf + outPos
+            *_p21 = unsafe.cast[u8](44)
+            outPos = outPos + 1
+        }
+        i = i + 1
+    }
+    var _p22: *u8 = buf + outPos
+    *_p22 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}

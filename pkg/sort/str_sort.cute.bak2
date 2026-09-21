@@ -1,0 +1,381 @@
+// pkg/sort/str_sort.cute - 字符串排序（快排 + Timsort）
+// CRITICAL: 字符串排序不能使用泛型比较函数（签名需要 string 参数，
+// GC 会在作用域退出时释放它们，导致堆损坏）。
+// 所以字符串排序使用自定义的 _lessString/raw 比较，但复用
+// sort.cute 中的 _elemLoad/_elemStore/_swapElem 基础设施。
+
+var _STR_ELEM: int = 24
+
+// ========== 字符串元素操作（原始字节） ==========
+
+// _strLoadRaw 从裸指针缓冲区加载 24 字节字符串结构到 dest
+fn _strLoadRaw(a ptr, index int, dest ptr) {
+    var off: int = index * _STR_ELEM
+    var i: int = 0
+    for ; i < _STR_ELEM; {
+        var _p1: *u8 = dest + i
+        var _p2: *u8 = a + off + i
+        *_p1 = unsafe.cast[u8](*_p2)
+        i = i + 1
+    }
+}
+
+// _strStoreRaw 将 src 缓冲区的 24 字节字符串结构写入裸指针
+fn _strStoreRaw(a ptr, index int, src ptr) {
+    var off: int = index * _STR_ELEM
+    var i: int = 0
+    for ; i < _STR_ELEM; {
+        var _p3: *u8 = a + off + i
+        var _p4: *u8 = src + i
+        *_p3 = unsafe.cast[u8](*_p4)
+        i = i + 1
+    }
+}
+
+// _strSwapRaw 交换裸指针数组中两个字符串位置
+fn _strSwapRaw(a ptr, i int, j int) {
+    var off1: int = i * _STR_ELEM
+    var off2: int = j * _STR_ELEM
+    var _p5: *ptr = a + off1
+    var tmp0: int = *_p5
+    var _p6: *ptr = a + off1
+    var _p7: *ptr = a + off2
+    *_p6 = unsafe.cast[ptr](*_p7)
+    var _p8: *ptr = a + off2
+    *_p8 = unsafe.cast[ptr](tmp0)
+    var _p9: *ptr = a + off1 + 8
+    var tmp1: int = *_p9
+    var _p10: *ptr = a + off1 + 8
+    var _p11: *ptr = a + off2 + 8
+    *_p10 = unsafe.cast[ptr](*_p11)
+    var _p12: *ptr = a + off2 + 8
+    *_p12 = unsafe.cast[ptr](tmp1)
+    var _p13: *ptr = a + off1 + 16
+    var tmp2: int = *_p13
+    var _p14: *ptr = a + off1 + 16
+    var _p15: *ptr = a + off2 + 16
+    *_p14 = unsafe.cast[ptr](*_p15)
+    var _p16: *ptr = a + off2 + 16
+    *_p16 = unsafe.cast[ptr](tmp2)
+}
+
+// ========== 字符串比较（无 string 类型变量） ==========
+
+fn _cmpStrIdx(a ptr, i int, j int) int {
+    var iOff: int = i * _STR_ELEM
+    var jOff: int = j * _STR_ELEM
+    var _p17: *ptr = a + iOff
+    var _p18: *ptr = a + iOff + 8
+    var _p19: *ptr = a + iOff + 16
+    var _p20: *ptr = a + jOff
+    var _p21: *ptr = a + jOff + 8
+    var _p22: *ptr = a + jOff + 16
+    ret compareStrings(strings.makeString(*_p17, *_p18, *_p19), strings.makeString(*_p20, *_p21, *_p22))
+}
+
+fn _lessStringRaw(a ptr, i int, j int) bool {
+    ret _cmpStrIdx(a, i, j) < 0
+}
+
+// ========== 快速排序（字符串专用） ==========
+
+fn _quickSortStrRange(a ptr, lo int, hi int, tmp ptr) {
+    for ; lo < hi; {
+        var pivotIdx: int = _partitionStrings(a, lo, hi, tmp)
+        if pivotIdx - 1 - lo < hi - pivotIdx - 1 {
+            if lo < pivotIdx - 1 {
+                _insertionSortStrRange(a, lo, pivotIdx - 1, tmp)
+            }
+            lo = pivotIdx + 1
+        } else {
+            if pivotIdx + 1 < hi {
+                _insertionSortStrRange(a, pivotIdx + 1, hi, tmp)
+            }
+            hi = pivotIdx - 1
+        }
+    }
+}
+
+fn _partitionStrings(a ptr, lo int, hi int, tmp ptr) int {
+    var mid: int = lo + (hi - lo) / 2
+    if _lessStringRaw(a, mid, lo) {
+        _strSwapRaw(a, lo, mid)
+    }
+    if _lessStringRaw(a, hi, lo) {
+        _strSwapRaw(a, lo, hi)
+    }
+    if _lessStringRaw(a, hi, mid) {
+        _strSwapRaw(a, mid, hi)
+    }
+    _strSwapRaw(a, mid, hi)
+
+    var pivotOff: int = hi * _STR_ELEM
+    var i: int = lo - 1
+    var j: int = lo
+    for ; j < hi; {
+        var jOff: int = j * _STR_ELEM
+        var less: bool = true
+        var k: int = 0
+        for ; k < 8; {
+            var _p23: *u8 = a + jOff + k
+            var bj: u8 = *_p23
+            var _p24: *u8 = a + pivotOff + k
+            var bp: u8 = *_p24
+            if bj < bp {
+                break
+            }
+            if bj > bp {
+                less = false
+                break
+            }
+            k = k + 1
+        }
+        if less {
+            // 字符串指针比较还需要比较字符串内容
+            if less {
+                // 通过 compareStrings 确认
+                var cmp: int = _cmpStrIdx(a, j, hi)
+                less = cmp < 0
+            }
+        }
+        if less {
+            i = i + 1
+            _strSwapRaw(a, i, j)
+        }
+        j = j + 1
+    }
+    _strSwapRaw(a, i + 1, hi)
+    ret i + 1
+}
+
+fn _insertionSortStrRange(a ptr, lo int, hi int, tmp ptr) {
+    var i: int = lo + 1
+    for ; i <= hi; {
+        var keyOff: int = i * _STR_ELEM
+        var j: int = i - 1
+        for ; j >= lo; {
+            var cmp: int = _cmpStrIdx(a, j, i)
+            if cmp <= 0 {
+                break
+            }
+            // s[j+1] = s[j]
+            var jOff: int = j * _STR_ELEM
+            var j1Off: int = (j + 1) * _STR_ELEM
+            var _p25: *ptr = a + j1Off
+            var _p26: *ptr = a + jOff
+            *_p25 = unsafe.cast[ptr](*_p26)
+            var _p27: *ptr = a + j1Off + 8
+            var _p28: *ptr = a + jOff + 8
+            *_p27 = unsafe.cast[ptr](*_p28)
+            var _p29: *ptr = a + j1Off + 16
+            var _p30: *ptr = a + jOff + 16
+            *_p29 = unsafe.cast[ptr](*_p30)
+            j = j - 1
+        }
+        // s[j+1] = key
+        var j1Off2: int = (j + 1) * _STR_ELEM
+        var _p31: *ptr = a + j1Off2
+        var _p32: *ptr = a + keyOff
+        *_p31 = unsafe.cast[ptr](*_p32)
+        var _p33: *ptr = a + j1Off2 + 8
+        var _p34: *ptr = a + keyOff + 8
+        *_p33 = unsafe.cast[ptr](*_p34)
+        var _p35: *ptr = a + j1Off2 + 16
+        var _p36: *ptr = a + keyOff + 16
+        *_p35 = unsafe.cast[ptr](*_p36)
+        i = i + 1
+    }
+}
+
+// ========== Timsort（字符串专用） ==========
+
+fn timsortStrings(a ptr, n int) {
+    if n <= 1 {
+        ret
+    }
+    var tmp: ptr = memory.malloc(48)
+    if n <= 32 {
+        _insertionSortStrRange(a, 0, n - 1, tmp)
+        memory.free(tmp)
+        ret
+    }
+
+    var halfN: int = n / 2
+    var buf: ptr = memory.malloc(halfN * _STR_ELEM)
+
+    var stackLo: *[]int = slices.new[int](16)
+    var stackHi: *[]int = slices.new[int](16)
+
+    var pos: int = 0
+    for ; pos < n; {
+        var runStart: int = pos
+        var runEnd: int = pos + 1
+        for ; runEnd < n; {
+            if !_lessStringRaw(a, runEnd, runEnd - 1) {
+                runEnd = runEnd + 1
+            } else {
+                break
+            }
+        }
+        var target: int = runStart + 32
+        if target > n {
+            target = n
+        }
+        if runEnd - runStart < 32 && runEnd < n {
+            _insertionSortStrRange(a, runStart, target - 1, tmp)
+            runEnd = target
+        }
+        slices.push[int](stackLo, runStart)
+        slices.push[int](stackHi, runEnd)
+        var sl: int = slices.len[int](stackLo)
+        for ; sl >= 3; {
+            var p: int = sl - 3
+            var q: int = sl - 2
+            var r: int = sl - 1
+            var pLo: int = slices.loadInt(slices.getPtr[int](stackLo, p))
+            var pHi: int = slices.loadInt(slices.getPtr[int](stackHi, p))
+            var qLo: int = slices.loadInt(slices.getPtr[int](stackLo, q))
+            var qHi: int = slices.loadInt(slices.getPtr[int](stackHi, q))
+            var rLo: int = slices.loadInt(slices.getPtr[int](stackLo, r))
+            var rHi: int = slices.loadInt(slices.getPtr[int](stackHi, r))
+            var pLen: int = pHi - pLo
+            var qLen: int = qHi - qLo
+            var rLen: int = rHi - rLo
+            if pLen <= qLen + rLen {
+                if pLen < rLen {
+                    _mergeStrRuns(a, pLo, pHi, qLo, qHi, buf, tmp)
+                    _strStackRemove(stackLo, stackHi, q)
+                } else {
+                    _mergeStrRuns(a, qLo, qHi, rLo, rHi, buf, tmp)
+                    _strStackRemove(stackLo, stackHi, r)
+                }
+                sl = slices.len[int](stackLo)
+            } else if qLen <= rLen {
+                _mergeStrRuns(a, qLo, qHi, rLo, rHi, buf, tmp)
+                _strStackRemove(stackLo, stackHi, r)
+                sl = slices.len[int](stackLo)
+            } else {
+                break
+            }
+        }
+        pos = runEnd
+    }
+    var remaining: int = slices.len[int](stackLo)
+    for ; remaining > 1; {
+        var r2: int = remaining - 1
+        var q2: int = remaining - 2
+        var qLo2: int = slices.loadInt(slices.getPtr[int](stackLo, q2))
+        var qHi2: int = slices.loadInt(slices.getPtr[int](stackHi, q2))
+        var rLo2: int = slices.loadInt(slices.getPtr[int](stackLo, r2))
+        var rHi2: int = slices.loadInt(slices.getPtr[int](stackHi, r2))
+        _mergeStrRuns(a, qLo2, qHi2, rLo2, rHi2, buf, tmp)
+        slices.remove[int](stackHi, r2)
+        slices.remove[int](stackLo, r2)
+        remaining = slices.len[int](stackLo)
+    }
+    memory.free(buf)
+    memory.free(tmp)
+}
+
+fn _mergeStrRuns(a ptr, leftStart int, leftEnd int, rightStart int, rightEnd int, buf ptr, tmp ptr) {
+    var leftLen: int = leftEnd - leftStart
+    var rightLen: int = rightEnd - rightStart
+    var i: int = 0
+    for ; i < leftLen; {
+        _strLoadRaw(a, leftStart + i, buf + i * _STR_ELEM)
+        i = i + 1
+    }
+    var li: int = 0
+    var ri: int = 0
+    var ai: int = leftStart
+    for ; li < leftLen && ri < rightLen; {
+        var _p37: *ptr = buf + li * _STR_ELEM
+        var _p38: *ptr = buf + li * _STR_ELEM + 8
+        var _p39: *ptr = buf + li * _STR_ELEM + 16
+        var _p40: *ptr = a + (rightStart + ri) * _STR_ELEM
+        var _p41: *ptr = a + (rightStart + ri) * _STR_ELEM + 8
+        var _p42: *ptr = a + (rightStart + ri) * _STR_ELEM + 16
+        var cmp: int = compareStrings(strings.makeString(*_p37, *_p38, *_p39), strings.makeString(*_p40, *_p41, *_p42))
+        if cmp <= 0 {
+            _strStoreRaw(a, ai, buf + li * _STR_ELEM)
+            li = li + 1
+        } else {
+            _strStoreRaw(a, ai, a + (rightStart + ri) * _STR_ELEM)
+            ri = ri + 1
+        }
+        ai = ai + 1
+    }
+    for ; li < leftLen; {
+        _strStoreRaw(a, ai, buf + li * _STR_ELEM)
+        li = li + 1
+        ai = ai + 1
+    }
+}
+
+fn _strStackRemove(stackLo *[]int, stackHi *[]int, index int) {
+    var n: int = slices.len[int](stackLo)
+    var i: int = index
+    for ; i < n - 1; {
+        slices.storeInt(slices.getPtr[int](stackLo, i), slices.loadInt(slices.getPtr[int](stackLo, i + 1)))
+        slices.storeInt(slices.getPtr[int](stackHi, i), slices.loadInt(slices.getPtr[int](stackHi, i + 1)))
+        i = i + 1
+    }
+    slices.remove[int](stackLo, n - 1)
+    slices.remove[int](stackHi, n - 1)
+}
+
+// ========== 便捷入口 ==========
+
+fn quickSortStrings(a ptr, n int) {
+    if n <= 1 {
+        ret
+    }
+    var tmp: ptr = memory.malloc(48)
+    _quickSortStrRange(a, 0, n - 1, tmp)
+    memory.free(tmp)
+}
+
+fn sortStrings(a ptr, n int) {
+    quickSortStrings(a, n)
+}
+
+// ========== 搜索 ==========
+
+fn searchStrings(a ptr, n int, s string) int {
+    var low: int = 0
+    var high: int = n
+    for ; low < high; {
+        var mid: int = low + (high - low) / 2
+        var midOff: int = mid * _STR_ELEM
+        var _p43: *ptr = a + midOff
+        var _p44: *ptr = a + midOff + 8
+        var _p45: *ptr = a + midOff + 16
+        var cmp: int = compareStrings(strings.makeString(*_p43, *_p44, *_p45), s)
+        if cmp < 0 {
+            low = low + 1
+        } else {
+            high = mid
+        }
+    }
+    ret low
+}
+
+fn isSortedStrings(a ptr, n int) bool {
+    var i: int = 0
+    for ; i < n - 1; {
+        var iOff: int = i * _STR_ELEM
+        var i1Off: int = (i + 1) * _STR_ELEM
+        var _p46: *ptr = a + iOff
+        var _p47: *ptr = a + iOff + 8
+        var _p48: *ptr = a + iOff + 16
+        var _p49: *ptr = a + i1Off
+        var _p50: *ptr = a + i1Off + 8
+        var _p51: *ptr = a + i1Off + 16
+        var cmp: int = compareStrings(strings.makeString(*_p46, *_p47, *_p48), strings.makeString(*_p49, *_p50, *_p51))
+        if cmp > 0 {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}

@@ -1,0 +1,7 @@
+== main (6 vars)
+  a [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1
+  b [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1
+  c [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1
+  d [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1
+  e [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1
+  f [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString off=-1

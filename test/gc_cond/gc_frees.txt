@@ -1,0 +1,8 @@
+== main (5 vars)
+  a [unknown] site=call:pickItem off=-1
+  b [unknown] site=call:pickItem off=-1
+  c [unknown] site=call:pickItem off=-1
+  d [unknown] site=call:pickItem off=-1
+  p [unknown] site=unknown off=-1
+  -- block frees --
+  it [unknown] scope=1

@@ -1,0 +1,126 @@
+== /home/gx/Desktop/______/tiny/pkg/builtin.panic
+== /home/gx/Desktop/______/tiny/pkg/builtin.print
+== /home/gx/Desktop/______/tiny/pkg/builtin.println
+== /home/gx/Desktop/______/tiny/pkg/strings.atoi
+== /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.bufNew
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
+== /home/gx/Desktop/______/tiny/pkg/strings.bufToString
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.cap
+== /home/gx/Desktop/______/tiny/pkg/strings.clone
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p51 site=null_init ESCAPED
+  obj[2] _p52 site=null_init ESCAPED
+  obj[3] _p53 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.compare
+== /home/gx/Desktop/______/tiny/pkg/strings.contains
+== /home/gx/Desktop/______/tiny/pkg/strings.containsAny
+== /home/gx/Desktop/______/tiny/pkg/strings.containsRune
+== /home/gx/Desktop/______/tiny/pkg/strings.count
+== /home/gx/Desktop/______/tiny/pkg/strings.countByte
+== /home/gx/Desktop/______/tiny/pkg/strings.eq
+== /home/gx/Desktop/______/tiny/pkg/strings.equalFold
+== /home/gx/Desktop/______/tiny/pkg/strings.formatBool
+  obj[0] _p34 site=null_init ESCAPED
+  obj[1] _p35 site=null_init ESCAPED
+  obj[2] _p36 site=null_init ESCAPED
+  obj[3] _p37 site=null_init ESCAPED
+  obj[4] _p38 site=null_init ESCAPED
+  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[6] _p39 site=null_init ESCAPED
+  obj[7] _p40 site=null_init ESCAPED
+  obj[8] _p41 site=null_init ESCAPED
+  obj[9] _p42 site=null_init ESCAPED
+  obj[10] _p43 site=null_init ESCAPED
+  obj[11] _p44 site=null_init ESCAPED
+  obj[12]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.fromI64
+== /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffixAny
+== /home/gx/Desktop/______/tiny/pkg/strings.index
+== /home/gx/Desktop/______/tiny/pkg/strings.indexAny
+== /home/gx/Desktop/______/tiny/pkg/strings.indexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.isSpace
+== /home/gx/Desktop/______/tiny/pkg/strings.itoa
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.join
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.len
+== /home/gx/Desktop/______/tiny/pkg/strings.makeString
+== /home/gx/Desktop/______/tiny/pkg/strings.ne
+== /home/gx/Desktop/______/tiny/pkg/strings.notFound
+== /home/gx/Desktop/______/tiny/pkg/strings.parse
+== /home/gx/Desktop/______/tiny/pkg/strings.parseBool
+== /home/gx/Desktop/______/tiny/pkg/strings.repeat
+== /home/gx/Desktop/______/tiny/pkg/strings.repeatN
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.repeat ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.replace
+== /home/gx/Desktop/______/tiny/pkg/strings.reverse
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p54 site=null_init ESCAPED
+  obj[2] _p55 site=null_init ESCAPED
+  obj[3] _p56 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.strcmp
+== /home/gx/Desktop/______/tiny/pkg/strings.strcpy
+== /home/gx/Desktop/______/tiny/pkg/strings.strlen
+== /home/gx/Desktop/______/tiny/pkg/strings.toCstring
+== /home/gx/Desktop/______/tiny/pkg/strings.toLower
+== /home/gx/Desktop/______/tiny/pkg/strings.toString
+== /home/gx/Desktop/______/tiny/pkg/strings.toU64
+== /home/gx/Desktop/______/tiny/pkg/strings.toUpper
+== /home/gx/Desktop/______/tiny/pkg/strings.trim
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimRight ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2] _p1 site=null_init ESCAPED
+  obj[3] _p2 site=null_init ESCAPED
+  obj[4] _p3 site=null_init ESCAPED
+  obj[5] _p4 site=null_init ESCAPED
+  obj[6] _p5 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.trimRight
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2] _p6 site=null_init ESCAPED
+  obj[3] _p7 site=null_init ESCAPED
+  obj[4] _p8 site=null_init ESCAPED
+  obj[5] _p9 site=null_init ESCAPED
+  obj[6] _p10 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
+== /home/gx/Desktop/______/tiny/pkg/syscall.brk
+== /home/gx/Desktop/______/tiny/pkg/syscall.close
+== /home/gx/Desktop/______/tiny/pkg/syscall.exit
+== /home/gx/Desktop/______/tiny/pkg/syscall.fstat
+== /home/gx/Desktop/______/tiny/pkg/syscall.getcwd
+== /home/gx/Desktop/______/tiny/pkg/syscall.getdents
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenv
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenvName_eq
+== /home/gx/Desktop/______/tiny/pkg/syscall.lseek
+== /home/gx/Desktop/______/tiny/pkg/syscall.mkdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.open
+== /home/gx/Desktop/______/tiny/pkg/syscall.read
+== /home/gx/Desktop/______/tiny/pkg/syscall.rename
+== /home/gx/Desktop/______/tiny/pkg/syscall.rmdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.stat
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall6
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall64
+== /home/gx/Desktop/______/tiny/pkg/syscall.unlink
+== /home/gx/Desktop/______/tiny/pkg/syscall.write
+== divide
+== main
+== swap

@@ -1,6 +1,7 @@
 package packageFmt
 
 import (
+	"strings"
 	"unsafe"
 )
 
@@ -55,10 +56,37 @@ var globalVarTable = make(map[string]any)
 
 // RegisterGlobalVar 注册全局变量到全局表
 func RegisterGlobalVar(pkgPath, varName string, v any) {
-	globalVarTable[FixPathName(pkgPath)+"/"+varName] = v
+	key := FixPathName(pkgPath) + "/" + varName
+	globalVarTable[key] = v
 }
 
 // LookupGlobalVar 按包路径 + 变量名查询全局变量表
 func LookupGlobalVar(pkgPath, varName string) any {
 	return globalVarTable[FixPathName(pkgPath)+"/"+varName]
+}
+
+// LookupGlobalVarAll 按变量名在所有包中查找（fixParser 后 p.Package.Path 不可靠时使用）
+func LookupGlobalVarAll(varName string) any {
+	keySuffix := "/" + varName
+	for k, v := range globalVarTable {
+		if strings.HasSuffix(k, keySuffix) {
+			return v
+		}
+	}
+	return nil
+}
+
+// AutoImport 全局自动导入注册表：短包名 → 完整包路径。
+// 用于无显式 import 的跨包调用（如编译器内置的 memory.load64）。
+// key = FixPathName(短名如 "memory")，value = FixPathName(完整路径如 ".../pkg/memory")。
+var autoImport = make(map[string]string)
+
+// RegisterAutoImport 注册短包名到完整路径的映射
+func RegisterAutoImport(shortName, fullPath string) {
+	autoImport[FixPathName(shortName)] = FixPathName(fullPath)
+}
+
+// LookupAutoImport 通过短包名查找完整路径，找不到返回空串
+func LookupAutoImport(shortName string) string {
+	return autoImport[FixPathName(shortName)]
 }

@@ -1,0 +1,9 @@
+{
+    "name": "html",
+    "version": "1.0.0",
+    "description": "HTML escape/unescape utilities",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

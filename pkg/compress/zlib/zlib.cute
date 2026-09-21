@@ -1,0 +1,121 @@
+// pkg/compress/zlib/zlib.cute - Zlib 压缩解压
+// Zlib = 2 字节头 + DEFLATE 数据 + 4 字节 ADLER32 校验
+// 头部格式：
+//   [0]    CMF = 0x78 (CM=8 deflate, CINFO=7 32K window)
+//   [1]    FLG = 0x01 (FCHECK使得(CMF*256+FLG)%31==0)
+// 尾部格式：ADLER32 校验和（大端序）
+
+// Reader zlib 读取器
+type Reader struct {
+    flate: *flate.Reader  // 底层 flate 读取器
+}
+
+// NewReader 创建 zlib 读取器，跳过 2 字节头部
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(8)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // 跳过 zlib 头部（2 字节）
+    var flateData: ptr = rPtr + 2
+    var flateLen: uint = rLen - 2
+    var flateStr: string = strings.makeString(flateData, flateLen, flateLen)
+    var fr: *flate.Reader = flate.NewReader(flateStr)
+    var _p1: *ptr = buf
+    *_p1 = unsafe.cast[ptr](fr)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Read 从 zlib 读取器中读取解压数据
+fn Read(r *Reader, buf ptr, n int) int {
+    var _p2: *ptr = r
+    var fr: *flate.Reader = *_p2
+    ret flate.Read(fr, buf, n)
+}
+
+// Writer zlib 写入器
+type Writer struct {
+    flate: *flate.Writer  // 底层 flate 写入器
+    adler: u32            // ADLER32 校验和
+}
+
+// NewWriter 创建 zlib 写入器，写入 2 字节头部
+fn NewWriter() *Writer {
+    var buf: ptr = memory.malloc(16)
+    var fw: *flate.Writer = flate.NewWriter()
+    var _p3: *ptr = buf
+    *_p3 = unsafe.cast[ptr](fw)
+    var _p4: *uint = buf + 8
+    *_p4 = unsafe.cast[uint](1 // Adler-32 初始值 A=1, B=0 → (0<<16)|1 = 1)
+    var result: *Writer
+    result = buf
+    ret result
+}
+
+// updateAdler 更新 ADLER32 校验和
+fn updateAdler(adler u32, data ptr, n uint) u32 {
+    var a: u32 = adler & 0xFFFF
+    var b: u32 = (adler >> 16) & 0xFFFF
+    var i: uint = 0
+    for ; i < n; {
+        var _p5: *u8 = data + i
+        var byteVal: u32 = *_p5
+        a = (a + byteVal) % 65521
+        b = (b + a) % 65521
+        i = i + 1
+    }
+    ret (b << 16) | a
+}
+
+// Write 向 zlib 写入器写入数据
+fn Write(w *Writer, data ptr, n int) int {
+    // 更新 Adler-32
+    var _p6: *uint = w + 8
+    var oldAdler: u32 = *_p6
+    var newAdler: u32 = updateAdler(oldAdler, data, n)
+    var _p7: *uint = w + 8
+    *_p7 = unsafe.cast[uint](newAdler)
+    var _p8: *ptr = w
+    var fw: *flate.Writer = *_p8
+    ret flate.Write(fw, data, n)
+}
+
+// Close 关闭 zlib 写入器，返回完整的 zlib 数据（头 + 压缩数据 + 尾）
+fn Close(w *Writer) string {
+    var _p9: *ptr = w
+    var fw: *flate.Writer = *_p9
+    var flateData: string = flate.Close(fw)
+    var flatePtr: ptr = strings.toCstring(flateData)
+    var flateLen: uint = strings.len(flateData)
+    // zlib: 2 字节头 + flate 数据 + 4 字节尾 = 6 + flateLen
+    var totalLen: uint = 2 + flateLen + 4
+    var outPtr: ptr = memory.malloc(totalLen)
+    // 写入 zlib 头部
+    var _p10: *u8 = outPtr
+    *_p10 = unsafe.cast[u8](0x78  // CMF: CM=8, CINFO=7)
+    var _p11: *u8 = outPtr + 1
+    *_p11 = unsafe.cast[u8](0x01  // FLG: FCHECK 使 (0x78*256+0x01)%31==0)
+    // 拷贝 flate 数据
+    var i: uint = 0
+    for ; i < flateLen; {
+        var _p12: *u8 = outPtr + 2 + i
+        var _p13: *u8 = flatePtr + i
+        *_p12 = unsafe.cast[u8](*_p13)
+        i = i + 1
+    }
+    // 写入 ADLER32 尾部（大端序）
+    var _p14: *uint = w + 8
+    var adler: u32 = *_p14
+    var _p15: *u8 = outPtr + 2 + flateLen
+    *_p15 = unsafe.cast[u8]((adler >> 24) & 0xFF)
+    var _p16: *u8 = outPtr + 3 + flateLen
+    *_p16 = unsafe.cast[u8]((adler >> 16) & 0xFF)
+    var _p17: *u8 = outPtr + 4 + flateLen
+    *_p17 = unsafe.cast[u8]((adler >> 8) & 0xFF)
+    var _p18: *u8 = outPtr + 5 + flateLen
+    *_p18 = unsafe.cast[u8](adler & 0xFF)
+    var _p19: *u8 = outPtr + totalLen
+    *_p19 = unsafe.cast[u8](0)
+    ret strings.makeString(outPtr, totalLen, totalLen)
+}

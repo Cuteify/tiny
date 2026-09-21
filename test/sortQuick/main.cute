@@ -1,0 +1,17 @@
+fn main() int {
+    var s: *[]int = slices.new[int](4)
+    slices.push[int](s, 30)
+    slices.push[int](s, 10)
+    slices.push[int](s, 20)
+    slices.push[int](s, 5)
+
+    sort.insertionSortInts(s)
+
+    var v: int = 0
+    slices.copyOut[int](s, 0, &v)
+    if v != 5 {
+        ret 1
+    }
+    slices.free[int](s)
+    ret 0
+}

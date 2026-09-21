@@ -1,0 +1,4 @@
+== main (1 vars)
+  loc [list] site=new off=-1
+== useTemp (1 vars)
+  t [string] site=call:makeGreeting off=-1

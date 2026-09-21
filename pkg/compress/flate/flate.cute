@@ -1,0 +1,239 @@
+// pkg/compress/flate/flate.cute - DEFLATE 压缩解压（简化版：仅存储模式）
+// 存储模式不做压缩，仅对数据进行分块帧封装
+// 块头：1 字节 BFINAL+BTYPE（bit 0=BFINAL, bit 1-2=BTYPE）
+//   BTYPE=00: 存储块（无压缩）
+//   存储块格式：LEN(2字节小端) + NLEN(2字节小端) + 原始数据
+//   最后块 BFINAL=1
+
+// Reader 读取器结构
+type Reader struct {
+    data: ptr     // 输入数据指针
+    dataLen: uint // 输入数据总长度
+    pos: uint     // 当前读取位置
+}
+
+// NewReader 创建新的 DEFLATE 读取器
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(24)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // layout: [data:8][dataLen:8][pos:8]
+    var _p1: *ptr = buf
+    *_p1 = unsafe.cast[ptr](rPtr)
+    var _p2: *ptr = buf + 8
+    *_p2 = unsafe.cast[ptr](rLen)
+    var _p3: *ptr = buf + 16
+    *_p3 = unsafe.cast[ptr](0)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Read 从 Reader 中读取解压数据到 buf，最多读 n 字节
+// 返回实际读取的字节数，0 表示 EOF
+fn Read(r *Reader, buf ptr, n int) int {
+    var _p4: *ptr = r
+    var dataPtr: ptr = *_p4
+    var _p5: *ptr = r + 8
+    var dataLen: uint = *_p5
+    var _p6: *ptr = r + 16
+    var pos: uint = *_p6
+
+    if pos >= dataLen {
+        ret 0
+    }
+
+    // 读取 DEFLATE 块头
+    // bit 0: BFINAL, bit 1-2: BTYPE
+    var _p7: *u8 = dataPtr + pos
+    var header: u8 = *_p7
+    var btype: u8 = header & 0x06  // bits 1-2
+    var bfinal: u8 = header & 0x01 // bit 0
+    pos = pos + 1
+
+    if btype == 0 {
+        // 存储块（无压缩）
+        // 读取 LEN 和 NLEN（小端序）
+        if pos + 4 > dataLen {
+            var _p8: *ptr = r + 16
+            *_p8 = unsafe.cast[ptr](pos)
+            ret 0
+        }
+        var _p9: *u8 = dataPtr + pos
+        var lenLow: u8 = *_p9
+        var _p10: *u8 = dataPtr + pos + 1
+        var lenHigh: u8 = *_p10
+        var blockLen: uint = lenLow + lenHigh * 256
+        var _p11: *u8 = dataPtr + pos + 2
+        var nlenLow: u8 = *_p11
+        var _p12: *u8 = dataPtr + pos + 3
+        var nlenHigh: u8 = *_p12
+        var blockNlen: uint = nlenLow + nlenHigh * 256
+        pos = pos + 4
+
+        // 验证 NLEN == ~LEN
+        if blockNlen != (blockLen ^ 0xFFFF) & 0xFFFF {
+            var _p13: *ptr = r + 16
+            *_p13 = unsafe.cast[ptr](pos)
+            ret 0
+        }
+
+        // 拷贝数据
+        var copyLen: uint = blockLen
+        if copyLen > dataLen - pos {
+            copyLen = dataLen - pos
+        }
+        var readLen: int = 0
+        if n > 0 {
+            var i: uint = 0
+            for ; i < copyLen && i < n; {
+                var _p14: *u8 = buf + i
+                var _p15: *u8 = dataPtr + pos + i
+                *_p14 = unsafe.cast[u8](*_p15)
+                i = i + 1
+            }
+            readLen = i
+            pos = pos + i
+        } else {
+            pos = pos + copyLen
+            readLen = 0
+        }
+        var _p16: *ptr = r + 16
+        *_p16 = unsafe.cast[ptr](pos)
+        ret readLen
+    }
+
+    // 不支持的压缩类型
+    var _p17: *ptr = r + 16
+    *_p17 = unsafe.cast[ptr](pos)
+    ret 0
+}
+
+// Writer 写入器结构
+type Writer struct {
+    buf: ptr     // 输出缓冲区
+    bufLen: uint // 当前缓冲区数据长度
+    bufCap: uint // 缓冲区容量
+}
+
+// NewWriter 创建新的 DEFLATE 写入器
+fn NewWriter() *Writer {
+    var buf: ptr = memory.malloc(24)
+    var dataBuf: ptr = memory.malloc(4096)
+    // layout: [buf:8][bufLen:8][bufCap:8]
+    var _p18: *ptr = buf
+    *_p18 = unsafe.cast[ptr](dataBuf)
+    var _p19: *ptr = buf + 8
+    *_p19 = unsafe.cast[ptr](0)
+    var _p20: *ptr = buf + 16
+    *_p20 = unsafe.cast[ptr](4096)
+    var result: *Writer
+    result = buf
+    ret result
+}
+
+// growBuffer 扩展缓冲区
+fn growBuffer(w *Writer, needed: uint) {
+    var _p21: *ptr = w + 16
+    var curCap: uint = *_p21
+    var newCap: uint = curCap * 2
+    if newCap < needed {
+        newCap = needed
+    }
+    var _p22: *ptr = w
+    var oldPtr: ptr = *_p22
+    var _p23: *ptr = w + 8
+    var curLen: uint = *_p23
+    var newPtr: ptr = memory.malloc(newCap)
+    var i: uint = 0
+    for ; i < curLen; {
+        var _p24: *u8 = newPtr + i
+        var _p25: *u8 = oldPtr + i
+        *_p24 = unsafe.cast[u8](*_p25)
+        i = i + 1
+    }
+    var _p26: *ptr = w
+    *_p26 = unsafe.cast[ptr](newPtr)
+    var _p27: *ptr = w + 16
+    *_p27 = unsafe.cast[ptr](newCap)
+}
+
+// Write 向 Writer 写入数据
+fn Write(w *Writer, data ptr, n int) int {
+    var _p28: *ptr = w + 8
+    var curLen: uint = *_p28
+    var _p29: *ptr = w + 16
+    var curCap: uint = *_p29
+    // 块格式：header(1) + LEN(2) + NLEN(2) + data(n) = 5 + n
+    var needed: uint = curLen + 5 + n
+    if needed > curCap {
+        growBuffer(w, needed)
+    }
+    var _p30: *ptr = w
+    var bufPtr: ptr = *_p30
+    // 写入 BFINAL=0, BTYPE=00（存储块，非最后一块）
+    var _p31: *u8 = bufPtr + curLen
+    *_p31 = unsafe.cast[u8](0x00)
+    // 写入 LEN（小端序）
+    var blockLen: u16 = n & 0xFFFF
+    var _p32: *u8 = bufPtr + curLen + 1
+    *_p32 = unsafe.cast[u8](blockLen & 0xFF)
+    var _p33: *u8 = bufPtr + curLen + 2
+    *_p33 = unsafe.cast[u8]((blockLen >> 8) & 0xFF)
+    // 写入 NLEN（小端序）
+    var nlen: u16 = blockLen ^ 0xFFFF
+    var _p34: *u8 = bufPtr + curLen + 3
+    *_p34 = unsafe.cast[u8](nlen & 0xFF)
+    var _p35: *u8 = bufPtr + curLen + 4
+    *_p35 = unsafe.cast[u8]((nlen >> 8) & 0xFF)
+    // 写入数据
+    var i: int = 0
+    for ; i < n; {
+        var _p36: *u8 = bufPtr + curLen + 5 + i
+        var _p37: *u8 = data + i
+        *_p36 = unsafe.cast[u8](*_p37)
+        i = i + 1
+    }
+    var _p38: *ptr = w + 8
+    *_p38 = unsafe.cast[ptr](curLen + 5 + n)
+    ret n
+}
+
+// Close 关闭写入器，追加结束块（BFINAL=1）并返回所有压缩数据
+fn Close(w *Writer) string {
+    var _p39: *ptr = w + 8
+    var curLen: uint = *_p39
+    var _p40: *ptr = w + 16
+    var curCap: uint = *_p40
+    // 追加结束块：header(1) + LEN(2) + NLEN(2) = 5 字节
+    if curLen + 5 > curCap {
+        growBuffer(w, curLen + 5)
+    }
+    var _p41: *ptr = w
+    var bufPtr: ptr = *_p41
+    // BFINAL=1, BTYPE=00
+    var _p42: *u8 = bufPtr + curLen
+    *_p42 = unsafe.cast[u8](0x01)
+    // LEN=0, NLEN=0xFFFF
+    var _p43: *u8 = bufPtr + curLen + 1
+    *_p43 = unsafe.cast[u8](0x00)
+    var _p44: *u8 = bufPtr + curLen + 2
+    *_p44 = unsafe.cast[u8](0x00)
+    var _p45: *u8 = bufPtr + curLen + 3
+    *_p45 = unsafe.cast[u8](0xFF)
+    var _p46: *u8 = bufPtr + curLen + 4
+    *_p46 = unsafe.cast[u8](0xFF)
+    var totalLen: uint = curLen + 5
+    // 构造字符串返回
+    var strPtr: ptr = memory.malloc(totalLen + 1)
+    var i: uint = 0
+    for ; i < totalLen; {
+        var _p47: *u8 = strPtr + i
+        var _p48: *u8 = bufPtr + i
+        *_p47 = unsafe.cast[u8](*_p48)
+        i = i + 1
+    }
+    var _p49: *u8 = strPtr + totalLen
+    *_p49 = unsafe.cast[u8](0)
+    ret strings.makeString(strPtr, totalLen, totalLen)
+}

@@ -12,6 +12,7 @@ type Arch interface {
 	Info() string
 
 	// ---- 函数生命周期 ----
+	SetArgsOffset(fn *parser.FuncBlock) // 将参数偏移从调用者帧位置刷新为 callee-local 位置
 	Prologue(fn *parser.FuncBlock) string
 	Epilogue(fn *parser.FuncBlock) string
 
@@ -26,6 +27,7 @@ type Arch interface {
 	ForEnd(forBlock *parser.ForBlock) string
 	VarDecl(varBlock *parser.VarBlock) string
 	VarAddr(v *parser.VarBlock) string
+	MultiVarDecl(varBlock *parser.VarBlock) string // 多返回值解构（a, b := foo()）
 
 	// ---- 条件跳转 ----
 	Cmp(dst, src string) string
@@ -73,7 +75,11 @@ func ResetLocalVarOffset(n *parser.Node, offset int) {
 	for _, child := range n.Children {
 		switch child.Value.(type) {
 		case *parser.VarBlock:
-			child.Value.(*parser.VarBlock).Offset += offset
+			vb := child.Value.(*parser.VarBlock)
+			vb.Offset += offset
+			for i := range vb.MultiOffsets {
+				vb.MultiOffsets[i] += offset
+			}
 		case *parser.IfBlock:
 			ResetLocalVarOffset(child, offset)
 			if child.Value.(*parser.IfBlock).Else {

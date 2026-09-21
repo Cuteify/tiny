@@ -1,0 +1,539 @@
+// ===== Cuteify Memory Manager v3 — Allocator Core =====
+//
+// 内存布局：
+//   [header: ptrSize bytes] [user data ...] [footer: ptrSize bytes]
+//   header 存储块大小 | 标志位，footer 与 header 相同（用于向前合并时读取前一块信息）
+//   用户指针 ptr 指向 data 起始位置，header 在 ptr - ptrSize
+//
+// 块大小分级（tier）：
+//   TINY   (≤1024B)  — class 0-32，按 12.5% 递增，最小 32B
+//   SMALL  (≤4096B)  — class 34-35，固定 2048B 或 4096B
+//   MIDDLE (≤65536B) — class 36-59，按 12.5% 递增
+//   LARGE  (≤262144B) — 直接 brk 分配，走 coalesce 合并
+//   HUGE   (>262144B) — 直接 brk 分配，不进空闲链表
+//
+// 空闲块内部布局（复用 data 区域存储链表指针）：
+//   [next: ptr] [prev: ptr] ... （在 data 区域的前 2*ptrSize 字节）
+
+// 空闲链表头数组，每个 class 一个头指针（共 60 个 class）
+// 用原始 brk 分配的 ptr 指针 + 指针算术模拟（解析器不支持 [N]ptr 语法）
+var gFreeHeads: ptr
+
+// initFreeHeads 用 brk 直接分配 60*8=480 字节存储空闲链表头
+// 不走 malloc，避免循环依赖
+fn initFreeHeads() {
+    if gFreeHeads != 0 {
+        ret  // 已初始化
+    }
+    var cur: ptr = syscall.brk(0)
+    var nb: ptr = syscall.brk(cur + 480)
+    if nb < cur + 480 {
+        ret  // 分配失败
+    }
+    gFreeHeads = cur
+}
+
+// tierOf 将请求大小分类为 tier: 0=TINY, 1=SMALL, 2=MIDDLE, 3=LARGE, 4=HUGE
+fn tierOf(size: uint) uint {
+    if size <= TINY_MAX {
+        ret 0
+    }
+    if size <= SMALL_MAX {
+        ret 1
+    }
+    if size <= MIDDLE_MAX {
+        ret 2
+    }
+    if size <= LARGE_MAX {
+        ret 3
+    }
+    ret 4
+}
+
+// blkSizeOfTiny 根据 tiny class 编号计算块大小
+// class 0 = 32B，后续每级增长 max(当前大小/8, 16B)，最终对齐到 ptrSize
+// 例：cls=0→32, cls=1→48, cls=2→64, cls=3→80, cls=4→96 ...
+fn blkSizeOfTiny(cls: uint) uint {
+    if cls == 0 {
+        ret 32
+    }
+    var s: uint = 32
+    var i: uint = 0
+    for ; i < cls; {
+        // 增量 = 当前大小 / 8（即 12.5% 增长），最小 16B
+        var step: uint = s >> 3
+        if step < 16 {
+            step = 16
+        }
+        s = s + step
+        i = i + 1
+    }
+    // 对齐到 ptrSize（向上取整到 8 的倍数）
+    ret (s + ptrSize - 1) & ~(ptrSize - 1)
+}
+
+// blkSizeOfSmall 根据 small class 编号计算块大小（class 0=2048B, class 1=4096B）
+fn blkSizeOfSmall(cls: uint) uint {
+    if cls == 0 {
+        ret 2048
+    }
+    ret 4096
+}
+
+// blkSizeOfMiddle 根据 middle class 编号计算块大小
+// 起始 4096B，每级增长 12.5%（s += s/8）
+fn blkSizeOfMiddle(cls: uint) uint {
+    var s: uint = 4096
+    var i: uint = 0
+    for ; i < cls; {
+        s = s + (s >> 3)
+        i = i + 1
+    }
+    ret s
+}
+
+// blkSizeOf 根据全局 class 编号分派到对应的 blkSizeOf* 函数
+// class 0-33 → tiny, 34-35 → small, 36-59 → middle
+fn blkSizeOf(cls: uint) uint {
+    if cls <= 33 {
+        ret blkSizeOfTiny(cls)
+    }
+    if cls <= 35 {
+        ret blkSizeOfSmall(cls - 34)
+    }
+    ret blkSizeOfMiddle(cls - 36)
+}
+
+// slotOfTiny 将请求大小映射到 tiny slot 编号（0-33）
+// 遍历 tiny 块大小序列，找到第一个 >= size 的 class
+fn slotOfTiny(size: uint) uint {
+    if size <= 32 {
+        ret 0
+    }
+    var s: uint = 32
+    var cls: uint = 0
+    for ; cls < 33; {
+        var step: uint = s >> 3
+        if step < 16 {
+            step = 16
+        }
+        var next: uint = s + step
+        // 如果下一个 class 的块大小 >= 请求大小，当前 class 就是目标
+        if next >= size {
+            ret cls + 1
+        }
+        s = next
+        cls = cls + 1
+    }
+    ret 33
+}
+
+// slotOfSmall 将请求大小映射到 small slot 编号（34 或 35）
+fn slotOfSmall(size: uint) uint {
+    if size <= 2048 {
+        ret 34
+    }
+    ret 35
+}
+
+// slotOfMiddle 将请求大小映射到 middle slot 编号（36-59）
+// 遍历 middle 块大小序列，找到第一个 >= size 的 class
+fn slotOfMiddle(size: uint) uint {
+    if size <= 4096 {
+        ret 36
+    }
+    var s: uint = 4096
+    var cls: uint = 0
+    for ; cls < 23; {
+        var next: uint = s + (s >> 3)
+        if next >= size {
+            ret 36 + cls + 1
+        }
+        s = next
+        cls = cls + 1
+    }
+    ret 59
+}
+
+// slotOf 根据请求大小分派到对应的 slotOf* 函数，返回全局 slot 编号（0-59）
+// 返回 60 表示超出所有 class 范围（不应发生）
+fn slotOf(size: uint) uint {
+    if size <= TINY_MAX {
+        ret slotOfTiny(size)
+    }
+    if size <= SMALL_MAX {
+        ret slotOfSmall(size)
+    }
+    if size <= MIDDLE_MAX {
+        ret slotOfMiddle(size)
+    }
+    ret 60
+}
+
+// headOf 读取指定 class 的空闲链表头
+fn headOf(cls: uint) ptr {
+    var _p: *ptr = gFreeHeads + cls * 8
+    ret *_p
+}
+
+// setHead 设置指定 class 的空闲链表头
+fn setHead(cls: uint, v: ptr) {
+    var _p: *ptr = gFreeHeads + cls * 8
+    *_p = v
+}
+
+// insertFreeList 将空闲块插入对应 class 的空闲链表头部（双向链表）
+// 插入后 blk 成为新的链表头
+fn insertFreeList(blk: ptr) {
+    // 从 header 读取块大小（清除标志位），计算 class
+    var size: uint = hdrSizeRaw(blk) & ~FLAG_MASK
+    var cls: uint = slotOf(size)
+    if cls >= 60 {
+        ret
+    }
+    // 链表操作：blk.next = oldHead, blk.prev = nil
+    var oldHead: ptr = headOf(cls)
+    freeSetNext(blk, oldHead)
+    freeSetPrev(blk, 0)
+    // 如果原 head 非空，让它的 prev 指向 blk
+    if oldHead != 0 {
+        freeSetPrev(oldHead, blk)
+    }
+    setHead(cls, blk)
+}
+
+// removeFreeList 从空闲链表中移除指定块（双向链表摘除）
+// 典型的双向链表删除：让 prev.next = next, next.prev = prev
+fn removeFreeList(blk: ptr) {
+    var prev: ptr = freePrev(blk)
+    var next: ptr = freeNext(blk)
+    var size: uint = hdrSizeRaw(blk) & ~FLAG_MASK
+    var cls: uint = slotOf(size)
+    if cls >= 60 {
+        ret
+    }
+    gDbgD = blk
+    // 如果有前驱，让前驱跳过 blk；否则 blk 是头，更新 head
+    if prev != 0 {
+        freeSetNext(prev, next)
+    } else {
+        setHead(cls, next)
+    }
+    // 如果有后继，让后继跳过 blk
+    if next != 0 {
+        freeSetPrev(next, prev)
+    }
+}
+
+// commit 向内核申请 CHUNK_SIZE 字节堆空间，切成等大小空闲块加入指定 class 的链表
+// 返回新空间的起始地址，链表头设为第一个块
+fn commit(cls: uint, blkSize: uint) ptr {
+    // 获取当前 brk 位置，然后扩展 CHUNK_SIZE
+    var chunk: ptr = syscall.brk(0)
+    var nb: ptr = syscall.brk(chunk + CHUNK_SIZE)
+    if nb < chunk + CHUNK_SIZE {
+        ret 0  // 内存不足
+    }
+    // 将新空间切成 blkSize 大小的空闲块，串成链表
+    var head: ptr = chunk
+    var prev: ptr = 0
+    var p: ptr = chunk
+    var end: ptr = chunk + CHUNK_SIZE
+    for ; p + blkSize <= end; {
+        // 第一个块无 PREV_FREE，后续块标记 PREV_FREE（因为前一块也是空闲的）
+        var flags: uint = IS_FREE
+        if prev != 0 {
+            flags = flags | PREV_FREE
+        }
+        var full: uint = blkSize | flags
+        hdrSetSizeRaw(p, full)
+        hdrSetFooter(p, full)
+        // 串入双向链表
+        freeSetNext(p, 0)
+        freeSetPrev(p, prev)
+        if prev != 0 {
+            freeSetNext(prev, p)
+        }
+        prev = p
+        p = p + blkSize
+    }
+    // 将整个 chunk 的链表头设为 cls 的空闲链表头
+    setHead(cls, head)
+    ret chunk
+}
+
+// coalesce 合并相邻空闲块，返回合并后的块起始地址
+// 算法：先向后合并（next 空闲则合并），再向前合并（prev 空闲则合并）
+// 合并后更新 header/footer 和 PREV_FREE 标记
+fn coalesce(blk: ptr) ptr {
+    var raw: uint = hdrSizeRaw(blk)
+    var pure: uint = raw & ~FLAG_MASK  // 清除标志位得到纯块大小
+    var brkTop: ptr = syscall.brk(0)  // 当前堆顶
+
+    gDbgA = blk
+
+    // === 向后合并 ===
+    // 计算下一个块的地址，如果在堆范围内且空闲则合并
+    var nextBlk: ptr = blk + pure
+    if nextBlk + ptrSize <= brkTop {
+        var ns: uint = hdrSizeRaw(nextBlk)
+        if ns != 0 && (ns & IS_FREE) != 0 {
+            // 下一块空闲：从链表摘除，累加大小
+            removeFreeList(nextBlk)
+            pure = pure + (ns & ~FLAG_MASK)
+        }
+    }
+
+    // === 向前合并 ===
+    // 通过 PREV_FREE 标志判断前一块是否空闲
+    if (raw & PREV_FREE) != 0 {
+        // 读前一块的 footer（在 blk - ptrSize），获取前一块大小
+        var prevFooterP: *ptr = blk - ptrSize
+        var prevFooter: uint = *prevFooterP
+        var prevSize: uint = prevFooter & ~FLAG_MASK
+        var prevBlk: ptr = blk - prevSize
+        removeFreeList(prevBlk)
+        // 合并后保留前一块的 PREV_FREE 标志（传递给更前面的块）
+        var mergedFlags: uint = (prevFooter & PREV_FREE) | IS_FREE
+        pure = prevSize + pure
+        blk = prevBlk  // 合并后起点前移到前一块
+        hdrSetSizeRaw(blk, pure | mergedFlags)
+        hdrSetFooter(blk, pure | mergedFlags)
+    } else {
+        // 前一块不空闲，仅标记当前块为 IS_FREE
+        hdrSetSizeRaw(blk, pure | IS_FREE)
+        hdrSetFooter(blk, pure | IS_FREE)
+    }
+
+    // === 更新后继块的 PREV_FREE 标记 ===
+    // 合并后的块是空闲的，所以后继块应该知道"我的前驱是空闲的"
+    var nextAfter: ptr = blk + pure
+    if nextAfter + ptrSize <= brkTop {
+        var ns2: uint = hdrSizeRaw(nextAfter)
+        if ns2 != 0 {
+            hdrSetSizeRaw(nextAfter, ns2 | PREV_FREE)
+            hdrSetFooter(nextAfter, ns2 | PREV_FREE)
+        }
+    }
+
+    ret blk
+}
+
+// malloc 分配 size 字节内存，返回用户指针（跳过 header）
+// 分配策略：
+//   1. HUGE (>LARGE_MAX): 直接 brk 扩展，header 存纯大小
+//   2. LARGE (>MIDDLE_MAX): brk 扩展 + coalesce 合并
+//   3. SMALL/TINY: 从空闲链表取，空链表时 commit 新空间
+fn malloc(size: uint) ptr {
+    // 初始化空闲链表头（仅首次调用）
+    initFreeHeads()
+
+    // 用户请求大小 + header + footer 的开销
+    var req: uint = size + ptrSize * 2
+    // 最小块大小 = 4 * ptrSize（确保能放下 next/prev 指针）
+    var minReq: uint = ptrSize * 4
+    if req < minReq {
+        req = minReq
+    }
+
+    // === 路径 1: HUGE 块 — 直接 brk 分配，不进空闲链表 ===
+    if req > LARGE_MAX {
+        var old: ptr = syscall.brk(0)
+        var nb: ptr = syscall.brk(old + req)
+        if nb < old + req {
+            ret 0
+        }
+        hdrSetSizeRaw(old, req)
+        hdrSetFooter(old, req)
+        ret old + ptrSize  // 跳过 header
+    }
+
+    // === 路径 2: LARGE 块 — brk 分配 + coalesce 合并 ===
+    if req > MIDDLE_MAX {
+        // 对齐到 ptrSize
+        var aligned: uint = (req + ptrSize - 1) & ~(ptrSize - 1)
+        var old: ptr = syscall.brk(0)
+        var nb: ptr = syscall.brk(old + aligned)
+        if nb < old + aligned {
+            ret 0
+        }
+        // 先标记为 IS_FREE 再 coalesce，尝试与相邻空闲块合并
+        hdrSetSizeRaw(old, aligned | IS_FREE)
+        hdrSetFooter(old, aligned | IS_FREE)
+        var merged: ptr = coalesce(old)
+        // coalesce 后清除 IS_FREE 标志（块现在是已分配的）
+        var mRaw: uint = hdrSizeRaw(merged)
+        var mPure: uint = mRaw & ~FLAG_MASK
+        hdrSetSizeRaw(merged, mPure)
+        hdrSetFooter(merged, mPure)
+        // 清除后继块的 PREV_FREE（我们的块不再是空闲的）
+        var nextM: ptr = merged + mPure
+        var brkTop: ptr = syscall.brk(0)
+        if nextM + ptrSize <= brkTop {
+            var ns: uint = hdrSizeRaw(nextM)
+            if ns != 0 {
+                hdrSetSizeRaw(nextM, ns & ~PREV_FREE)
+                hdrSetFooter(nextM, ns & ~PREV_FREE)
+            }
+        }
+        ret merged + ptrSize
+    }
+
+    // === 路径 3: TINY/SMALL 块 — 空闲链表分配 ===
+    var cls: uint = slotOf(req)
+    var blkSize: uint = blkSizeOf(cls)
+    var head: ptr = headOf(cls)
+    // 链表为空，commit 新空间
+    if head == 0 {
+        head = commit(cls, blkSize)
+        if head == 0 {
+            ret 0
+        }
+    }
+
+    // 从链表头部取块：head = head.next
+    var next: ptr = freeNext(head)
+    setHead(cls, next)
+    if next != 0 {
+        freeSetPrev(next, 0)
+    }
+
+    // 设置 header/footer（清除 IS_FREE，块现在是已分配的）
+    hdrSetSizeRaw(head, blkSize)
+    hdrSetFooter(head, blkSize)
+
+    // 清除后继块的 PREV_FREE（我们的块不再是空闲的）
+    var nextBlk: ptr = head + blkSize
+    var brkTop: ptr = syscall.brk(0)
+    if nextBlk + ptrSize <= brkTop {
+        var ns: uint = hdrSizeRaw(nextBlk)
+        if ns != 0 {
+            hdrSetSizeRaw(nextBlk, ns & ~PREV_FREE)
+            hdrSetFooter(nextBlk, ns & ~PREV_FREE)
+        }
+    }
+
+    ret head + ptrSize  // 跳过 header，返回用户指针
+}
+
+// freeAt 释放指定 blk（块起始地址，非用户指针）的内存，供 free/freeRC 共用
+// 释放策略：
+//   - HUGE: 如果 blk 在堆顶，直接 brk 回缩
+//   - LARGE: coalesce 后如果在堆顶则 brk 回缩
+//   - TINY/SMALL: coalesce 后加入空闲链表
+fn freeAt(blk: ptr) {
+    var raw: uint = hdrSizeRaw(blk)
+    var pure: uint = raw & ~FLAG_MASK
+
+    // HUGE 块：仅在堆顶时释放（brk 回缩）
+    if pure > LARGE_MAX {
+        var cur: ptr = syscall.brk(0)
+        if blk + pure == cur {
+            syscall.brk(blk)  // 回缩 brk 到 blk 位置
+        }
+        ret
+    }
+
+    // LARGE 块：合并后如果在堆顶则释放
+    if pure > MIDDLE_MAX {
+        var merged: ptr = coalesce(blk)
+        var mRaw: uint = hdrSizeRaw(merged)
+        var mPure: uint = mRaw & ~FLAG_MASK
+        var cur: ptr = syscall.brk(0)
+        if merged + mPure == cur {
+            syscall.brk(merged)
+        }
+        ret
+    }
+
+    // TINY/SMALL 块：合并后加入空闲链表
+    var merged: ptr = coalesce(blk)
+    insertFreeList(merged)
+}
+
+// free 释放用户指针指向的内存
+// 运行时检测 flags 字段（ptr-ptrSize）：
+//   - 如果是 IS_RC_TAG，说明是 mallocRC 分配的块，走 rcDec（引用计数释放）
+//   - 否则走 freeAt（直接释放）
+fn free(ptr: ptr) {
+    gDbgA = ptr
+    if ptr == 0 {
+        ret
+    }
+    // 读 flags 字段（在用户指针的前一个 ptrSize 位置）
+    var flags: uint = flagLoad(ptr)
+    if flags == IS_RC_TAG {
+        // mallocRC 分配的块：走引用计数释放
+        rcDec(ptr)
+        ret
+    }
+    // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - ptrSize）
+    gDbgC = ptr - ptrSize
+    freeAt(ptr - ptrSize)
+}
+
+// realloc 重新分配内存
+// 策略：
+//   1. 如果新大小 <= 当前块大小，直接返回原指针（不缩小）
+//   2. 尝试原地扩展：如果下一块是空闲的且合并后够用，直接合并
+//   3. 否则：malloc 新块 + memcpy 复制 + free 旧块
+fn realloc(ptr: ptr, newSize: uint) ptr {
+    if ptr == 0 {
+        ret malloc(newSize)
+    }
+    if newSize == 0 {
+        free(ptr)
+        ret 0
+    }
+    // 计算当前块的实际大小（不含 header/footer）
+    var blk: ptr = ptr - ptrSize
+    var oldPure: uint = hdrSizeRaw(blk) & ~FLAG_MASK
+    // 新请求需要的总大小（含 header/footer）
+    var req: uint = newSize + ptrSize * 2
+
+    // 新大小 <= 当前块大小，无需扩展
+    if req <= oldPure {
+        ret ptr
+    }
+
+    // 尝试原地扩展：检查下一块是否空闲
+    var nextBlk: ptr = blk + oldPure
+    var brkTop: ptr = syscall.brk(0)
+    if nextBlk + ptrSize <= brkTop {
+        var ns: uint = hdrSizeRaw(nextBlk)
+        if ns != 0 && (ns & IS_FREE) != 0 {
+            // 下一块空闲，尝试合并
+            var merged: uint = oldPure + (ns & ~FLAG_MASK)
+            if merged >= req {
+                // 合并后够用：从空闲链表摘除下一块，扩大当前块
+                removeFreeList(nextBlk)
+                hdrSetSizeRaw(blk, merged)
+                hdrSetFooter(blk, merged)
+                // 清除新后继的 PREV_FREE
+                var nn: ptr = blk + merged
+                if nn + ptrSize <= brkTop {
+                    var nn2: uint = hdrSizeRaw(nn)
+                    if nn2 != 0 {
+                        hdrSetSizeRaw(nn, nn2 & ~PREV_FREE)
+                        hdrSetFooter(nn, nn2 & ~PREV_FREE)
+                    }
+                }
+                ret ptr  // 原地扩展成功，返回原指针
+            }
+        }
+    }
+
+    // 原地扩展失败：分配新块 + 复制 + 释放旧块
+    var np: ptr = malloc(newSize)
+    if np == 0 {
+        ret 0
+    }
+    // 复制数据（取旧数据和新大小中的较小值）
+    var copySize: uint = oldPure - ptrSize * 2
+    if copySize > newSize {
+        copySize = newSize
+    }
+    memcpy(np, ptr, copySize)
+    free(ptr)
+    ret np
+}

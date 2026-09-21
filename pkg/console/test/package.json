@@ -1,0 +1,8 @@
+{
+    "name": "console_test",
+    "version": "1.0.0",
+    "description": "console package tests",
+    "imports": {
+        "console": "std:console"
+    }
+}

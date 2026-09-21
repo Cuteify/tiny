@@ -1,0 +1,105 @@
+// 字符串工具函数测试
+
+fn main() int {
+    var fails: int = 0
+
+    // 1. contains
+    if strings.contains("hello world", "world") == false {
+        fails = fails + 1
+    }
+    if strings.contains("hello", "xyz") == true {
+        fails = fails + 1
+    }
+    if strings.contains("hello", "") == false {
+        fails = fails + 1
+    }
+
+    // 2. index
+    var idx: int = strings.index("hello world", "world")
+    if idx != 6 {
+        fails = fails + 1
+    }
+    idx = strings.index("hello", "xyz")
+    if idx != -1 {
+        fails = fails + 1
+    }
+    idx = strings.index("hello", "")
+    if idx != 0 {
+        fails = fails + 1
+    }
+
+    // 3. hasPrefix / hasSuffix
+    if strings.hasPrefix("hello world", "hello") == false {
+        fails = fails + 1
+    }
+    if strings.hasPrefix("hello", "world") == true {
+        fails = fails + 1
+    }
+    if strings.hasSuffix("hello world", "world") == false {
+        fails = fails + 1
+    }
+    if strings.hasSuffix("hello", "world") == true {
+        fails = fails + 1
+    }
+
+    // 4. toUpper / toLower
+    var upper: string = strings.toUpper("hello")
+    if strings.eq(upper, "HELLO") == false {
+        fails = fails + 1
+    }
+    var lower: string = strings.toLower("HELLO")
+    if strings.eq(lower, "hello") == false {
+        fails = fails + 1
+    }
+
+    // 5. trimSpace
+    var trimmed: string = strings.trimSpace("  hello  ")
+    if strings.eq(trimmed, "hello") == false {
+        fails = fails + 1
+    }
+
+    // 6. trimPrefix / trimSuffix
+    var noPrefix: string = strings.trimPrefix("hello world", "hello ")
+    if strings.eq(noPrefix, "world") == false {
+        fails = fails + 1
+    }
+    var noSuffix: string = strings.trimSuffix("hello world", " world")
+    if strings.eq(noSuffix, "hello") == false {
+        fails = fails + 1
+    }
+
+    // 7. repeat
+    var repeated: string = strings.repeat("ab", 3)
+    if strings.eq(repeated, "ababab") == false {
+        fails = fails + 1
+    }
+
+    // 8. replace
+    var replaced: string = strings.replace("hello hello hello", "hello", "hi", 2)
+    if strings.eq(replaced, "hi hi hello") == false {
+        fails = fails + 1
+    }
+
+    // 9. split
+    var parts: []string = strings.split("a,b,c", ",")
+    if len(parts) != 3 {
+        fails = fails + 1
+    }
+
+    // 10. join
+    var joined: string = strings.join(parts, "-")
+    if strings.eq(joined, "a-b-c") == false {
+        fails = fails + 1
+    }
+
+    // 11. fields
+    var words: []string = strings.fields("  hello   world  ")
+    if len(words) != 2 {
+        fails = fails + 1
+    }
+
+    if fails == 0 {
+        console.println("ALL PASS")
+    }
+    ret fails
+}

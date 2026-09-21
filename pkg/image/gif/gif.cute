@@ -1,0 +1,12 @@
+// pkg/image/gif/gif.cute - GIF 编解码存根（占位）
+// 平台无关实现
+
+// Encode 将图像编码为 GIF 格式（存根，返回空字符串）
+fn Encode(img *image.Image) string {
+    ret ""
+}
+
+// Decode 从 GIF 数据解码图像（存根，返回空图像）
+fn Decode(data string) *image.Image {
+    ret image.NewRGBA(0, 0)
+}

@@ -1,0 +1,33 @@
+// 函数重载测试
+// 同名函数，不同参数类型
+
+fn add(a: int, b: int) int {
+    ret a + b
+}
+
+fn add(a: int, b: int, c: int) int {
+    ret a + b + c
+}
+
+fn main() int {
+    var failures: int = 0
+
+    // 测试两参数重载
+    var r1: int = add(1, 2)
+    if r1 != 3 {
+        failures = failures + 1
+    }
+
+    // 测试三参数重载
+    var r3: int = add(1, 2, 3)
+    if r3 != 6 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        println("overload: ALL PASS")
+        ret 42
+    }
+    println("overload: FAIL")
+    ret 1
+}

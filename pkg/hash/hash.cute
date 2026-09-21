@@ -1,0 +1,5 @@
+// pkg/hash/hash.cute - 哈希函数接口包
+// 提供统一的哈希接口常量定义
+// 具体实现分散在子包中（crc32, crc64, adler32, fnv, maphash）
+
+const VERSION: string = "1.0.0"

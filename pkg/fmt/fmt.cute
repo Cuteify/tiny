@@ -1,0 +1,98 @@
+// pkg/fmt/fmt.cute - 格式化包
+// 提供整数到字符串转换工具函数
+// 平台无关实现，底层复用 std:memory 和 std:strings
+
+// itoa 将整数转换为十进制字符串
+fn itoa(n int) string {
+    ret strings.toString(n, 10)
+}
+
+// itoaHex 将整数转换为十六进制字符串（小写）
+fn itoaHex(n int) string {
+    ret strings.toString(n, 16)
+}
+
+// itoaOct 将整数转换为八进制字符串
+fn itoaOct(n int) string {
+    ret strings.toString(n, 8)
+}
+
+// appendInt 将整数追加到现有字符串末尾
+fn appendInt(s string, n int) string {
+    var numStr: string = itoa(n)
+    var sLen: uint = strings.len(s)
+    var nLen: uint = strings.len(numStr)
+    var totalLen: uint = sLen + nLen
+    var buf: ptr = memory.malloc(totalLen + 1)
+    var sPtr: ptr = strings.toCstring(s)
+    var nPtr: ptr = strings.toCstring(numStr)
+    // 拷贝原字符串
+    var i: uint = 0
+    for i < sLen {
+        var _p1: *u8 = buf + i
+        var _p2: *u8 = sPtr + i
+        *_p1 = unsafe.cast[u8](*_p2)
+        i = i + 1
+    }
+    // 拷贝数字字符串
+    i = 0
+    for i < nLen {
+        var _p3: *u8 = buf + sLen + i
+        var _p4: *u8 = nPtr + i
+        *_p3 = unsafe.cast[u8](*_p4)
+        i = i + 1
+    }
+    var _p5: *u8 = buf + totalLen
+    *_p5 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, totalLen, totalLen)
+}
+
+// appendStr 将字符串追加到现有字符串末尾
+fn appendStr(s string, suffix string) string {
+    var sLen: uint = strings.len(s)
+    var nLen: uint = strings.len(suffix)
+    var totalLen: uint = sLen + nLen
+    var buf: ptr = memory.malloc(totalLen + 1)
+    var sPtr: ptr = strings.toCstring(s)
+    var nPtr: ptr = strings.toCstring(suffix)
+    // 拷贝原字符串
+    var i: uint = 0
+    for i < sLen {
+        var _p6: *u8 = buf + i
+        var _p7: *u8 = sPtr + i
+        *_p6 = unsafe.cast[u8](*_p7)
+        i = i + 1
+    }
+    // 拷贝后缀字符串
+    i = 0
+    for i < nLen {
+        var _p8: *u8 = buf + sLen + i
+        var _p9: *u8 = nPtr + i
+        *_p8 = unsafe.cast[u8](*_p9)
+        i = i + 1
+    }
+    var _p10: *u8 = buf + totalLen
+    *_p10 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, totalLen, totalLen)
+}
+
+// appendChar 将单个字符追加到字符串末尾
+fn appendChar(s string, c int) string {
+    var sLen: uint = strings.len(s)
+    var buf: ptr = memory.malloc(sLen + 2)
+    var sPtr: ptr = strings.toCstring(s)
+    // 拷贝原字符串
+    var i: uint = 0
+    for i < sLen {
+        var _p11: *u8 = buf + i
+        var _p12: *u8 = sPtr + i
+        *_p11 = unsafe.cast[u8](*_p12)
+        i = i + 1
+    }
+    // 追加字符
+    var _p13: *u8 = buf + sLen
+    *_p13 = unsafe.cast[u8](c)
+    var _p14: *u8 = buf + sLen + 1
+    *_p14 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, sLen + 1, sLen + 1)
+}

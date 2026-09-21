@@ -1,0 +1,207 @@
+// pkg/archive/tar/tar.cute - Tar 归档读取（USTAR 格式）
+// USTAR 格式头：512 字节
+//   [0,100]    文件名 (NUL 填充)
+//   [100,108]  文件模式 (8 进制 ASCII)
+//   [108,116]  用户 ID (8 进制 ASCII)
+//   [116,124]  组 ID (8 进制 ASCII)
+//   [124,136]  文件大小 (12 位 8 进制 ASCII)
+//   [136,148]  修改时间 (12 位 8 进制 ASCII)
+//   [148,151]  校验和 (6 位 8 进制 ASCII + 空格 + NUL)
+//   [151]      文件类型标志
+//   [257,263]  USTAR 标志 "ustar"
+//   [263,265]  版本 "00"
+//   [265,297]  用户名
+//   [297,329]  组名
+//   [329,337]  设备主号
+//   [337,345]  设备次号
+//   [347,500]  前缀路径
+
+// Header tar 头部结构
+type Header struct {
+    name: string  // 文件名
+    size: uint    // 文件大小
+    mode: u32     // 文件模式
+}
+
+// Reader tar 读取器
+type Reader struct {
+    data: ptr     // 输入数据指针
+    dataLen: uint // 输入数据总长度
+    pos: uint     // 当前读取位置（对齐到 512 字节边界）
+    filePos: uint // 当前文件内容读取位置
+    fileSize: uint// 当前文件剩余大小
+}
+
+// octalToInt 将 8 进制 ASCII 字符串解析为整数
+fn octalToInt(ptr ptr, len uint) uint {
+    var result: uint = 0
+    var i: uint = 0
+    for ; i < len; {
+        var _p1: *u8 = ptr + i
+        var ch: u8 = *_p1
+        if ch < '0' || ch > '7' {
+            break
+        }
+        result = result * 8 + (ch - '0')
+        i = i + 1
+    }
+    ret result
+}
+
+// parseTarName 从 NUL 结尾的固定长度字段中提取字符串
+fn parseTarName(ptr ptr, maxLen uint) string {
+    var i: uint = 0
+    for ; i < maxLen; {
+        var _p2: *u8 = ptr + i
+        if *_p2 == 0 {
+            break
+        }
+        i = i + 1
+    }
+    var strPtr: ptr = memory.malloc(i + 1)
+    var j: uint = 0
+    for ; j < i; {
+        var _p3: *u8 = strPtr + j
+        var _p4: *u8 = ptr + j
+        *_p3 = unsafe.cast[u8](*_p4)
+        j = j + 1
+    }
+    var _p5: *u8 = strPtr + i
+    *_p5 = unsafe.cast[u8](0)
+    ret strings.makeString(strPtr, i, i)
+}
+
+// NewReader 创建 tar 读取器
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(40)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // layout: [data:8][dataLen:8][pos:8][filePos:8][fileSize:8]
+    var _p6: *ptr = buf
+    *_p6 = unsafe.cast[ptr](rPtr)
+    var _p7: *ptr = buf + 8
+    *_p7 = unsafe.cast[ptr](rLen)
+    var _p8: *ptr = buf + 16
+    *_p8 = unsafe.cast[ptr](0)
+    var _p9: *ptr = buf + 24
+    *_p9 = unsafe.cast[ptr](0)
+    var _p10: *ptr = buf + 32
+    *_p10 = unsafe.cast[ptr](0)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Next 读取下一个 tar 头部，返回 *Header 或 nil（EOF）
+fn Next(r *Reader) *Header {
+    var _p11: *ptr = r
+    var dataPtr: ptr = *_p11
+    var _p12: *ptr = r + 8
+    var dataLen: uint = *_p12
+    var _p13: *ptr = r + 16
+    var pos: uint = *_p13
+
+    // 检查是否有足够数据
+    if pos + 512 > dataLen {
+        ret 0
+    }
+
+    // 检查全零块（tar 结尾标记）
+    var isZero: bool = true
+    var i: u32 = 0
+    for ; i < 512; {
+        var _p14: *u8 = dataPtr + pos + i
+        if *_p14 != 0 {
+            isZero = false
+            break
+        }
+        i = i + 1
+    }
+    if isZero {
+        ret 0
+    }
+
+    // 解析文件名
+    var name: string = parseTarName(dataPtr + pos, 100)
+
+    // 解析文件大小（12 位 8 进制）
+    var size: uint = octalToInt(dataPtr + pos + 124, 12)
+
+    // 解析文件模式（8 位 8 进制）
+    var mode: u32 = 0
+    var i2: u32 = 0
+    for ; i2 < 8; {
+        var _p15: *u8 = dataPtr + pos + 100 + i2
+        var ch: u8 = *_p15
+        if ch >= '0' && ch <= '7' {
+            mode = mode * 8 + (ch - '0')
+        }
+        i2 = i2 + 1
+    }
+
+    // 创建 Header
+    var hdrBuf: ptr = memory.malloc(24)
+    var _p16: *ptr = hdrBuf
+    *_p16 = unsafe.cast[ptr](name)
+    var _p17: *ptr = hdrBuf + 8
+    *_p17 = unsafe.cast[ptr](size)
+    var _p18: *uint = hdrBuf + 16
+    *_p18 = unsafe.cast[uint](mode)
+
+    // 更新位置：跳过头部（512 字节）+ 文件数据（对齐到 512 边界）
+    var dataBlocks: uint = (size + 511) / 512
+    pos = pos + 512 + dataBlocks * 512
+
+    var _p19: *ptr = r + 16
+    *_p19 = unsafe.cast[ptr](pos)
+    var _p20: *ptr = r + 24
+    *_p20 = unsafe.cast[ptr](0)
+    var _p21: *ptr = r + 32
+    *_p21 = unsafe.cast[ptr](size)
+
+    var result: *Header
+    result = hdrBuf
+    ret result
+}
+
+// Read 从当前文件内容中读取数据
+fn Read(r *Reader, buf ptr, n int) int {
+    var _p22: *ptr = r
+    var dataPtr: ptr = *_p22
+    var _p23: *ptr = r + 8
+    var dataLen: uint = *_p23
+    var _p24: *ptr = r + 16
+    var pos: uint = *_p24
+    var _p25: *ptr = r + 24
+    var filePos: uint = *_p25
+    var _p26: *ptr = r + 32
+    var fileSize: uint = *_p26
+
+    // 文件内容起始位置 = pos - fileSize（因为 Next 已经跳过了头部）
+    var contentStart: uint = pos - fileSize
+    var offset: uint = contentStart + filePos
+
+    if filePos >= fileSize {
+        ret 0
+    }
+
+    var available: uint = fileSize - filePos
+    var toRead: uint = available
+    if toRead > n {
+        toRead = n
+    }
+
+    var i: uint = 0
+    for ; i < toRead; {
+        if offset + i < dataLen {
+            var _p27: *u8 = buf + i
+            var _p28: *u8 = dataPtr + offset + i
+            *_p27 = unsafe.cast[u8](*_p28)
+        }
+        i = i + 1
+    }
+
+    var _p29: *ptr = r + 24
+    *_p29 = unsafe.cast[ptr](filePos + toRead)
+    ret toRead
+}

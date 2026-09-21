@@ -1,0 +1,26 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test mime.typeByExtension(".html")
+    var htmlType: string = mime.typeByExtension(".html")
+    if !strings.eq(htmlType, "text/html") {
+        failures = failures + 1
+    }
+
+    // Test mime.typeByExtension(".json")
+    var jsonType: string = mime.typeByExtension(".json")
+    if !strings.eq(jsonType, "application/json") {
+        failures = failures + 1
+    }
+
+    // Test mime.typeByExtension(".png")
+    var pngType: string = mime.typeByExtension(".png")
+    if !strings.eq(pngType, "image/png") {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

@@ -82,7 +82,8 @@ fn t_arith() int {
 fn t_callarg() int {
     var g: u32 = 100
     var pg: *u32 = &g
-    *pg = memory.load32(&g)
+    var _p1: *uint = &g
+    *pg = *_p1
     if g != 100 {
         ret 0
     }

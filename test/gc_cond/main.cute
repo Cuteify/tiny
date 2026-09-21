@@ -1,0 +1,66 @@
+build os("linux")
+
+type Item struct {
+    name: string
+    value: int
+}
+
+fn makeItem(name: string, value: int) *Item {
+    var it: *Item = new(Item)
+    it.name = name
+    it.value = value
+    ret it
+}
+
+fn pickItem(flag: int) *Item {
+    if flag == 1 {
+        ret makeItem("alpha", 100)
+    }
+    if flag == 2 {
+        ret makeItem("beta", 200)
+    }
+    if flag == 3 {
+        ret makeItem("gamma", 300)
+    }
+    ret makeItem("default", 0)
+}
+
+fn main() int {
+    var ok: int = 0
+
+    // 1. 条件分支分配
+    var a: *Item = pickItem(1)
+    var b: *Item = pickItem(2)
+    var c: *Item = pickItem(3)
+    var d: *Item = pickItem(99)
+    if a.value + b.value + c.value + d.value == 600 {
+        ok = ok + 1
+    }
+
+    // 2. 循环内条件分配
+    var total: int = 0
+    var i: int = 0
+    for ; i < 10; {
+        var it: *Item = pickItem(i)
+        total = total + it.value
+        i = i + 1
+    }
+    // pickItem(0)=0, 1=100, 2=200, 3=300, 4..9=0 → total=600
+    if total == 600 {
+        ok = ok + 1
+    }
+
+    // 3. if-else 两条路径都分配
+    var x: int = 5
+    var p: *Item
+    if x > 3 {
+        p = makeItem("big", 50)
+    } else {
+        p = makeItem("small", 10)
+    }
+    if p.value == 50 {
+        ok = ok + 1
+    }
+
+    ret ok
+}

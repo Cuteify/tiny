@@ -1,0 +1,596 @@
+// pkg/strings/strings_common.cute - 平台无关字符串函数
+// 补充 strings_x86/strings_x86_64 中缺失的函数
+
+// count 计算 substr 在 s 中出现的次数
+fn count(s string, substr string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var tPtr: ptr = strings.toCstring(substr)
+    var tLen: uint = strings.len(substr)
+    var nf: uint = strings.notFound()
+    var cnt: int = 0
+    var scanPos: uint = 0
+
+    if tLen < 1 {
+        ret sLen + 1
+    }
+
+    for ; true; {
+        var idx: uint = strings.indexFrom(sPtr, sLen, tPtr, tLen, scanPos)
+        if idx >= nf {
+            break
+        }
+        cnt = cnt + 1
+        scanPos = idx + tLen
+    }
+    ret cnt
+}
+
+// isSpace 判断字节是否为空白字符（空格、制表符、换行符、回车符）
+fn isSpace(ch uint) bool {
+    if ch == 32 { ret true }   // space
+    if ch == 9 { ret true }    // tab
+    if ch == 10 { ret true }   // newline
+    if ch == 13 { ret true }   // carriage return
+    ret false
+}
+
+// trimLeft 从 s 左侧去除 cutset 中包含的字符
+fn trimLeft(s string, cutset string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var cPtr: ptr = strings.toCstring(cutset)
+    var cLen: uint = strings.len(cutset)
+    var i: uint = 0
+
+    for ; i < sLen; {
+        var _p1: *u8 = sPtr + i
+        var ch: uint = *_p1
+        var found: bool = false
+        var j: uint = 0
+        for ; j < cLen; {
+            var _p2: *u8 = cPtr + j
+            var cj: uint = *_p2
+            if ch == cj {
+                found = true
+                break
+            }
+            j = j + 1
+        }
+        if !found {
+            break
+        }
+        i = i + 1
+    }
+
+    var newLen: uint = sLen - i
+    var buf: ptr = memory.malloc(newLen + 1)
+    var k: uint = 0
+    for ; k < newLen; {
+        var _p3: *u8 = buf + k
+        var _p4: *u8 = sPtr + i + k
+        *_p3 = unsafe.cast[u8](*_p4)
+        k = k + 1
+    }
+    var _p5: *u8 = buf + newLen
+    *_p5 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, newLen, newLen)
+}
+
+// trimRight 从 s 右侧去除 cutset 中包含的字符
+fn trimRight(s string, cutset string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var cPtr: ptr = strings.toCstring(cutset)
+    var cLen: uint = strings.len(cutset)
+    var end: uint = sLen
+
+    for ; end > 0; {
+        var _p6: *u8 = sPtr + end - 1
+        var ch: uint = *_p6
+        var found: bool = false
+        var j: uint = 0
+        for ; j < cLen; {
+            var _p7: *u8 = cPtr + j
+            var cj: uint = *_p7
+            if ch == cj {
+                found = true
+                break
+            }
+            j = j + 1
+        }
+        if !found {
+            break
+        }
+        end = end - 1
+    }
+
+    var buf: ptr = memory.malloc(end + 1)
+    var k: uint = 0
+    for ; k < end; {
+        var _p8: *u8 = buf + k
+        var _p9: *u8 = sPtr + k
+        *_p8 = unsafe.cast[u8](*_p9)
+        k = k + 1
+    }
+    var _p10: *u8 = buf + end
+    *_p10 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, end, end)
+}
+
+// trim 从 s 两端去除 cutset 中包含的字符
+fn trim(s string, cutset string) string {
+    ret trimRight(trimLeft(s, cutset), cutset)
+}
+
+// lastIndex 返回 substr 在 s 中最后一次出现的位置，未找到返回 -1
+fn lastIndex(s string, substr string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var tPtr: ptr = strings.toCstring(substr)
+    var tLen: uint = strings.len(substr)
+
+    if tLen < 1 {
+        ret sLen
+    }
+    if tLen > sLen {
+        ret 0 - 1
+    }
+
+    var i: uint = sLen - tLen
+    var lastFound: int = -1
+    for ; true; {
+        var found: bool = true
+        var j: uint = 0
+        for ; j < tLen; {
+            var _p11: *u8 = sPtr + i + j
+            var a: uint = *_p11
+            var _p12: *u8 = tPtr + j
+            var b: uint = *_p12
+            if a != b {
+                found = false
+                break
+            }
+            j = j + 1
+        }
+        if found {
+            lastFound = strings.fromI64(i)
+            break
+        }
+        if i < 1 {
+            break
+        }
+        i = i - 1
+    }
+    ret lastFound
+}
+
+// indexByte 返回字节 c 在 s 中首次出现的位置，未找到返回 -1
+fn indexByte(s string, c int) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var byteVal: uint = c
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p13: *u8 = sPtr + i
+        var mv: uint = *_p13
+        if mv == byteVal {
+            ret i
+        }
+        i = i + 1
+    }
+    ret 0 - 1
+}
+
+// containsAny 判断 s 是否包含 chars 中的任意字符
+fn containsAny(s string, chars string) bool {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var cPtr: ptr = strings.toCstring(chars)
+    var cLen: uint = strings.len(chars)
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p14: *u8 = sPtr + i
+        var ch: uint = *_p14
+        var j: uint = 0
+        for ; j < cLen; {
+            var _p15: *u8 = cPtr + j
+            var cj: uint = *_p15
+            if ch == cj {
+                ret true
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    ret false
+}
+
+// containsRune 判断 s 是否包含 Unicode 码点 r
+fn containsRune(s string, r int) bool {
+    if r < 128 {
+        if indexByte(s, r) >= 0 {
+            ret true
+        }
+        ret false
+    }
+    ret false
+}
+
+// compare 比较两个字符串：相等返回 0，a<b 返回负数，a>b 返回正数
+fn compare(a string, b string) int {
+    var aPtr: ptr = strings.toCstring(a)
+    var aLen: uint = strings.len(a)
+    var bPtr: ptr = strings.toCstring(b)
+    var bLen: uint = strings.len(b)
+    var minLen: uint = aLen
+    if bLen < aLen {
+        minLen = bLen
+    }
+    var i: uint = 0
+    for ; i < minLen; {
+        var _p16: *u8 = aPtr + i
+        var ca: uint = *_p16
+        var _p17: *u8 = bPtr + i
+        var cb: uint = *_p17
+        if ca < cb {
+            ret 0 - 1
+        }
+        if ca > cb {
+            ret 1
+        }
+        i = i + 1
+    }
+    if aLen < bLen {
+        ret 0 - 1
+    }
+    if aLen > bLen {
+        ret 1
+    }
+    ret 0
+}
+
+// ============================================================================
+// strconv 功能（合并至 strings 包）
+// ============================================================================
+
+// atoi 将十进制字符串解析为 int
+fn atoi(s string) int {
+    ret strings.parse(s, 10)
+}
+
+// itoa 将 int 转换为十进制字符串
+fn itoa(n int) string {
+    ret strings.toString(n, 10)
+}
+
+// parseBool 解析布尔字符串
+fn parseBool(s string) bool {
+    var sLen: uint = strings.len(s)
+    var sPtr: ptr = strings.toCstring(s)
+
+    if sLen < 1 {
+        ret false
+    }
+
+    // 单字符：'1' -> true, '0' -> false
+    if sLen == 1 {
+        var _p18: *u8 = sPtr
+        var ch: uint = *_p18
+        if ch == 49 { ret true }   // '1'
+        if ch == 48 { ret false }  // '0'
+        ret false
+    }
+
+    // "true" / "TRUE"
+    if sLen == 4 {
+        var _p19: *u8 = sPtr
+        var a: uint = *_p19
+        var _p20: *u8 = sPtr + 1
+        var b: uint = *_p20
+        var _p21: *u8 = sPtr + 2
+        var c: uint = *_p21
+        var _p22: *u8 = sPtr + 3
+        var d: uint = *_p22
+        if a == 116 && b == 114 && c == 117 && d == 101 { ret true }   // "true"
+        if a == 84 && b == 82 && c == 85 && d == 69 { ret true }       // "TRUE"
+    }
+
+    // "false" / "FALSE"
+    if sLen == 5 {
+        var _p23: *u8 = sPtr
+        var a2: uint = *_p23
+        var _p24: *u8 = sPtr + 1
+        var b2: uint = *_p24
+        var _p25: *u8 = sPtr + 2
+        var c2: uint = *_p25
+        var _p26: *u8 = sPtr + 3
+        var d2: uint = *_p26
+        var _p27: *u8 = sPtr + 4
+        var e2: uint = *_p27
+        if a2 == 102 && b2 == 97 && c2 == 108 && d2 == 115 && e2 == 101 { ret false }  // "false"
+        if a2 == 70 && b2 == 65 && c2 == 76 && d2 == 83 && e2 == 69 { ret false }      // "FALSE"
+    }
+
+    ret false
+}
+
+// ===== 字节缓冲区构建器 =====
+// 高层包（如 console）应使用这些函数而非直接调用 memory.store8/malloc/free
+
+// bufNew 分配一个字节缓冲区（返回 ptr）
+fn bufNew(capacity int) ptr {
+    ret memory.malloc(capacity)
+}
+
+// bufSetByte 在指定偏移写入一个字节
+fn bufSetByte(buf ptr, offset int, val int) {
+    var _p28: *u8 = buf + offset
+    *_p28 = unsafe.cast[u8](val)
+}
+
+// bufSetInt 在指定偏移写入整数的十进制 ASCII，返回写入字节数
+fn bufSetInt(buf ptr, offset int, n int) int {
+    if n == 0 {
+        var _p29: *u8 = buf + offset
+        *_p29 = unsafe.cast[u8](48)
+        ret 1
+    }
+    var negative: int = 0
+    var num: int = n
+    if num < 0 {
+        negative = 1
+        num = 0 - num
+    }
+    var temp: int = num
+    var digitCount: int = 0
+    for ; temp > 0; {
+        temp = temp / 10
+        digitCount = digitCount + 1
+    }
+    var total: int = digitCount
+    if negative == 1 {
+        total = total + 1
+    }
+    var pos: int = digitCount
+    var remaining: int = num
+    for ; remaining > 0; {
+        pos = pos - 1
+        var digit: int = remaining - (remaining / 10) * 10
+        var _p30: *u8 = buf + offset + pos
+        *_p30 = unsafe.cast[u8](48 + digit)
+        remaining = remaining / 10
+    }
+    if negative == 1 {
+        pos = pos - 1
+        var _p31: *u8 = buf + offset + pos
+        *_p31 = unsafe.cast[u8](45)
+    }
+    ret total
+}
+
+// bufToString 将缓冲区包装为 string 并释放缓冲区
+fn bufToString(buf ptr, length int) string {
+    var s: string = strings.makeString(buf, length, length)
+    memory.free(buf)
+    ret s
+}
+
+// bufCopyFrom 从 src 指针复制 count 个字节到 dst+offset
+fn bufCopyFrom(dst ptr, dstOffset int, src ptr, count int) {
+    var i: int = 0
+    for ; i < count; {
+        var _p32: *u8 = dst + dstOffset + i
+        var _p33: *u8 = src + i
+        *_p32 = unsafe.cast[u8](*_p33)
+        i = i + 1
+    }
+}
+
+// formatBool 将布尔值格式化为字符串
+fn formatBool(b bool) string {
+    if b {
+        var tbuf: ptr = memory.malloc(5)
+        var _p34: *u8 = tbuf
+        *_p34 = unsafe.cast[u8](116)
+        var _p35: *u8 = tbuf + 1
+        *_p35 = unsafe.cast[u8](114)
+        var _p36: *u8 = tbuf + 2
+        *_p36 = unsafe.cast[u8](117)
+        var _p37: *u8 = tbuf + 3
+        *_p37 = unsafe.cast[u8](101)
+        var _p38: *u8 = tbuf + 4
+        *_p38 = unsafe.cast[u8](0)
+        ret strings.makeString(tbuf, 4, 4)
+    }
+    var fbuf: ptr = memory.malloc(6)
+    var _p39: *u8 = fbuf
+    *_p39 = unsafe.cast[u8](102)
+    var _p40: *u8 = fbuf + 1
+    *_p40 = unsafe.cast[u8](97)
+    var _p41: *u8 = fbuf + 2
+    *_p41 = unsafe.cast[u8](108)
+    var _p42: *u8 = fbuf + 3
+    *_p42 = unsafe.cast[u8](115)
+    var _p43: *u8 = fbuf + 4
+    *_p43 = unsafe.cast[u8](101)
+    var _p44: *u8 = fbuf + 5
+    *_p44 = unsafe.cast[u8](0)
+    ret strings.makeString(fbuf, 5, 5)
+}
+
+// ===== 新增函数 =====
+
+// equalFold 忽略大小写比较两个字符串
+fn equalFold(s string, t string) bool {
+    var sLen: uint = strings.len(s)
+    var tLen: uint = strings.len(t)
+    if sLen != tLen {
+        ret false
+    }
+    var sPtr: ptr = strings.toCstring(s)
+    var tPtr: ptr = strings.toCstring(t)
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p45: *u8 = sPtr + i
+        var a: uint = *_p45
+        var _p46: *u8 = tPtr + i
+        var b: uint = *_p46
+        // 转小写比较
+        if a >= 65 && a <= 90 {
+            a = a + 32
+        }
+        if b >= 65 && b <= 90 {
+            b = b + 32
+        }
+        if a != b {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// indexAny 返回 chars 中任意字符在 s 中首次出现的位置，未找到返回 -1
+fn indexAny(s string, chars string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var cPtr: ptr = strings.toCstring(chars)
+    var cLen: uint = strings.len(chars)
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p47: *u8 = sPtr + i
+        var ch: uint = *_p47
+        var j: uint = 0
+        for ; j < cLen; {
+            var _p48: *u8 = cPtr + j
+            var cj: uint = *_p48
+            if ch == cj {
+                ret i
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    ret 0 - 1
+}
+
+// lastIndexByte 返回字节 c 在 s 中最后一次出现的位置，未找到返回 -1
+fn lastIndexByte(s string, c int) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var byteVal: uint = c
+    var i: uint = sLen
+    for ; i > 0; {
+        i = i - 1
+        var _p49: *u8 = sPtr + i
+        var mv: uint = *_p49
+        if mv == byteVal {
+            ret i
+        }
+    }
+    ret 0 - 1
+}
+
+// countByte 返回字节 c 在 s 中出现的次数
+fn countByte(s string, c int) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var byteVal: uint = c
+    var cnt: int = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p50: *u8 = sPtr + i
+        if *_p50 == unsafe.cast[u8](byteVal) {
+            cnt = cnt + 1
+        }
+        i = i + 1
+    }
+    ret cnt
+}
+
+// clone 返回 s 的一个副本
+fn clone(s string) string {
+    var sLen: uint = strings.len(s)
+    if sLen == 0 {
+        ret s
+    }
+    var sPtr: ptr = strings.toCstring(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p51: *u8 = buf + i
+        var _p52: *u8 = sPtr + i
+        *_p51 = unsafe.cast[u8](*_p52)
+        i = i + 1
+    }
+    var _p53: *u8 = buf + sLen
+    *_p53 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, sLen, sLen)
+}
+
+// reverse 返回 s 的反转字符串
+fn reverse(s string) string {
+    var sLen: uint = strings.len(s)
+    if sLen == 0 {
+        ret s
+    }
+    var sPtr: ptr = strings.toCstring(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p54: *u8 = buf + i
+        var _p55: *u8 = sPtr + sLen - 1 - i
+        *_p54 = unsafe.cast[u8](*_p55)
+        i = i + 1
+    }
+    var _p56: *u8 = buf + sLen
+    *_p56 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, sLen, sLen)
+}
+
+// repeatN 返回 s 重复 count 次的新字符串（repeat 的 int 参数版本）
+fn repeatN(s string, count int) string {
+    if count <= 0 {
+        ret ""
+    }
+    ret strings.repeat(s, count)
+}
+
+// hasSuffixAny 判断 s 是否以 suffixes 中的任意一个结尾（suffixes 用 '|' 分隔）
+fn hasSuffixAny(s string, suffixes string) bool {
+    var sLen: uint = strings.len(s)
+    var sfPtr: ptr = strings.toCstring(suffixes)
+    var sfLen: uint = strings.len(suffixes)
+    var i: uint = 0
+    for ; i < sfLen; {
+        var sEnd: uint = i
+        for ; sEnd < sfLen; {
+            var _p57: *u8 = sfPtr + sEnd
+            var ch: uint = *_p57
+            if ch == 124 { // '|'
+                break
+            }
+            sEnd = sEnd + 1
+        }
+        var sufLen: uint = sEnd - i
+        if sufLen > 0 && sufLen <= sLen {
+            var match: bool = true
+            var j: uint = 0
+            for ; j < sufLen; {
+                var _p58: *u8 = strings.toCstring(s) + sLen - sufLen + j
+                var _p59: *u8 = sfPtr + i + j
+                if *_p58 != *_p59 {
+                    match = false
+                    break
+                }
+                j = j + 1
+            }
+            if match {
+                ret true
+            }
+        }
+        i = sEnd + 1
+    }
+    ret false
+}

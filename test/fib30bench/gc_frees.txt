@@ -1,0 +1,8 @@
+== /home/gx/Desktop/______/tiny/pkg/time.durationString (0 vars)
+  hs [string] scope=1
+  ms [string] scope=1
+  ss [string] scope=1
+== /home/gx/Desktop/______/tiny/pkg/time.loadZone (1 vars)
+  data [string] site=call:/home/gx/Desktop/______/tiny/pkg/time.findZoneData off=-1
+== /home/gx/Desktop/______/tiny/pkg/time.zoneOffset (1 vars)
+  data [string] site=call:/home/gx/Desktop/______/tiny/pkg/time.findZoneData off=-1

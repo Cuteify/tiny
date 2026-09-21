@@ -1,0 +1,24 @@
+// Interface dispatch test: call method through interface vtable
+
+type Stringer interface {
+    stringify() string
+}
+
+type Dog struct {
+    name: string
+    age: int
+}
+
+fn Dog.stringify() string {
+    ret "dog"
+}
+
+fn main() int {
+    var d: Dog
+    d.name = "Rex"
+    d.age = 5
+    var s: Stringer = d
+    result := s.stringify()
+    println(result)
+    ret 0
+}

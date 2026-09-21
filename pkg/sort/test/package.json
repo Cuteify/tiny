@@ -1,0 +1,9 @@
+{
+    "name": "sort_test",
+    "version": "1.0.0",
+    "description": "Sort package tests",
+    "imports": {
+        "sort": "std:sort",
+        "memory": "std:memory"
+    }
+}

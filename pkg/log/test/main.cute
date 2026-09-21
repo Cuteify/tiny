@@ -1,0 +1,9 @@
+fn main() int {
+    // Test 1: log.log should not crash
+    log.log("test message")
+
+    // Test 2: log.logError should not crash
+    log.logError("error message")
+
+    ret 42
+}

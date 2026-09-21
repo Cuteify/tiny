@@ -1,0 +1,10 @@
+{
+    "name": "png",
+    "version": "1.0.0",
+    "description": "PNG image encoding stub",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "image": "std:image"
+    }
+}

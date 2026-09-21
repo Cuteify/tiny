@@ -1,0 +1,84 @@
+// pkg/thread/thread.cute — Thread API for Cuteify
+type Thread struct {
+    ctx: ptr
+    tid: u64
+    done: i32
+}
+
+type Mutex struct {
+    state: i32
+}
+
+type Cond struct {
+    state: i32
+}
+
+// threadCreate creates a new thread running fn(arg).
+// fnPtr must be the raw address of the function (use asm lea to get it).
+// Returns a raw ptr to the Thread struct (caller must pass to threadJoin).
+fn threadCreate(fnPtr: ptr, argPtr: ptr) ptr {
+    var t: Thread
+    t.done = 0
+
+    // Allocate ThreadCtx (24 bytes): [funcPtr(8), argPtr(8), retval(8)]
+    var ctx: ptr = memory.malloc(24)
+    var _p1: *ptr = ctx
+    *_p1 = unsafe.cast[ptr](fnPtr)
+    var _p2: *ptr = ctx + 8
+    *_p2 = unsafe.cast[ptr](argPtr)
+    var _p3: *ptr = ctx + 16
+    *_p3 = unsafe.cast[ptr](0)
+    t.ctx = ctx
+
+    // pthread_create(&tid, NULL, threadEntryRaw, ctx)
+    var tid: u64 = 0
+    build asm {
+        and rsp, -16
+        lea rdi, [$tid]
+        xor esi, esi
+        lea rdx, [std_thread_threadEntryRaw__ptr]
+        mov rcx, $ctx
+        call pthread_create
+    }
+    t.tid = tid
+
+    // Allocate Thread on heap and copy
+    var threadPtr: ptr = memory.malloc(24)
+    var _p4: *ptr = threadPtr
+    *_p4 = unsafe.cast[ptr](t.ctx)
+    var _p5: *ptr = threadPtr + 8
+    *_p5 = unsafe.cast[ptr](t.tid)
+    var _p6: *ptr = threadPtr + 16
+    *_p6 = unsafe.cast[ptr](0)
+    ret threadPtr
+}
+
+// threadJoin waits for thread to finish.
+fn threadJoin(t: ptr) {
+    var _p7: *ptr = t + 8
+    var tid: u64 = *_p7
+    if tid != 0 {
+        build asm {
+            and rsp, -16
+            mov rdi, $tid
+            xor esi, esi
+            call pthread_join
+        }
+    }
+    var _p8: *ptr = t
+    var ctx: ptr = *_p8
+    if ctx != 0 {
+        memory.free(ctx)
+    }
+    memory.free(t)
+}
+
+fn threadSelf() u64 {
+    var tid: u64 = 0
+    build asm {
+        and rsp, -16
+        call pthread_self
+        mov $tid, rax
+    }
+    ret tid
+}

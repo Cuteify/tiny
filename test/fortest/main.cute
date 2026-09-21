@@ -1,6 +1,7 @@
 fn sLen(s string) uint {
     var p: ptr = &s
-    ret memory.load64(p + 8)
+    var _p1: *ptr = p + 8
+    ret *_p1
 }
 
 fn main() int {

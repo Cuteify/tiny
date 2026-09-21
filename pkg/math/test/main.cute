@@ -1,0 +1,58 @@
+fn main() int {
+    // math.abs
+    if math.abs(-5) != 5 {
+        ret 1
+    }
+    if math.abs(5) != 5 {
+        ret 2
+    }
+
+    // math.min
+    if math.min(3, 7) != 3 {
+        ret 3
+    }
+
+    // math.max
+    if math.max(3, 7) != 7 {
+        ret 4
+    }
+
+    // math.isPrime
+    if math.isPrime(7) != true {
+        ret 5
+    }
+    if math.isPrime(4) != false {
+        ret 6
+    }
+
+    // math.gcd
+    if math.gcd(12, 8) != 4 {
+        ret 7
+    }
+
+    // math.lcm
+    if math.lcm(4, 6) != 12 {
+        ret 8
+    }
+
+    // math.factorial
+    if math.factorial(5) != 120 {
+        ret 9
+    }
+
+    // math.clamp (f64)
+    var c1: f64 = math.clamp(10.0, 0.0, 5.0)
+    if c1 != 5.0 {
+        ret 10
+    }
+    var c2: f64 = math.clamp(-1.0, 0.0, 5.0)
+    if c2 != 0.0 {
+        ret 11
+    }
+    var c3: f64 = math.clamp(3.0, 0.0, 5.0)
+    if c3 != 3.0 {
+        ret 12
+    }
+
+    ret 42
+}

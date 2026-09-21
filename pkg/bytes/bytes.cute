@@ -1,0 +1,132 @@
+// pkg/bytes/bytes.cute - 字节缓冲区包
+// 提供可增长的字节缓冲区，用于 I/O 操作和字节序列构建
+// 平台无关实现，底层复用 std:memory 和 std:strings
+
+// Buffer 结构体：可增长的字节缓冲区
+type Buffer struct {
+    ptr: ptr    // 数据指针
+    len: uint  // 当前数据长度
+    cap: uint  // 缓冲区总容量
+}
+
+// newBuffer 创建空缓冲区
+fn newBuffer() *Buffer {
+    var b: ptr = memory.malloc(128)
+    var buf: Buffer
+    buf.ptr = b + 24  // 跳过结构体头部
+    buf.len = 0
+    buf.cap = 100     // 默认容量
+    // 写入结构体头部（长度 + 容量 + 数据指针）
+    var _p1: *ptr = b
+    *_p1 = unsafe.cast[ptr](buf.len)
+    var _p2: *ptr = b + 8
+    *_p2 = unsafe.cast[ptr](buf.cap)
+    var _p3: *ptr = b + 16
+    *_p3 = unsafe.cast[ptr](buf.ptr)
+    var result: *Buffer
+    result = b
+    ret result
+}
+
+// grow 扩容缓冲区到至少 newCap 容量
+fn grow(b *Buffer, newCap: uint) {
+    var _p4: *ptr = b + 8
+    var oldCap: uint = *_p4
+    if newCap <= oldCap {
+        ret
+    }
+    // 新容量翻倍或至少 newCap
+    var doubled: uint = oldCap * 2
+    if doubled > newCap {
+        newCap = doubled
+    }
+    var _p5: *ptr = b + 16
+    var oldPtr: ptr = *_p5
+    var _p6: *ptr = b
+    var oldLen: uint = *_p6
+    // 分配新内存
+    var newPtr: ptr = memory.malloc(newCap)
+    // 拷贝旧数据
+    var i: uint = 0
+    for i < oldLen {
+        var _p7: *u8 = newPtr + i
+        var _p8: *u8 = oldPtr + i
+        *_p7 = unsafe.cast[u8](*_p8)
+        i = i + 1
+    }
+    // 更新结构体
+    var _p9: *ptr = b + 16
+    *_p9 = unsafe.cast[ptr](newPtr)
+    var _p10: *ptr = b + 8
+    *_p10 = unsafe.cast[ptr](newCap)
+}
+
+// write 向缓冲区追加原始字节数据
+fn write(b *Buffer, data ptr, dataLen: uint) {
+    var _p11: *ptr = b
+    var curLen: uint = *_p11
+    var _p12: *ptr = b + 8
+    var curCap: uint = *_p12
+    // 检查是否需要扩容
+    if curLen + dataLen > curCap {
+        grow(b, curLen + dataLen)
+    }
+    var _p13: *ptr = b + 16
+    var bufPtr: ptr = *_p13
+    // 拷贝数据到缓冲区
+    var i: uint = 0
+    for i < dataLen {
+        var _p14: *u8 = bufPtr + curLen + i
+        var _p15: *u8 = data + i
+        *_p14 = unsafe.cast[u8](*_p15)
+        i = i + 1
+    }
+    // 更新长度
+    var _p16: *ptr = b
+    *_p16 = unsafe.cast[ptr](curLen + dataLen)
+}
+
+// writeString 向缓冲区追加字符串内容
+fn writeString(b *Buffer, s string) {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    write(b, sPtr, sLen)
+}
+
+// len 返回缓冲区当前数据长度
+fn len(b *Buffer) uint {
+    var _p17: *ptr = b
+    ret *_p17
+}
+
+// reset 重置缓冲区（长度清零，保留容量）
+fn reset(b *Buffer) {
+    var _p18: *ptr = b
+    *_p18 = unsafe.cast[ptr](0)
+}
+
+// String 将缓冲区内容转换为字符串
+fn String(b *Buffer) string {
+    var _p19: *ptr = b
+    var dataLen: uint = *_p19
+    var _p20: *ptr = b + 16
+    var dataPtr: ptr = *_p20
+    // 分配新内存存放字符串数据
+    var strPtr: ptr = memory.malloc(dataLen + 1)
+    var i: uint = 0
+    for i < dataLen {
+        var _p21: *u8 = strPtr + i
+        var _p22: *u8 = dataPtr + i
+        *_p21 = unsafe.cast[u8](*_p22)
+        i = i + 1
+    }
+    var _p23: *u8 = strPtr + dataLen
+    *_p23 = unsafe.cast[u8](0)
+    ret strings.makeString(strPtr, dataLen, dataLen)
+}
+
+// bytes 返回缓冲区数据的原始指针和长度（不支持列表，直接返回信息）
+fn bytes(b *Buffer) ptr {
+    var _p24: *ptr = b + 16
+    ret *_p24
+}

@@ -1,0 +1,214 @@
+// pkg/flag/flag.cute - 命令行参数解析包
+// 简化实现：支持 --name=value 格式的参数解析
+// 注意：Cuteify 没有 os.Args，这里使用全局变量模拟参数输入
+
+// Flag 表示一个命令行标志
+type Flag struct {
+    name: string
+    value: string
+    defValue: string
+    usage: string
+}
+
+// flagSet 内部存储结构
+type flagSet struct {
+    flags: ptr
+    count: uint
+    capacity: uint
+}
+
+// 全局默认 flagSet
+var defaultSet: flagSet
+
+// 全局参数存储（用于模拟 os.Args）
+var gArgs: ptr = 0
+var gArgCount: uint = 0
+
+// init 初始化默认 flagSet
+fn init() {
+    defaultSet.capacity = 16
+    defaultSet.flags = memory.malloc(16 * 128)  // 每个 Flag 约 128 字节
+    defaultSet.count = 0
+}
+
+// setArgs 设置参数（用于模拟 os.Args）
+fn setArgs(args: ptr, count: uint) {
+    gArgs = args
+    gArgCount = count
+}
+
+// defineString 定义字符串标志，返回默认值
+fn defineString(name: string, value: string, usage: string) string {
+    // 如果 flagSet 未初始化，先初始化
+    if defaultSet.capacity == 0 {
+        init()
+    }
+    
+    // 创建新标志
+    var newFlag: Flag
+    newFlag.name = name
+    newFlag.value = value
+    newFlag.defValue = value
+    newFlag.usage = usage
+    
+    // 存储到 flagSet
+    var idx: uint = defaultSet.count
+    if idx >= defaultSet.capacity {
+        // 扩容（简化实现：不处理扩容）
+        ret value
+    }
+    
+    // 写入内存
+    var base: ptr = defaultSet.flags + idx * 128
+    var _p1: *uint = base
+    *_p1 = unsafe.cast[uint](strings.toCstring(name))
+    var _p2: *uint = base + 4
+    *_p2 = unsafe.cast[uint](strings.len(name))
+    var _p3: *uint = base + 8
+    *_p3 = unsafe.cast[uint](strings.toCstring(value))
+    var _p4: *uint = base + 12
+    *_p4 = unsafe.cast[uint](strings.len(value))
+    var _p5: *uint = base + 16
+    *_p5 = unsafe.cast[uint](strings.toCstring(value)  // defValue)
+    var _p6: *uint = base + 20
+    *_p6 = unsafe.cast[uint](strings.len(value))
+    var _p7: *uint = base + 24
+    *_p7 = unsafe.cast[uint](strings.toCstring(usage))
+    var _p8: *uint = base + 28
+    *_p8 = unsafe.cast[uint](strings.len(usage))
+    
+    defaultSet.count = defaultSet.count + 1
+    ret value
+}
+
+// defineInt 定义整数标志，返回默认值
+fn defineInt(name: string, value: int, usage: string) int {
+    // 将整数转换为字符串存储
+    var valueStr: string = strings.toString(value, 10)
+    string(name, valueStr, usage)
+    ret value
+}
+
+// defineBool 定义布尔标志，返回默认值
+fn defineBool(name: string, value: bool, usage: string) bool {
+    // 将布尔值转换为字符串存储
+    var valueStr: string = "false"
+    if value {
+        valueStr = "true"
+    }
+    string(name, valueStr, usage)
+    ret value
+}
+
+// parse 解析命令行参数（简化：只匹配 --name=value 格式）
+fn parse() {
+    // 简化实现：实际解析逻辑需要遍历 gArgs
+    // 这里只是示例框架
+}
+
+// arg 获取位置参数
+fn arg(index: int) string {
+    if gArgs == 0 || index < 0 || uint(index) >= gArgCount {
+        ret ""
+    }
+    // 从参数数组中获取（简化实现）
+    var _p9: *uint = gArgs + uint(index) * 4
+    var argPtr: ptr = *_p9
+    var argLen: uint = 0
+    var _p10: *u8 = argPtr + argLen
+    for ; *_p10 != 0; {
+        argLen = argLen + 1
+    }
+    ret strings.makeString(argPtr, argLen, argLen)
+}
+
+// nArgs 返回位置参数数量
+fn nArgs() int {
+    ret gArgCount
+}
+
+// printUsage 打印使用说明
+fn printUsage() {
+    // 打印所有已定义的标志
+    var i: uint = 0
+    for ; i < defaultSet.count; {
+        var base: ptr = defaultSet.flags + i * 128
+        var _p11: *uint = base
+        var namePtr: ptr = *_p11
+        var _p12: *uint = base + 4
+        var nameLen: uint = *_p12
+        var _p13: *uint = base + 24
+        var usagePtr: ptr = *_p13
+        var _p14: *uint = base + 28
+        var usageLen: uint = *_p14
+        
+        // 打印标志名
+        syscall.write(1, namePtr, nameLen)
+        syscall.write(1, strings.toCstring("  "), 2)
+        // 打印使用说明
+        syscall.write(1, usagePtr, usageLen)
+        syscall.write(1, strings.toCstring("\n"), 1)
+        
+        i = i + 1
+    }
+}
+
+// lookup 查找标志的值
+fn lookup(name: string) string {
+    var i: uint = 0
+    for ; i < defaultSet.count; {
+        var base: ptr = defaultSet.flags + i * 128
+        var _p15: *uint = base
+        var flagNamePtr: ptr = *_p15
+        var _p16: *uint = base + 4
+        var flagNameLen: uint = *_p16
+        
+        // 比较标志名
+        if strings.len(name) == flagNameLen {
+            var match: bool = true
+            var j: uint = 0
+            for ; j < flagNameLen; {
+                var _p17: *u8 = strings.toCstring(name) + j
+                var _p18: *u8 = flagNamePtr + j
+                if *_p17 != *_p18 {
+                    match = false
+                    break
+                }
+                j = j + 1
+            }
+            if match {
+                // 返回当前值
+                var _p19: *uint = base + 8
+                var valuePtr: ptr = *_p19
+                var _p20: *uint = base + 12
+                var valueLen: uint = *_p20
+                ret strings.makeString(valuePtr, valueLen, valueLen)
+            }
+        }
+        i = i + 1
+    }
+    ret ""
+}
+
+// getString 获取字符串标志的值
+fn getString(name: string) string {
+    ret lookup(name)
+}
+
+// getInt 获取整数标志的值
+fn getInt(name: string) int {
+    var valueStr: string = lookup(name)
+    if strings.len(valueStr) == 0 {
+        ret 0
+    }
+    ret strings.parse(valueStr, 10)
+}
+
+// getBool 获取布尔标志的值
+fn getBool(name: string) bool {
+    var valueStr: string = lookup(name)
+    if strings.eq(valueStr, "true") {
+        ret true
+    }
+    ret false
+}

@@ -1,0 +1,168 @@
+// pkg/index/suffixarray/suffixarray.cute - 后缀数组
+// 平台无关实现，使用 O(n^2) 构建算法和 O(n log n) 搜索
+
+// Index 后缀数组结构
+type Index struct {
+    data: string    // 原始字符串
+    sa: ptr         // 后缀数组（int 数组）
+    n: int          // 数据长度
+}
+
+// New 创建后缀数组索引
+// data: 要索引的字符串
+fn New(data string) *Index {
+    var idx: *Index = memory.malloc(32)
+    idx.data = data
+    var dataLen: uint = strings.len(data)
+    idx.n = strings.fromI64(strings.toU64(dataLen))
+    var dataPtr: ptr = strings.toCstring(data)
+    // 分配后缀数组
+    var saSize: uint = dataLen * 8
+    idx.sa = memory.malloc(saSize)
+    // 初始化后缀数组为 0, 1, 2, ..., n-1
+    var i: int = 0
+    for ; i < idx.n; {
+        var _p1: *ptr = idx.sa + strings.toU64(i * 8)
+        *_p1 = unsafe.cast[ptr](strings.toU64(i))
+        i = i + 1
+    }
+    // 构建后缀数组（插入排序，按后缀字典序）
+    buildSuffixArray(idx)
+    ret idx
+}
+
+// buildSuffixArray 通过插入排序构建后缀数组
+fn buildSuffixArray(idx *Index) {
+    var n: int = idx.n
+    if n <= 1 {
+        ret
+    }
+    var dataPtr: ptr = strings.toCstring(idx.data)
+    var dataLen: uint = strings.len(idx.data)
+    var i: int = 1
+    for ; i < n; {
+        var key: int = i
+        var j: int = i - 1
+        for ; j >= 0; {
+            var _p2: *ptr = idx.sa + strings.toU64(j * 8)
+            var jIdx: int = strings.fromI64(*_p2)
+            var keyIdx: int = key
+            // 比较两个后缀
+            var cmp: int = compareSuffixes(dataPtr, dataLen, jIdx, keyIdx)
+            if cmp > 0 {
+                // 交换
+                var _p3: *ptr = idx.sa + strings.toU64(j * 8)
+                var tmp: u64 = *_p3
+                var _p4: *ptr = idx.sa + strings.toU64(j * 8)
+                var _p5: *ptr = idx.sa + strings.toU64((j + 1) * 8)
+                *_p4 = unsafe.cast[ptr](*_p5)
+                var _p6: *ptr = idx.sa + strings.toU64((j + 1) * 8)
+                *_p6 = unsafe.cast[ptr](tmp)
+                j = j - 1
+            } else {
+                break
+            }
+        }
+        i = i + 1
+    }
+}
+
+// compareSuffixes 比较从 pos1 和 pos2 开始的后缀
+// 返回: 正数表示 suffix1 > suffix2, 0 相等, 负数表示 suffix1 < suffix2
+fn compareSuffixes(dataPtr: ptr, dataLen: uint, pos1: int, pos2: int) int {
+    var i1: uint = strings.toU64(pos1)
+    var i2: uint = strings.toU64(pos2)
+    for ; i1 < dataLen && i2 < dataLen; {
+        var _p7: *u8 = dataPtr + i1
+        var c1: u8 = *_p7
+        var _p8: *u8 = dataPtr + i2
+        var c2: u8 = *_p8
+        if c1 < c2 {
+            ret -1
+        }
+        if c1 > c2 {
+            ret 1
+        }
+        i1 = i1 + 1
+        i2 = i2 + 1
+    }
+    if i1 < dataLen {
+        ret 1
+    }
+    if i2 < dataLen {
+        ret -1
+    }
+    ret 0
+}
+
+// Search 在后缀数组中搜索字符串 s
+// 返回 s 在原字符串中首次出现的位置索引，未找到返回 -1
+fn Search(idx *Index, s string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var n: int = idx.n
+    var dataPtr: ptr = strings.toCstring(idx.data)
+    var dataLen: uint = strings.len(idx.data)
+    var low: int = 0
+    var high: int = n
+    for ; low < high; {
+        var mid: int = low + (high - low) / 2
+        var _p9: *ptr = idx.sa + strings.toU64(mid * 8)
+        var midIdx: int = strings.fromI64(*_p9)
+        // 比较后缀与 s
+        var cmp: int = compareWithPattern(dataPtr, dataLen, midIdx, sPtr, sLen)
+        if cmp < 0 {
+            low = mid + 1
+        } else {
+            high = mid
+        }
+    }
+    if low < n {
+        var _p10: *ptr = idx.sa + strings.toU64(low * 8)
+        var pos: int = strings.fromI64(*_p10)
+        // 验证匹配
+        if strings.toU64(pos) + sLen <= dataLen {
+            var match: bool = true
+            var i: uint = 0
+            for ; i < sLen; {
+                var _p11: *u8 = dataPtr + strings.toU64(pos) + i
+                var _p12: *u8 = sPtr + i
+                if *_p11 != *_p12 {
+                    match = false
+                    break
+                }
+                i = i + 1
+            }
+            if match {
+                ret pos
+            }
+        }
+    }
+    ret -1
+}
+
+// compareWithPattern 比较 data 中从 pos 开始的子串与 pattern
+// 返回: 正数表示 data > pattern, 0 相等, 负数表示 data < pattern
+fn compareWithPattern(dataPtr: ptr, dataLen: uint, pos: int, patternPtr: ptr, patternLen: uint) int {
+    var di: uint = strings.toU64(pos)
+    var pi: uint = 0
+    for ; pi < patternLen; {
+        if di >= dataLen {
+            ret -1
+        }
+        var _p13: *u8 = dataPtr + di
+        var dc: u8 = *_p13
+        var _p14: *u8 = patternPtr + pi
+        var pc: u8 = *_p14
+        if dc < pc {
+            ret -1
+        }
+        if dc > pc {
+            ret 1
+        }
+        di = di + 1
+        pi = pi + 1
+    }
+    // pattern 完全匹配，data 可能还有剩余
+    ret 0
+}

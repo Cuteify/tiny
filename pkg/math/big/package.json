@@ -1,0 +1,9 @@
+{
+    "name": "math/big",
+    "version": "1.0.0",
+    "description": "Arbitrary-precision integers and floats (placeholder)",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

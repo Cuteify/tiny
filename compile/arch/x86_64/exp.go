@@ -7,6 +7,7 @@ import (
 	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -16,6 +17,42 @@ const (
 	OrExp   = 4
 	NotExp  = 5
 )
+
+// lo8Exp 返回寄存器名的低8位寄存器名（setXX/movzx 需要）
+func lo8Exp(name string) string {
+	switch strings.ToUpper(name) {
+	case "EAX", "RAX":
+		return "al"
+	case "EBX", "RBX":
+		return "bl"
+	case "ECX", "RCX":
+		return "cl"
+	case "EDX", "RDX":
+		return "dl"
+	case "ESI", "RSI":
+		return "sil"
+	case "EDI", "RDI":
+		return "dil"
+	case "R8":
+		return "r8b"
+	case "R9":
+		return "r9b"
+	case "R10":
+		return "r10b"
+	case "R11":
+		return "r11b"
+	case "R12":
+		return "r12b"
+	case "R13":
+		return "r13b"
+	case "R14":
+		return "r14b"
+	case "R15":
+		return "r15b"
+	default:
+		return "al"
+	}
+}
 
 type ExpCom struct {
 	ctx           *context.Context
@@ -39,6 +76,12 @@ func (c *ExpCom) CompileExpr(exp *parser.Expression, result, desc string) (code 
 	if exp.Type != nil && exp.Type.Kind() == "list" && result != "push" && !IsReg(result) {
 		if baseOffset, ok := GetRbpOffset(result); ok {
 			return c.compileListToAddr(exp, baseOffset, desc)
+		}
+	}
+
+	if exp.Type != nil && exp.Type.Kind() == "array" && exp.Separator == "array_lit" && result != "push" && !IsReg(result) {
+		if baseOffset, ok := GetRbpOffset(result); ok {
+			return c.compileArrayToAddr(exp, baseOffset, desc)
 		}
 	}
 
@@ -90,6 +133,8 @@ func (c *ExpCom) CompileExprChildren(exp *parser.Expression) (code string, reg *
 		return c.compileSlice(exp)
 	case "list_lit":
 		return c.compileListLiteral(exp)
+	case "array_lit":
+		return c.compileArrayLiteral(exp)
 	}
 
 	return c.compileBinaryOp(exp)
@@ -126,6 +171,25 @@ func (c *ExpCom) builtinHandle(exp *parser.Expression, result, desc string) (cod
 		return
 	}
 
+	// 数组内建方法（len）
+	if exp.Call.ThisVar != nil && exp.Call.ThisVar.Type != nil &&
+		exp.Call.ThisVar.Type.Kind() == "array" && len(exp.Call.Args) == 0 {
+		methodName := exp.Call.Name.Last()
+		if methodName == "len" {
+			at := exp.Call.ThisVar.Type.(*typeSys.ArrayType)
+			lenVal := strconv.Itoa(at.Len())
+			if result == "push" {
+				code += utils.Format("push QWORD " + lenVal + "; array len " + desc)
+			} else if IsReg(result) {
+				code += utils.Format("mov " + result + ", " + lenVal + "; " + desc)
+			} else {
+				code += utils.Format("mov rax, " + lenVal + "; " + desc)
+				code += utils.Format("mov " + result + ", rax; " + desc)
+			}
+			return
+		}
+	}
+
 	if len(exp.Call.Args) != 1 {
 		return ""
 	}
@@ -141,7 +205,7 @@ func (c *ExpCom) builtinHandle(exp *parser.Expression, result, desc string) (cod
 
 	switch callName {
 	case "len", "lists_len":
-		if typeSys.CheckKind(argType, "string") || argType.Kind() == "list" {
+		if typeSys.CheckKind(argType, "string") || argType.Kind() == "list" || (argType.IsPointer() && argType.Elem() != nil && argType.Elem().Kind() == "list") {
 			var argCode, argResult string
 			if arg.Value.IsConst() {
 				argCode, argResult = c.CompileExprVal(arg.Value)
@@ -157,15 +221,23 @@ func (c *ExpCom) builtinHandle(exp *parser.Expression, result, desc string) (cod
 				}
 			}
 			code += argCode
+			// *[]T: 先解引用指针，再读 len 字段
+			base := argResult
+			if argType.IsPointer() && argType.Elem() != nil && argType.Elem().Kind() == "list" {
+				tmp := "RAX"
+				code += utils.Format("mov " + tmp + ", " + base)
+				code += utils.Format("mov " + tmp + ", QWORD [" + tmp + "]")
+				base = tmp
+			}
 			if result == "push" {
-				code += utils.Format("push QWORD [" + argResult + "+8]; " + desc)
+				code += utils.Format("push QWORD [" + base + "+8]; " + desc)
 			} else {
-				code += utils.Format("mov " + result + ", QWORD [" + argResult + "+8]; " + desc)
+				code += utils.Format("mov " + result + ", QWORD [" + base + "+8]; " + desc)
 			}
 			return
 		}
 	case "cap", "lists_cap":
-		if typeSys.CheckKind(argType, "string") || argType.Kind() == "list" {
+		if typeSys.CheckKind(argType, "string") || argType.Kind() == "list" || (argType.IsPointer() && argType.Elem() != nil && argType.Elem().Kind() == "list") {
 			var argCode, argResult string
 			if arg.Value.IsConst() {
 				argCode, argResult = c.CompileExprVal(arg.Value)
@@ -181,10 +253,17 @@ func (c *ExpCom) builtinHandle(exp *parser.Expression, result, desc string) (cod
 				}
 			}
 			code += argCode
+			base := argResult
+			if argType.IsPointer() && argType.Elem() != nil && argType.Elem().Kind() == "list" {
+				tmp := "RAX"
+				code += utils.Format("mov " + tmp + ", " + base)
+				code += utils.Format("mov " + tmp + ", QWORD [" + tmp + "]")
+				base = tmp
+			}
 			if result == "push" {
-				code += utils.Format("push QWORD [" + argResult + "+16]; " + desc)
+				code += utils.Format("push QWORD [" + base + "+16]; " + desc)
 			} else {
-				code += utils.Format("mov " + result + ", QWORD [" + argResult + "+16]; " + desc)
+				code += utils.Format("mov " + result + ", QWORD [" + base + "+16]; " + desc)
 			}
 			return
 		}
@@ -251,7 +330,11 @@ func (c *ExpCom) compileLeafNode(exp *parser.Expression) (code string, reg *regm
 	}
 
 	if reg.Name != resultVal {
-		code += utils.Format("mov " + reg.Name + ", " + resultVal)
+		movDst := reg.Name
+		if strings.HasPrefix(resultVal, "DWORD") && reg.Name == "RAX" {
+			movDst = "eax"
+		}
+		code += utils.Format("mov " + movDst + ", " + resultVal)
 	}
 	return
 }
@@ -379,6 +462,23 @@ func (c *ExpCom) generateOpWithRBX(code string, exp *parser.Expression, rightRes
 		code += utils.Format("mov rax, RBX")
 		code += utils.Format("idiv " + formattedSrc)
 		code += utils.Format("mov RBX, rdx")
+	case "==", "!=", "<", ">", "<=", ">=":
+		code += utils.Format("cmp RBX, " + formattedSrc)
+		switch exp.Separator {
+		case "==":
+			code += utils.Format("sete bl")
+		case "!=":
+			code += utils.Format("setne bl")
+		case "<":
+			code += utils.Format("setl bl")
+		case ">":
+			code += utils.Format("setg bl")
+		case "<=":
+			code += utils.Format("setle bl")
+		case ">=":
+			code += utils.Format("setge bl")
+		}
+		code += utils.Format("movzx RBX, bl")
 	}
 
 	c.ctx.Reg.Free(leftExp)
@@ -441,6 +541,24 @@ func (c *ExpCom) emitOpInstruction(regName, op, src string) string {
 			utils.Format("mov rax, "+regName) +
 			utils.Format("idiv "+src) +
 			utils.Format("mov "+regName+", rdx")
+	case "==", "!=", "<", ">", "<=", ">=":
+		code := utils.Format("cmp " + regName + ", " + src)
+		switch op {
+		case "==":
+			code += utils.Format("sete " + lo8Exp(regName))
+		case "!=":
+			code += utils.Format("setne " + lo8Exp(regName))
+		case "<":
+			code += utils.Format("setl " + lo8Exp(regName))
+		case ">":
+			code += utils.Format("setg " + lo8Exp(regName))
+		case "<=":
+			code += utils.Format("setle " + lo8Exp(regName))
+		case ">=":
+			code += utils.Format("setge " + lo8Exp(regName))
+		}
+		code += utils.Format("movzx " + regName + ", " + lo8Exp(regName))
+		return code
 	default:
 		return ""
 	}
@@ -494,19 +612,42 @@ func (c *ExpCom) CompileBoolExpr(exp *parser.Expression, result string) (code st
 	case OrExp:
 	case AndExp:
 	default:
+		// 判断是否为无符号类型比较，决定使用有符号/无符号跳转
+		isUnsigned := false
+		if exp.Left != nil && exp.Left.Type != nil {
+			isUnsigned = typeSys.CheckKind(exp.Left.Type, "uint")
+		} else if exp.Right != nil && exp.Right.Type != nil {
+			isUnsigned = typeSys.CheckKind(exp.Right.Type, "uint")
+		}
 		switch exp.Separator {
 		case "==":
 			code += utils.Format("jne " + result + "; 判断后跳转到目标")
 		case "!=":
 			code += utils.Format("je " + result + "; 判断后跳转到目标")
 		case "<":
-			code += utils.Format("jnl " + result + "; 判断后跳转到目标")
+			if isUnsigned {
+				code += utils.Format("jnb " + result + "; 判断后跳转到目标(unsigned)")
+			} else {
+				code += utils.Format("jnl " + result + "; 判断后跳转到目标")
+			}
 		case ">":
-			code += utils.Format("jle " + result + "; 判断后跳转到目标")
+			if isUnsigned {
+				code += utils.Format("jbe " + result + "; 判断后跳转到目标(unsigned)")
+			} else {
+				code += utils.Format("jle " + result + "; 判断后跳转到目标")
+			}
 		case "<=":
-			code += utils.Format("jg " + result + "; 判断后跳转到目标")
+			if isUnsigned {
+				code += utils.Format("jnbe " + result + "; 判断后跳转到目标(unsigned)")
+			} else {
+				code += utils.Format("jg " + result + "; 判断后跳转到目标")
+			}
 		case ">=":
-			code += utils.Format("jl " + result + "; 判断后跳转到目标")
+			if isUnsigned {
+				code += utils.Format("jb " + result + "; 判断后跳转到目标(unsigned)")
+			} else {
+				code += utils.Format("jl " + result + "; 判断后跳转到目标")
+			}
 		}
 	}
 
@@ -879,15 +1020,109 @@ func (c *ExpCom) compileListLiteral(exp *parser.Expression) (code string, reg *r
 	return
 }
 
+func (c *ExpCom) compileArrayLiteral(exp *parser.Expression) (code string, reg *regmgr.Reg) {
+	at := exp.Type.(*typeSys.ArrayType)
+	elemSize := at.Elem().Size()
+	arrLen := at.Len()
+	totalSize := arrLen * elemSize
+
+	reg = c.ctx.Reg.Get(c.ctx.Now, exp, ClassGPR, false)
+	if reg.StoreCode != "" {
+		code += reg.StoreCode
+	}
+
+	code += utils.Format("sub rsp, " + strconv.Itoa(totalSize) + "; array literal " + strconv.Itoa(arrLen) + " elements")
+	code += utils.Format("mov " + reg.Name + ", rsp; array base addr")
+
+	for i, elem := range exp.ListElems {
+		offset := i * elemSize
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
+			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+			switch elemSize {
+			case 1:
+				code += utils.Format("mov BYTE [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + val)
+			case 2:
+				code += utils.Format("mov WORD [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + val)
+			case 4:
+				code += utils.Format("mov DWORD [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + val)
+			case 8:
+				code += utils.Format("mov QWORD [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + val)
+			}
+		} else if elem.IsConst() && typeSys.CheckKind(elem.Type, "string") {
+			strLabel := c.getStringLabel(elem.StringVal)
+			code += utils.Format("mov QWORD [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + strLabel)
+		} else {
+			elemCode, elemReg := c.CompileExprChildren(elem)
+			code += elemCode
+			if elemReg != nil {
+				sizePrefix := GetLenName(elemSize)
+				code += utils.Format("mov " + sizePrefix + " [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + elemReg.Name)
+				c.ctx.Reg.Free(elem)
+			}
+		}
+	}
+
+	return
+}
+
+// compileArrayToAddr writes array literal elements directly to a stack address.
+func (c *ExpCom) compileArrayToAddr(exp *parser.Expression, baseOffset int, desc string) (code string) {
+	at := exp.Type.(*typeSys.ArrayType)
+	elemSize := at.Elem().Size()
+
+	for i, elem := range exp.ListElems {
+		offset := baseOffset + i*elemSize
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
+			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+			switch elemSize {
+			case 1:
+				code += utils.Format("mov BYTE [ebp+" + strconv.Itoa(offset) + "], " + val + "; " + desc)
+			case 2:
+				code += utils.Format("mov WORD [ebp+" + strconv.Itoa(offset) + "], " + val + "; " + desc)
+			case 4:
+				code += utils.Format("mov DWORD [ebp+" + strconv.Itoa(offset) + "], " + val + "; " + desc)
+			case 8:
+				code += utils.Format("mov QWORD [ebp+" + strconv.Itoa(offset) + "], " + val + "; " + desc)
+			}
+		} else if elem.IsConst() && typeSys.CheckKind(elem.Type, "string") {
+			strLabel := c.getStringLabel(elem.StringVal)
+			code += utils.Format("mov QWORD [ebp+" + strconv.Itoa(offset) + "], " + strLabel + "; " + desc)
+		} else {
+			elemCode, elemReg := c.CompileExprChildren(elem)
+			code += elemCode
+			if elemReg != nil {
+				sizePrefix := GetLenName(elemSize)
+				code += utils.Format("mov " + sizePrefix + " [ebp+" + strconv.Itoa(offset) + "], " + elemReg.Name + "; " + desc)
+				c.ctx.Reg.Free(elem)
+			}
+		}
+	}
+	return
+}
+
 func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *regmgr.Reg) {
-	// exp.Right is the list being indexed, exp.Index[0] is the index
-	lt := exp.Right.Type.(*typeSys.ListType)
-	elemSize := lt.Elem().Size()
+	// exp.Right is the list/array being indexed, exp.Index[0] is the index
+	elemSize := 0
+	isArray := false
+	if at, ok := exp.Right.Type.(*typeSys.ArrayType); ok {
+		elemSize = at.Elem().Size()
+		isArray = true
+	} else {
+		lt := exp.Right.Type.(*typeSys.ListType)
+		elemSize = lt.Elem().Size()
+	}
 
 	var listCode, listResult string
 	var listReg *regmgr.Reg
 	if exp.Right.IsConst() {
 		listCode, listResult = c.CompileExprVal(exp.Right)
+	} else if isArray && exp.Right.Var != nil {
+		// Stack arrays: use the variable's address directly (no pointer indirection)
+		listResult = GenVarAddr(c.ctx, exp.Right.Var)
+		// Strip size prefix like "DWORD " to get pure [ebp+N]
+		if idx := strings.Index(listResult, "["); idx > 0 {
+			listResult = listResult[idx:]
+		}
 	} else {
 		listCode, listReg = c.CompileExprChildren(exp.Right)
 		if listReg != nil {
@@ -905,10 +1140,20 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 		code += reg.StoreCode
 	}
 
-	if listReg != nil && reg.Name == listReg.Name {
-		code += utils.Format("; load list ptr (already in " + reg.Name + ")")
+	if isArray {
+		// 数组：listResult 就是栈地址（基址）
+		if listReg != nil && reg.Name == listReg.Name {
+			code += utils.Format("; array base addr (already in " + reg.Name + ")")
+		} else {
+			code += utils.Format("mov " + reg.Name + ", " + listResult + "; array base addr")
+		}
 	} else {
-		code += utils.Format("mov " + reg.Name + ", " + listResult + "; load list ptr")
+		// 列表：从 slice header 加载数据指针
+		if listReg != nil && reg.Name == listReg.Name {
+			code += utils.Format("; load list ptr (already in " + reg.Name + ")")
+		} else {
+			code += utils.Format("mov " + reg.Name + ", " + listResult + "; load list ptr")
+		}
 	}
 
 	idxExpr := exp.Index[0]
@@ -944,14 +1189,27 @@ func (c *ExpCom) compileIndexAccess(exp *parser.Expression) (code string, reg *r
 }
 
 func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regmgr.Reg) {
-	// exp.Left is the index expression (list[idx]), exp.Right is the value
+	// exp.Left is the index expression (list[idx] or arr[idx]), exp.Right is the value
 	indexExpr := exp.Left
-	lt := indexExpr.Right.Type.(*typeSys.ListType)
-	elemSize := lt.Elem().Size()
+	elemSize := 0
+	isArray := false
+	if at, ok := indexExpr.Right.Type.(*typeSys.ArrayType); ok {
+		elemSize = at.Elem().Size()
+		isArray = true
+	} else {
+		lt := indexExpr.Right.Type.(*typeSys.ListType)
+		elemSize = lt.Elem().Size()
+	}
 
 	var listCode, listResult string
 	if indexExpr.Right.IsConst() {
 		listCode, listResult = c.CompileExprVal(indexExpr.Right)
+	} else if isArray && indexExpr.Right.Var != nil {
+		// Stack arrays: use the variable's address directly
+		listResult = GenVarAddr(c.ctx, indexExpr.Right.Var)
+		if idx := strings.Index(listResult, "["); idx > 0 {
+			listResult = listResult[idx:]
+		}
 	} else {
 		var listReg *regmgr.Reg
 		listCode, listReg = c.CompileExprChildren(indexExpr.Right)
@@ -971,7 +1229,11 @@ func (c *ExpCom) compileIndexSet(exp *parser.Expression) (code string, reg *regm
 		code += addrReg.StoreCode
 	}
 
-	code += utils.Format("mov " + addrReg.Name + ", " + listResult + "; load list ptr")
+	if isArray {
+		code += utils.Format("mov " + addrReg.Name + ", " + listResult + "; array base addr")
+	} else {
+		code += utils.Format("mov " + addrReg.Name + ", " + listResult + "; load list ptr")
+	}
 
 	idxExpr := indexExpr.Index[0]
 	if idxExpr.IsConst() {

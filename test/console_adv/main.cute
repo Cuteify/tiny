@@ -1,0 +1,69 @@
+// test/console_adv/main.cute — advanced console API test
+
+fn main() int {
+    console.println("=== Console Advanced API Test ===")
+
+    // 窗口标题
+    console.setWindowTitle("Cuteify Test")
+
+    // 清屏 + 光标归位
+    console.clearScreen()
+    console.setCursorPos(1, 1)
+
+    // 16 色测试
+    console.setFg(console.FG_RED)
+    console.println("Red text (16 color)")
+    console.setFg(console.FG_GREEN)
+    console.println("Green text (16 color)")
+    console.setFg(console.FG_BLUE)
+    console.println("Blue text (16 color)")
+    console.resetColor()
+
+    // 256 色测试
+    console.setFg256(console.C256_ORANGE)
+    console.println("Orange (256 color)")
+    console.setFg256(console.C256_CYAN)
+    console.println("Cyan (256 color)")
+    console.resetColor()
+
+    // TrueColor 测试（自动降级到 256/16 色）
+    console.setFgRGB(255, 128, 0)
+    console.println("Orange (TrueColor, auto-degrade)")
+    console.setFgRGB(0, 200, 255)
+    console.println("Sky blue (TrueColor, auto-degrade)")
+    console.resetColor()
+
+    // 样式测试
+    console.setBold()
+    console.println("Bold text")
+    console.clearBold()
+
+    console.setItalic()
+    console.println("Italic text")
+    console.clearItalic()
+
+    console.setUnderline()
+    console.println("Underline text")
+    console.clearUnderline()
+
+    console.resetStyle()
+
+    // 十六进制输出
+    console.writeHexByte(255)
+    console.println("")
+
+    // 全局开关测试
+    console.disableAll()
+    console.setFg(console.FG_RED)
+    console.println("Advanced disabled - no color above")
+    console.enableAll()
+
+    // 颜色模式切换测试
+    console.setColorMode(console.COLOR_16)
+    console.setFgRGB(255, 0, 0)
+    console.println("Forced 16-color mode")
+    console.setColorMode(console.COLOR_AUTO)
+
+    console.println("=== All tests passed ===")
+    ret 0
+}

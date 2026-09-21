@@ -1,0 +1,6 @@
+== main (5 vars)
+  b [unknown] site=call:makeOuter off=-1
+  c [unknown] site=call:makeOuter off=-1
+  o1 [unknown] site=call:makeOuter off=-1
+  o2 [unknown] site=call:makeOuter off=-1
+  o3 [unknown] site=call:makeOuter off=-1

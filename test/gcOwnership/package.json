@@ -1,0 +1,8 @@
+{
+  "name": "gcOwnership",
+  "version": "1.0.0",
+  "description": "GC ownership analysis leak tracking test",
+  "imports": {
+    "memory": "std:memory"
+  }
+}

@@ -16,3 +16,30 @@ fn println(s string) i32 {
     var n: i32 = print(s)
     ret n + syscall.write(STDOUT, strings.toCstring("\n"), 1)
 }
+
+// read 从标准输入读取数据到缓冲区，返回读取的字节数
+fn read(buf *u64, count u64) i32 {
+    ret syscall.read(STDIN, buf, count)
+}
+
+// readLine 从标准输入读取一行（不含换行符）
+fn readLine() string {
+    var buf: ptr = strings.bufNew(1024)
+    var pos: int = 0
+    var oneByte: ptr = strings.bufNew(1)
+    for ; pos < 1023; {
+        var n: i32 = syscall.read(STDIN, oneByte, 1)
+        if n <= 0 {
+            break
+        }
+        var _p1: *u8 = oneByte
+        var ch: u8 = *_p1
+        if ch == 10 {
+            break
+        }
+        strings.bufSetByte(buf, pos, ch)
+        pos = pos + 1
+    }
+    strings.bufSetByte(buf, pos, 0)
+    ret strings.bufToString(buf, pos)
+}

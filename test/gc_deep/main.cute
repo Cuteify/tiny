@@ -1,0 +1,70 @@
+build os("linux")
+
+type User struct {
+    name: string
+    age: int
+    email: string
+}
+
+fn makeUser(name: string, age: int, email: string) *User {
+    var u: *User = new(User)
+    u.name = name
+    u.age = age
+    u.email = email
+    ret u
+}
+
+fn level1() *User {
+    ret makeUser("deep1", 1, "d1@test.com")
+}
+
+fn level2() *User {
+    var u: *User = level1()
+    u.age = u.age + 1
+    ret u
+}
+
+fn level3() *User {
+    var u: *User = level2()
+    u.age = u.age + 1
+    ret u
+}
+
+fn level4() *User {
+    var u: *User = level3()
+    u.age = u.age + 1
+    ret u
+}
+
+fn level5() *User {
+    var u: *User = level4()
+    u.age = u.age + 1
+    ret u
+}
+
+fn main() int {
+    var ok: int = 0
+
+    // 1. 五层嵌套调用
+    var u1: *User = level5()
+    if u1.age == 5 {
+        ok = ok + 1
+    }
+
+    // 2. 并行深调用链
+    var a: *User = level3()
+    var b: *User = level4()
+    var c: *User = level5()
+    if a.age + b.age + c.age == 12 {
+        ok = ok + 1
+    }
+
+    // 3. 深调用 + 本地分配
+    var deep: *User = level5()
+    var local: *User = makeUser("local", 50, "local@test.com")
+    if deep.age + local.age == 55 {
+        ok = ok + 1
+    }
+
+    ret ok
+}

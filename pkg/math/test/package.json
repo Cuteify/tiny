@@ -1,0 +1,8 @@
+{
+    "name": "math_test",
+    "version": "1.0.0",
+    "description": "Math package tests",
+    "imports": {
+        "math": "std:math"
+    }
+}

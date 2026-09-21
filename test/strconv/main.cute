@@ -1,13 +1,16 @@
 // strconv 测试：strings.toString / strings.parse（2-62 进制）
 fn sLen(s string) uint {
     var p: ptr = &s
-    ret memory.load64(p + 8)
+    var _p1: *ptr = p + 8
+    ret *_p1
 }
 
 fn sChar(s string, idx uint) uint {
     var p: ptr = &s
-    var b: ptr = memory.load64(p)
-    ret memory.load8(b + idx)
+    var _p2: *ptr = p
+    var b: ptr = *_p2
+    var _p3: *u8 = b + idx
+    ret *_p3
 }
 
 fn main() int {

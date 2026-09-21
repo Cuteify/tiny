@@ -1,0 +1,97 @@
+// pkg/image/image.cute - 图像处理包：RGBA 像素操作
+// 平台无关实现，底层复用 std:memory
+
+// Image 图像结构体
+type Image struct {
+    width: int
+    height: int
+    pixels: ptr
+}
+
+// stride 返回每行像素的字节数（RGBA 4 字节/像素）
+fn stride(img *Image) int {
+    ret img.width * 4
+}
+
+// NewRGBA 创建新的 RGBA 图像，像素初始化为全透明黑色
+fn NewRGBA(w int, h int) *Image {
+    var img: ptr = memory.malloc(24)
+    var _p1: *ptr = img
+    *_p1 = unsafe.cast[ptr](w          // width)
+    var _p2: *ptr = img + 8
+    *_p2 = unsafe.cast[ptr](h      // height)
+    var pixelSize: uint = w * h * 4
+    var pix: ptr = memory.malloc(pixelSize)
+    var _p3: *ptr = img + 16
+    *_p3 = unsafe.cast[ptr](pix   // pixels)
+    var i: uint = 0
+    for ; i < pixelSize; {
+        var _p4: *u8 = pix + i
+        *_p4 = unsafe.cast[u8](0)
+        i = i + 1
+    }
+    var result: *Image
+    result = img
+    ret result
+}
+
+// pixelOffset 计算 (x, y) 像素在缓冲区中的偏移
+fn pixelOffset(img *Image, x int, y int) int {
+    ret (y * stride(img) + x * 4)
+}
+
+// Set 设置像素 (x, y) 的 RGBA 值
+fn Set(img *Image, x int, y int, r u8, g u8, b u8, a u8) {
+    var off: int = pixelOffset(img, x, y)
+    var _p5: *ptr = img + 16
+    var pix: ptr = *_p5
+    var _p6: *u8 = pix + off
+    *_p6 = unsafe.cast[u8](r)
+    var _p7: *u8 = pix + off + 1
+    *_p7 = unsafe.cast[u8](g)
+    var _p8: *u8 = pix + off + 2
+    *_p8 = unsafe.cast[u8](b)
+    var _p9: *u8 = pix + off + 3
+    *_p9 = unsafe.cast[u8](a)
+}
+
+// GetR 获取像素 (x, y) 的红色分量
+fn GetR(img *Image, x int, y int) u8 {
+    var off: int = pixelOffset(img, x, y)
+    var _p10: *ptr = img + 16
+    var pix: ptr = *_p10
+    var _p11: *u8 = pix + off
+    ret *_p11
+}
+
+// GetG 获取像素 (x, y) 的绿色分量
+fn GetG(img *Image, x int, y int) u8 {
+    var off: int = pixelOffset(img, x, y)
+    var _p12: *ptr = img + 16
+    var pix: ptr = *_p12
+    var _p13: *u8 = pix + off + 1
+    ret *_p13
+}
+
+// GetB 获取像素 (x, y) 的蓝色分量
+fn GetB(img *Image, x int, y int) u8 {
+    var off: int = pixelOffset(img, x, y)
+    var _p14: *ptr = img + 16
+    var pix: ptr = *_p14
+    var _p15: *u8 = pix + off + 2
+    ret *_p15
+}
+
+// GetA 获取像素 (x, y) 的透明度分量
+fn GetA(img *Image, x int, y int) u8 {
+    var off: int = pixelOffset(img, x, y)
+    var _p16: *ptr = img + 16
+    var pix: ptr = *_p16
+    var _p17: *u8 = pix + off + 3
+    ret *_p17
+}
+
+// Bounds 返回图像边界 (min_x, min_y, max_x, max_y)
+fn Bounds(img *Image) (int, int, int, int) {
+    ret 0, 0, img.width, img.height
+}

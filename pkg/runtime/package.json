@@ -1,0 +1,9 @@
+{
+    "name": "runtime",
+    "version": "1.0.0",
+    "description": "Runtime information: CPU count, version, compiler name",
+    "imports": {
+        "strings": "std:strings",
+        "syscall": "std:syscall"
+    }
+}

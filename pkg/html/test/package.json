@@ -1,0 +1,9 @@
+{
+    "name": "html_test",
+    "version": "1.0.0",
+    "imports": {
+        "html": "std:html",
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

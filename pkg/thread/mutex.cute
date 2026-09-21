@@ -1,0 +1,81 @@
+// pkg/thread/mutex.cute — Mutex using Linux futex
+// state: 0=unlocked, 1=locked(no waiters), 2=locked(has waiters)
+
+fn mutexInit(m: ptr) {
+    var _p1: *uint = m
+    *_p1 = unsafe.cast[uint](0)
+}
+
+fn mutexLock(m: ptr) {
+    var ok: i32 = 0
+    build asm {
+        mov rax, [rdi]
+        xor ecx, ecx
+        mov edx, 1
+        lock cmpxchg [rdi], edx
+        setz cl
+        mov [$ok], rcx
+    }
+    if ok == 1 {
+        ret
+    }
+    // Slow path: set state to 2 (contended)
+    var _p2: *uint = m
+    *_p2 = unsafe.cast[uint](2)
+    // FUTEX_WAIT: reload addr from stack since rdi was clobbered by call
+    build asm {
+        mov rdi, $m
+        mov eax, 0
+        mov esi, 2
+        xor edx, edx
+        xor r10d, r10d
+        xor r8d, r8d
+        syscall
+    }
+    // Spin-wait with CAS
+    var i: i32 = 0
+    for ; i < 1000; {
+        ok = 0
+        build asm {
+            mov rdi, $m
+            xor ecx, ecx
+            mov edx, 1
+            lock cmpxchg [rdi], edx
+            setz cl
+            mov [$ok], rcx
+        }
+        if ok == 1 {
+            ret
+        }
+        i = i + 1
+    }
+}
+
+fn mutexUnlock(m: ptr) {
+    // Clear lock word to 0
+    var _p3: *uint = m
+    *_p3 = unsafe.cast[uint](0)
+    // FUTEX_WAKE: reload addr from stack
+    build asm {
+        mov rdi, $m
+        mov eax, 1
+        mov esi, 1
+        xor edx, edx
+        xor r10d, r10d
+        xor r8d, r8d
+        syscall
+    }
+}
+
+fn mutexTryLock(m: ptr) i32 {
+    var ok: i32 = 0
+    build asm {
+        mov rdi, $m
+        xor ecx, ecx
+        mov edx, 1
+        lock cmpxchg [rdi], edx
+        setz cl
+        mov [$ok], rcx
+    }
+    ret ok
+}

@@ -1,0 +1,64 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test html.escape("<div>")
+    var escaped: string = html.escape("<div>")
+    // "<div>" -> "&lt;div&gt;"
+    // Length of "&lt;div&gt;" is 11
+    var escLen: uint = strings.len(escaped)
+    if escLen != 11 {
+        failures = failures + 1
+    }
+
+    // Test html.unescape("&lt;div&gt;")
+    var unescaped: string = html.unescape("&lt;div&gt;")
+    // "&lt;div&gt;" -> "<div>"
+    // Length of "<div>" is 5
+    var unescLen: uint = strings.len(unescaped)
+    if unescLen != 5 {
+        failures = failures + 1
+    }
+
+    // Verify escaped content: first 4 chars should be "&lt;"
+    if escLen >= 4 {
+        var p: ptr = strings.toCstring(escaped)
+        // '&' = 38, 'l' = 108, 't' = 116, ';' = 59
+        var _p1: *u8 = p
+        if *_p1 != 38 {
+            failures = failures + 1
+        }
+        var _p2: *u8 = p + 1
+        if *_p2 != 108 {
+            failures = failures + 1
+        }
+        var _p3: *u8 = p + 2
+        if *_p3 != 116 {
+            failures = failures + 1
+        }
+        var _p4: *u8 = p + 3
+        if *_p4 != 59 {
+            failures = failures + 1
+        }
+    }
+
+    // Verify unescaped content: first char should be '<'
+    if unescLen >= 1 {
+        var u: ptr = strings.toCstring(unescaped)
+        var _p5: *u8 = u
+        if *_p5 != 60 {
+            failures = failures + 1
+        }
+    }
+
+    // Test escape of '&' -> "&amp;"
+    var ampEscaped: string = html.escape("&")
+    var ampLen: uint = strings.len(ampEscaped)
+    if ampLen != 5 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

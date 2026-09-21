@@ -1,0 +1,274 @@
+== /home/gx/Desktop/______/tiny/pkg/builtin.panic
+== /home/gx/Desktop/______/tiny/pkg/builtin.print
+== /home/gx/Desktop/______/tiny/pkg/builtin.println
+== /home/gx/Desktop/______/tiny/pkg/console.bufAndStr
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.bufToString FRAME_OWN
+  FREE s [string]
+== /home/gx/Desktop/______/tiny/pkg/console.clearBlink
+== /home/gx/Desktop/______/tiny/pkg/console.clearBold
+== /home/gx/Desktop/______/tiny/pkg/console.clearDim
+== /home/gx/Desktop/______/tiny/pkg/console.clearHidden
+== /home/gx/Desktop/______/tiny/pkg/console.clearItalic
+== /home/gx/Desktop/______/tiny/pkg/console.clearLine
+== /home/gx/Desktop/______/tiny/pkg/console.clearReverse
+== /home/gx/Desktop/______/tiny/pkg/console.clearScreen
+== /home/gx/Desktop/______/tiny/pkg/console.clearStrikethrough
+== /home/gx/Desktop/______/tiny/pkg/console.clearToEndOfLine
+== /home/gx/Desktop/______/tiny/pkg/console.clearToEndOfScreen
+== /home/gx/Desktop/______/tiny/pkg/console.clearToStartOfLine
+== /home/gx/Desktop/______/tiny/pkg/console.clearToStartOfScreen
+== /home/gx/Desktop/______/tiny/pkg/console.clearUnderline
+== /home/gx/Desktop/______/tiny/pkg/console.cursorShape
+== /home/gx/Desktop/______/tiny/pkg/console.deleteChars
+== /home/gx/Desktop/______/tiny/pkg/console.deleteLines
+== /home/gx/Desktop/______/tiny/pkg/console.detectAllCaps
+== /home/gx/Desktop/______/tiny/pkg/console.disableAll
+== /home/gx/Desktop/______/tiny/pkg/console.disableMouse
+== /home/gx/Desktop/______/tiny/pkg/console.disableMouseSgr
+== /home/gx/Desktop/______/tiny/pkg/console.enableAll
+== /home/gx/Desktop/______/tiny/pkg/console.enableMouse
+== /home/gx/Desktop/______/tiny/pkg/console.enableMouseSgr
+== /home/gx/Desktop/______/tiny/pkg/console.eraseChars
+== /home/gx/Desktop/______/tiny/pkg/console.getAdvancedMode
+== /home/gx/Desktop/______/tiny/pkg/console.getColorMode
+== /home/gx/Desktop/______/tiny/pkg/console.getMouseMode
+== /home/gx/Desktop/______/tiny/pkg/console.getSixelMode
+== /home/gx/Desktop/______/tiny/pkg/console.hideCursor
+== /home/gx/Desktop/______/tiny/pkg/console.insertChars
+== /home/gx/Desktop/______/tiny/pkg/console.insertLines
+== /home/gx/Desktop/______/tiny/pkg/console.moveCursor
+== /home/gx/Desktop/______/tiny/pkg/console.moveDown
+== /home/gx/Desktop/______/tiny/pkg/console.moveLeft
+== /home/gx/Desktop/______/tiny/pkg/console.moveRight
+== /home/gx/Desktop/______/tiny/pkg/console.moveUp
+== /home/gx/Desktop/______/tiny/pkg/console.print
+== /home/gx/Desktop/______/tiny/pkg/console.println
+== /home/gx/Desktop/______/tiny/pkg/console.read
+== /home/gx/Desktop/______/tiny/pkg/console.readLine
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/console.redetectCaps
+== /home/gx/Desktop/______/tiny/pkg/console.resetColor
+== /home/gx/Desktop/______/tiny/pkg/console.resetStyle
+== /home/gx/Desktop/______/tiny/pkg/console.restoreCursor
+== /home/gx/Desktop/______/tiny/pkg/console.rgbToAnsi256
+== /home/gx/Desktop/______/tiny/pkg/console.saveCursor
+== /home/gx/Desktop/______/tiny/pkg/console.scrollDown
+== /home/gx/Desktop/______/tiny/pkg/console.scrollUp
+== /home/gx/Desktop/______/tiny/pkg/console.setAdvancedMode
+== /home/gx/Desktop/______/tiny/pkg/console.setBg
+== /home/gx/Desktop/______/tiny/pkg/console.setBg256
+== /home/gx/Desktop/______/tiny/pkg/console.setBgBright
+== /home/gx/Desktop/______/tiny/pkg/console.setBgRGB
+== /home/gx/Desktop/______/tiny/pkg/console.setBlink
+== /home/gx/Desktop/______/tiny/pkg/console.setBold
+== /home/gx/Desktop/______/tiny/pkg/console.setColorMode
+== /home/gx/Desktop/______/tiny/pkg/console.setDim
+== /home/gx/Desktop/______/tiny/pkg/console.setFg
+== /home/gx/Desktop/______/tiny/pkg/console.setFg256
+== /home/gx/Desktop/______/tiny/pkg/console.setFgBright
+== /home/gx/Desktop/______/tiny/pkg/console.setFgRGB
+== /home/gx/Desktop/______/tiny/pkg/console.setHidden
+== /home/gx/Desktop/______/tiny/pkg/console.setItalic
+== /home/gx/Desktop/______/tiny/pkg/console.setMouseMode
+== /home/gx/Desktop/______/tiny/pkg/console.setReverse
+== /home/gx/Desktop/______/tiny/pkg/console.setScrollRegion
+== /home/gx/Desktop/______/tiny/pkg/console.setSixelMode
+== /home/gx/Desktop/______/tiny/pkg/console.setStrikethrough
+== /home/gx/Desktop/______/tiny/pkg/console.setTabWidth
+== /home/gx/Desktop/______/tiny/pkg/console.setUnderline
+== /home/gx/Desktop/______/tiny/pkg/console.setWindowTitle
+  obj[0] title site=param:title ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/console.shouldUseAdvanced
+== /home/gx/Desktop/______/tiny/pkg/console.showCursor
+== /home/gx/Desktop/______/tiny/pkg/console.sixelBegin
+== /home/gx/Desktop/______/tiny/pkg/console.sixelClear
+== /home/gx/Desktop/______/tiny/pkg/console.sixelColor
+== /home/gx/Desktop/______/tiny/pkg/console.sixelData
+== /home/gx/Desktop/______/tiny/pkg/console.sixelDisplay
+== /home/gx/Desktop/______/tiny/pkg/console.sixelEnd
+== /home/gx/Desktop/______/tiny/pkg/console.sixelRowEnd
+== /home/gx/Desktop/______/tiny/pkg/console.supports256Color
+== /home/gx/Desktop/______/tiny/pkg/console.supportsMouse
+== /home/gx/Desktop/______/tiny/pkg/console.supportsSixel
+== /home/gx/Desktop/______/tiny/pkg/console.supportsTrueColor
+== /home/gx/Desktop/______/tiny/pkg/console.writeEsc1Param
+== /home/gx/Desktop/______/tiny/pkg/console.writeEsc2Param
+== /home/gx/Desktop/______/tiny/pkg/console.writeEscCSI
+== /home/gx/Desktop/______/tiny/pkg/console.writeEscParamCSI
+== /home/gx/Desktop/______/tiny/pkg/console.writeHexByte
+== /home/gx/Desktop/______/tiny/pkg/console.writeStr
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.coalesce
+== /home/gx/Desktop/______/tiny/pkg/memory.commit
+== /home/gx/Desktop/______/tiny/pkg/memory.free
+== /home/gx/Desktop/______/tiny/pkg/memory.freeNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freePrev
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.headOf
+== /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.load32
+== /home/gx/Desktop/______/tiny/pkg/memory.load64
+== /home/gx/Desktop/______/tiny/pkg/memory.load8
+== /home/gx/Desktop/______/tiny/pkg/memory.malloc
+== /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+== /home/gx/Desktop/______/tiny/pkg/memory.memset
+== /home/gx/Desktop/______/tiny/pkg/memory.realloc
+== /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.setHead
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOf
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.store32
+== /home/gx/Desktop/______/tiny/pkg/memory.store64
+== /home/gx/Desktop/______/tiny/pkg/memory.store8
+== /home/gx/Desktop/______/tiny/pkg/memory.tierOf
+== /home/gx/Desktop/______/tiny/pkg/slices.contains
+== /home/gx/Desktop/______/tiny/pkg/slices.containsString
+== /home/gx/Desktop/______/tiny/pkg/slices.indexOf
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceAppend
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceAppendSlice
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceCap
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceCopy
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceFree
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceGet
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceGrow
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceLen
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceReset
+== /home/gx/Desktop/______/tiny/pkg/slices.intSliceSet
+== /home/gx/Desktop/______/tiny/pkg/slices.max
+== /home/gx/Desktop/______/tiny/pkg/slices.min
+== /home/gx/Desktop/______/tiny/pkg/slices.newIntSlice
+== /home/gx/Desktop/______/tiny/pkg/slices.newStringSlice
+== /home/gx/Desktop/______/tiny/pkg/slices.newU8Slice
+== /home/gx/Desktop/______/tiny/pkg/slices.reverse
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceAppend
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceCap
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceCopy
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceFree
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceGet
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceGrow
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceLen
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceReset
+== /home/gx/Desktop/______/tiny/pkg/slices.stringSliceSet
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceAppend
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceAppendBytes
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceAppendInt
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceAppendString
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceCap
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceCopy
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceFree
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceGet
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceGrow
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceLen
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceReset
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceSet
+== /home/gx/Desktop/______/tiny/pkg/slices.u8SliceString
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.atoi
+== /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.bufNew
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
+== /home/gx/Desktop/______/tiny/pkg/strings.bufToString
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.cap
+== /home/gx/Desktop/______/tiny/pkg/strings.compare
+== /home/gx/Desktop/______/tiny/pkg/strings.contains
+== /home/gx/Desktop/______/tiny/pkg/strings.containsAny
+== /home/gx/Desktop/______/tiny/pkg/strings.containsRune
+== /home/gx/Desktop/______/tiny/pkg/strings.count
+== /home/gx/Desktop/______/tiny/pkg/strings.eq
+== /home/gx/Desktop/______/tiny/pkg/strings.formatBool
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.fromI64
+== /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
+== /home/gx/Desktop/______/tiny/pkg/strings.index
+== /home/gx/Desktop/______/tiny/pkg/strings.indexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.itoa
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
+== /home/gx/Desktop/______/tiny/pkg/strings.len
+== /home/gx/Desktop/______/tiny/pkg/strings.makeString
+== /home/gx/Desktop/______/tiny/pkg/strings.ne
+== /home/gx/Desktop/______/tiny/pkg/strings.notFound
+== /home/gx/Desktop/______/tiny/pkg/strings.parse
+== /home/gx/Desktop/______/tiny/pkg/strings.parseBool
+== /home/gx/Desktop/______/tiny/pkg/strings.repeat
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.replace
+  obj[0] s site=param:s ESCAPED
+  obj[1] old site=param:old ESCAPED
+  obj[2] new site=param:new ESCAPED
+  obj[3]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.strcmp
+== /home/gx/Desktop/______/tiny/pkg/strings.strcpy
+== /home/gx/Desktop/______/tiny/pkg/strings.strlen
+== /home/gx/Desktop/______/tiny/pkg/strings.toCstring
+== /home/gx/Desktop/______/tiny/pkg/strings.toLower
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.toString
+== /home/gx/Desktop/______/tiny/pkg/strings.toU64
+== /home/gx/Desktop/______/tiny/pkg/strings.toUpper
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trim
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimRight ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+  obj[0] s site=param:s ESCAPED
+  obj[1] prefix site=param:prefix ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimRight
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
+  obj[0] s site=param:s ESCAPED
+  obj[1] suffix site=param:suffix ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/syscall.brk
+== /home/gx/Desktop/______/tiny/pkg/syscall.close
+== /home/gx/Desktop/______/tiny/pkg/syscall.exit
+== /home/gx/Desktop/______/tiny/pkg/syscall.fstat
+== /home/gx/Desktop/______/tiny/pkg/syscall.getcwd
+== /home/gx/Desktop/______/tiny/pkg/syscall.getdents
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenv
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenvName_eq
+== /home/gx/Desktop/______/tiny/pkg/syscall.lseek
+== /home/gx/Desktop/______/tiny/pkg/syscall.mkdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.open
+== /home/gx/Desktop/______/tiny/pkg/syscall.read
+== /home/gx/Desktop/______/tiny/pkg/syscall.rename
+== /home/gx/Desktop/______/tiny/pkg/syscall.rmdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.stat
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall6
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall64
+== /home/gx/Desktop/______/tiny/pkg/syscall.unlink
+== /home/gx/Desktop/______/tiny/pkg/syscall.write
+== main
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/slices.newIntSlice FRAME_OWN
+  FREE s [unknown]

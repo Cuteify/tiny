@@ -1,0 +1,6 @@
+{
+    "imports": {
+        "slices": "std:slices",
+        "memory": "std:memory"
+    }
+}

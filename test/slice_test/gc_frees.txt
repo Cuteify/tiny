@@ -1,0 +1,5 @@
+== /home/gx/Desktop/______/tiny/pkg/console.bufAndStr (1 vars)
+  s [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.bufToString off=-1
+== main (2 vars)
+  p [int] site=expr off=-1
+  s [unknown] site=new off=-1

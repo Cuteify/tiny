@@ -1,6 +1,6 @@
 // 结构体方法测试
 
-struct Point {
+type Point struct {
     pub x: int
     pub y: int
 }

@@ -9,8 +9,10 @@ fn now() Time {
     var buf: u64 = 0
     var p: ptr = &buf
     syscall.syscall(228, 0, p, 0)
-    var sec: u64 = memory.load64(p)
-    var nsec: u64 = memory.load64(p + 8)
+    var _p1: *ptr = p
+    var sec: u64 = *_p1
+    var _p2: *ptr = p + 8
+    var nsec: u64 = *_p2
     var t: Time
     t.sec = sec
     t.nsec = nsec
@@ -24,18 +26,24 @@ fn sleep(d u64) {
     var p: ptr = &req
     var sec: u64 = d / SECOND
     var nsec: u64 = d % SECOND
-    memory.store64(p, sec)
-    memory.store64(p + 8, nsec)
+    var _p3: *ptr = p
+    *_p3 = unsafe.cast[ptr](sec)
+    var _p4: *ptr = p + 8
+    *_p4 = unsafe.cast[ptr](nsec)
     syscall.syscall(35, p, 0, 0)
 }
 // strSlots 写入 x86_64 字符串三槽（各 8 字节：ptr/len/cap）
 fn strSlots(p: ptr, vptr: u64, vlen: u64, vcap: u64) {
-    memory.store64(p, vptr)
-    memory.store64(p + 8, vlen)
-    memory.store64(p + 16, vcap)
+    var _p5: *ptr = p
+    *_p5 = unsafe.cast[ptr](vptr)
+    var _p6: *ptr = p + 8
+    *_p6 = unsafe.cast[ptr](vlen)
+    var _p7: *ptr = p + 16
+    *_p7 = unsafe.cast[ptr](vcap)
 }
 
 // numOut 按 x86_64 字宽写 int 值到指针目标（8 字节）
 fn numOut(p: ptr, v: int) {
-    memory.store64(p, v)
+    var _p8: *ptr = p
+    *_p8 = unsafe.cast[ptr](v)
 }

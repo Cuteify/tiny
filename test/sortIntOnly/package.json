@@ -1,0 +1,6 @@
+{
+    "imports": {
+        "slices": "std:slices",
+        "sort": "std:sort"
+    }
+}

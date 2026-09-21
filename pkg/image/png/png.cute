@@ -1,0 +1,127 @@
+// pkg/image/png/png.cute - PNG 编码存根（简化版）
+// 平台无关实现，底层复用 std:memory 和 std:image
+
+// Encode 将图像编码为简化格式的原始像素数据字符串
+// 返回格式: "RGBA:w:h:<raw bytes>"
+fn Encode(img **image.Image) string {
+    var w: int = img.width
+    var h: int = img.height
+    var _p1: *ptr = img + 16
+    var pix: ptr = *_p1
+    // 头部: "RGBA:w:h:" 需要空间
+    var headerBuf: ptr = memory.malloc(128)
+    var headerLen: uint = 0
+    // 写入 "RGBA:"
+    var _p2: *u8 = headerBuf
+    *_p2 = unsafe.cast[u8](82     // 'R')
+    var _p3: *u8 = headerBuf + 1
+    *_p3 = unsafe.cast[u8](71 // 'G')
+    var _p4: *u8 = headerBuf + 2
+    *_p4 = unsafe.cast[u8](66 // 'B')
+    var _p5: *u8 = headerBuf + 3
+    *_p5 = unsafe.cast[u8](65 // 'A')
+    var _p6: *u8 = headerBuf + 4
+    *_p6 = unsafe.cast[u8](58 // ':')
+    headerLen = 5
+    // 写入宽度
+    var ws: string = strings.toString(w, 10)
+    var wp: ptr = strings.toCstring(ws)
+    var wn: uint = strings.len(ws)
+    var k: uint = 0
+    for k < wn {
+        var _p7: *u8 = headerBuf + headerLen + k
+        var _p8: *u8 = wp + k
+        *_p7 = unsafe.cast[u8](*_p8)
+        k = k + 1
+    }
+    headerLen = headerLen + wn
+    var _p9: *u8 = headerBuf + headerLen
+    *_p9 = unsafe.cast[u8](58 // ':')
+    headerLen = headerLen + 1
+    // 写入高度
+    var hs: string = strings.toString(h, 10)
+    var hp: ptr = strings.toCstring(hs)
+    var hn: uint = strings.len(hs)
+    k = 0
+    for k < hn {
+        var _p10: *u8 = headerBuf + headerLen + k
+        var _p11: *u8 = hp + k
+        *_p10 = unsafe.cast[u8](*_p11)
+        k = k + 1
+    }
+    headerLen = headerLen + hn
+    var _p12: *u8 = headerBuf + headerLen
+    *_p12 = unsafe.cast[u8](58 // ':')
+    headerLen = headerLen + 1
+    // 总长度 = header + 像素数据
+    var pixelBytes: uint = w * h * 4
+    var totalLen: uint = headerLen + pixelBytes
+    var buf: ptr = memory.malloc(totalLen + 1)
+    // 拷贝头部
+    k = 0
+    for k < headerLen {
+        var _p13: *u8 = buf + k
+        var _p14: *u8 = headerBuf + k
+        *_p13 = unsafe.cast[u8](*_p14)
+        k = k + 1
+    }
+    // 拷贝像素数据
+    k = 0
+    for k < pixelBytes {
+        var _p15: *u8 = buf + headerLen + k
+        var _p16: *u8 = pix + k
+        *_p15 = unsafe.cast[u8](*_p16)
+        k = k + 1
+    }
+    var _p17: *u8 = buf + totalLen
+    *_p17 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, totalLen, totalLen)
+}
+
+// NewReader 从数据字符串解码图像（简化版：解析 "RGBA:w:h:<raw>" 格式）
+fn NewReader(data string) *image.Image {
+    var p: ptr = strings.toCstring(data)
+    var n: uint = strings.len(data)
+    var pos: uint = 0
+    // 跳过 "RGBA:"
+    pos = 5
+    // 读取宽度
+    var w: int = 0
+    for pos < n {
+        var _p18: *u8 = p + pos
+        var ch: u8 = *_p18
+        if ch == 58 { // ':'
+            pos = pos + 1
+            break
+        }
+        w = w * 10 + ch - 48
+        pos = pos + 1
+    }
+    // 读取高度
+    var h: int = 0
+    for pos < n {
+        var _p19: *u8 = p + pos
+        var ch: u8 = *_p19
+        if ch == 58 { // ':'
+            pos = pos + 1
+            break
+        }
+        h = h * 10 + ch - 48
+        pos = pos + 1
+    }
+    // 创建图像
+    var img: *image.Image = image.NewRGBA(w, h)
+    var _p20: *ptr = img + 16
+    var pix: ptr = *_p20
+    var pixelBytes: uint = w * h * 4
+    // 拷贝像素数据
+    var k: uint = 0
+    for k < pixelBytes && pos < n {
+        var _p21: *u8 = pix + k
+        var _p22: *u8 = p + pos
+        *_p21 = unsafe.cast[u8](*_p22)
+        k = k + 1
+        pos = pos + 1
+    }
+    ret img
+}

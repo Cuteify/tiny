@@ -1,0 +1,35 @@
+// Interface + generics test: type system verification
+// Tests: interface definition, struct method registration, generic type params parsing
+
+type Stringer interface {
+    stringify() string
+}
+
+type Counter interface {
+    increment()
+    getCount() int
+}
+
+struct Dog {
+    name: string
+    age: int
+}
+
+fn Dog.stringify() string {
+    ret "dog"
+}
+
+struct Bot {
+    count: int
+}
+
+fn Bot.increment() {
+}
+
+fn Bot.getCount() int {
+    ret 0
+}
+
+fn main() int {
+    ret 0
+}

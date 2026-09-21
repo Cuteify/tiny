@@ -1,0 +1,51 @@
+fn main() {
+    // 数组声明 + 字面量初始化
+    var arr: [3]int = [3]int{10, 20, 30}
+
+    // 索引访问
+    var first: int = arr[0]
+    var second: int = arr[1]
+    var third: int = arr[2]
+
+    if (first != 10) {
+        println("FAIL: arr[0] = ", first)
+        println(", want 10")
+        exit(1)
+    }
+    if (second != 20) {
+        println("FAIL: arr[1] = ", second)
+        println(", want 20")
+        exit(1)
+    }
+    if (third != 30) {
+        println("FAIL: arr[2] = ", third)
+        println(", want 30")
+        exit(1)
+    }
+
+    // 索引赋值
+    arr[1] = 99
+    if (arr[1] != 99) {
+        println("FAIL: arr[1] after assign = ", arr[1])
+        println(", want 99")
+        exit(1)
+    }
+
+    // len 函数
+    var n: int = len(arr)
+    if (n != 3) {
+        println("FAIL: len(arr) = ", n)
+        println(", want 3")
+        exit(1)
+    }
+
+    // 未初始化数组（零值）
+    var zeros: [5]int
+    var z: int = zeros[0]
+    if (z != 0) {
+        println("FAIL: zeros[0] = ", z, ", want 0")
+        exit(1)
+    }
+
+    println("PASS: ALL")
+}

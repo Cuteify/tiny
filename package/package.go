@@ -5,12 +5,11 @@ import (
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
 	"encoding/json"
+	"os"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
-
-	"os"
-	"path"
 )
 
 type All struct {
@@ -28,6 +27,16 @@ var (
 
 // preFilterBuild 在解析前检查文件级 build arch/os 指令。
 // 返回 false 表示该文件不匹配当前架构/系统，应跳过。
+func splitNames(s string) []string {
+	var names []string
+	for _, f := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == '"' || r == '\'' || r == ' ' || r == '\t'
+	}) {
+		names = append(names, f)
+	}
+	return names
+}
+
 func preFilterBuild(pkgPath string) (bool, error) {
 	content, err := os.ReadFile(pkgPath)
 	if err != nil {
@@ -36,15 +45,6 @@ func preFilterBuild(pkgPath string) (bool, error) {
 	currentArch := os.Getenv("CUTE_ARCH")
 	if currentArch == "" {
 		currentArch = "x86"
-	}
-	splitNames := func(s string) []string {
-		var names []string
-		for _, f := range strings.FieldsFunc(s, func(r rune) bool {
-			return r == ',' || r == '"' || r == '\'' || r == ' ' || r == '\t'
-		}) {
-			names = append(names, f)
-		}
-		return names
 	}
 	if m := reBuildArch.FindStringSubmatch(string(content)); m != nil {
 		matched := false
@@ -92,8 +92,6 @@ func fixPkgNamePaths(n *parser.Node, pkg *packageFmt.Info) {
 		if v.Name.IsPath() {
 			v.Name.FixPath(pkg)
 		} else if v.Func == nil {
-			// 同包跨文件函数调用：包级函数在合并时统一 SetPkgPath，
-			// parse 期未解析出的同包调用在此补上本包前缀，供合并后匹配。
 			v.Name.SetPkgPath(pkg.Path)
 		}
 		for _, arg := range v.Args {
@@ -209,23 +207,33 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	}
 	for k, ppath := range packageInfo.Imports {
 		if _, ok := packages[ppath]; !ok {
+			resolvedPath := ppath
 			if ppath[:4] == "std:" {
 				stdPath, err := os.Getwd()
 				if err != nil {
 					return nil, err
 				}
-
-				ppath = path.Join(stdPath, "pkg", ppath[4:])
+				resolvedPath = path.Join(stdPath, "pkg", ppath[4:])
+				// 注册短包名到完整路径的自动导入映射（供无 import 的跨包调用使用）
+				packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
 			} else {
-				ppath = path.Join(packagePath, ppath)
+				resolvedPath = path.Join(packagePath, ppath)
 			}
-			info, err := GetPackage(ppath, false)
+			// 检查是否已加载（用解析后的路径检查）
+			if _, ok2 := packages[resolvedPath]; ok2 {
+				packageInfo.Imports[k] = resolvedPath
+				if ppath[:4] == "std:" {
+					packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
+				}
+				continue
+			}
+			info, err := GetPackage(resolvedPath, false)
 			if err != nil {
 				return nil, err
 			}
 			// 回写import
-			packageInfo.Imports[k] = ppath
-			packages[ppath] = info
+			packageInfo.Imports[k] = resolvedPath
+			packages[resolvedPath] = info
 		}
 	}
 
@@ -264,12 +272,14 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			}
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
-					switch v := p.Block.Children[i].Value.(type) {
-					case *parser.FuncBlock:
-						v.Name.SetPkgPath(packagePath)
-					case *parser.VarBlock:
-						v.Name.SetPkgPath(packagePath)
-					}
+				switch v := p.Block.Children[i].Value.(type) {
+				case *parser.FuncBlock:
+					v.Name.SetPkgPath(packagePath)
+				case *parser.VarBlock:
+					v.Name.SetPkgPath(packagePath)
+				case *parser.TypeBlock:
+					v.Name.SetPkgPath(packagePath)
+				}
 				}
 				// 用本包导入表把跨包名称固定为包路径前缀。
 				// 合并后的树共享根 Parser（根包导入表不含本包别名），
@@ -283,11 +293,22 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 				if !ok {
 					continue
 				}
+				// 跳过被 arch/os build 标记忽略的函数（编译器不会编译它）
+				ignored := false
 				for _, bf := range fb.BuildFlags {
-					if bf.Type == "link" && bf.Link != "" {
-						parser.LinkProviders[bf.Link] = fb
+					if bf.Ignore {
+						ignored = true
+						break
 					}
 				}
+				if ignored {
+					continue
+				}
+			for _, bf := range fb.BuildFlags {
+				if bf.Type == "link" && bf.Link != "" {
+					parser.LinkProviders[bf.Link] = fb
+				}
+			}
 			}
 			// 内置包：逐文件注册顶层函数（先注册保证包内跨文件裸调用可用）
 			if packageInfo.Builtin {
@@ -314,7 +335,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		for _, info := range packages {
 			tmp := info.AST.(*parser.Node)
 			for _, child := range tmp.Children {
-				rootNode.AddChild(child)
+				// 直接挂载，不触发 Check（fixParser/Check 统一在后面执行）
+				child.Father = rootNode
+				rootNode.Children = append(rootNode.Children, child)
 			}
 		}
 		// 将所有包的AST都设置成合并后的全局AST

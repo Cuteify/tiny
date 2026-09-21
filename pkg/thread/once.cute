@@ -1,0 +1,39 @@
+// pkg/thread/once.cute — Execute function exactly once using atomic CAS
+
+fn onceDo(o: ptr, fnPtr: ptr) {
+    // Fast path: check if already done
+    var _p1: *uint = o
+    var done: i32 = *_p1
+    if done == 1 {
+        ret
+    }
+    // Try CAS 0 → 1
+    var ok: i32 = 0
+    build asm {
+        xor ecx, ecx
+        mov edx, 1
+        lock cmpxchg [rdi], edx
+        setz cl
+        mov [$ok], rcx
+    }
+    if ok == 1 {
+        // We won — call the function
+        build asm {
+            and rsp, -16
+            mov rax, rsi
+            xor rdi, rdi
+            call rax
+        }
+        ret
+    }
+    // Another thread is running it — spin
+    var i: i32 = 0
+    for ; i < 10000; {
+        var _p2: *uint = o
+        done = *_p2
+        if done == 1 {
+            ret
+        }
+        i = i + 1
+    }
+}

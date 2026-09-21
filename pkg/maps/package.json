@@ -1,0 +1,10 @@
+{
+    "name": "maps",
+    "version": "1.0.0",
+    "description": "Map utility functions: keys, values, hasKey, len",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "hashmap": "std:hashmap"
+    }
+}

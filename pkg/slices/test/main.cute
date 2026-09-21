@@ -1,0 +1,73 @@
+// pkg/slices/test/main.cute - slices 标准库完整测试
+fn main() int {
+    var pass: int = 0
+    var fail: int = 0
+
+    // test 1: new + len + cap
+    var s: *[]int = slices.new[int](8)
+    if slices.len[int](s) != 0 { fail = fail + 1 } else { pass = pass + 1 }
+    if slices.cap[int](s) < 8 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 2: push + len
+    slices.push[int](s, 10)
+    slices.push[int](s, 20)
+    slices.push[int](s, 30)
+    if slices.len[int](s) != 3 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 3: getPtr + copyOut
+    var v: int = 0
+    slices.copyOut[int](s, 0, &v)
+    if v != 10 { fail = fail + 1 } else { pass = pass + 1 }
+    slices.copyOut[int](s, 2, &v)
+    if v != 30 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 4: set
+    slices.set[int](s, 1, 99)
+    slices.copyOut[int](s, 1, &v)
+    if v != 99 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 5: pop
+    var popped: int = slices.pop[int](s)
+    if popped != 99 { fail = fail + 1 } else { pass = pass + 1 }
+    if slices.len[int](s) != 2 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 6: insert
+    slices.insert[int](s, 1, 55)
+    if slices.len[int](s) != 3 { fail = fail + 1 } else { pass = pass + 1 }
+    slices.copyOut[int](s, 1, &v)
+    if v != 55 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 7: remove
+    var removed: int = slices.remove[int](s, 1)
+    if removed != 55 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 8: find
+    slices.clear[int](s)
+    slices.push[int](s, 100)
+    slices.push[int](s, 200)
+    slices.push[int](s, 300)
+    var idx: int = slices.find[int](s, 200)
+    if idx != 1 { fail = fail + 1 } else { pass = pass + 1 }
+    idx = slices.find[int](s, 999)
+    if idx != -1 { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 9: contains
+    if !slices.contains[int](s, 300) { fail = fail + 1 } else { pass = pass + 1 }
+    if slices.contains[int](s, 999) { fail = fail + 1 } else { pass = pass + 1 }
+
+    // test 10: reverse
+    slices.clear[int](s)
+    slices.push[int](s, 1)
+    slices.push[int](s, 2)
+    slices.push[int](s, 3)
+    slices.reverse[int](s)
+    slices.copyOut[int](s, 0, &v)
+    if v != 3 { fail = fail + 1 } else { pass = pass + 1 }
+    slices.copyOut[int](s, 2, &v)
+    if v != 1 { fail = fail + 1 } else { pass = pass + 1 }
+
+    slices.free[int](s)
+
+    // 结果：pass*10 + fail
+    ret pass * 10 + fail
+}

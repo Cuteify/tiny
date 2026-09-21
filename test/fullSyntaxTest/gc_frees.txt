@@ -1,0 +1,7 @@
+== main (6 vars)
+  concat [string] site=string-concat off=-1
+  list [list] site=expr off=-1
+  repeated [string] site=expr off=-1
+  s [string] site=expr off=-1
+  s2 [string] site=expr off=-1
+  slice [list] site=expr off=-1

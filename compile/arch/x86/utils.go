@@ -53,7 +53,12 @@ func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {	if v.Name.Fir
 		switch v.Define.Type {
 		case parser.FindTypeVar:
 			if vb, ok := v.Define.Value.(*parser.VarBlock); ok {
-				v.Offset = vb.Offset
+				// 多返回值引用：使用正确的偏移量索引
+				if len(vb.MultiNames) > 0 && v.MultiIndex >= 0 && len(vb.MultiOffsets) > v.MultiIndex {
+					v.Offset = vb.MultiOffsets[v.MultiIndex]
+				} else {
+					v.Offset = vb.Offset
+				}
 			}
 		case parser.FindTypeArg:
 			isDefineInArg = true
@@ -279,7 +284,12 @@ func listFieldAddr(ctx *context.Context, v *parser.VarBlock, fieldOffset int) st
 		switch v.Define.Type {
 		case parser.FindTypeVar:
 			if vb, ok := v.Define.Value.(*parser.VarBlock); ok {
-				baseOffset = vb.Offset
+				// 多返回值引用：使用正确的偏移量索引
+				if len(vb.MultiNames) > 0 && v.MultiIndex >= 0 && len(vb.MultiOffsets) > v.MultiIndex {
+					baseOffset = vb.MultiOffsets[v.MultiIndex]
+				} else {
+					baseOffset = vb.Offset
+				}
 			}
 		case parser.FindTypeArg:
 			if ab, ok := v.Define.Value.(*parser.ArgBlock); ok {

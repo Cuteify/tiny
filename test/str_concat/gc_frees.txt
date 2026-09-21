@@ -1,0 +1,6 @@
+== /home/gx/Desktop/______/tiny/pkg/console.bufAndStr (1 vars)
+  s [string] site=call:/home/gx/Desktop/______/tiny/pkg/strings.bufToString off=-1
+== buildStr (0 vars)
+  s [string] scope=1
+== main (1 vars)
+  s [string] site=call:buildStr off=-1

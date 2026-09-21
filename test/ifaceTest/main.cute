@@ -1,0 +1,15 @@
+type Stringer interface {
+    stringify() string
+}
+
+struct Foo {
+    val u64
+}
+
+fn Foo.stringify() string {
+    ret "Foo"
+}
+
+fn main() int {
+    ret 0
+}

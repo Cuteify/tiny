@@ -1,0 +1,120 @@
+// pkg/slices/slice.cute - 泛型动态数组
+// Layout: [len:ptr][cap:ptr][data:ptr]
+
+fn len[T](s *[]T) int {
+    var _p1: *ptr = unsafe.cast[ptr](s)
+    ret *_p1
+}
+
+fn cap[T](s *[]T) int {
+    var _p2: *ptr = unsafe.cast[ptr](s) + 8
+    ret *_p2
+}
+
+fn new[T](initialCap int) ptr {
+    var bufSize: int = initialCap * sizeof[T]()
+    var s: ptr = memory.malloc(24)
+    var _p3: *ptr = s
+    *_p3 = unsafe.cast[ptr](0)
+    var _p4: *ptr = s + 8
+    *_p4 = unsafe.cast[ptr](initialCap)
+    var _p5: *ptr = s + 16
+    *_p5 = unsafe.cast[ptr](memory.malloc(bufSize))
+    ret s
+}
+
+fn _elemPtr[T](s ptr, index int) ptr {
+    var _p6: *ptr = s + 16
+    var data: ptr = *_p6
+    ret data + index * sizeof[T]()
+}
+
+fn push[T](s *[]T, val T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var _lenP: *ptr = sAddr
+    var curLen: int = *_lenP
+    var _capP: *ptr = sAddr + 8
+    var curCap: int = *_capP
+
+    if curLen >= curCap {
+        // 扩容：cap *= 2
+        var newCap: int = curCap * 2
+        if newCap < 4 {
+            newCap = 4
+        }
+        var elemSize: int = sizeof[T]()
+        var newBufSize: int = newCap * elemSize
+        var _dataP: *ptr = sAddr + 16
+        var oldData: ptr = *_dataP
+        var newData: ptr = memory.malloc(newBufSize)
+        // memmove(oldData, newData, curLen * elemSize)
+        memmove(newData, oldData, unsafe.cast[uint](curLen * elemSize))
+        memory.free(oldData)
+        *_dataP = newData
+        *_capP = unsafe.cast[ptr](newCap)
+    }
+
+    // 写入元素
+    var elemAddr: ptr = _elemPtr[T](sAddr, curLen)
+    var valPtr: *T = unsafe.cast[*T](elemAddr)
+    *valPtr = val
+
+    // len++
+    *_lenP = unsafe.cast[ptr](curLen + 1)
+}
+
+fn free[T](s *[]T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var _dataP: *ptr = sAddr + 16
+    var data: ptr = *_dataP
+    if data != 0 {
+        memory.free(data)
+    }
+    memory.free(sAddr)
+}
+
+fn copyOut[T](s *[]T, index int, out *T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var elemAddr: ptr = _elemPtr[T](sAddr, index)
+    var elemPtr: *T = unsafe.cast[*T](elemAddr)
+    *out = *elemPtr
+}
+
+// set 将 src 指向的值写入 s[index]（src 为裸指针，按 sizeof[T] 字节拷贝）
+fn set[T](s *[]T, index int, src ptr) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var elemAddr: ptr = _elemPtr[T](sAddr, index)
+    // 按字节拷贝 sizeof[T] 字节
+    var elemSize: int = sizeof[T]()
+    var i: int = 0
+    for ; i < elemSize; {
+        var _pd: *u8 = elemAddr + i
+        var _ps: *u8 = src + i
+        *_pd = *_ps
+        i = i + 1
+    }
+}
+
+// getPtr 返回 s[index] 的原始指针（用于 loadInt/storeInt 等低级操作）
+fn getPtr[T](s *[]T, index int) ptr {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    ret _elemPtr[T](sAddr, index)
+}
+
+// remove 删除 s[index]，将后续元素左移，len--
+fn remove[T](s *[]T, index int) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var _lenP: *ptr = sAddr
+    var curLen: int = *_lenP
+    if index >= curLen {
+        ret
+    }
+    var elemSize: int = sizeof[T]()
+    var src: ptr = _elemPtr[T](sAddr, index + 1)
+    var dst: ptr = _elemPtr[T](sAddr, index)
+    var moveSize: int = (curLen - index - 1) * elemSize
+    if moveSize > 0 {
+        memmove(dst, src, unsafe.cast[uint](moveSize))
+    }
+    *_lenP = unsafe.cast[ptr](curLen - 1)
+}

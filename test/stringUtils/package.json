@@ -1,0 +1,9 @@
+{
+    "name": "stringUtils",
+    "version": "1.0.0",
+    "description": "string utility functions test",
+    "imports": {
+        "strings": "std:strings",
+        "slices": "std:slices"
+    }
+}

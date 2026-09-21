@@ -1,0 +1,459 @@
+// pkg/sort/sort.cute - 排序函数（int / string）
+// 使用原始指针操作，避免触发泛型单态化
+// 字符串元素大小 = 24 字节（ptr 8 + len 8 + cap 8）
+
+// ============================================================================
+// int 排序
+// ============================================================================
+
+// insertionSortInts 对 *[]int 进行插入排序
+fn insertionSortInts(s *[]int) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    // 读取 len
+    var lenP: *ptr = sAddr
+    var n: int = *lenP
+    // 读取 data 指针
+    var dataP: *ptr = sAddr + 16
+    var data: ptr = *dataP
+    var esz: int = sizeof[int]()
+    var i: int = 1
+    for ; i < n; {
+        // key = s[i]
+        var keyPtr: ptr = data + i * esz
+        var j: int = i - 1
+        for ; j >= 0; {
+            var curPtr: ptr = data + j * esz
+            // 直接读 int 比较
+            var curP: *int = curPtr
+            var cur: int = *curP
+            var keyP: *int = keyPtr
+            var key: int = *keyP
+            if cur <= key {
+                break
+            }
+            // s[j+1] = s[j]：按字节拷贝
+            var dst: ptr = data + (j + 1) * esz
+            var src: ptr = curPtr
+            var _d: *u8 = dst
+            var _s: *u8 = src
+            var k: int = 0
+            for ; k < esz; {
+                *_d = unsafe.cast[u8](*_s)
+                _d = _d + 1
+                _s = _s + 1
+                k = k + 1
+            }
+            j = j - 1
+        }
+        // s[j+1] = key
+        var dst2: ptr = data + (j + 1) * esz
+        var _d2: *u8 = dst2
+        var _s2: *u8 = keyPtr
+        var m: int = 0
+        for ; m < esz; {
+            *_d2 = unsafe.cast[u8](*_s2)
+            _d2 = _d2 + 1
+            _s2 = _s2 + 1
+            m = m + 1
+        }
+        i = i + 1
+    }
+}
+
+// ============================================================================
+// int 快速排序
+// ============================================================================
+
+// _swapInts 按字节交换 data[a] 和 data[b]（各 esz 字节）
+fn _swapInts(data: ptr, a: int, b: int, esz: int) {
+    var offA: ptr = data + a * esz
+    var offB: ptr = data + b * esz
+    var _da: *u8 = offA
+    var _db: *u8 = offB
+    var k: int = 0
+    for ; k < esz; {
+        var tmp: u8 = *_da
+        *_da = *_db
+        *_db = tmp
+        _da = _da + 1
+        _db = _db + 1
+        k = k + 1
+    }
+}
+
+// _copyInts 按字节将 src 拷贝到 dst（各 esz 字节）
+fn _copyInts(dst: ptr, src: ptr, esz: int) {
+    var _d: *u8 = dst
+    var _s: *u8 = src
+    var k: int = 0
+    for ; k < esz; {
+        *_d = unsafe.cast[u8](*_s)
+        _d = _d + 1
+        _s = _s + 1
+        k = k + 1
+    }
+}
+
+// _getIntVal 从 data + idx*esz 读取 int 值
+fn _getIntVal(data: ptr, idx: int, esz: int) int {
+    var p: *int = data + idx * esz
+    ret *p
+}
+
+// _setIntVal 将 val 写入 data + idx*esz
+fn _setIntVal(data: ptr, idx: int, val: int, esz: int) {
+    var p: *int = data + idx * esz
+    *p = val
+}
+
+// qsortInts 对 *[]int 进行快速排序
+fn qsortInts(s *[]int) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var lenP: *ptr = sAddr
+    var n: int = *lenP
+    if n <= 1 {
+        ret
+    }
+    var dataP: *ptr = sAddr + 16
+    var data: ptr = *dataP
+    var esz: int = sizeof[int]()
+    _qsortIntsRecurse(data, 0, n - 1, esz)
+}
+
+// _qsortIntsRecurse 对 int 数组的 [lo, hi] 区间进行快速排序
+fn _qsortIntsRecurse(data: ptr, lo: int, hi: int, esz: int) {
+    for ; lo < hi; {
+        // 小数组用插入排序
+        if hi - lo + 1 <= 16 {
+            _insertionSortIntsRange(data, lo, hi, esz)
+            ret
+        }
+        // 三数取中选 pivot
+        var mid: int = lo + (hi - lo) / 2
+        var loVal: int = _getIntVal(data, lo, esz)
+        var midVal: int = _getIntVal(data, mid, esz)
+        var hiVal: int = _getIntVal(data, hi, esz)
+        if loVal > midVal {
+            _swapInts(data, lo, mid, esz)
+            var tmp: int = loVal
+            loVal = midVal
+            midVal = tmp
+        }
+        if loVal > hiVal {
+            _swapInts(data, lo, hi, esz)
+            var tmp2: int = loVal
+            loVal = hiVal
+            hiVal = tmp2
+        }
+        if midVal > hiVal {
+            _swapInts(data, mid, hi, esz)
+            var tmp3: int = midVal
+            midVal = hiVal
+            hiVal = tmp3
+        }
+        // 将 pivot 放到 hi-1 位置
+        _swapInts(data, mid, hi - 1, esz)
+        // 分区
+        var i: int = lo
+        var j: int = hi - 1
+        var pv: int = _getIntVal(data, hi - 1, esz)
+        for ; true; {
+            // i 右移找到 >= pivot 的元素
+            i = i + 1
+            for ; i < hi - 1; {
+                var vi: int = _getIntVal(data, i, esz)
+                if vi >= pv {
+                    break
+                }
+                i = i + 1
+            }
+            // j 左移找到 <= pivot 的元素
+            j = j - 1
+            for ; j > lo; {
+                var vj: int = _getIntVal(data, j, esz)
+                if vj <= pv {
+                    break
+                }
+                j = j - 1
+            }
+            if i >= j {
+                break
+            }
+            _swapInts(data, i, j, esz)
+        }
+        // 将 pivot 放到最终位置 i
+        _swapInts(data, i, hi - 1, esz)
+        // 递归排序两个分区
+        _qsortIntsRecurse(data, lo, i - 1, esz)
+        _qsortIntsRecurse(data, i + 1, hi, esz)
+        ret
+    }
+}
+
+// _insertionSortIntsRange 对 int 数组的 [lo, hi] 区间进行插入排序
+fn _insertionSortIntsRange(data: ptr, lo: int, hi: int, esz: int) {
+    var i: int = lo + 1
+    for ; i <= hi; {
+        var keyVal: int = _getIntVal(data, i, esz)
+        var j: int = i - 1
+        for ; j >= lo; {
+            var curVal: int = _getIntVal(data, j, esz)
+            if curVal <= keyVal {
+                break
+            }
+            _setIntVal(data, j + 1, curVal, esz)
+            j = j - 1
+        }
+        _setIntVal(data, j + 1, keyVal, esz)
+        i = i + 1
+    }
+}
+
+// ============================================================================
+// string 排序
+// ============================================================================
+
+var _STR_ELEM: int = 24  // 字符串结构体大小：ptr(8) + len(8) + cap(8)
+
+// _strLoad 从 data + index*_STR_ELEM 读取 string
+fn _strLoad(data: ptr, index: int) string {
+    var off: int = index * _STR_ELEM
+    var pPtr: *ptr = data + off
+    var pLen: *int = data + off + 8
+    var pCap: *int = data + off + 16
+    ret strings.makeString(*pPtr, *pLen, *pCap)
+}
+
+// _strStore 将 string s 存入 data + index*_STR_ELEM
+fn _strStore(data: ptr, index: int, s: string) {
+    var off: int = index * _STR_ELEM
+    var pPtr: *ptr = data + off
+    var pLen: *int = data + off + 8
+    var pCap: *int = data + off + 16
+    *pPtr = strings.toCstring(s)
+    *pLen = strings.len(s)
+    *pCap = strings.len(s)
+}
+
+// _strSwap 交换 data[i] 和 data[j]（各 _STR_ELEM 字节，按字节交换）
+fn _strSwap(data: ptr, i: int, j: int) {
+    var off1: int = i * _STR_ELEM
+    var off2: int = j * _STR_ELEM
+    var k: int = 0
+    for ; k < _STR_ELEM; {
+        var _p1: *u8 = data + off1 + k
+        var _p2: *u8 = data + off2 + k
+        var tmp: u8 = *_p1
+        *_p1 = *_p2
+        *_p2 = tmp
+        k = k + 1
+    }
+}
+
+// _strCopy 将 src 处的 _STR_ELEM 字节拷贝到 dst 处
+fn _strCopy(dst: ptr, src: ptr) {
+    var k: int = 0
+    for ; k < _STR_ELEM; {
+        var _d: *u8 = dst + k
+        var _s: *u8 = src + k
+        *_d = unsafe.cast[u8](*_s)
+        _d = _d + 1
+        _s = _s + 1
+        k = k + 1
+    }
+}
+
+// _strLess 比较 data[i] 和 data[j] 处的字符串，返回 a < b
+fn _strLess(data: ptr, i: int, j: int) bool {
+    var a: string = _strLoad(data, i)
+    var b: string = _strLoad(data, j)
+    ret _strCompareStrs(a, b) < 0
+}
+
+// _strCompareStrs 比较两个字符串（独立实现，不使用 strings.compare 以避免泛型问题）
+fn _strCompareStrs(a string, b string) int {
+    var aPtr: ptr = strings.toCstring(a)
+    var aLen: int = strings.len(a)
+    var bPtr: ptr = strings.toCstring(b)
+    var bLen: int = strings.len(b)
+    var minLen: int = aLen
+    if bLen < aLen {
+        minLen = bLen
+    }
+    var i: int = 0
+    for ; i < minLen; {
+        var _pa: *u8 = aPtr + i
+        var ca: int = *_pa
+        var _pb: *u8 = bPtr + i
+        var cb: int = *_pb
+        if ca < cb {
+            ret 0 - 1
+        }
+        if ca > cb {
+            ret 1
+        }
+        i = i + 1
+    }
+    if aLen < bLen {
+        ret 0 - 1
+    }
+    if aLen > bLen {
+        ret 1
+    }
+    ret 0
+}
+
+// _copyStringFromBuf 从 buf 中读取 string 并存入 data + idx*_STR_ELEM
+fn _copyStringFromBuf(data: ptr, idx: int, buf: ptr) {
+    // buf 本身就是一个临时缓冲区，直接按字节拷贝 _STR_ELEM 字节
+    var dst: ptr = data + idx * _STR_ELEM
+    _strCopy(dst, buf)
+}
+
+// _storeStringToBuf 将 data + idx*_STR_ELEM 拷贝到 buf
+fn _storeStringToBuf(data: ptr, idx: int, buf: ptr) {
+    var src: ptr = data + idx * _STR_ELEM
+    _strCopy(buf, src)
+}
+
+// insertionSortStrs 对 *[]string 进行插入排序
+fn insertionSortStrs(s *[]string) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    // 读取 len
+    var lenP: *ptr = sAddr
+    var n: int = *lenP
+    // 读取 data 指针
+    var dataP: *ptr = sAddr + 16
+    var data: ptr = *dataP
+    var i: int = 1
+    for ; i < n; {
+        // key = s[i] —— 拷贝到临时缓冲区
+        var keyBuf: ptr = memory.malloc(_STR_ELEM)
+        _storeStringToBuf(data, i, keyBuf)
+        var j: int = i - 1
+        for ; j >= 0; {
+            // 比较 data[j] 和 key
+            var curStr: string = _strLoad(data, j)
+            var keyStr: string = _strLoad(keyBuf, 0)
+            var cmp: int = _strCompareStrs(curStr, keyStr)
+            if cmp <= 0 {
+                break
+            }
+            // s[j+1] = s[j]
+            _strCopy(data + (j + 1) * _STR_ELEM, data + j * _STR_ELEM)
+            j = j - 1
+        }
+        // s[j+1] = key
+        _strCopy(data + (j + 1) * _STR_ELEM, keyBuf)
+        memory.free(keyBuf)
+        i = i + 1
+    }
+}
+
+// ============================================================================
+// string 快速排序
+// ============================================================================
+
+// qsortStrs 对 *[]string 进行快速排序
+fn qsortStrs(s *[]string) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var lenP: *ptr = sAddr
+    var n: int = *lenP
+    if n <= 1 {
+        ret
+    }
+    var dataP: *ptr = sAddr + 16
+    var data: ptr = *dataP
+    _qsortStrsRecurse(data, 0, n - 1)
+}
+
+// _qsortStrsRecurse 对 string 数组的 [lo, hi] 区间进行快速排序
+fn _qsortStrsRecurse(data: ptr, lo: int, hi: int) {
+    for ; lo < hi; {
+        // 小数组用插入排序
+        if hi - lo + 1 <= 16 {
+            _insertionSortStrsRange(data, lo, hi)
+            ret
+        }
+        // 三数取中选 pivot
+        var mid: int = lo + (hi - lo) / 2
+        // 排序 lo, mid, hi 三个元素
+        if _strLess(data, lo, mid) == false {
+            _strSwap(data, lo, mid)
+        }
+        if _strLess(data, lo, hi) == false {
+            _strSwap(data, lo, hi)
+        }
+        if _strLess(data, mid, hi) == false {
+            _strSwap(data, mid, hi)
+        }
+        // 将 pivot (mid) 放到 hi-1 位置
+        _strSwap(data, mid, hi - 1)
+        // 分区
+        var i: int = lo
+        var j: int = hi - 1
+        var pivotBuf: ptr = memory.malloc(_STR_ELEM)
+        _storeStringToBuf(data, hi - 1, pivotBuf)
+        for ; true; {
+            // i 右移找到 >= pivot 的元素
+            i = i + 1
+            for ; i < hi - 1; {
+                var iStr: string = _strLoad(data, i)
+                var pivotStr: string = _strLoad(pivotBuf, 0)
+                var cmpI: int = _strCompareStrs(iStr, pivotStr)
+                if cmpI >= 0 {
+                    break
+                }
+                i = i + 1
+            }
+            // j 左移找到 <= pivot 的元素
+            j = j - 1
+            for ; j > lo; {
+                var jStr: string = _strLoad(data, j)
+                var pivotStr2: string = _strLoad(pivotBuf, 0)
+                var cmpJ: int = _strCompareStrs(jStr, pivotStr2)
+                if cmpJ <= 0 {
+                    break
+                }
+                j = j - 1
+            }
+            if i >= j {
+                break
+            }
+            _strSwap(data, i, j)
+        }
+        // 将 pivot 放到最终位置 i
+        _strSwap(data, i, hi - 1)
+        memory.free(pivotBuf)
+        // 递归排序两个分区
+        _qsortStrsRecurse(data, lo, i - 1)
+        _qsortStrsRecurse(data, i + 1, hi)
+        ret
+    }
+}
+
+// _insertionSortStrsRange 对 string 数组的 [lo, hi] 区间进行插入排序
+fn _insertionSortStrsRange(data: ptr, lo: int, hi: int) {
+    var i: int = lo + 1
+    for ; i <= hi; {
+        // key = data[i]，拷贝到临时缓冲区
+        var keyBuf: ptr = memory.malloc(_STR_ELEM)
+        _storeStringToBuf(data, i, keyBuf)
+        var j: int = i - 1
+        for ; j >= lo; {
+            var curStr: string = _strLoad(data, j)
+            var keyStr: string = _strLoad(keyBuf, 0)
+            var cmp: int = _strCompareStrs(curStr, keyStr)
+            if cmp <= 0 {
+                break
+            }
+            // s[j+1] = s[j]
+            _strCopy(data + (j + 1) * _STR_ELEM, data + j * _STR_ELEM)
+            j = j - 1
+        }
+        // s[j+1] = key
+        _strCopy(data + (j + 1) * _STR_ELEM, keyBuf)
+        memory.free(keyBuf)
+        i = i + 1
+    }
+}

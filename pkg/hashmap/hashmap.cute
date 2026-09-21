@@ -1,0 +1,198 @@
+// pkg/hashmap/hashmap.cute - 哈希表实现
+// 使用 FNV-1a 作为哈希函数，链地址法解决冲突
+// 支持 string 键和 ptr 值的存储
+
+// HashMap 哈希表结构
+// buckets: 桶数组指针，每个桶存储链表头
+// count: 当前存储的键值对数量
+// cap: 桶数组容量（始终为 2 的幂）
+type HashMap struct {
+    buckets: ptr
+    count: uint
+    cap: uint
+}
+
+// hashEntry 键值对节点
+// key: 字符串键
+// value: 值指针
+// next: 下一个节点（链表）
+type hashEntry struct {
+    key: string
+    value: ptr
+    next: ptr
+}
+
+// new 创建并返回一个新的 HashMap
+// 默认初始容量为 16 个桶
+fn new() *HashMap {
+    var m: *HashMap = memory.malloc(24)
+    var initialCap: uint = 16
+    m.buckets = memory.malloc(initialCap * 8)
+    m.count = 0
+    m.cap = initialCap
+    // 初始化所有桶为空
+    var i: uint = 0
+    for ; i < initialCap; {
+        var _p1: *ptr = m.buckets + i * 8
+        *_p1 = unsafe.cast[ptr](0)
+        i = i + 1
+    }
+    ret m
+}
+
+// hashKey 计算字符串键的哈希值（使用 FNV-1a）
+fn hashKey(key string) uint {
+    var sPtr: ptr = strings.toCstring(key)
+    var sLen: uint = strings.len(key)
+    var h: u32 = 2166136261
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p2: *u8 = sPtr + i
+        var byteVal: u32 = *_p2
+        h = h ^ byteVal
+        h = h * 16777619
+        i = i + 1
+    }
+    ret h
+}
+
+// bucketIndex 根据哈希值计算桶索引
+fn bucketIndex(m *HashMap, h uint) uint {
+    ret h % m.cap
+}
+
+// getBucket 获取指定桶的链表头
+fn getBucket(m *HashMap, idx uint) *hashEntry {
+    var _p3: *ptr = m.buckets + idx * 8
+    ret *_p3
+}
+
+// setBucket 设置指定桶的链表头
+fn setBucket(m *HashMap, idx uint, entry *hashEntry) {
+    var _p4: *ptr = m.buckets + idx * 8
+    *_p4 = unsafe.cast[ptr](entry)
+}
+
+// resize 扩容哈希表（容量翻倍）
+fn resize(m *HashMap) {
+    var oldCap: uint = m.cap
+    var newCap: uint = oldCap * 2
+    var newBuckets: ptr = memory.malloc(newCap * 8)
+    // 初始化新桶为空
+    var i: uint = 0
+    for ; i < newCap; {
+        var _p5: *ptr = newBuckets + i * 8
+        *_p5 = unsafe.cast[ptr](0)
+        i = i + 1
+    }
+    // 重新哈希所有现有条目
+    var j: uint = 0
+    for ; j < oldCap; {
+        var entry: *hashEntry = getBucket(m, j)
+        for ; entry != 0; {
+            var nextEntry: *hashEntry = entry.next
+            var entryKey: string = entry.key
+            var h: uint = hashKey(entryKey)
+            var newIdx: uint = h % newCap
+            // 将当前节点插入新桶的头部
+            var _p6: *ptr = newBuckets + newIdx * 8
+            var currentHead: *hashEntry = *_p6
+            entry.next = currentHead
+            var _p7: *ptr = newBuckets + newIdx * 8
+            *_p7 = unsafe.cast[ptr](entry)
+            entry = nextEntry
+        }
+        j = j + 1
+    }
+    m.buckets = newBuckets
+    m.cap = newCap
+}
+
+// set 向哈希表中插入或更新键值对
+// 如果键已存在，则更新值；否则插入新条目
+fn set(m *HashMap, key string, value ptr) {
+    var h: uint = hashKey(key)
+    var idx: uint = bucketIndex(m, h)
+    var entry: *hashEntry = getBucket(m, idx)
+    // 查找是否已存在该键
+    for ; entry != 0; {
+        if strings.eq(entry.key, key) {
+            // 键已存在，更新值
+            entry.value = value
+            ret
+        }
+        entry = entry.next
+    }
+    // 键不存在，创建新条目
+    var newEntry: *hashEntry = memory.malloc(40)
+    newEntry.key = key
+    newEntry.value = value
+    // 插入链表头部
+    var currentHead: *hashEntry = getBucket(m, idx)
+    newEntry.next = currentHead
+    setBucket(m, idx, newEntry)
+    m.count = m.count + 1
+    // 负载因子超过 0.75 时扩容
+    if m.count > m.cap * 3 / 4 {
+        resize(m)
+    }
+}
+
+// get 从哈希表中获取键对应的值
+// 如果键不存在，返回 0
+fn get(m *HashMap, key string) ptr {
+    var h: uint = hashKey(key)
+    var idx: uint = bucketIndex(m, h)
+    var entry: *hashEntry = getBucket(m, idx)
+    for ; entry != 0; {
+        if strings.eq(entry.key, key) {
+            ret entry.value
+        }
+        entry = entry.next
+    }
+    ret 0
+}
+
+// delete 从哈希表中删除键值对
+// 如果键存在则删除并返回 true，否则返回 false
+fn delete(m *HashMap, key string) bool {
+    var h: uint = hashKey(key)
+    var idx: uint = bucketIndex(m, h)
+    var entry: *hashEntry = getBucket(m, idx)
+    var prev: *hashEntry = 0
+    for ; entry != 0; {
+        if strings.eq(entry.key, key) {
+            if prev == 0 {
+                // 删除链表头节点
+                setBucket(m, idx, entry.next)
+            } else {
+                // 删除中间或末尾节点
+                prev.next = entry.next
+            }
+            m.count = m.count - 1
+            ret true
+        }
+        prev = entry
+        entry = entry.next
+    }
+    ret false
+}
+
+// has 判断键是否存在
+fn has(m *HashMap, key string) bool {
+    var h: uint = hashKey(key)
+    var idx: uint = bucketIndex(m, h)
+    var entry: *hashEntry = getBucket(m, idx)
+    for ; entry != 0; {
+        if strings.eq(entry.key, key) {
+            ret true
+        }
+        entry = entry.next
+    }
+    ret false
+}
+
+// size 返回哈希表中的元素数量
+fn size(m *HashMap) uint {
+    ret m.count
+}

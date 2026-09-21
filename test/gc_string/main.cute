@@ -1,0 +1,70 @@
+build os("linux")
+
+fn buildStr(n int) string {
+    var s: string = ""
+    var i: int = 0
+    for ; i < n; {
+        s = s + "A"
+        i = i + 1
+    }
+    ret s
+}
+
+fn concat3(a: string, b: string, c: string) string {
+    ret a + b + c
+}
+
+fn repeatStr(s: string, n int) string {
+    var result: string = ""
+    var i: int = 0
+    for ; i < n; {
+        result = result + s
+        i = i + 1
+    }
+    ret result
+}
+
+fn main() int {
+    var ok: int = 0
+
+    // 1. 循环拼接
+    var s1: string = buildStr(50)
+    if len(s1) == 50 {
+        ok = ok + 1
+    }
+
+    // 2. 多次重用同一变量
+    var s2: string = buildStr(10)
+    s2 = buildStr(20)
+    s2 = buildStr(30)
+    if len(s2) == 30 {
+        ok = ok + 1
+    }
+
+    // 3. 三路拼接
+    var s3: string = concat3("hello", " ", "world")
+    if len(s3) == 11 {
+        ok = ok + 1
+    }
+
+    // 4. 嵌套拼接
+    var s4: string = repeatStr("xy", 5)
+    if len(s4) == 10 {
+        ok = ok + 1
+    }
+
+    // 5. 大量拼接
+    var big: string = buildStr(200)
+    if len(big) == 200 {
+        ok = ok + 1
+    }
+
+    // 6. 拼接后重用
+    var tmp: string = buildStr(5)
+    var final: string = repeatStr(tmp, 4)
+    if len(final) == 20 {
+        ok = ok + 1
+    }
+
+    ret ok
+}

@@ -1,0 +1,9 @@
+{
+    "name": "thread",
+    "version": "1.0.0",
+    "description": "System thread library for Cuteify (pthreads + futex synchronization)",
+    "imports": {
+        "memory": "std:memory",
+        "fmt": "std:fmt"
+    }
+}

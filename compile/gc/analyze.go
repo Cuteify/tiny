@@ -66,9 +66,6 @@ func Build(root *parser.Node) {
 		}
 	}
 
-	// Phase 3: 基于最终摘要计算出口释放计划
-	PlanFrees(root)
-
 	// LLR 分析：基于对象绑定的精确生命周期
 	LLRResults = map[string]*LLRResult{}
 	for fnKey, fb := range a.fns {
@@ -136,6 +133,13 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 					a.bumpRet(key, EscCaller)
 					a.bumpParams(fs, EscCaller, ModeOtherRef)
 				}
+				// 传播 HasHeapAllocs：ret 调用了有堆分配的函数
+				if !fs.HasHeapAllocs && exprAllocates(rv) {
+					fs.HasHeapAllocs = true
+					a.changed = true
+				}
+				// 返回表达式里的嵌套调用也要传播逃逸
+				walkExprCalls(rv, func(cb *parser.CallBlock) { a.applyCallee(key, fs, cb, fb) })
 			}
 		case *parser.VarBlock:
 			// 赋值语句（IsDefine=false）：目标是全局 且 右值为拥有值
@@ -154,6 +158,14 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 			}
 		case *parser.CallBlock:
 			a.applyCallee(key, fs, v, fb)
+		}
+		// 检测堆分配：任何表达式含 RetOwned 调用 / 字符串拼接 / new / make
+		if !fs.HasHeapAllocs {
+			if vb, ok := n.Value.(*parser.VarBlock); ok && vb.Value != nil && vb.Type != nil && isOwning(vb.Type) {
+				if exprAllocates(vb.Value) {
+					fs.HasHeapAllocs = true
+				}
+			}
 		}
 		for _, ch := range n.Children {
 			walk(ch)
@@ -198,6 +210,11 @@ func (a *analyzer) applyCallee(key string, fs *FnSummary, cb *parser.CallBlock, 
 		if ps.Escape > EscNone && refsTracked(arg.Value, fb) {
 			a.bumpParams(fs, ps.Escape, ps.Mode)
 		}
+	}
+	// 传播 HasHeapAllocs：被调函数有堆分配 → 调用者也有
+	if callee.HasHeapAllocs && !fs.HasHeapAllocs {
+		fs.HasHeapAllocs = true
+		a.changed = true
 	}
 	// 实参里若出现嵌套复杂表达式调用（右值含其它调用），递归扫描其内部调用点
 	for _, ag := range cb.Args {
@@ -298,14 +315,21 @@ func walkExprCalls(e *parser.Expression, fn func(*parser.CallBlock)) {
 	}
 }
 
-// isOwning 类型是否携带堆缓冲（string/list 视为拥有指针载体；
+// isOwning 类型是否携带堆缓冲（string/list/结构体指针 *T 视为拥有指针载体；
 // 裸 ptr 为借用/手动管理，不跟踪——与 GC_PLAN §3 一致）。
 func isOwning(t typeSys.Type) bool {
 	if t == nil {
 		return false
 	}
 	k := t.Kind()
-	return k == "string" || k == "list"
+	if k == "string" || k == "list" {
+		return true
+	}
+	// *T（结构体指针）默认 owns（&local 除外，由调用方标记）
+	if t.IsPointer() {
+		return true
+	}
+	return false
 }
 
 // appendUnique 去重追加。
@@ -354,6 +378,14 @@ func exprAllocates(e *parser.Expression) bool {
 		return true
 	}
 	return exprAllocates(e.Left) || exprAllocates(e.Right)
+}
+
+// isRCAlloc 判断表达式是否是 newRC() 分配（带 RC 头，由手动 rcDec 管理，LLR 不自动释放）。
+func isRCAlloc(e *parser.Expression) bool {
+	if e == nil || e.Call == nil {
+		return false
+	}
+	return e.Call.IsRC
 }
 
 // ParamEscapes 查询被调函数第 idx 个参数的逃逸层级。

@@ -1,0 +1,9 @@
+{
+    "name": "tabwriter",
+    "version": "1.0.0",
+    "description": "Tab-aligned text writer package: elastic tabstop alignment",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

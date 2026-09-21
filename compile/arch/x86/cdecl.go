@@ -5,9 +5,10 @@ import (
 	"cuteify/compile/context"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"cuteify/utils"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 // Cdecl 实现 x86 cdecl 调用约定（全部压栈，调用者清理）。
@@ -27,6 +28,9 @@ func NewCdecl(ctx *context.Context) *Cdecl {
 
 // Info 返回调用约定的名称
 func (a *Cdecl) Info() string { return "x86 cdecl" }
+
+// SetArgsOffset 将参数偏移从调用者帧位置刷新为 callee-local 位置
+func (a *Cdecl) SetArgsOffset(fn *parser.FuncBlock) { setArgsOffset(fn) }
 
 // Prologue 函数前序代码
 func (a *Cdecl) Prologue(fn *parser.FuncBlock) string {
@@ -61,6 +65,13 @@ func (a *Cdecl) Call(call *parser.CallBlock) string {
 		}
 		addr := listFieldAddr(a.ctx, call.ThisVar, fieldOffset)
 		return utils.Format("mov eax, dword " + addr + "; " + methodName + "()")
+	}
+
+	// Interface dispatch: if receiver is an interface type, dispatch via vtable
+	if call.ThisVar != nil && call.ThisVar.Type != nil {
+		if ifaceType, ok := call.ThisVar.Type.(*typeSys.InterfaceType); ok {
+			return a.interfaceDispatch(call, ifaceType)
+		}
 	}
 
 normalCall:
@@ -122,8 +133,51 @@ normalCall:
 		}
 	}
 
+	// 变参打包：将变参参数打包为 []T 传递
+	var variadicArrayBytes int
+	if call.IsVariadic && len(call.VariadicArgs) > 0 {
+		// 获取变参元素类型（call.VariadicType 是 []T，需要取 Elem()）
+		elemType := call.VariadicType
+		if lt, ok := elemType.(*typeSys.ListType); ok {
+			elemType = lt.Elem()
+		}
+		elemSize := elemType.Size()
+		if elemSize <= 0 {
+			elemSize = 4
+		}
+		count := len(call.VariadicArgs)
+		variadicArrayBytes = count * elemSize
+
+		// 在栈上分配临时数组
+		if variadicArrayBytes > 0 {
+			code += utils.Format("sub esp, " + strconv.Itoa(variadicArrayBytes) + "; 变参数组空间")
+		}
+
+		// 将每个变参参数存入数组（从低地址到高地址）
+		for i, varg := range call.VariadicArgs {
+			offset := i * elemSize
+			expCode := a.Exp(varg.Value, "EAX", "变参"+strconv.Itoa(i))
+			storeCode := utils.Format("mov dword [esp+" + strconv.Itoa(offset) + "], EAX; 变参" + strconv.Itoa(i))
+			code += expCode
+			code += storeCode
+		}
+
+		// 压入 slice {ptr, len, cap}
+		// ptr 指向临时数组（在 2 次 push 下方：cap + len = 8 bytes）
+		ptrOffset := 8 // 2 pushes * 4 bytes = 8
+		code += utils.Format("push " + strconv.Itoa(count) + "; 变参 cap")
+		code += utils.Format("push " + strconv.Itoa(count) + "; 变参 len")
+		code += utils.Format("lea eax, [esp+" + strconv.Itoa(ptrOffset) + "]; 变参 ptr → 数组起始地址")
+		code += utils.Format("push eax; 变参 ptr")
+	}
+
+	// 生成函数名
+	isIndirect := call.ThisVar != nil && call.ThisVar.Type != nil &&
+		call.ThisVar.Type.Kind() == "func"
+
 	// 最后压入 this 指针（如果有）：this 位于 [ebp+8]，参数从 [ebp+12] 起
-	if call.ThisVar != nil {
+	// 函数指针间接调用不压 this 指针
+	if call.ThisVar != nil && !isIndirect {
 		thisAddr := genVarAddr(a.ctx, call.ThisVar)
 		if call.ThisVar.Type != nil && !call.ThisVar.Type.IsPointer() {
 			// 值语义：压结构体地址（lea 取地址）
@@ -134,20 +188,32 @@ normalCall:
 			code += utils.Format("push " + thisAddr + "; push this pointer")
 		}
 	}
-
-	// 生成函数名
-	name := formatFuncName(fn.Name.NASM(), len(fn.Args))
+	var name string
+	if !isIndirect {
+		name = formatFuncName(fn)
+	}
 	isContainerRet := arch.FuncReturnsLarge(fn)
 	if isContainerRet {
 		code += utils.Format("lea EAX, [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址")
 		code += utils.Format("push EAX; 大值返回槽地址")
 	}
-	code += utils.Format("call " + name)
+	if isIndirect {
+		// 间接调用：从变量加载函数指针到 EAX，然后 call eax
+		addr := genVarAddr(a.ctx, call.ThisVar)
+		code += utils.Format("mov eax, dword " + addr + "; 加载函数指针")
+		code += utils.Format("call eax; 间接调用")
+	} else {
+		code += utils.Format("call " + name)
+	}
 
 	// cdecl: 调用者清理参数栈
 	argSize := callArgsSize(call)
 	if argSize > 0 {
 		code += utils.Format("add esp, " + strconv.Itoa(argSize) + "; cdecl: 清理参数栈")
+	}
+	// 清理变参临时数组
+	if variadicArrayBytes > 0 {
+		code += utils.Format("add esp, " + strconv.Itoa(variadicArrayBytes) + "; 清理变参数组")
 	}
 	if isContainerRet {
 		code += utils.Format("add esp, 4; 清理返回槽地址")
@@ -169,4 +235,101 @@ func (a *Cdecl) Exp(exp *parser.Expression, result, desc string) string {
 		return compile64Type(a.ctx, exp, result, desc)
 	}
 	return a.exp(exp, result, desc)
+}
+
+// interfaceDispatch generates indirect call via vtable for interface method dispatch on x86.
+func (a *Cdecl) interfaceDispatch(call *parser.CallBlock, ifaceType *typeSys.InterfaceType) string {
+	ps := a.ctx.PointerSize // 4 for x86
+
+	// Get interface variable address - strip size prefix for raw memory access
+	thisAddr := genVarAddr(a.ctx, call.ThisVar)
+	// Strip size prefix (e.g. "DWORD[ebp-28]" → "[ebp-28]")
+	rawAddr := thisAddr
+	if idx := strings.Index(rawAddr, "["); idx >= 0 {
+		rawAddr = rawAddr[idx:]
+	}
+	thisBase := rawAddr
+
+	// Method name from call
+	methodName := call.Name.Last()
+
+	// Find method index in interface
+	methodIdx := -1
+	for i, m := range ifaceType.InterfaceMethods {
+		if m.Name == methodName {
+			methodIdx = i
+			break
+		}
+	}
+	if methodIdx < 0 {
+		return "; interface dispatch: unknown method " + methodName + "\n"
+	}
+
+	// Vtable method offset: ps (type_info) + methodIdx * ps
+	vtableMethodOff := ps + methodIdx*ps
+
+	var code string
+
+	// 1. Load vtable_ptr from interface variable (first slot)
+	code += utils.Format("mov esi, dword " + thisBase + "; vtable_ptr")
+
+	// 2. Load data_ptr from interface variable (second slot) - this is the this pointer
+	code += utils.Format("mov edi, dword " + thisBase[:len(thisBase)-1] + "+" + strconv.Itoa(ps) + "]; data_ptr (this)")
+
+	// 3. Set return slot (push) for methods returning large values (string/list)
+	if methodIdx >= 0 && methodIdx < len(ifaceType.InterfaceMethods) {
+		mret := ifaceType.InterfaceMethods[methodIdx].Returns
+		if len(mret) > 0 && mret[0] != nil && arch.IsListLikeType(mret[0]) {
+			code += utils.Format("lea eax, [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址 (interface)")
+			code += utils.Format("push eax; 大值返回槽地址")
+		} else if len(mret) > 0 && mret[0] != nil && mret[0].Size() > ps && !(mret[0].Size() == 8 && (mret[0].Type() == "i64" || mret[0].Type() == "u64" || mret[0].Type() == "f64")) {
+			code += utils.Format("lea eax, [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; 大值返回槽地址 (interface)")
+			code += utils.Format("push eax; 大值返回槽地址")
+		}
+	}
+
+	// 4. Push data_ptr (this) as first argument
+	code += utils.Format("push edi; data_ptr (this)")
+
+	// 5. Push additional arguments (from call.Args)
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		arg := call.Args[i]
+		if arg == nil || arg.Value == nil {
+			continue
+		}
+		code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
+	}
+
+	// 6. Load function pointer from vtable and call indirectly
+	// x86: can't call [esi+offset] directly, need to load into register
+	code += utils.Format("call dword [esi+" + strconv.Itoa(vtableMethodOff) + "]; interface dispatch: " + methodName)
+
+	// 7. Clean up stack: this (4 bytes) + args
+	cleanBytes := ps // this pointer
+	for _, arg := range call.Args {
+		if arg != nil && arg.Type != nil {
+			cleanBytes += arch.ArgSlots(arg.Type) * ps
+		}
+	}
+	// Check if return slot was pushed
+	if methodIdx >= 0 && methodIdx < len(ifaceType.InterfaceMethods) {
+		mret := ifaceType.InterfaceMethods[methodIdx].Returns
+		if len(mret) > 0 && mret[0] != nil && (arch.IsListLikeType(mret[0]) || (mret[0].Size() > ps && !(mret[0].Size() == 8 && (mret[0].Type() == "i64" || mret[0].Type() == "u64" || mret[0].Type() == "f64")))) {
+			cleanBytes += ps // return slot
+		}
+	}
+	if cleanBytes > 0 {
+		code += utils.Format("add esp, " + strconv.Itoa(cleanBytes) + "; 清理接口分派参数")
+	}
+
+	code += utils.Format("; interface dispatch: " + methodName + "\n")
+	return code
+}
+
+// stripOuterBrackets 去掉外层方括号
+func stripOuterBrackets(addr string) string {
+	if len(addr) >= 2 && strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
+		return addr[1 : len(addr)-1]
+	}
+	return addr
 }

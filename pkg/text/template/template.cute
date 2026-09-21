@@ -1,0 +1,101 @@
+// pkg/text/template/template.cute - 简单模板引擎
+// 支持 {{.FieldName}} 占位符替换
+// 使用 hashmap.HashMap 存储键值对
+
+// Template 模板结构
+type Template struct {
+    pattern: string
+}
+
+// newTemplate 创建新模板
+fn newTemplate(pattern string) *Template {
+    var t: *Template = memory.malloc(24)
+    t.pattern = pattern
+    ret t
+}
+
+// execute 执行模板，将 {{.key}} 替换为 data 中对应的值
+// 使用 hashmap.HashMap 作为数据源
+fn execute(t *Template, data *hashmap.HashMap) string {
+    var pat: string = t.pattern
+    var patPtr: ptr = strings.toCstring(pat)
+    var patLen: uint = strings.len(pat)
+    // 结果缓冲区：预估为 pattern 长度 * 2
+    var buf: ptr = memory.malloc(patLen * 2 + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < patLen; {
+        // 检查是否为 {{ 开头
+        var _p1: *u8 = patPtr + i
+        var _p2: *u8 = patPtr + i + 1
+        if i + 1 < patLen && *_p1 == 123 && *_p2 == 123 {
+            // 查找闭合 }}
+            var j: uint = i + 2
+            var foundEnd: bool = false
+            for ; j + 1 < patLen; {
+                var _p3: *u8 = patPtr + j
+                var _p4: *u8 = patPtr + j + 1
+                if *_p3 == 125 && *_p4 == 125 {
+                    foundEnd = true
+                    break
+                }
+                j = j + 1
+            }
+            if foundEnd && j > i + 3 {
+                // 提取 .key（跳过 {{ 和 }}）
+                var keyStart: uint = i + 2
+                // 跳过可选的 '.'
+                var _p5: *u8 = patPtr + keyStart
+                if *_p5 == 46 {
+                    keyStart = keyStart + 1
+                }
+                var keyLen: uint = j - keyStart
+                var keyBuf: ptr = memory.malloc(keyLen + 1)
+                var k: uint = 0
+                for ; k < keyLen; {
+                    var _p6: *u8 = keyBuf + k
+                    var _p7: *u8 = patPtr + keyStart + k
+                    *_p6 = unsafe.cast[u8](*_p7)
+                    k = k + 1
+                }
+                var _p8: *u8 = keyBuf + keyLen
+                *_p8 = unsafe.cast[u8](0)
+                var key: string = strings.makeString(keyBuf, keyLen, keyLen)
+                // 在 HashMap 中查找
+                var val: ptr = hashmap.get(data, key)
+                if val != 0 {
+                    // val 是指向字符串的指针
+                    var _p9: *ptr = val
+                    var valStr: string = *_p9
+                    var valPtr: ptr = strings.toCstring(valStr)
+                    var valLen: uint = strings.len(valStr)
+                    var v: uint = 0
+                    for ; v < valLen; {
+                        var _p10: *u8 = buf + outPos
+                        var _p11: *u8 = valPtr + v
+                        *_p10 = unsafe.cast[u8](*_p11)
+                        outPos = outPos + 1
+                        v = v + 1
+                    }
+                }
+                i = j + 2
+            } else {
+                // 未找到闭合，原样输出
+                var _p12: *u8 = buf + outPos
+                var _p13: *u8 = patPtr + i
+                *_p12 = unsafe.cast[u8](*_p13)
+                outPos = outPos + 1
+                i = i + 1
+            }
+        } else {
+            var _p14: *u8 = buf + outPos
+            var _p15: *u8 = patPtr + i
+            *_p14 = unsafe.cast[u8](*_p15)
+            outPos = outPos + 1
+            i = i + 1
+        }
+    }
+    var _p16: *u8 = buf + outPos
+    *_p16 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}

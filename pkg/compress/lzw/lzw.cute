@@ -1,0 +1,276 @@
+// pkg/compress/lzw/lzw.cute - LZW 压缩解压
+// 经典 LZW 压缩算法，支持可配置的字宽（litWidth）
+
+// 常量
+const MAX_DICT_SIZE: u32 = 4096
+
+// Reader LZW 读取器
+type Reader struct {
+    data: ptr       // 输入数据指针
+    dataLen: uint   // 输入数据总长度
+    pos: uint       // 当前读取位置
+    litWidth: int   // 字面量宽度
+    prevCode: int   // 上一个代码
+    table: ptr      // 字典表（每个条目：prefix:i16 + char:u8 → code:i16）
+    tableSize: int  // 当前字典大小
+    buf: ptr        // 输出缓冲区
+    bufPos: int     // 当前缓冲区位置
+    bufLen: int     // 缓冲区有效长度
+}
+
+// NewReader 创建 LZW 读取器
+fn NewReader(data string, litWidth int) *Reader {
+    var buf: ptr = memory.malloc(64)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // 初始化字典：每个字面量值作为单字符条目
+    var dictSize: int = 1 << litWidth
+    var table: ptr = memory.malloc(dictSize * 8)
+    // 字典表每条目 4 字节：prefix(i16) + char(u8) + padding(u8)
+    // 初始化空字典条目
+    var i: int = 0
+    for ; i < dictSize; {
+        var _p1: *u8 = table + i * 4 + 2
+        *_p1 = unsafe.cast[u8](0xFF // 标记为空)
+        i = i + 1
+    }
+    // layout: [data:8][dataLen:8][pos:8][litWidth:8][prevCode:8][table:8][tableSize:8][buf:8][bufPos:8][bufLen:8]
+    var _p2: *ptr = buf
+    *_p2 = unsafe.cast[ptr](rPtr)
+    var _p3: *ptr = buf + 8
+    *_p3 = unsafe.cast[ptr](rLen)
+    var _p4: *ptr = buf + 16
+    *_p4 = unsafe.cast[ptr](0)
+    var _p5: *ptr = buf + 24
+    *_p5 = unsafe.cast[ptr](litWidth)
+    var _p6: *ptr = buf + 32
+    *_p6 = unsafe.cast[ptr](-1)
+    var _p7: *ptr = buf + 40
+    *_p7 = unsafe.cast[ptr](table)
+    var _p8: *ptr = buf + 48
+    *_p8 = unsafe.cast[ptr](dictSize)
+    var outBuf: ptr = memory.malloc(4096)
+    var _p9: *ptr = buf + 56
+    *_p9 = unsafe.cast[ptr](outBuf)
+    var _p10: *ptr = buf + 64
+    *_p10 = unsafe.cast[ptr](0)
+    var _p11: *ptr = buf + 72
+    *_p11 = unsafe.cast[ptr](0)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Read 从 LZW 读取器中读取解压数据
+fn Read(r *Reader, outBuf ptr, n int) int {
+    var _p12: *ptr = r + 64
+    var bufPos: int = *_p12
+    var _p13: *ptr = r + 72
+    var bufLen: int = *_p13
+    // 如果缓冲区有数据，直接输出
+    if bufLen > 0 && bufPos < bufLen {
+        var available: int = bufLen - bufPos
+        var toRead: int = available
+        if toRead > n {
+            toRead = n
+        }
+        var _p14: *ptr = r + 56
+        var inBuf: ptr = *_p14
+        var i: int = 0
+        for ; i < toRead; {
+            var _p15: *u8 = outBuf + i
+            var _p16: *u8 = inBuf + bufPos + i
+            *_p15 = unsafe.cast[u8](*_p16)
+            i = i + 1
+        }
+        var _p17: *ptr = r + 64
+        *_p17 = unsafe.cast[ptr](bufPos + toRead)
+        ret toRead
+    }
+    // 简化的 LZW 解压：逐代码处理
+    var _p18: *ptr = r
+    var dataPtr: ptr = *_p18
+    var _p19: *ptr = r + 8
+    var dataLen: uint = *_p19
+    var _p20: *ptr = r + 16
+    var pos: uint = *_p20
+    var _p21: *ptr = r + 24
+    var litWidth: int = *_p21
+    var _p22: *ptr = r + 32
+    var prevCode: int = *_p22
+    var _p23: *ptr = r + 40
+    var table: ptr = *_p23
+    var _p24: *ptr = r + 48
+    var tableSize: int = *_p24
+    var _p25: *ptr = r + 56
+    var outPtr: ptr = *_p25
+    // 每次读取一个代码（litWidth 位，高位在前）
+    if pos >= dataLen {
+        var _p26: *ptr = r + 16
+        *_p26 = unsafe.cast[ptr](pos)
+        ret 0
+    }
+    // 简化实现：每次解压一个字节（适用于 8 位 litWidth）
+    if litWidth == 8 {
+        var _p27: *u8 = dataPtr + pos
+        var code: int = *_p27
+        pos = pos + 1
+        var outPos: int = 0
+        if code < (1 << litWidth) {
+            // 字面量
+            var _p28: *u8 = outPtr
+            *_p28 = unsafe.cast[u8](code)
+            outPos = 1
+        } else if code == (1 << litWidth) {
+            // Clear code
+            tableSize = 1 << litWidth
+            var _p29: *u8 = outPtr
+            *_p29 = unsafe.cast[u8](0)
+            outPos = 1
+        } else if code == (1 << litWidth) + 1 {
+            // EOF
+            var _p30: *ptr = r + 16
+            *_p30 = unsafe.cast[ptr](pos)
+            ret 0
+        } else if prevCode >= 0 && code < tableSize {
+            // 引用代码
+            // 简化：输出上一个代码对应字符
+            if prevCode < (1 << litWidth) {
+                var _p31: *u8 = outPtr
+                *_p31 = unsafe.cast[u8](prevCode)
+                outPos = 1
+            }
+        }
+        var _p32: *ptr = r + 16
+        *_p32 = unsafe.cast[ptr](pos)
+        var _p33: *ptr = r + 32
+        *_p33 = unsafe.cast[ptr](code)
+        var _p34: *ptr = r + 48
+        *_p34 = unsafe.cast[ptr](tableSize)
+        var _p35: *ptr = r + 64
+        *_p35 = unsafe.cast[ptr](1)
+        var _p36: *ptr = r + 72
+        *_p36 = unsafe.cast[ptr](outPos)
+        ret outPos
+    }
+    // 其他 litWidth 暂不支持
+    var _p37: *ptr = r + 16
+    *_p37 = unsafe.cast[ptr](pos)
+    ret 0
+}
+
+// Writer LZW 写入器
+type Writer struct {
+    litWidth: int    // 字面量宽度
+    table: ptr       // 字典表
+    tableSize: int   // 当前字典大小
+    buf: ptr         // 输出缓冲区
+    bufLen: uint     // 当前缓冲区长度
+    bufCap: uint     // 缓冲区容量
+    prevCode: int    // 上一个代码
+}
+
+// NewWriter 创建 LZW 写入器
+fn NewWriter(litWidth int) *Writer {
+    var buf: ptr = memory.malloc(48)
+    var dictSize: int = 1 << litWidth
+    var table: ptr = memory.malloc(dictSize * 8)
+    var i: int = 0
+    for ; i < dictSize; {
+        var _p38: *u8 = table + i * 4 + 2
+        *_p38 = unsafe.cast[u8](0xFF)
+        i = i + 1
+    }
+    var outBuf: ptr = memory.malloc(4096)
+    // layout: [litWidth:8][table:8][tableSize:8][buf:8][bufLen:8][bufCap:8][prevCode:8]
+    var _p39: *ptr = buf
+    *_p39 = unsafe.cast[ptr](litWidth)
+    var _p40: *ptr = buf + 8
+    *_p40 = unsafe.cast[ptr](table)
+    var _p41: *ptr = buf + 16
+    *_p41 = unsafe.cast[ptr](dictSize)
+    var _p42: *ptr = buf + 24
+    *_p42 = unsafe.cast[ptr](outBuf)
+    var _p43: *ptr = buf + 32
+    *_p43 = unsafe.cast[ptr](0)
+    var _p44: *ptr = buf + 40
+    *_p44 = unsafe.cast[ptr](4096)
+    var _p45: *ptr = buf + 48
+    *_p45 = unsafe.cast[ptr](-1)
+    var result: *Writer
+    result = buf
+    ret result
+}
+
+// Write 向 LZW 写入器写入数据（简化：输出 Clear + 字面量 + EOF）
+fn Write(w *Writer, data ptr, n int) int {
+    var _p46: *ptr = w
+    var litWidth: int = *_p46
+    var _p47: *ptr = w + 24
+    var outBuf: ptr = *_p47
+    var _p48: *ptr = w + 32
+    var outLen: uint = *_p48
+    var _p49: *ptr = w + 40
+    var outCap: uint = *_p49
+    // 输出 Clear code
+    var needed: uint = outLen + 1 + n + 1 // clear + data + eof
+    if needed > outCap {
+        var newCap: uint = outCap * 2
+        if newCap < needed {
+            newCap = needed
+        }
+        var newBuf: ptr = memory.malloc(newCap)
+        var i: uint = 0
+        for ; i < outLen; {
+            var _p50: *u8 = newBuf + i
+            var _p51: *u8 = outBuf + i
+            *_p50 = unsafe.cast[u8](*_p51)
+            i = i + 1
+        }
+        outBuf = newBuf
+        outCap = newCap
+        var _p52: *ptr = w + 24
+        *_p52 = unsafe.cast[ptr](newBuf)
+        var _p53: *ptr = w + 40
+        *_p53 = unsafe.cast[ptr](newCap)
+    }
+    // Clear code
+    var _p54: *u8 = outBuf + outLen
+    *_p54 = unsafe.cast[u8]((1 << litWidth) & 0xFF)
+    outLen = outLen + 1
+    // 输出字面量
+    var i: int = 0
+    for ; i < n; {
+        var _p55: *u8 = outBuf + outLen
+        var _p56: *u8 = data + i
+        *_p55 = unsafe.cast[u8](*_p56)
+        outLen = outLen + 1
+        i = i + 1
+    }
+    // EOF code
+    var _p57: *u8 = outBuf + outLen
+    *_p57 = unsafe.cast[u8](((1 << litWidth) + 1) & 0xFF)
+    outLen = outLen + 1
+    var _p58: *ptr = w + 32
+    *_p58 = unsafe.cast[ptr](outLen)
+    ret n
+}
+
+// Close 关闭 LZW 写入器，返回压缩数据
+fn Close(w *Writer) string {
+    var _p59: *ptr = w + 24
+    var outBuf: ptr = *_p59
+    var _p60: *ptr = w + 32
+    var outLen: uint = *_p60
+    var strPtr: ptr = memory.malloc(outLen + 1)
+    var i: uint = 0
+    for ; i < outLen; {
+        var _p61: *u8 = strPtr + i
+        var _p62: *u8 = outBuf + i
+        *_p61 = unsafe.cast[u8](*_p62)
+        i = i + 1
+    }
+    var _p63: *u8 = strPtr + outLen
+    *_p63 = unsafe.cast[u8](0)
+    ret strings.makeString(strPtr, outLen, outLen)
+}

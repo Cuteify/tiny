@@ -1,0 +1,17 @@
+// unicode/utf8 package test
+
+fn main() int {
+    // runeCount: "hello" has 5 ASCII runes
+    var rc1: int = utf8.runeCount("hello")
+    if rc1 != 5 {
+        ret 1
+    }
+
+    // valid: "hello" is valid UTF-8
+    var v1: bool = utf8.valid("hello")
+    if !v1 {
+        ret 2
+    }
+
+    ret 42
+}

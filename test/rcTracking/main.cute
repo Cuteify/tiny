@@ -1,0 +1,164 @@
+build os("linux")
+
+// === RC 内存跟踪综合测试 ===
+// 测试：大量对象分配、跨函数引用传递、全局泄露检测
+// 每一步打印追踪信息，最终 exit code 验证
+
+fn step(msg: string) {
+    console.println(msg)
+}
+
+fn passToChild(p: ptr, n: int) int {
+    var i: int = 0
+    for i < n {
+        memory.rcInc(p)
+        memory.rcDec(p)
+        i = i + 1
+    }
+    ret 0
+}
+
+fn transferOwnership(p: ptr) {
+    memory.rcDec(p)
+}
+
+fn batchAlloc(count: int) ptr {
+    var i: int = 0
+    var p: ptr = memory.mallocRC(32)
+    for i < count - 1 {
+        var tmp: ptr = memory.mallocRC(32)
+        memory.rcDec(tmp)
+        i = i + 1
+    }
+    ret p
+}
+
+fn main() int {
+    memory.resetLeakTracker()
+
+    // Step 1: 基本分配 — allocs=3
+    step("[Step1] alloc 3 objects")
+    var p1: ptr = memory.mallocRC(32)
+    var p2: ptr = memory.mallocRC(32)
+    var p3: ptr = memory.mallocRC(32)
+
+    // Step 2: 引用计数 — no change
+    step("[Step2] rcInc(p1) then rcDec(p1)")
+    memory.rcInc(p1)
+    memory.rcDec(p1)
+
+    // Step 3: 释放 p2,p3 — frees+=2
+    step("[Step3] free p2, p3 via rcDec")
+    memory.rcDec(p2)
+    memory.rcDec(p3)
+
+    // Step 4: 跨函数引用 — no alloc/free change
+    step("[Step4] passToChild(p1, 5): cross-function ref counting")
+    passToChild(p1, 5)
+
+    // Step 5: 释放 p1 — frees+=1
+    step("[Step5] free p1")
+    memory.rcDec(p1)
+
+    // Step 6: 批量分配 — allocs+=10, frees+=9
+    step("[Step6] batchAlloc(10): allocate 10, free 9 inside")
+    var batchP: ptr = batchAlloc(10)
+
+    // Step 7: 释放最后一批 — frees+=1
+    step("[Step7] free last batch object")
+    memory.rcDec(batchP)
+
+    // Step 8: 创建 10 个泄露对象 — allocs+=10
+    step("[Step8] create 10 intentionally leaked objects")
+    var g1: ptr = memory.mallocRC(32)
+    var g2: ptr = memory.mallocRC(32)
+    var g3: ptr = memory.mallocRC(32)
+    var g4: ptr = memory.mallocRC(32)
+    var g5: ptr = memory.mallocRC(32)
+    var g6: ptr = memory.mallocRC(32)
+    var g7: ptr = memory.mallocRC(32)
+    var g8: ptr = memory.mallocRC(32)
+    var g9: ptr = memory.mallocRC(32)
+    var g10: ptr = memory.mallocRC(32)
+
+    // Step 9: 部分释放 — frees+=3
+    step("[Step9] free 3 of 10 leaks (g1,g2,g3)")
+    memory.rcDec(g1)
+    memory.rcDec(g2)
+    memory.rcDec(g3)
+
+    // Step 10: rcTryRelease — no free (just sets rc=0)
+    step("[Step10] rcTryRelease(g4) — set rc to 0 without freeRC")
+    memory.rcTryRelease(g4)
+
+    // Step 11: rcAdd(9) + 10x rcSub — last rcSub frees, frees+=1
+    step("[Step11] rcAdd(g5, 9) then 10x rcSub(g5,1)")
+    memory.rcAdd(g5, 9)
+    var i: int = 0
+    for i < 10 {
+        memory.rcSub(g5, 1)
+        i = i + 1
+    }
+
+    // Step 12: +2 new, -5 old leaks — allocs+=2, frees+=5
+    step("[Step12] +2 new objects, -5 old leaks (g6-g10)")
+    var mix1: ptr = memory.mallocRC(32)
+    var mix2: ptr = memory.mallocRC(32)
+    memory.rcDec(g6)
+    memory.rcDec(g7)
+    memory.rcDec(g8)
+    memory.rcDec(g9)
+    memory.rcDec(g10)
+
+    // Step 13: ownership transfer — frees+=1 (mix1)
+    step("[Step13] transferOwnership(mix1) then (mix2 after rcInc)")
+    transferOwnership(mix1)
+    memory.rcInc(mix2)
+    transferOwnership(mix2)
+
+    // Step 14: 嵌套引用 — allocs+=2
+    step("[Step14] nested ref: nodeA(2→1), nodeB(2→1)")
+    var nodeA: ptr = memory.mallocRC(64)
+    var nodeB: ptr = memory.mallocRC(64)
+    memory.rcInc(nodeA)
+    memory.rcInc(nodeB)
+    memory.rcDec(nodeA)
+    memory.rcDec(nodeB)
+
+    // Step 15: 释放嵌套引用 — frees+=2
+    step("[Step15] free nodeA, nodeB")
+    memory.rcDec(nodeA)
+    memory.rcDec(nodeB)
+
+    // 最终: allocs=27, frees=25, leaks=2 (g4 + mix2)
+    step("=== Final: mix2(rc=1) + g4(rc=0) still alive ===")
+    step("=== Expected: allocs=27 frees=25 leaks=2 ===")
+
+    var ok: int = 1
+    var finalAllocs: uint = memory.reportAllocCount()
+    var finalFrees: uint = memory.reportFreeCount()
+    var finalLeaks: uint = memory.reportLeaks()
+
+    if finalAllocs != 27 {
+        step("[FAIL] allocs != 27")
+        ok = 0
+    }
+    if finalFrees != 25 {
+        step("[FAIL] frees != 25")
+        ok = 0
+    }
+    if finalLeaks != 2 {
+        step("[FAIL] leaks != 2")
+        ok = 0
+    }
+    if !memory.rcIsOne(mix2) {
+        step("[FAIL] mix2 rc != 1")
+        ok = 0
+    }
+
+    if ok == 1 {
+        step("[PASS] All 16 steps verified!")
+        ret 42
+    }
+    ret 1
+}

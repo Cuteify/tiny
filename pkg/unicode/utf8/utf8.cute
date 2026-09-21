@@ -1,0 +1,176 @@
+// pkg/unicode/utf8/utf8.cute - UTF-8 编码/解码包
+// 提供 UTF-8 编码和解码操作
+// 平台无关实现，底层复用 std:memory 和 std:strings
+
+// encodeRune 将 Unicode 码点编码为 UTF-8 字节序列，写入 buf，返回字节数
+// 单字节：0xxxxxxx (U+0000 到 U+007F)
+// 双字节：110xxxxx 10xxxxxx (U+0080 到 U+07FF)
+// 三字节：1110xxxx 10xxxxxx 10xxxxxx (U+0800 到 U+FFFF)
+// 四字节：11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (U+10000 到 U+10FFFF)
+fn encodeRune(r int, buf ptr) uint {
+    if r < 128 {
+        var _p1: *u8 = buf
+        *_p1 = unsafe.cast[u8](r)
+        ret 1
+    }
+    if r < 2048 {
+        var _p2: *u8 = buf
+        *_p2 = unsafe.cast[u8](192 + r / 64)
+        var _p3: *u8 = buf + 1
+        *_p3 = unsafe.cast[u8](128 + r % 64)
+        ret 2
+    }
+    if r < 65536 {
+        var _p4: *u8 = buf
+        *_p4 = unsafe.cast[u8](224 + r / 4096)
+        var _p5: *u8 = buf + 1
+        *_p5 = unsafe.cast[u8](128 + (r / 64) % 64)
+        var _p6: *u8 = buf + 2
+        *_p6 = unsafe.cast[u8](128 + r % 64)
+        ret 3
+    }
+    var _p7: *u8 = buf
+    *_p7 = unsafe.cast[u8](240 + r / 262144)
+    var _p8: *u8 = buf + 1
+    *_p8 = unsafe.cast[u8](128 + (r / 4096) % 64)
+    var _p9: *u8 = buf + 2
+    *_p9 = unsafe.cast[u8](128 + (r / 64) % 64)
+    var _p10: *u8 = buf + 3
+    *_p10 = unsafe.cast[u8](128 + r % 64)
+    ret 4
+}
+
+// decodeRune 从 UTF-8 字节序列解码一个码点，返回码点和字节数
+fn decodeRune(p ptr) (rune int, size uint) {
+    var _p11: *u8 = p
+    var b0: uint = *_p11
+    // 单字节
+    if b0 < 128 {
+        rune = b0
+        size = 1
+        ret
+    }
+    // 双字节
+    if b0 >= 192 && b0 < 224 {
+        var _p12: *u8 = p + 1
+        var b1: uint = *_p12
+        rune = (b0 - 192) * 64 + (b1 - 128)
+        size = 2
+        ret
+    }
+    // 三字节
+    if b0 >= 224 && b0 < 240 {
+        var _p13: *u8 = p + 1
+        var b1b: uint = *_p13
+        var _p14: *u8 = p + 2
+        var b2: uint = *_p14
+        rune = (b0 - 224) * 4096 + (b1b - 128) * 64 + (b2 - 128)
+        size = 3
+        ret
+    }
+    // 四字节
+    var _p15: *u8 = p + 1
+    var b1c: uint = *_p15
+    var _p16: *u8 = p + 2
+    var b2c: uint = *_p16
+    var _p17: *u8 = p + 3
+    var b3: uint = *_p17
+    rune = (b0 - 240) * 262144 + (b1c - 128) * 4096 + (b2c - 128) * 64 + (b3 - 128)
+    size = 4
+    ret
+}
+
+// runeCount 计算字符串中的 UTF-8 码点数量
+fn runeCount(s string) int {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var count: int = 0
+    var i: uint = 0
+    for i < sLen {
+        var r: int
+        var sz: uint
+        r = decodeRune(sPtr + i)
+        // 使用返回的 size 更新索引
+        // decodeRune 返回两个值，需要分别获取
+        var _p18: *u8 = sPtr + i
+        var b0: uint = *_p18
+        var skip: uint = 1
+        if b0 >= 192 && b0 < 224 {
+            skip = 2
+        } else if b0 >= 224 && b0 < 240 {
+            skip = 3
+        } else if b0 >= 240 {
+            skip = 4
+        }
+        i = i + skip
+        count = count + 1
+    }
+    ret count
+}
+
+// valid 检查字符串是否为有效的 UTF-8 编码
+fn valid(s string) bool {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var i: uint = 0
+    for i < sLen {
+        var _p19: *u8 = sPtr + i
+        var b0: uint = *_p19
+        // 单字节
+        if b0 < 128 {
+            i = i + 1
+        } else if b0 >= 192 && b0 < 224 {
+            // 双字节：需要至少 2 字节
+            if i + 1 >= sLen {
+                ret false
+            }
+            var _p20: *u8 = sPtr + i + 1
+            var b1: uint = *_p20
+            if b1 < 128 || b1 >= 192 {
+                ret false
+            }
+            i = i + 2
+        } else if b0 >= 224 && b0 < 240 {
+            // 三字节：需要至少 3 字节
+            if i + 2 >= sLen {
+                ret false
+            }
+            var _p21: *u8 = sPtr + i + 1
+            var b1d: uint = *_p21
+            var _p22: *u8 = sPtr + i + 2
+            var b2: uint = *_p22
+            if b1d < 128 || b1d >= 192 {
+                ret false
+            }
+            if b2 < 128 || b2 >= 192 {
+                ret false
+            }
+            i = i + 3
+        } else if b0 >= 240 {
+            // 四字节：需要至少 4 字节
+            if i + 3 >= sLen {
+                ret false
+            }
+            var _p23: *u8 = sPtr + i + 1
+            var b1e: uint = *_p23
+            var _p24: *u8 = sPtr + i + 2
+            var b2e: uint = *_p24
+            var _p25: *u8 = sPtr + i + 3
+            var b3: uint = *_p25
+            if b1e < 128 || b1e >= 192 {
+                ret false
+            }
+            if b2e < 128 || b2e >= 192 {
+                ret false
+            }
+            if b3 < 128 || b3 >= 192 {
+                ret false
+            }
+            i = i + 4
+        } else {
+            // 非法起始字节
+            ret false
+        }
+    }
+    ret true
+}

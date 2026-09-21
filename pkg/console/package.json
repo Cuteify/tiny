@@ -4,6 +4,7 @@
     "description": "Console operations: standard input/output/error",
     "imports": {
         "syscall": "std:syscall",
-        "strings": "std:strings"
+        "strings": "std:strings",
+        "memory": "std:memory"
     }
 }

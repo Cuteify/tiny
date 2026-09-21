@@ -1,0 +1,89 @@
+// pkg/hash/crc32/crc32.cute - CRC-32 IEEE 校验和
+// 使用标准 IEEE 多项式 0xEDB88320 的逐字节实现
+// 无需预计算查找表，适用于平台无关场景
+
+// crc32Table 存储 256 项查找表，初始化为 0 表示未构建
+var crc32Table: ptr = 0
+var tableReady: bool = false
+
+// buildTable 生成 CRC-32 IEEE 查找表（多项式 0xEDB88320）
+fn buildTable() {
+    if tableReady {
+        ret
+    }
+    crc32Table = memory.malloc(256 * 4)
+    var i: u32 = 0
+    for ; i < 256; {
+        var crc: u32 = i
+        var j: u32 = 0
+        for ; j < 8; {
+            if crc & 1 == 1 {
+                crc = (crc >> 1) ^ 0xEDB88320
+            } else {
+                crc = crc >> 1
+            }
+            j = j + 1
+        }
+        // 将 crc 写入表[i]（小端序）
+        var p: ptr = crc32Table + i * 4
+        var _p1: *u8 = p
+        *_p1 = unsafe.cast[u8](crc & 0xFF)
+        var _p2: *u8 = p + 1
+        *_p2 = unsafe.cast[u8]((crc >> 8) & 0xFF)
+        var _p3: *u8 = p + 2
+        *_p3 = unsafe.cast[u8]((crc >> 16) & 0xFF)
+        var _p4: *u8 = p + 3
+        *_p4 = unsafe.cast[u8]((crc >> 24) & 0xFF)
+        i = i + 1
+    }
+    tableReady = true
+}
+
+// readTableEntry 从表中读取第 idx 项的 u32 值
+fn readTableEntry(idx: u32) u32 {
+    var p: ptr = crc32Table + idx * 4
+    var _p5: *u8 = p
+    var b0: u32 = *_p5
+    var _p6: *u8 = p + 1
+    var b1: u32 = *_p6
+    var _p7: *u8 = p + 2
+    var b2: u32 = *_p7
+    var _p8: *u8 = p + 3
+    var b3: u32 = *_p8
+    ret b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+// checksum 计算 data 的 CRC-32 校验和
+// 返回 32 位 CRC-32 IEEE 值
+fn checksum(data string) u32 {
+    buildTable()
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var crc: u32 = 0xFFFFFFFF
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p9: *u8 = sPtr + i
+        var byteVal: u32 = *_p9
+        var tableIdx: u32 = (crc ^ byteVal) & 0xFF
+        crc = (crc >> 8) ^ readTableEntry(tableIdx)
+        i = i + 1
+    }
+    ret crc ^ 0xFFFFFFFF
+}
+
+// checksumWithInit 使用初始值计算 CRC-32（支持分块计算）
+fn checksumWithInit(data string, prev u32) u32 {
+    buildTable()
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    var crc: u32 = prev ^ 0xFFFFFFFF
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p10: *u8 = sPtr + i
+        var byteVal: u32 = *_p10
+        var tableIdx: u32 = (crc ^ byteVal) & 0xFF
+        crc = (crc >> 8) ^ readTableEntry(tableIdx)
+        i = i + 1
+    }
+    ret crc ^ 0xFFFFFFFF
+}

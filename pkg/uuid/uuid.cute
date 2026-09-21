@@ -1,0 +1,117 @@
+// pkg/uuid/uuid.cute - UUID v4 生成
+// 平台无关实现，使用简单伪随机数生成器
+// 格式: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+
+// uuidState 伪随机数状态（xorshift32）
+var uuidState: u32 = 12345
+
+// uuidNextRand 返回下一个伪随机 u32（xorshift32 算法）
+fn uuidNextRand() u32 {
+    var x: u32 = uuidState
+    x = x ^ (x << 13)
+    x = x ^ (x >> 17)
+    x = x ^ (x << 5)
+    uuidState = x
+    ret x
+}
+
+// uuidHexChar 将 4 位值转换为十六进制字符
+fn uuidHexChar(v: u32) u8 {
+    if v < 10 {
+        ret 48 + v
+    }
+    ret 97 + v - 10
+}
+
+// new 生成一个 UUID v4 字符串
+// 格式: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+// y 的最高两位固定为 10（版本变体）
+fn new() string {
+    var buf: ptr = memory.malloc(37)
+    var i: int = 0
+    // 生成 16 字节随机数据
+    var bytes: ptr = memory.malloc(16)
+    var b: int = 0
+    for ; b < 16; {
+        var r: u32 = uuidNextRand()
+        var _p1: *u8 = bytes + b
+        *_p1 = unsafe.cast[u8](r & 255)
+        b = b + 1
+    }
+    // 设置版本号（第 6 字节的高 4 位 = 4）
+    var _p2: *u8 = bytes + 6
+    var b6: u8 = *_p2
+    b6 = (b6 & 15) | 64
+    var _p3: *u8 = bytes + 6
+    *_p3 = unsafe.cast[u8](b6)
+    // 设置变体（第 8 字节的高 2 位 = 10）
+    var _p4: *u8 = bytes + 8
+    var b8: u8 = *_p4
+    b8 = (b8 & 63) | 128
+    var _p5: *u8 = bytes + 8
+    *_p5 = unsafe.cast[u8](b8)
+    // 格式化输出
+    var pos: int = 0
+    var byteIdx: int = 0
+    var dashPositions: int = 0
+    var formatOrder: ptr = memory.malloc(16)
+    // 写入字节顺序: 0-3, 4-5, 6-7, 8-9, 10-15
+    var _p6: *u8 = formatOrder
+    *_p6 = unsafe.cast[u8](0)
+    var _p7: *u8 = formatOrder + 1
+    *_p7 = unsafe.cast[u8](1)
+    var _p8: *u8 = formatOrder + 2
+    *_p8 = unsafe.cast[u8](2)
+    var _p9: *u8 = formatOrder + 3
+    *_p9 = unsafe.cast[u8](3)
+    var _p10: *u8 = formatOrder + 4
+    *_p10 = unsafe.cast[u8](4)
+    var _p11: *u8 = formatOrder + 5
+    *_p11 = unsafe.cast[u8](5)
+    var _p12: *u8 = formatOrder + 6
+    *_p12 = unsafe.cast[u8](6)
+    var _p13: *u8 = formatOrder + 7
+    *_p13 = unsafe.cast[u8](7)
+    var _p14: *u8 = formatOrder + 8
+    *_p14 = unsafe.cast[u8](8)
+    var _p15: *u8 = formatOrder + 9
+    *_p15 = unsafe.cast[u8](9)
+    var _p16: *u8 = formatOrder + 10
+    *_p16 = unsafe.cast[u8](10)
+    var _p17: *u8 = formatOrder + 11
+    *_p17 = unsafe.cast[u8](11)
+    var _p18: *u8 = formatOrder + 12
+    *_p18 = unsafe.cast[u8](12)
+    var _p19: *u8 = formatOrder + 13
+    *_p19 = unsafe.cast[u8](13)
+    var _p20: *u8 = formatOrder + 14
+    *_p20 = unsafe.cast[u8](14)
+    var _p21: *u8 = formatOrder + 15
+    *_p21 = unsafe.cast[u8](15)
+    // dash 插入位置: 4, 6, 8, 10
+    var dashPos: int = 0
+    var i2: int = 0
+    for ; i2 < 16; {
+        var _p22: *u8 = bytes + i2
+        var byteVal: u8 = *_p22
+        var hi: u32 = (byteVal >> 4) & 15
+        var lo: u32 = byteVal & 15
+        var _p23: *u8 = buf + pos
+        *_p23 = unsafe.cast[u8](uuidHexChar(hi))
+        var _p24: *u8 = buf + pos + 1
+        *_p24 = unsafe.cast[u8](uuidHexChar(lo))
+        pos = pos + 2
+        // 在位置 4, 6, 8, 10 后插入 '-'
+        if i2 == 3 || i2 == 5 || i2 == 7 || i2 == 9 {
+            var _p25: *u8 = buf + pos
+            *_p25 = unsafe.cast[u8](45)
+            pos = pos + 1
+        }
+        i2 = i2 + 1
+    }
+    var _p26: *u8 = buf + pos
+    *_p26 = unsafe.cast[u8](0)
+    memory.free(bytes)
+    memory.free(formatOrder)
+    ret strings.makeString(buf, pos, pos)
+}

@@ -1,0 +1,12 @@
+// pkg/runtime/debug/debug.cute - 运行时调试工具包
+// 平台无关实现
+
+// Stack 返回当前调用栈的文本表示（存根）
+fn Stack() string {
+    ret "goroutine 1 [running]:\n  main.main()\n"
+}
+
+// ReadBuildInfo 返回编译构建信息（存根）
+fn ReadBuildInfo() string {
+    ret "cuteify version 0.1.0"
+}

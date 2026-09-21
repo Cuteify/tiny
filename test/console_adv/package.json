@@ -1,0 +1,9 @@
+{
+    "name": "console_adv_test",
+    "version": "1.0.0",
+    "imports": {
+        "console": "std:console",
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

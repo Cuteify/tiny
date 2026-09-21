@@ -1,0 +1,645 @@
+// pkg/console/advanced.cute - 高级终端控制 API
+// 基于 ANSI/VT100 转义序列，支持颜色、字体样式、光标控制、终端控制和 Sixel 图形
+// 平台无关，通过 syscall.write 输出转义序列
+// 所有字节缓冲区操作通过 strings 包的 builder 函数完成
+
+// ===== 常量 =====
+const ESC: int = 27
+const STDOUT_FD: int = 1
+
+// 标准颜色（ANSI 30-37 / 40-47）
+const COLOR_BLACK: int = 0
+const COLOR_RED: int = 1
+const COLOR_GREEN: int = 2
+const COLOR_YELLOW: int = 3
+const COLOR_BLUE: int = 4
+const COLOR_MAGENTA: int = 5
+const COLOR_CYAN: int = 6
+const COLOR_WHITE: int = 7
+
+// 亮色（ANSI 90-97 / 100-107）
+const COLOR_BRIGHT_BLACK: int = 8
+const COLOR_BRIGHT_RED: int = 9
+const COLOR_BRIGHT_GREEN: int = 10
+const COLOR_BRIGHT_YELLOW: int = 11
+const COLOR_BRIGHT_BLUE: int = 12
+const COLOR_BRIGHT_MAGENTA: int = 13
+const COLOR_BRIGHT_CYAN: int = 14
+const COLOR_BRIGHT_WHITE: int = 15
+
+// SGR 样式代码
+const STYLE_BOLD: int = 1
+const STYLE_DIM: int = 2
+const STYLE_ITALIC: int = 3
+const STYLE_UNDERLINE: int = 4
+const STYLE_BLINK: int = 5
+const STYLE_REVERSE: int = 7
+const STYLE_HIDDEN: int = 8
+const STYLE_STRIKETHROUGH: int = 9
+
+// 光标方向
+const CURSOR_UP: int = 65
+const CURSOR_DOWN: int = 66
+const CURSOR_RIGHT: int = 67
+const CURSOR_LEFT: int = 68
+
+// ===== 内部辅助 =====
+
+// writeStr 向 stdout 写入字符串
+fn writeStr(s string) int {
+    ret syscall.write(STDOUT_FD, strings.toCstring(s), strings.len(s))
+}
+
+// bufAndStr 构建字符串并输出，释放缓冲区
+fn bufAndStr(buf ptr, pos int) int {
+    var s: string = strings.bufToString(buf, pos)
+    ret writeStr(s)
+}
+
+// writeEsc2Param 写入 ESC[<p1>;<p2><ch> 格式的转义序列
+fn writeEsc2Param(p1 int, p2 int, ch int) int {
+    var buf: ptr = strings.bufNew(32)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    var pos: int = 2
+    pos = pos + strings.bufSetInt(buf, pos, p1)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, p2)
+    strings.bufSetByte(buf, pos, ch)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// writeEsc1Param 写入 ESC[<n><ch> 格式的转义序列
+fn writeEsc1Param(n int, ch int) int {
+    var buf: ptr = strings.bufNew(32)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    var pos: int = 2
+    pos = pos + strings.bufSetInt(buf, pos, n)
+    strings.bufSetByte(buf, pos, ch)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// writeEscCSI 写入 ESC[<suffix> 格式的转义序列（无参数）
+fn writeEscCSI(suffix int) int {
+    var buf: ptr = strings.bufNew(8)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    strings.bufSetByte(buf, 2, suffix)
+    ret bufAndStr(buf, 3)
+}
+
+// writeEscParamCSIPrefix 写入 ESC[?<n><suffix> 格式的转义序列
+fn writeEscParamCSI(question int, n int, suffix int) int {
+    var buf: ptr = strings.bufNew(32)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    var pos: int = 2
+    if question == 1 {
+        strings.bufSetByte(buf, pos, 63)
+        pos = pos + 1
+    }
+    pos = pos + strings.bufSetInt(buf, pos, n)
+    strings.bufSetByte(buf, pos, suffix)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// ===== 颜色 API =====
+
+// rgbToAnsi256 将 RGB 转换为 256 色 ANSI 码（简化版：映射到 16 色）
+fn rgbToAnsi256(r int, g int, b int) int {
+    if r > 200 {
+        if g > 200 {
+            ret 11
+        }
+        if b > 200 {
+            ret 13
+        }
+        ret 1
+    }
+    if g > 200 {
+        ret 2
+    }
+    if b > 200 {
+        ret 4
+    }
+    if r > 100 {
+        if g > 100 {
+            ret 3
+        }
+        ret 9
+    }
+    if g > 100 {
+        ret 10
+    }
+    if b > 100 {
+        ret 12
+    }
+    ret 7
+}
+
+// setFg 设置前景色（标准色 0-7，亮色 8-15）
+fn setFg(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    ret writeEsc1Param(30 + color, 109)
+}
+
+// setBg 设置背景色（标准色 0-7，亮色 8-15）
+fn setBg(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    ret writeEsc1Param(40 + color, 109)
+}
+
+// setFgBright 设置亮前景色（等效于 setFg(8+n)）
+fn setFgBright(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    ret writeEsc1Param(90 + color, 109)
+}
+
+// setBgBright 设置亮背景色（等效于 setBg(8+n)）
+fn setBgBright(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    ret writeEsc1Param(100 + color, 109)
+}
+
+// setFg256 使用 256 色调色板设置前景色
+fn setFg256(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    if supports256Color() == -1 {
+        var c16: int = color
+        if c16 > 15 {
+            c16 = c16 % 16
+        }
+        if c16 >= 8 {
+            ret setFgBright(c16 - 8)
+        }
+        ret setFg(c16)
+    }
+    var buf: ptr = strings.bufNew(32)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    strings.bufSetByte(buf, 2, 51)
+    strings.bufSetByte(buf, 3, 56)
+    strings.bufSetByte(buf, 4, 59)
+    strings.bufSetByte(buf, 5, 53)
+    strings.bufSetByte(buf, 6, 59)
+    var pos: int = 7
+    pos = pos + strings.bufSetInt(buf, pos, color)
+    strings.bufSetByte(buf, pos, 109)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// setBg256 使用 256 色调色板设置背景色
+fn setBg256(color int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    if supports256Color() == -1 {
+        var c16: int = color
+        if c16 > 15 {
+            c16 = c16 % 16
+        }
+        if c16 >= 8 {
+            ret setBgBright(c16 - 8)
+        }
+        ret setBg(c16)
+    }
+    var buf: ptr = strings.bufNew(32)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    strings.bufSetByte(buf, 2, 52)
+    strings.bufSetByte(buf, 3, 56)
+    strings.bufSetByte(buf, 4, 59)
+    strings.bufSetByte(buf, 5, 53)
+    strings.bufSetByte(buf, 6, 59)
+    var pos: int = 7
+    pos = pos + strings.bufSetInt(buf, pos, color)
+    strings.bufSetByte(buf, pos, 109)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// setFgRGB 使用 TrueColor (24-bit) 设置前景色
+fn setFgRGB(r int, g int, b int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    if supportsTrueColor() == -1 {
+        var idx: int = rgbToAnsi256(r, g, b)
+        ret setFg256(idx)
+    }
+    var buf: ptr = strings.bufNew(48)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    strings.bufSetByte(buf, 2, 51)
+    strings.bufSetByte(buf, 3, 56)
+    strings.bufSetByte(buf, 4, 59)
+    strings.bufSetByte(buf, 5, 50)
+    strings.bufSetByte(buf, 6, 59)
+    var pos: int = 7
+    pos = pos + strings.bufSetInt(buf, pos, r)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, g)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, b)
+    strings.bufSetByte(buf, pos, 109)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// setBgRGB 使用 TrueColor (24-bit) 设置背景色
+fn setBgRGB(r int, g int, b int) int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    if supportsTrueColor() == -1 {
+        var idx: int = rgbToAnsi256(r, g, b)
+        ret setBg256(idx)
+    }
+    var buf: ptr = strings.bufNew(48)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 91)
+    strings.bufSetByte(buf, 2, 52)
+    strings.bufSetByte(buf, 3, 56)
+    strings.bufSetByte(buf, 4, 59)
+    strings.bufSetByte(buf, 5, 50)
+    strings.bufSetByte(buf, 6, 59)
+    var pos: int = 7
+    pos = pos + strings.bufSetInt(buf, pos, r)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, g)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, b)
+    strings.bufSetByte(buf, pos, 109)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// resetColor 重置所有颜色和样式为默认
+fn resetColor() int {
+    ret writeEsc1Param(48, 109)
+}
+
+// ===== 字体样式 API =====
+
+fn setBold() int {
+    ret writeEsc1Param(1, 109)
+}
+
+fn clearBold() int {
+    ret writeEsc1Param(22, 109)
+}
+
+fn setDim() int {
+    ret writeEsc1Param(2, 109)
+}
+
+fn clearDim() int {
+    ret writeEsc1Param(22, 109)
+}
+
+fn setItalic() int {
+    ret writeEsc1Param(3, 109)
+}
+
+fn clearItalic() int {
+    ret writeEsc1Param(23, 109)
+}
+
+fn setUnderline() int {
+    ret writeEsc1Param(4, 109)
+}
+
+fn clearUnderline() int {
+    ret writeEsc1Param(24, 109)
+}
+
+fn setBlink() int {
+    ret writeEsc1Param(5, 109)
+}
+
+fn clearBlink() int {
+    ret writeEsc1Param(25, 109)
+}
+
+fn setReverse() int {
+    ret writeEsc1Param(7, 109)
+}
+
+fn clearReverse() int {
+    ret writeEsc1Param(27, 109)
+}
+
+fn setHidden() int {
+    ret writeEsc1Param(8, 109)
+}
+
+fn clearHidden() int {
+    ret writeEsc1Param(28, 109)
+}
+
+fn setStrikethrough() int {
+    ret writeEsc1Param(9, 109)
+}
+
+fn clearStrikethrough() int {
+    ret writeEsc1Param(29, 109)
+}
+
+// resetStyle 重置所有样式（颜色、字体、装饰）
+fn resetStyle() int {
+    ret writeEsc1Param(48, 109)
+}
+
+// ===== 光标控制 API =====
+
+fn moveCursor(row int, col int) int {
+    ret writeEsc2Param(row, col, 72)
+}
+
+fn moveUp(n int) int {
+    ret writeEsc1Param(n, CURSOR_UP)
+}
+
+fn moveDown(n int) int {
+    ret writeEsc1Param(n, CURSOR_DOWN)
+}
+
+fn moveRight(n int) int {
+    ret writeEsc1Param(n, CURSOR_RIGHT)
+}
+
+fn moveLeft(n int) int {
+    ret writeEsc1Param(n, CURSOR_LEFT)
+}
+
+fn saveCursor() int {
+    ret writeEscCSI(115)
+}
+
+fn restoreCursor() int {
+    ret writeEscCSI(117)
+}
+
+fn hideCursor() int {
+    ret writeEscParamCSI(1, 25, 108)
+}
+
+fn showCursor() int {
+    ret writeEscParamCSI(1, 25, 104)
+}
+
+fn cursorShape(shape int) int {
+    ret writeEsc2Param(shape, 1, 113)
+}
+
+// ===== 终端控制 API =====
+
+fn clearScreen() int {
+    ret writeEscCSI(74)
+}
+
+fn clearLine() int {
+    ret writeEsc1Param(2, 75)
+}
+
+fn clearToEndOfLine() int {
+    ret writeEsc1Param(0, 75)
+}
+
+fn clearToStartOfLine() int {
+    ret writeEsc1Param(1, 75)
+}
+
+fn clearToEndOfScreen() int {
+    ret writeEsc1Param(0, 74)
+}
+
+fn clearToStartOfScreen() int {
+    ret writeEsc1Param(1, 74)
+}
+
+fn scrollUp(n int) int {
+    ret writeEsc1Param(n, 83)
+}
+
+fn scrollDown(n int) int {
+    ret writeEsc1Param(n, 84)
+}
+
+fn insertLines(n int) int {
+    ret writeEsc1Param(n, 76)
+}
+
+fn deleteLines(n int) int {
+    ret writeEsc1Param(n, 77)
+}
+
+fn insertChars(n int) int {
+    ret writeEsc1Param(n, 64)
+}
+
+fn deleteChars(n int) int {
+    ret writeEsc1Param(n, 80)
+}
+
+fn eraseChars(n int) int {
+    ret writeEsc1Param(n, 88)
+}
+
+fn setScrollRegion(top int, bottom int) int {
+    ret writeEsc2Param(top, bottom, 114)
+}
+
+// setWindowTitle 设置终端窗口标题
+fn setWindowTitle(title string) int {
+    var buf: ptr = strings.bufNew(256)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 93)
+    strings.bufSetByte(buf, 2, 50)
+    strings.bufSetByte(buf, 3, 59)
+    var titlePtr: ptr = strings.toCstring(title)
+    var titleLen: int = strings.len(title)
+    strings.bufCopyFrom(buf, 4, titlePtr, titleLen)
+    strings.bufSetByte(buf, 4 + titleLen, 7)
+    ret bufAndStr(buf, 4 + titleLen + 1)
+}
+
+fn setTabWidth(n int) int {
+    ret writeEsc1Param(n, 87)
+}
+
+// ===== 鼠标事件 API =====
+
+fn enableMouse() int {
+    if shouldUseAdvanced() == 0 || supportsMouse() == -1 {
+        ret 0
+    }
+    ret writeEscParamCSI(1, 1003, 104)
+}
+
+fn disableMouse() int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    ret writeEscParamCSI(1, 1003, 108)
+}
+
+fn enableMouseSgr() int {
+    if shouldUseAdvanced() == 0 || supportsMouse() == -1 {
+        ret 0
+    }
+    var r1: int = writeEscParamCSI(1, 1006, 104)
+    var r2: int = writeEscParamCSI(1, 1003, 104)
+    ret r1 + r2
+}
+
+fn disableMouseSgr() int {
+    if shouldUseAdvanced() == 0 {
+        ret 0
+    }
+    var r1: int = writeEscParamCSI(1, 1003, 108)
+    var r2: int = writeEscParamCSI(1, 1006, 108)
+    ret r1 + r2
+}
+
+// ===== 序列输出 API =====
+
+// writeHexByte 以十六进制格式写入一个字节（如 "1B"）
+fn writeHexByte(value int) int {
+    var buf: ptr = strings.bufNew(4)
+    var hi: int = value / 16
+    var lo: int = value - hi * 16
+    if hi < 10 {
+        strings.bufSetByte(buf, 0, 48 + hi)
+    } else {
+        strings.bufSetByte(buf, 0, 55 + hi)
+    }
+    if lo < 10 {
+        strings.bufSetByte(buf, 1, 48 + lo)
+    } else {
+        strings.bufSetByte(buf, 1, 55 + lo)
+    }
+    ret bufAndStr(buf, 2)
+}
+
+// ===== Sixel 图形 API =====
+
+// sixelBegin 开始 Sixel 图像数据（发送 DCS 序列头）
+fn sixelBegin(width int, height int, colors int) int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    var buf: ptr = strings.bufNew(128)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 80)
+    strings.bufSetByte(buf, 2, 48)
+    strings.bufSetByte(buf, 3, 59)
+    strings.bufSetByte(buf, 4, 48)
+    strings.bufSetByte(buf, 5, 59)
+    strings.bufSetByte(buf, 6, 48)
+    strings.bufSetByte(buf, 7, 59)
+    strings.bufSetByte(buf, 8, 48)
+    strings.bufSetByte(buf, 9, 113)
+    strings.bufSetByte(buf, 10, 34)
+    strings.bufSetByte(buf, 11, 49)
+    strings.bufSetByte(buf, 12, 59)
+    strings.bufSetByte(buf, 13, 49)
+    strings.bufSetByte(buf, 14, 59)
+    var pos: int = 15
+    pos = pos + strings.bufSetInt(buf, pos, width)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, height)
+    strings.bufSetByte(buf, pos, 114)
+    pos = pos + 1
+    ret bufAndStr(buf, pos)
+}
+
+// sixelColor 定义 Sixel 调色板颜色
+fn sixelColor(index int, r int, g int, b int) int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    var buf: ptr = strings.bufNew(64)
+    strings.bufSetByte(buf, 0, 35)
+    var pos: int = 1
+    pos = pos + strings.bufSetInt(buf, pos, index)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, 2)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, r)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, g)
+    strings.bufSetByte(buf, pos, 59)
+    pos = pos + 1
+    pos = pos + strings.bufSetInt(buf, pos, b)
+    ret bufAndStr(buf, pos)
+}
+
+// sixelData 写入 Sixel 行数据
+fn sixelData(data ptr, len int) int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    ret syscall.write(STDOUT_FD, data, len)
+}
+
+// sixelRowEnd 结束一行 Sixel 数据
+fn sixelRowEnd() int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    var buf: ptr = strings.bufNew(4)
+    strings.bufSetByte(buf, 0, 36)
+    strings.bufSetByte(buf, 1, 10)
+    ret bufAndStr(buf, 2)
+}
+
+// sixelEnd 结束 Sixel 图像数据（发送 ST 终止序列）
+fn sixelEnd() int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    var buf: ptr = strings.bufNew(4)
+    strings.bufSetByte(buf, 0, ESC)
+    strings.bufSetByte(buf, 1, 92)
+    ret bufAndStr(buf, 2)
+}
+
+// sixelDisplay 显示 Sixel 图像（完整流程：begin + data + end）
+fn sixelDisplay(width int, height int, data ptr, len int) int {
+    if shouldUseAdvanced() == 0 || supportsSixel() == -1 {
+        ret -1
+    }
+    var r1: int = sixelBegin(width, height, 0)
+    var r2: int = sixelData(data, len)
+    var r3: int = sixelEnd()
+    ret r1 + r2 + r3
+}
+
+fn sixelClear() int {
+    ret clearScreen()
+}

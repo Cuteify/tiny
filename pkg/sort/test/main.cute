@@ -1,0 +1,114 @@
+fn main() int {
+    // Create a sorted array: [10, 20, 30, 40, 50]
+    var arr: ptr = memory.malloc(40)
+    var _p1: *ptr = arr + 0
+    *_p1 = unsafe.cast[ptr](10)
+    var _p2: *ptr = arr + 8
+    *_p2 = unsafe.cast[ptr](20)
+    var _p3: *ptr = arr + 16
+    *_p3 = unsafe.cast[ptr](30)
+    var _p4: *ptr = arr + 24
+    *_p4 = unsafe.cast[ptr](40)
+    var _p5: *ptr = arr + 32
+    *_p5 = unsafe.cast[ptr](50)
+
+    var n: int = 5
+
+    // Test isSortedInts on already sorted array
+    if sort.isSortedInts(arr, n) != true {
+        ret 1
+    }
+
+    // Test searchInts: find exact match
+    var idx: int = sort.searchInts(arr, n, 30)
+    if idx != 2 {
+        ret 2
+    }
+
+    // Test searchInts: value between elements
+    idx = sort.searchInts(arr, n, 25)
+    if idx != 2 {
+        ret 3
+    }
+
+    // Test searchInts: value below all elements
+    idx = sort.searchInts(arr, n, 5)
+    if idx != 0 {
+        ret 4
+    }
+
+    // Test searchInts: value above all elements
+    idx = sort.searchInts(arr, n, 100)
+    if idx != 5 {
+        ret 5
+    }
+
+    // Test searchInts: first element
+    idx = sort.searchInts(arr, n, 10)
+    if idx != 0 {
+        ret 6
+    }
+
+    // Test searchInts: last element
+    idx = sort.searchInts(arr, n, 50)
+    if idx != 4 {
+        ret 7
+    }
+
+    // Create an unsorted array and sort it
+    var arr2: ptr = memory.malloc(40)
+    var _p6: *ptr = arr2 + 0
+    *_p6 = unsafe.cast[ptr](50)
+    var _p7: *ptr = arr2 + 8
+    *_p7 = unsafe.cast[ptr](10)
+    var _p8: *ptr = arr2 + 16
+    *_p8 = unsafe.cast[ptr](40)
+    var _p9: *ptr = arr2 + 24
+    *_p9 = unsafe.cast[ptr](20)
+    var _p10: *ptr = arr2 + 32
+    *_p10 = unsafe.cast[ptr](30)
+
+    // Verify it is not sorted
+    if sort.isSortedInts(arr2, n) != false {
+        ret 8
+    }
+
+    // Sort it
+    sort.sortInts(arr2, n)
+
+    // Verify it is now sorted
+    if sort.isSortedInts(arr2, n) != true {
+        ret 9
+    }
+
+    // Verify sorted values
+    var _p11: *ptr = arr2 + 0
+    var v0: int = *_p11
+    var _p12: *ptr = arr2 + 8
+    var v1: int = *_p12
+    var _p13: *ptr = arr2 + 16
+    var v2: int = *_p13
+    var _p14: *ptr = arr2 + 24
+    var v3: int = *_p14
+    var _p15: *ptr = arr2 + 32
+    var v4: int = *_p15
+    if v0 != 10 {
+        ret 10
+    }
+    if v1 != 20 {
+        ret 11
+    }
+    if v2 != 30 {
+        ret 12
+    }
+    if v3 != 40 {
+        ret 13
+    }
+    if v4 != 50 {
+        ret 14
+    }
+
+    memory.free(arr)
+    memory.free(arr2)
+    ret 42
+}

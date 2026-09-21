@@ -1,0 +1,180 @@
+// pkg/compress/gzip/gzip.cute - Gzip 压缩解压
+// Gzip = 10 字节头 + DEFLATE 数据 + 8 字节尾
+// 头部格式：
+//   [0]    ID1 = 0x1F
+//   [1]    ID2 = 0x8B
+//   [2]    CM  = 0x08 (DEFLATE)
+//   [3]    FLG = 0x00
+//   [4-7]  MTIME = 0
+//   [8]    XFL  = 0
+//   [9]    OS   = 0xFF (unknown)
+// 尾部格式：
+//   [0-3]  CRC32 (little-endian)
+//   [4-7]  ISIZE (original size mod 2^32, little-endian)
+
+// Reader gzip 读取器
+type Reader struct {
+    flate: *flate.Reader  // 底层 flate 读取器
+    header: uint          // 头部偏移（跳过 10 字节头）
+    dataLen: uint         // 原始数据总长度（含头尾）
+}
+
+// NewReader 创建 gzip 读取器，跳过 10 字节头部
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(32)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+    // 跳过 gzip 头部（10 字节）
+    var flateData: ptr = rPtr + 10
+    var flateLen: uint = rLen - 10
+    // 将 flate 部分构造为字符串传给 flate.NewReader
+    var flateStr: string = strings.makeString(flateData, flateLen, flateLen)
+    var fr: *flate.Reader = flate.NewReader(flateStr)
+    // layout: [flate:8][header:8][dataLen:8]
+    var _p1: *ptr = buf
+    *_p1 = unsafe.cast[ptr](fr)
+    var _p2: *ptr = buf + 8
+    *_p2 = unsafe.cast[ptr](10)
+    var _p3: *ptr = buf + 16
+    *_p3 = unsafe.cast[ptr](rLen)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Read 从 gzip 读取器中读取解压数据
+fn Read(r *Reader, buf ptr, n int) int {
+    var _p4: *ptr = r
+    var fr: *flate.Reader = *_p4
+    ret flate.Read(fr, buf, n)
+}
+
+// Writer gzip 写入器
+type Writer struct {
+    flate: *flate.Writer  // 底层 flate 写入器
+    crc: u32              // CRC32 校验和
+    size: u32             // 原始数据大小
+}
+
+// NewWriter 创建 gzip 写入器，写入 10 字节头部
+fn NewWriter() *Writer {
+    var buf: ptr = memory.malloc(24)
+    var fw: *flate.Writer = flate.NewWriter()
+    // layout: [flate:8][crc:4][size:4] + padding
+    var _p5: *ptr = buf
+    *_p5 = unsafe.cast[ptr](fw)
+    var _p6: *uint = buf + 8
+    *_p6 = unsafe.cast[uint](0)
+    var _p7: *uint = buf + 12
+    *_p7 = unsafe.cast[uint](0)
+    var result: *Writer
+    result = buf
+    ret result
+}
+
+// updateCRC 更新 CRC32 校验和（逐字节计算）
+fn updateCRC(crc u32, data ptr, n uint) u32 {
+    var c: u32 = crc
+    var i: uint = 0
+    for ; i < n; {
+        var _p8: *u8 = data + i
+        var byteVal: u32 = *_p8
+        c = c ^ byteVal
+        var j: u32 = 0
+        for ; j < 8; {
+            if c & 1 == 1 {
+                c = (c >> 1) ^ 0xEDB88320
+            } else {
+                c = c >> 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    ret c
+}
+
+// Write 向 gzip 写入器写入数据
+fn Write(w *Writer, data ptr, n int) int {
+    // 更新 CRC32
+    var _p9: *uint = w + 8
+    var oldCrc: u32 = *_p9
+    var newCrc: u32 = updateCRC(oldCrc, data, n)
+    var _p10: *uint = w + 8
+    *_p10 = unsafe.cast[uint](newCrc)
+    // 更新大小
+    var _p11: *uint = w + 12
+    var oldSize: u32 = *_p11
+    var _p12: *uint = w + 12
+    *_p12 = unsafe.cast[uint](oldSize + n)
+    // 委托给 flate
+    var _p13: *ptr = w
+    var fw: *flate.Writer = *_p13
+    ret flate.Write(fw, data, n)
+}
+
+// Close 关闭 gzip 写入器，返回完整的 gzip 数据（头 + 压缩数据 + 尾）
+fn Close(w *Writer) string {
+    var _p14: *ptr = w
+    var fw: *flate.Writer = *_p14
+    var flateData: string = flate.Close(fw)
+    var flatePtr: ptr = strings.toCstring(flateData)
+    var flateLen: uint = strings.len(flateData)
+    // gzip: 10 字节头 + flate 数据 + 8 字节尾 = 18 + flateLen
+    var totalLen: uint = 10 + flateLen + 8
+    var outPtr: ptr = memory.malloc(totalLen)
+    // 写入 gzip 头部
+    var _p15: *u8 = outPtr
+    *_p15 = unsafe.cast[u8](0x1F      // ID1)
+    var _p16: *u8 = outPtr + 1
+    *_p16 = unsafe.cast[u8](0x8B  // ID2)
+    var _p17: *u8 = outPtr + 2
+    *_p17 = unsafe.cast[u8](0x08  // CM = DEFLATE)
+    var _p18: *u8 = outPtr + 3
+    *_p18 = unsafe.cast[u8](0x00  // FLG)
+    var _p19: *u8 = outPtr + 4
+    *_p19 = unsafe.cast[u8](0x00  // MTIME byte 0)
+    var _p20: *u8 = outPtr + 5
+    *_p20 = unsafe.cast[u8](0x00  // MTIME byte 1)
+    var _p21: *u8 = outPtr + 6
+    *_p21 = unsafe.cast[u8](0x00  // MTIME byte 2)
+    var _p22: *u8 = outPtr + 7
+    *_p22 = unsafe.cast[u8](0x00  // MTIME byte 3)
+    var _p23: *u8 = outPtr + 8
+    *_p23 = unsafe.cast[u8](0x00  // XFL)
+    var _p24: *u8 = outPtr + 9
+    *_p24 = unsafe.cast[u8](0xFF  // OS)
+    // 拷贝 flate 数据
+    var i: uint = 0
+    for ; i < flateLen; {
+        var _p25: *u8 = outPtr + 10 + i
+        var _p26: *u8 = flatePtr + i
+        *_p25 = unsafe.cast[u8](*_p26)
+        i = i + 1
+    }
+    // 写入尾部：CRC32 + ISIZE（均为小端序）
+    var _p27: *uint = w + 8
+    var crc: u32 = *_p27
+    var _p28: *uint = w + 12
+    var size: u32 = *_p28
+    var _p29: *u8 = outPtr + 10 + flateLen
+    *_p29 = unsafe.cast[u8](crc & 0xFF)
+    var _p30: *u8 = outPtr + 11 + flateLen
+    *_p30 = unsafe.cast[u8]((crc >> 8) & 0xFF)
+    var _p31: *u8 = outPtr + 12 + flateLen
+    *_p31 = unsafe.cast[u8]((crc >> 16) & 0xFF)
+    var _p32: *u8 = outPtr + 13 + flateLen
+    *_p32 = unsafe.cast[u8]((crc >> 24) & 0xFF)
+    var _p33: *u8 = outPtr + 14 + flateLen
+    *_p33 = unsafe.cast[u8](size & 0xFF)
+    var _p34: *u8 = outPtr + 15 + flateLen
+    *_p34 = unsafe.cast[u8]((size >> 8) & 0xFF)
+    var _p35: *u8 = outPtr + 16 + flateLen
+    *_p35 = unsafe.cast[u8]((size >> 16) & 0xFF)
+    var _p36: *u8 = outPtr + 17 + flateLen
+    *_p36 = unsafe.cast[u8]((size >> 24) & 0xFF)
+    // 构造字符串
+    var _p37: *u8 = outPtr + totalLen
+    *_p37 = unsafe.cast[u8](0)
+    ret strings.makeString(outPtr, totalLen, totalLen)
+}

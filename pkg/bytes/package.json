@@ -1,0 +1,9 @@
+{
+    "name": "bytes",
+    "version": "1.0.0",
+    "description": "Bytes buffer package: growable byte buffer for I/O operations",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

@@ -1,0 +1,4 @@
+{
+  "name": "gcDebug",
+  "dependencies": ["memory", "strings"]
+}

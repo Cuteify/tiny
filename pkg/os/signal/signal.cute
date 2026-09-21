@@ -1,0 +1,185 @@
+// pkg/os/signal/signal.cute - 信号处理包
+// 简化实现：基于回调的信号处理
+// 注意：Cuteify 没有 goroutines/channels，使用回调函数
+
+// Signal 信号类型
+type Signal = int
+
+// 信号常量
+const SIGINT: Signal = 2
+const SIGTERM: Signal = 15
+const SIGQUIT: Signal = 3
+const SIGHUP: Signal = 1
+const SIGUSR1: Signal = 10
+const SIGUSR2: Signal = 12
+
+// SignalHandler 信号处理函数类型（简化为无参数无返回值）
+type SignalHandler = fn()
+
+// signalEntry 信号处理表条目
+type signalEntry struct {
+    signal: Signal
+    handler: SignalHandler
+    once: bool
+}
+
+// 信号处理表（简化实现：固定大小）
+var handlers: ptr = 0
+var handlerCount: uint = 0
+var handlerCapacity: uint = 32
+
+// 初始化信号处理表
+fn initHandlers() {
+    if handlers == 0 {
+        handlers = memory.malloc(handlerCapacity * 12)  // 每个条目约 12 字节
+        handlerCount = 0
+    }
+}
+
+// onSignal 注册信号处理函数
+fn onSignal(sig: Signal, handler: SignalHandler) {
+    initHandlers()
+    
+    // 检查是否已存在，更新
+    var i: uint = 0
+    for ; i < handlerCount; {
+        var base: ptr = handlers + i * 12
+        var _p1: *uint = base
+        var existingSig: Signal = *_p1
+        if existingSig == sig {
+            // 更新处理函数
+            var _p2: *uint = base + 4
+            *_p2 = unsafe.cast[uint](handler)
+            var _p3: *u8 = base + 8
+            *_p3 = unsafe.cast[u8](0  // once = false)
+            ret
+        }
+        i = i + 1
+    }
+    
+    // 添加新条目
+    if handlerCount >= handlerCapacity {
+        // 简化实现：不处理扩容
+        ret
+    }
+    
+    var base: ptr = handlers + handlerCount * 12
+    var _p4: *uint = base
+    *_p4 = unsafe.cast[uint](sig)
+    var _p5: *uint = base + 4
+    *_p5 = unsafe.cast[uint](handler)
+    var _p6: *u8 = base + 8
+    *_p6 = unsafe.cast[u8](0  // once = false)
+    handlerCount = handlerCount + 1
+}
+
+// handleOnce 注册一次性信号处理函数
+fn handleOnce(sig: Signal, handler: SignalHandler) {
+    initHandlers()
+    
+    // 检查是否已存在，更新
+    var i: uint = 0
+    for ; i < handlerCount; {
+        var base: ptr = handlers + i * 12
+        var _p7: *uint = base
+        var existingSig: Signal = *_p7
+        if existingSig == sig {
+            // 更新处理函数
+            var _p8: *uint = base + 4
+            *_p8 = unsafe.cast[uint](handler)
+            var _p9: *u8 = base + 8
+            *_p9 = unsafe.cast[u8](1  // once = true)
+            ret
+        }
+        i = i + 1
+    }
+    
+    // 添加新条目
+    if handlerCount >= handlerCapacity {
+        // 简化实现：不处理扩容
+        ret
+    }
+    
+    var base: ptr = handlers + handlerCount * 12
+    var _p10: *uint = base
+    *_p10 = unsafe.cast[uint](sig)
+    var _p11: *uint = base + 4
+    *_p11 = unsafe.cast[uint](handler)
+    var _p12: *u8 = base + 8
+    *_p12 = unsafe.cast[u8](1  // once = true)
+    handlerCount = handlerCount + 1
+}
+
+// reset 重置信号处理（移除指定信号的处理函数）
+fn reset(signals: Signal) {
+    var i: uint = 0
+    for ; i < handlerCount; {
+        var base: ptr = handlers + i * 12
+        var _p13: *uint = base
+        var existingSig: Signal = *_p13
+        if existingSig == signals {
+            // 移除条目：用最后一个覆盖
+            var lastBase: ptr = handlers + (handlerCount - 1) * 12
+            var _p14: *uint = base
+            var _p15: *uint = lastBase
+            *_p14 = unsafe.cast[uint](*_p15)
+            var _p16: *uint = base + 4
+            var _p17: *uint = lastBase + 4
+            *_p16 = unsafe.cast[uint](*_p17)
+            var _p18: *u8 = base + 8
+            var _p19: *u8 = lastBase + 8
+            *_p18 = unsafe.cast[u8](*_p19)
+            handlerCount = handlerCount - 1
+            ret
+        }
+        i = i + 1
+    }
+}
+
+// notify 模拟信号通知（简化：直接调用处理函数）
+// 实际实现需要操作系统支持，这里只是示例
+fn notify(sig: Signal) {
+    var i: uint = 0
+    for ; i < handlerCount; {
+        var base: ptr = handlers + i * 12
+        var _p20: *uint = base
+        var existingSig: Signal = *_p20
+        if existingSig == sig {
+            // 调用处理函数
+            var _p21: *uint = base + 4
+            var handler: SignalHandler = *_p21
+            var _p22: *u8 = base + 8
+            var once: bool = *_p22
+            
+            // 调用处理函数（简化实现：实际需要函数指针调用）
+            // handler()
+            
+            // 如果是一次性处理，移除
+            if once {
+                var lastBase: ptr = handlers + (handlerCount - 1) * 12
+                var _p23: *uint = base
+                var _p24: *uint = lastBase
+                *_p23 = unsafe.cast[uint](*_p24)
+                var _p25: *uint = base + 4
+                var _p26: *uint = lastBase + 4
+                *_p25 = unsafe.cast[uint](*_p26)
+                var _p27: *u8 = base + 8
+                var _p28: *u8 = lastBase + 8
+                *_p27 = unsafe.cast[u8](*_p28)
+                handlerCount = handlerCount - 1
+                ret
+            }
+        }
+        i = i + 1
+    }
+}
+
+// stop 停止信号通知（移除指定信号的所有处理函数）
+fn stop(sig: Signal) {
+    reset(sig)
+}
+
+// stopAll 停止所有信号通知
+fn stopAll() {
+    handlerCount = 0
+}

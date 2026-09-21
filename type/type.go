@@ -204,6 +204,90 @@ type (
 	}
 )
 
+// InterfaceMethodDef interface method signature definition
+type InterfaceMethodDef struct {
+	Name    string
+	Args    []Type
+	Returns []Type
+}
+
+// InterfaceType interface type (boxed value: {vtable_ptr, data_ptr})
+type InterfaceType struct {
+	RType
+	InterfaceMethods []InterfaceMethodDef
+}
+
+// Size returns the size of an interface value: 2 * pointerSize
+func (i *InterfaceType) Size() int {
+	return 2 * TargetPointerSize
+}
+
+// Methods returns the interface methods as []any (satisfies Type interface).
+func (i *InterfaceType) Methods() []any {
+	out := make([]any, len(i.InterfaceMethods))
+	for j := range i.InterfaceMethods {
+		out[j] = &i.InterfaceMethods[j]
+	}
+	return out
+}
+
+// ImplementsInterface checks if the given concrete type implements this interface.
+// A concrete type implements the interface if it has all methods with matching signatures.
+func (i *InterfaceType) ImplementsInterface(concreteType Type) bool {
+	if concreteType == nil {
+		return false
+	}
+	for _, ifaceMethod := range i.InterfaceMethods {
+		found := false
+		for _, cm := range concreteType.Methods() {
+			var methodName string
+			switch m := cm.(type) {
+			case *InterfaceMethodDef:
+				methodName = m.Name
+			case interface{ GetNameString() string }:
+				methodName = m.GetNameString()
+			case interface{ Name() string }:
+				methodName = m.Name()
+			case interface{ String() string }:
+				methodName = m.String()
+			}
+			if methodName == ifaceMethod.Name {
+				found = true
+				break
+			}
+			// Handle qualified names like "Dog.stringify" → match "stringify"
+			if dotIdx := strings.LastIndex(methodName, "."); dotIdx >= 0 {
+				if methodName[dotIdx+1:] == ifaceMethod.Name {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// ErrorInterface is the built-in error interface: { Error() string }
+// Any type with an Error() string method implements this interface.
+type ErrorInterface struct {
+	InterfaceType
+}
+
+// NewErrorInterface creates the built-in error interface type
+func NewErrorInterface() *ErrorInterface {
+	return &ErrorInterface{
+		InterfaceType: InterfaceType{
+			RType: RType{TypeName: "error"},
+			InterfaceMethods: []InterfaceMethodDef{
+				{Name: "Error", Args: []Type{}, Returns: []Type{&StringType{RType: RType{TypeName: "string"}}}},
+			},
+		},
+	}
+}
+
 func GetSystemType(name string) Type {
 	name = strings.ToLower(name)
 	switch name {
@@ -239,12 +323,44 @@ func GetSystemType(name string) Type {
 		return &PtrType{RType: RType{TypeName: "ptr"}}
 	case "string":
 		return &StringType{RType: RType{TypeName: "string"}}
+	case "error":
+		return NewErrorInterface()
 	default:
 		if strings.HasPrefix(name, "[]") {
 			return NewList(GetSystemType(name[2:]))
 		}
+		// [N]T 数组类型：name = "[N]T"
+		if len(name) > 2 && name[0] == '[' {
+			// 找到 ] 的位置
+			for i := 1; i < len(name); i++ {
+				if name[i] == ']' {
+					numStr := name[1:i]
+					elemName := name[i+1:]
+					length := atoi(numStr)
+					if length > 0 {
+						elemType := GetSystemType(elemName)
+						if elemType != nil {
+							return NewArray(elemType, length)
+						}
+					}
+					break
+				}
+			}
+		}
 		return nil
 	}
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, ch := range s {
+		if ch >= '0' && ch <= '9' {
+			n = n*10 + int(ch-'0')
+		} else {
+			return 0
+		}
+	}
+	return n
 }
 
 func NewList(elem Type) *ListType {
@@ -255,6 +371,21 @@ func NewList(elem Type) *ListType {
 	return &ListType{
 		RType: RType{TypeName: typeName},
 		_elem: elem,
+	}
+}
+
+func NewArray(elem Type, length int) *ArrayType {
+	if elem == nil {
+		panic("elem is nil")
+	}
+	if length <= 0 {
+		panic("array length must be > 0")
+	}
+	typeName := "[" + itoa(length) + "]" + elem.Type()
+	return &ArrayType{
+		RType: RType{TypeName: typeName},
+		_elem: elem,
+		_len:  length,
 	}
 }
 
@@ -284,6 +415,13 @@ func MakePointer(t Type) Type {
 
 func AutoType(before, after Type, IsConst bool) (ok bool) {
 	if before != nil && after != nil {
+		// TypeParam (generic type parameter) accepts any type
+		if _, isTP := before.(*TypeParam); isTP {
+			return true
+		}
+		if _, isTP := after.(*TypeParam); isTP {
+			return true
+		}
 		beforeType := before.Type()
 		afterType := after.Type()
 		beforePtr := before.IsPointer()
@@ -299,6 +437,10 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 		}
 		// 任意指针 → 系统 ptr：地址语义一致（如 &s 容器地址赋给 ptr 交给 memory.load64 读槽）
 		if beforePtr && afterType == "ptr" && !afterPtr {
+			return true
+		}
+		// fn → 系统 ptr：函数指针地址语义一致（如 workerFn 赋给 ptr 传给 pthread_create）
+		if beforeType == "fn" && afterType == "ptr" && !afterPtr {
 			return true
 		}
 		// 系统 ptr → 任意 *T：地址语义一致（如 memory.malloc 返回的 ptr 赋给 *T）
@@ -330,6 +472,12 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 				return true
 			}
 		}
+		// Interface satisfaction: concrete → interface
+		if afterIf, ok := after.(*InterfaceType); ok {
+			if afterIf.ImplementsInterface(before) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -342,6 +490,9 @@ func getSystemKind(t Type) string {
 	}
 	if _, ok := t.(*ListType); ok {
 		return "list"
+	}
+	if _, ok := t.(*ArrayType); ok {
+		return "array"
 	}
 
 	switch typeName {

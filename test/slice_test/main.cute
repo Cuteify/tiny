@@ -1,0 +1,17 @@
+// test/slice_test/main.cute
+fn main() int {
+    var x: int = 42
+    var p: *int = &x
+    console.print("x=")
+    console.println(strings.itoa(x))
+    console.print("*p=")
+    console.println(strings.itoa(*p))
+
+    // Test slices.new — simplest possible call
+    var s: *[]int = slices.new[int](4)
+    var val: int = 10
+    slices.set[int](s, 0, val)
+    console.println(strings.itoa(s[0]))
+
+    ret 0
+}

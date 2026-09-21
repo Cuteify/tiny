@@ -1,0 +1,10 @@
+{
+    "name": "flag",
+    "version": "1.0.0",
+    "description": "Command-line argument parsing package",
+    "imports": {
+        "strings": "std:strings",
+        "memory": "std:memory",
+        "syscall": "std:syscall"
+    }
+}

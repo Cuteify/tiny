@@ -1,0 +1,9 @@
+{
+    "name": "mime",
+    "version": "1.0.0",
+    "description": "MIME type detection by file extension",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

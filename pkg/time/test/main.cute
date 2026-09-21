@@ -1,0 +1,61 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test 1: time.SECOND == 1000000000
+    if time.SECOND != 1000000000 {
+        failures = failures + 1
+    }
+
+    // Test 2: time.MINUTE == 60000000000
+    if time.MINUTE != 60000000000 {
+        failures = failures + 1
+    }
+
+    // Test 3: time.HOUR == 3600000000000
+    if time.HOUR != 3600000000000 {
+        failures = failures + 1
+    }
+
+    // Test 4: time.daysIn(1, 2024) == 31 (January)
+    if time.daysIn(1, 2024) != 31 {
+        failures = failures + 1
+    }
+
+    // Test 5: time.daysIn(2, 2024) == 29 (leap year)
+    if time.daysIn(2, 2024) != 29 {
+        failures = failures + 1
+    }
+
+    // Test 6: time.daysIn(2, 2023) == 28 (non-leap)
+    if time.daysIn(2, 2023) != 28 {
+        failures = failures + 1
+    }
+
+    // Test 7: time.daysIn(4, 2024) == 30 (April)
+    if time.daysIn(4, 2024) != 30 {
+        failures = failures + 1
+    }
+
+    // Test 8: time.durationString(1000000000) == "1s"
+    var ds1: string = time.durationString(1000000000)
+    if !strings.eq(ds1, "1s") {
+        failures = failures + 1
+    }
+
+    // Test 9: time.durationString(3600000000000) == "1h"
+    var ds2: string = time.durationString(3600000000000)
+    if !strings.eq(ds2, "1h") {
+        failures = failures + 1
+    }
+
+    // Test 10: time.durationString(61000000000) == "1m1s"
+    var ds3: string = time.durationString(61000000000)
+    if !strings.eq(ds3, "1m1s") {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        ret 42
+    }
+    ret failures
+}

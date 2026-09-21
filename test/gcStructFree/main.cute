@@ -1,0 +1,54 @@
+build os("linux")
+
+type Node struct {
+    value: int
+    left: *Node
+    right: *Node
+}
+
+fn makeNode(val: int) *Node {
+    var node: *Node = new(Node)
+    node.value = val
+    node.left = nil
+    node.right = nil
+    ret node
+}
+
+fn buildTree() *Node {
+    var root: *Node = makeNode(1)
+    root.left = makeNode(2)
+    root.right = makeNode(3)
+    root.left.left = makeNode(4)
+    root.left.right = makeNode(5)
+
+    // 字段重赋值：旧 left 应被 orphan free
+    root.left = makeNode(6)
+
+    // 字段重赋值：旧 right 应被 orphan free
+    root.right = makeNode(7)
+
+    ret root
+}
+
+fn main() int {
+    var tree: *Node = buildTree()
+    var ok: int = 0
+
+    if tree.value == 1 {
+        ok = ok + 1
+    }
+    if tree.left.value == 6 {
+        ok = ok + 1
+    }
+    if tree.right.value == 7 {
+        ok = ok + 1
+    }
+
+    // 再次替换字段（测试嵌套 orphan free）
+    tree.left.left = makeNode(8)
+    if tree.left.left.value == 8 {
+        ok = ok + 1
+    }
+
+    ret ok
+}

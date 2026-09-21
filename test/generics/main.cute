@@ -1,0 +1,10 @@
+// Generics test: monomorphization of generic function
+
+fn identity[T](x: T) T {
+    ret x
+}
+
+fn main() int {
+    r1 := identity(42)
+    ret r1
+}

@@ -1,0 +1,233 @@
+// pkg/archive/zip/zip.cute - Zip 归档读取
+// Zip 文件结构：
+//   本地文件头 + 文件数据 + ...
+//   中央目录头 + ...
+//   中央目录结束记录
+// 本地文件头格式（30 字节 + 文件名 + 扩展字段）：
+//   [0,4]   签名 0x04034b50
+//   [4,6]   最低版本要求
+//   [6,8]   通用位标志
+//   [8,10]  压缩方法
+//   [10,12] 最后修改时间
+//   [12,14] 最后修改日期
+//   [14,18] CRC-32
+//   [18,22] 压缩大小
+//   [22,26] 未压缩大小
+//   [26,28] 文件名长度
+//   [28,30] 扩展字段长度
+
+// File zip 文件信息
+type File struct {
+    name: string  // 文件名
+    size: uint    // 未压缩大小
+    compressedSize: uint // 压缩大小
+    method: u16   // 压缩方法
+    offset: uint  // 文件数据偏移
+}
+
+// Reader zip 读取器
+type Reader struct {
+    data: ptr         // 输入数据指针
+    dataLen: uint     // 输入数据总长度
+    fileList: ptr     // 文件列表
+    fileCount: int    // 文件数量
+    currentFile: int  // 当前读取的文件索引
+    filePos: uint     // 当前文件内偏移
+}
+
+// readU16LE 从小端序读取 u16
+fn readU16LE(ptr ptr) u16 {
+    var _p1: *u8 = ptr
+    var b0: u16 = *_p1
+    var _p2: *u8 = ptr + 1
+    var b1: u16 = *_p2
+    ret b0 | (b1 << 8)
+}
+
+// readU32LE 从小端序读取 u32
+fn readU32LE(ptr ptr) u32 {
+    var _p3: *u8 = ptr
+    var b0: u32 = *_p3
+    var _p4: *u8 = ptr + 1
+    var b1: u32 = *_p4
+    var _p5: *u8 = ptr + 2
+    var b2: u32 = *_p5
+    var _p6: *u8 = ptr + 3
+    var b3: u32 = *_p6
+    ret b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+// NewReader 创建 zip 读取器，解析所有本地文件头
+fn NewReader(data string) *Reader {
+    var buf: ptr = memory.malloc(40)
+    var rPtr: ptr = strings.toCstring(data)
+    var rLen: uint = strings.len(data)
+
+    // 先计算文件数量
+    var count: int = 0
+    var scanPos: uint = 0
+    for ; scanPos + 30 <= rLen; {
+        var sig: u32 = readU32LE(rPtr + scanPos)
+        if sig != 0x04034b50 {
+            break
+        }
+        var nameLen: u16 = readU16LE(rPtr + scanPos + 26)
+        var extraLen: u16 = readU16LE(rPtr + scanPos + 28)
+        var compSize: u32 = readU32LE(rPtr + scanPos + 18)
+        var uncompSize: u32 = readU32LE(rPtr + scanPos + 22)
+        // 跳过文件头 + 文件名 + 扩展字段 + 压缩数据
+        scanPos = scanPos + 30 + nameLen + extraLen + compSize
+        count = count + 1
+    }
+
+    // 分配文件列表
+    var fileList: ptr = memory.malloc(count * 48)
+    // 每个 File 结构占 48 字节：[name:8][size:8][compressedSize:8][method:8][offset:8][padding:8]
+
+    // 再次扫描填充文件列表
+    var pos: uint = 0
+    var idx: int = 0
+    for ; idx < count; {
+        var sig: u32 = readU32LE(rPtr + pos)
+        if sig != 0x04034b50 {
+            break
+        }
+        var method: u16 = readU16LE(rPtr + pos + 8)
+        var compSize: u32 = readU32LE(rPtr + pos + 18)
+        var uncompSize: u32 = readU32LE(rPtr + pos + 22)
+        var nameLen: u16 = readU16LE(rPtr + pos + 26)
+        var extraLen: u16 = readU16LE(rPtr + pos + 28)
+
+        // 提取文件名
+        var namePtr: ptr = rPtr + pos + 30
+        var name: string = strings.makeString(namePtr, nameLen, nameLen)
+
+        // 文件数据偏移 = 文件头起始 + 30 + nameLen + extraLen
+        var dataOffset: uint = pos + 30 + nameLen + extraLen
+
+        // 写入文件列表条目
+        var entry: ptr = fileList + idx * 48
+        var _p7: *ptr = entry
+        *_p7 = unsafe.cast[ptr](name)
+        var _p8: *ptr = entry + 8
+        *_p8 = unsafe.cast[ptr](uncompSize)
+        var _p9: *ptr = entry + 16
+        *_p9 = unsafe.cast[ptr](compSize)
+        var _p10: *ptr = entry + 24
+        *_p10 = unsafe.cast[ptr](method)
+        var _p11: *ptr = entry + 32
+        *_p11 = unsafe.cast[ptr](dataOffset)
+
+        pos = dataOffset + compSize
+        idx = idx + 1
+    }
+
+    // layout: [data:8][dataLen:8][fileList:8][fileCount:8][currentFile:8][filePos:8]
+    var _p12: *ptr = buf
+    *_p12 = unsafe.cast[ptr](rPtr)
+    var _p13: *ptr = buf + 8
+    *_p13 = unsafe.cast[ptr](rLen)
+    var _p14: *ptr = buf + 16
+    *_p14 = unsafe.cast[ptr](fileList)
+    var _p15: *ptr = buf + 24
+    *_p15 = unsafe.cast[ptr](count)
+    var _p16: *ptr = buf + 32
+    *_p16 = unsafe.cast[ptr](0)
+    var _p17: *ptr = buf + 40
+    *_p17 = unsafe.cast[ptr](0)
+    var result: *Reader
+    result = buf
+    ret result
+}
+
+// Len 返回 zip 中的文件数量
+fn Len(r *Reader) int {
+    var _p18: *ptr = r + 24
+    ret *_p18
+}
+
+// FileAt 返回指定索引的文件信息
+fn FileAt(r *Reader, index int) *File {
+    var _p19: *ptr = r + 16
+    var fileList: ptr = *_p19
+    var _p20: *ptr = r + 24
+    var fileCount: int = *_p20
+    if index < 0 || index >= fileCount {
+        ret 0
+    }
+    var entry: ptr = fileList + index * 48
+    var fBuf: ptr = memory.malloc(24)
+    var _p21: *ptr = fBuf
+    var _p22: *ptr = entry
+    *_p21 = unsafe.cast[ptr](*_p22)
+    var _p23: *ptr = fBuf + 8
+    var _p24: *ptr = entry + 8
+    *_p23 = unsafe.cast[ptr](*_p24)
+    var _p25: *ptr = fBuf + 16
+    var _p26: *ptr = entry + 16
+    *_p25 = unsafe.cast[ptr](*_p26)
+    var result: *File
+    result = fBuf
+    ret result
+}
+
+// Open 打开指定文件，设置为当前读取文件
+fn Open(r *Reader, index int) bool {
+    var _p27: *ptr = r + 24
+    var fileCount: int = *_p27
+    if index < 0 || index >= fileCount {
+        ret false
+    }
+    var _p28: *ptr = r + 32
+    *_p28 = unsafe.cast[ptr](index)
+    var _p29: *ptr = r + 40
+    *_p29 = unsafe.cast[ptr](0)
+    ret true
+}
+
+// Read 从当前打开的文件中读取数据
+fn Read(r *Reader, buf ptr, n int) int {
+    var _p30: *ptr = r
+    var dataPtr: ptr = *_p30
+    var _p31: *ptr = r + 16
+    var fileList: ptr = *_p31
+    var _p32: *ptr = r + 32
+    var currentFile: int = *_p32
+    var _p33: *ptr = r + 40
+    var filePos: uint = *_p33
+    var entry: ptr = fileList + currentFile * 48
+    var _p34: *ptr = entry + 8
+    var uncompSize: uint = *_p34
+    var _p35: *ptr = entry + 16
+    var compSize: uint = *_p35
+    var _p36: *ptr = entry + 24
+    var method: uint = *_p36
+    var _p37: *ptr = entry + 32
+    var dataOffset: uint = *_p37
+
+    if filePos >= compSize {
+        ret 0
+    }
+
+    var available: uint = compSize - filePos
+    var toRead: uint = available
+    if toRead > n {
+        toRead = n
+    }
+
+    // 方法 0: 存储（无压缩）
+    if method == 0 {
+        var i: uint = 0
+        for ; i < toRead; {
+            var _p38: *u8 = buf + i
+            var _p39: *u8 = dataPtr + dataOffset + filePos + i
+            *_p38 = unsafe.cast[u8](*_p39)
+            i = i + 1
+        }
+    }
+    // 其他压缩方法暂不支持（需集成 flate 等）
+
+    var _p40: *ptr = r + 40
+    *_p40 = unsafe.cast[ptr](filePos + toRead)
+    ret toRead
+}

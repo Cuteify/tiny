@@ -1,0 +1,9 @@
+{
+    "name": "mime_test",
+    "version": "1.0.0",
+    "imports": {
+        "mime": "std:mime",
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

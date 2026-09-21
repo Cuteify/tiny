@@ -1,0 +1,5 @@
+== aliasShared (2 vars)
+  p [unknown] site=new off=-1
+  q [unknown] site=expr off=-1
+== allocLocal (1 vars)
+  p [unknown] site=new off=-1

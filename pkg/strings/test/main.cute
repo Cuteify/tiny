@@ -1,0 +1,287 @@
+// strings package test
+
+fn main() int {
+    var err: int = 0
+
+    // len tests
+    var hello: string = "hello"
+    var l1: uint = strings.len(hello)
+    if l1 > 5 { err = 1 }
+    if l1 < 5 { err = 1 }
+
+    var empty: string = ""
+    var l2: uint = strings.len(empty)
+    if l2 > 0 { err = 2 }
+    if l2 > 1 { err = 2 }
+
+    // eq tests
+    var abc: string = "abc"
+    var e1: bool = strings.eq(abc, abc)
+    if !e1 { err = 3 }
+
+    var abd: string = "abd"
+    var e2: bool = strings.eq(abc, abd)
+    if e2 { err = 4 }
+
+    // eq with same content, different variables
+    var abc2: string = "abc"
+    var e3: bool = strings.eq(abc, abc2)
+    if !e3 { err = 40 }
+
+    // ne tests
+    var a: string = "a"
+    var b: string = "b"
+    var n1: bool = strings.ne(a, b)
+    if !n1 { err = 5 }
+
+    // index tests
+    var helloworld: string = "hello world"
+    var world: string = "world"
+    var i1: int = strings.index(helloworld, world)
+    if i1 > 6 { err = 6 }
+    if i1 < 6 { err = 6 }
+
+    var xyz: string = "xyz"
+    var i2: int = strings.index(hello, xyz)
+    if i2 > -1 { err = 7 }
+    if i2 < -1 { err = 7 }
+
+    // contains
+    var ell: string = "ell"
+    var c1: bool = strings.contains(hello, ell)
+    if !c1 { err = 8 }
+
+    // hasPrefix
+    var hel: string = "hel"
+    var hp1: bool = strings.hasPrefix(hello, hel)
+    if !hp1 { err = 9 }
+
+    // hasSuffix
+    var llo: string = "llo"
+    var hs1: bool = strings.hasSuffix(hello, llo)
+    if !hs1 { err = 10 }
+
+    // toUpper
+    var u1: string = strings.toUpper(hello)
+    var HELLO: string = "HELLO"
+    if strings.compare(u1, HELLO) > 0 { err = 11 }
+    if strings.compare(u1, HELLO) < 0 { err = 11 }
+
+    // toLower
+    var lo1: string = strings.toLower(HELLO)
+    if strings.compare(lo1, hello) > 0 { err = 12 }
+    if strings.compare(lo1, hello) < 0 { err = 12 }
+
+    // trimSpace
+    var spaced: string = "  hello  "
+    var ts1: string = strings.trimSpace(spaced)
+    if strings.compare(ts1, hello) > 0 { err = 13 }
+    if strings.compare(ts1, hello) < 0 { err = 13 }
+
+    // count
+    var aaa: string = "aaa"
+    var a_char: string = "a"
+    var cnt1: int = strings.count(aaa, a_char)
+    if cnt1 > 3 { err = 14 }
+    if cnt1 < 3 { err = 14 }
+
+    // trimLeft
+    var xxhello: string = "xxhello"
+    var x_char: string = "x"
+    var tl1: string = strings.trimLeft(xxhello, x_char)
+    if strings.compare(tl1, hello) > 0 { err = 15 }
+    if strings.compare(tl1, hello) < 0 { err = 15 }
+
+    // trimRight
+    var helloxx: string = "helloxx"
+    var tr1: string = strings.trimRight(helloxx, x_char)
+    if strings.compare(tr1, hello) > 0 { err = 16 }
+    if strings.compare(tr1, hello) < 0 { err = 16 }
+
+    // trim
+    var xxhelloxx: string = "xxhelloxx"
+    var trm1: string = strings.trim(xxhelloxx, x_char)
+    if strings.compare(trm1, hello) > 0 { err = 17 }
+    if strings.compare(trm1, hello) < 0 { err = 17 }
+
+    // lastIndex
+    var o_char: string = "o"
+    var li1: int = strings.lastIndex(helloworld, o_char)
+    if li1 > 7 { err = 18 }
+    if li1 < 7 { err = 18 }
+
+    // indexByte (h = 104)
+    var ib1: int = strings.indexByte(hello, 104)
+    if ib1 > 0 { err = 19 }
+    if ib1 < 0 { err = 19 }
+
+    // containsAny
+    var vowels: string = "aeiou"
+    var ca1: bool = strings.containsAny(hello, vowels)
+    if !ca1 { err = 20 }
+
+    // compare
+    var cmp1: int = strings.compare(abc, abc)
+    if cmp1 > 0 { err = 21 }
+    if cmp1 < 0 { err = 21 }
+
+    var cmp2: int = strings.compare(abc, abd)
+    if cmp2 > -1 { err = 22 }
+    if cmp2 < -1 { err = 22 }
+
+    var cmp3: int = strings.compare(abd, abc)
+    if cmp3 > 1 { err = 23 }
+    if cmp3 < 1 { err = 23 }
+
+    // atoi
+    var numstr: string = "123"
+    var a1: int = strings.atoi(numstr)
+    if a1 > 123 { err = 24 }
+    if a1 < 123 { err = 24 }
+
+    // itoa
+    var it1: string = strings.itoa(123)
+    var num123: string = "123"
+    if strings.compare(it1, num123) > 0 { err = 25 }
+    if strings.compare(it1, num123) < 0 { err = 25 }
+
+    // parseBool
+    var truestr: string = "true"
+    var pb1: bool = strings.parseBool(truestr)
+    if !pb1 { err = 26 }
+
+    // formatBool
+    var fb1: string = strings.formatBool(false)
+    var falsestr: string = "false"
+    if strings.compare(fb1, falsestr) > 0 { err = 27 }
+    if strings.compare(fb1, falsestr) < 0 { err = 27 }
+
+    // ===== 新增测试 =====
+
+    // equalFold - 忽略大小写比较
+    var ef1: bool = strings.equalFold("Hello", "hello")
+    if !ef1 { err = 30 }
+    var ef2: bool = strings.equalFold("abc", "ABC")
+    if !ef2 { err = 31 }
+    var ef3: bool = strings.equalFold("abc", "abd")
+    if ef3 { err = 32 }
+    var ef4: bool = strings.equalFold("abc", "ab")
+    if ef4 { err = 33 }
+
+    // indexAny
+    var ia1: int = strings.indexAny("hello", "aeiou")
+    if ia1 > 1 { err = 34 }
+    if ia1 < 0 { err = 34 }
+    var ia2: int = strings.indexAny("hello", "xyz")
+    if ia2 > -1 { err = 35 }
+    if ia2 < -1 { err = 35 }
+
+    // lastIndexByte
+    var lib1: int = strings.lastIndexByte(helloworld, 111) // 'o' = 111
+    if lib1 > 7 { err = 36 }
+    if lib1 < 7 { err = 36 }
+    var lib2: int = strings.lastIndexByte(helloworld, 120) // 'x' not in string
+    if lib2 > -1 { err = 37 }
+    if lib2 < -1 { err = 37 }
+
+    // countByte
+    var cb1: int = strings.countByte(aaa, 97) // 'a' = 97
+    if cb1 > 3 { err = 38 }
+    if cb1 < 3 { err = 38 }
+    var cb2: int = strings.countByte(hello, 120) // 'x' not in string
+    if cb2 > 0 { err = 39 }
+    if cb2 < 0 { err = 39 }
+
+    // clone
+    var cl1: string = strings.clone(hello)
+    if strings.compare(cl1, hello) > 0 { err = 41 }
+    if strings.compare(cl1, hello) < 0 { err = 41 }
+    // 确认是独立副本（修改不影响原字符串）
+    var cl2: string = strings.clone("abc")
+    if strings.len(cl2) < 3 { err = 42 }
+
+    // reverse
+    var rv1: string = strings.reverse("abc")
+    varcba: string = "cba"
+    if strings.compare(rv1, varcba) > 0 { err = 43 }
+    if strings.compare(rv1, varcba) < 0 { err = 43 }
+    var rv2: string = strings.reverse("")
+    if strings.len(rv2) > 0 { err = 44 }
+
+    // repeatN
+    var rp1: string = strings.repeatN("ab", 3)
+    var ababab: string = "ababab"
+    if strings.compare(rp1, ababab) > 0 { err = 45 }
+    if strings.compare(rp1, ababab) < 0 { err = 45 }
+    var rp2: string = strings.repeatN("x", 0)
+    if strings.len(rp2) > 0 { err = 46 }
+
+    // trimPrefix
+    var tp1: string = strings.trimPrefix("hello world", "hello ")
+    var world2: string = "world"
+    if strings.compare(tp1, world2) > 0 { err = 47 }
+    if strings.compare(tp1, world2) < 0 { err = 47 }
+
+    // trimSuffix
+    var ts2: string = strings.trimSuffix("hello.go", ".go")
+    if strings.compare(ts2, hello) > 0 { err = 48 }
+    if strings.compare(ts2, hello) < 0 { err = 48 }
+
+    // replace
+    var rpl1: string = strings.replace("hello world", "world", "cute", 0)
+    var hellolute: string = "hello cute"
+    if strings.compare(rpl1, hellolute) > 0 { err = 49 }
+    if strings.compare(rpl1, hellolute) < 0 { err = 49 }
+
+    // repeat
+    var rpt1: string = strings.repeat("ab", 2)
+    var abab: string = "abab"
+    if strings.compare(rpt1, abab) > 0 { err = 50 }
+    if strings.compare(rpt1, abab) < 0 { err = 50 }
+
+    // containsRune
+    var cr1: bool = strings.containsRune(hello, 104) // 'h'
+    if !cr1 { err = 58 }
+
+    // containsAny 无匹配
+    var ca2: bool = strings.containsAny("hello", "xyz")
+    if ca2 { err = 59 }
+
+    // lastIndex 空 substr
+    var li2: int = strings.lastIndex(hello, "")
+    if li2 < 5 { err = 60 }
+
+    // parseBool FALSE
+    var pb2: bool = strings.parseBool("FALSE")
+    if pb2 { err = 61 }
+
+    // parseBool false
+    var pb3: bool = strings.parseBool("false")
+    if pb3 { err = 62 }
+
+    // parseBool 0
+    var pb4: bool = strings.parseBool("0")
+    if pb4 { err = 63 }
+
+    // formatBool true
+    var fb2: string = strings.formatBool(true)
+    if strings.compare(fb2, truestr) > 0 { err = 64 }
+    if strings.compare(fb2, truestr) < 0 { err = 64 }
+
+    // trim 空字符串
+    var trm2: string = strings.trim("", "x")
+    if strings.len(trm2) > 0 { err = 65 }
+
+    // trimLeft 空字符串
+    var tl2: string = strings.trimLeft("", "x")
+    if strings.len(tl2) > 0 { err = 66 }
+
+    // trimRight 空字符串
+    var tr2: string = strings.trimRight("", "x")
+    if strings.len(tr2) > 0 { err = 67 }
+
+    if err > 0 {
+        ret err
+    }
+    ret 42
+}

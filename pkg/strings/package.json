@@ -1,8 +1,6 @@
 {
     "name": "strings",
-    "version": "1.0.0",
-    "description": "String utility package: len/cap/eq/ne and safe C-string conversion",
-    "imports": {
-        "memory": "std:memory"
-    }
+    "version": "1.1.0",
+    "description": "String utility package: comparison, search, transform, split/join, conversion and buffer operations",
+    "imports": {}
 }

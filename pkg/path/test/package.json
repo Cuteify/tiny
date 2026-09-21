@@ -1,0 +1,10 @@
+{
+    "name": "path_test",
+    "version": "1.0.0",
+    "description": "path package tests",
+    "imports": {
+        "path": "std:path",
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

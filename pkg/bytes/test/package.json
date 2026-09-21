@@ -1,0 +1,9 @@
+{
+    "name": "bytes_test",
+    "version": "1.0.0",
+    "imports": {
+        "bytes": "std:bytes",
+        "strings": "std:strings",
+        "memory": "std:memory"
+    }
+}

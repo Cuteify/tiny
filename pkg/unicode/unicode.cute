@@ -1,0 +1,63 @@
+// pkg/unicode/unicode.cute - Unicode 字符分类包
+// 提供 ASCII 范围的字符分类和转换函数
+// 平台无关实现，纯逻辑判断
+
+// isLetter 判断字符是否为 ASCII 字母（a-z, A-Z）
+fn isLetter(r int) bool {
+    if r >= 65 && r <= 90 {
+        ret true
+    }
+    if r >= 97 && r <= 122 {
+        ret true
+    }
+    ret false
+}
+
+// isDigit 判断字符是否为 ASCII 数字（0-9）
+fn isDigit(r int) bool {
+    if r >= 48 && r <= 57 {
+        ret true
+    }
+    ret false
+}
+
+// isSpace 判断字符是否为空白字符（空格、制表符、换行符、回车符等）
+fn isSpace(r int) bool {
+    // 空格 (32), 制表符 (9), 换行符 (10), 回车符 (13), 垂直制表符 (11), 换页符 (12)
+    if r == 32 || r == 9 || r == 10 || r == 13 || r == 11 || r == 12 {
+        ret true
+    }
+    ret false
+}
+
+// isUpper 判断字符是否为大写字母（A-Z）
+fn isUpper(r int) bool {
+    if r >= 65 && r <= 90 {
+        ret true
+    }
+    ret false
+}
+
+// isLower 判断字符是否为小写字母（a-z）
+fn isLower(r int) bool {
+    if r >= 97 && r <= 122 {
+        ret true
+    }
+    ret false
+}
+
+// toUpper 将小写字母转换为大写，其他字符不变
+fn toUpper(r int) int {
+    if r >= 97 && r <= 122 {
+        ret r - 32
+    }
+    ret r
+}
+
+// toLower 将大写字母转换为小写，其他字符不变
+fn toLower(r int) int {
+    if r >= 65 && r <= 90 {
+        ret r + 32
+    }
+    ret r
+}

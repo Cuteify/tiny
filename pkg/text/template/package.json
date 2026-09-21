@@ -1,0 +1,10 @@
+{
+    "name": "template",
+    "version": "1.0.0",
+    "description": "Simple template engine with {{.Field}} placeholder support",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings",
+        "hashmap": "std:hashmap"
+    }
+}

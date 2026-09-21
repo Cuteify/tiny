@@ -129,12 +129,28 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 		switch v := child.Value.(type) {
 		case *parser.VarBlock:
 			if v.IsDefine {
-				varSize := v.Type.Size()
-				if varSize == 0 {
-					varSize = 4
+				if len(v.MultiNames) > 0 {
+					// 多返回值解构：为每个变量分配独立的栈空间
+					v.MultiOffsets = make([]int, len(v.MultiNames))
+					for i := range v.MultiNames {
+						varSize := 8 // 默认按指针大小分配
+						if i < len(v.MultiTypes) && v.MultiTypes[i] != nil {
+							varSize = v.MultiTypes[i].Size()
+						}
+						if varSize == 0 {
+							varSize = 8
+						}
+						*offset -= varSize
+						v.MultiOffsets[i] = *offset
+					}
+				} else {
+					varSize := v.Type.Size()
+					if varSize == 0 {
+						varSize = 4
+					}
+					*offset -= varSize
+					v.Offset = *offset
 				}
-				*offset -= varSize
-				v.Offset = *offset
 			}
 		case *parser.ForBlock:
 			if v.Init != nil && v.Init.Var != nil {

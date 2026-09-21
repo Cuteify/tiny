@@ -1,0 +1,7 @@
+{
+    "name": "sortMinimal2",
+    "imports": {
+        "slices": "std:slices",
+        "sort": "std:sort"
+    }
+}

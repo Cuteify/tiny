@@ -1,0 +1,7 @@
+== repeatString (0 vars)
+  result [string] scope=1
+== stringOperations (4 vars)
+  repeated [string] site=call:repeatString off=-1
+  s1 [string] site=expr off=-1
+  s2 [string] site=expr off=-1
+  s3 [string] site=string-concat off=-1

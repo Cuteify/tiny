@@ -1,0 +1,114 @@
+// pkg/hash/crc64/crc64.cute - CRC-64 ECMA-182 校验和
+// 使用 ECMA-182 多项式 0x42F0E1EBA9EA3693 的逐字节实现
+// 注意：u32 运算模拟 u64 的低 32 位，高 32 位用单独变量
+
+// crc64TableLow/crc64TableHigh 存储 256 项查找表（拆分高低 32 位）
+var crc64TableLow: ptr = 0
+var crc64TableHigh: ptr = 0
+var crc64TableReady: bool = false
+
+// buildCrc64Table 生成 CRC-64 ECMA-182 查找表
+// ECMA-182 多项式: 0x42F0E1EBA9EA3693
+fn buildCrc64Table() {
+    if crc64TableReady {
+        ret
+    }
+    crc64TableLow = memory.malloc(256 * 4)
+    crc64TableHigh = memory.malloc(256 * 4)
+    var i: u32 = 0
+    for ; i < 256; {
+        // 初始化 crc = i（低 64 位）
+        var crcL: u32 = i
+        var crcH: u32 = 0
+        var j: u32 = 0
+        for ; j < 8; {
+            // 检查最低位
+            if crcL & 1 == 1 {
+                // crc >>= 1
+                var newLow: u32 = (crcL >> 1) | (crcH << 31)
+                var newHigh: u32 = crcH >> 1
+                // 多项式 0x42F0E1EBA9EA3693 低 32 位 = 0xA9EA3693，高 32 位 = 0x42F0E1EB
+                crcL = newLow ^ 0xA9EA3693
+                crcH = newHigh ^ 0x42F0E1EB
+            } else {
+                var newLow: u32 = (crcL >> 1) | (crcH << 31)
+                var newHigh: u32 = crcH >> 1
+                crcL = newLow
+                crcH = newHigh
+            }
+            j = j + 1
+        }
+        // 写入表
+        var pL: ptr = crc64TableLow + i * 4
+        var _p1: *u8 = pL
+        *_p1 = unsafe.cast[u8](crcL & 0xFF)
+        var _p2: *u8 = pL + 1
+        *_p2 = unsafe.cast[u8]((crcL >> 8) & 0xFF)
+        var _p3: *u8 = pL + 2
+        *_p3 = unsafe.cast[u8]((crcL >> 16) & 0xFF)
+        var _p4: *u8 = pL + 3
+        *_p4 = unsafe.cast[u8]((crcL >> 24) & 0xFF)
+        var pH: ptr = crc64TableHigh + i * 4
+        var _p5: *u8 = pH
+        *_p5 = unsafe.cast[u8](crcH & 0xFF)
+        var _p6: *u8 = pH + 1
+        *_p6 = unsafe.cast[u8]((crcH >> 8) & 0xFF)
+        var _p7: *u8 = pH + 2
+        *_p7 = unsafe.cast[u8]((crcH >> 16) & 0xFF)
+        var _p8: *u8 = pH + 3
+        *_p8 = unsafe.cast[u8]((crcH >> 24) & 0xFF)
+        i = i + 1
+    }
+    crc64TableReady = true
+}
+
+// readCrc64Low 读取表的低 32 位
+fn readCrc64Low(idx: u32) u32 {
+    var p: ptr = crc64TableLow + idx * 4
+    var _p9: *u8 = p
+    var _p10: *u8 = p + 1
+    var _p11: *u8 = p + 2
+    var _p12: *u8 = p + 3
+    ret *_p9 | (*_p10 << 8) | (*_p11 << 16) | (*_p12 << 24)
+}
+
+// readCrc64High 读取表的高 32 位
+fn readCrc64High(idx: u32) u32 {
+    var p: ptr = crc64TableHigh + idx * 4
+    var _p13: *u8 = p
+    var _p14: *u8 = p + 1
+    var _p15: *u8 = p + 2
+    var _p16: *u8 = p + 3
+    ret *_p13 | (*_p14 << 8) | (*_p15 << 16) | (*_p16 << 24)
+}
+
+// checksum 计算 data 的 CRC-64 ECMA-182 校验和
+// 返回结果的低 64 位（高 32 位截断为 u64 的高部分）
+fn checksum(data string) u64 {
+    buildCrc64Table()
+    var sPtr: ptr = strings.toCstring(data)
+    var sLen: uint = strings.len(data)
+    // CRC 初始值全 1
+    var crcL: u32 = 0xFFFFFFFF
+    var crcH: u32 = 0xFFFFFFFF
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p17: *u8 = sPtr + i
+        var byteVal: u32 = *_p17
+        var tableIdx: u32 = (crcL ^ byteVal) & 0xFF
+        var tLow: u32 = readCrc64Low(tableIdx)
+        var tHigh: u32 = readCrc64High(tableIdx)
+        var newLow: u32 = (crcL >> 8) ^ tLow
+        var newHigh: u32 = (crcH >> 8) ^ tHigh
+        crcL = newLow
+        crcH = newHigh
+        i = i + 1
+    }
+    // 最终异或
+    crcL = crcL ^ 0xFFFFFFFF
+    crcH = crcH ^ 0xFFFFFFFF
+    // 组合为 u64（低 32 位 + 高 32 位）
+    var result: u64 = crcH
+    result = (result << 32) | crcL
+    ret result
+}

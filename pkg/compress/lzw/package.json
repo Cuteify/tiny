@@ -1,0 +1,9 @@
+{
+    "name": "lzw",
+    "version": "1.0.0",
+    "description": "LZW compression/decompression",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

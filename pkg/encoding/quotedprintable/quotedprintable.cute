@@ -1,0 +1,139 @@
+// pkg/encoding/quotedprintable/quotedprintable.cute - Quoted-Printable 编码/解码
+// 平台无关实现，遵循 RFC 2045 规范
+
+// isQPrintable 检查字节是否为可打印 ASCII（33-126，不含 '='）
+fn isQPrintable(ch: u8) bool {
+    if ch == 61 {
+        ret false
+    }
+    if ch >= 33 && ch <= 126 {
+        ret true
+    }
+    ret false
+}
+
+// hexDigit 将 4 位值转换为十六进制字符
+fn hexDigit(v: u8) u8 {
+    if v < 10 {
+        ret 48 + v
+    }
+    ret 65 + v - 10
+}
+
+// fromHex 将十六进制字符转换为数值，无效字符返回 255
+fn fromHex(ch: u8) u8 {
+    if ch >= 48 && ch <= 57 {
+        ret ch - 48
+    }
+    if ch >= 65 && ch <= 70 {
+        ret ch - 65 + 10
+    }
+    if ch >= 97 && ch <= 102 {
+        ret ch - 97 + 10
+    }
+    ret 255
+}
+
+// encode 将字符串编码为 Quoted-Printable 格式
+// 规则：
+// - 可打印 ASCII（33-126，不含 '='）保持原样
+// - 空格和制表符在行尾保持原样，其他位置转为 =XX
+// - 换行符保持原样
+// - 其他字节转为 =XX
+fn encode(s string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    // 最坏情况：每个字节 =XX (3 字节)
+    var buf: ptr = memory.malloc(sLen * 3 + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p1: *u8 = sPtr + i
+        var ch: u8 = *_p1
+        // 换行符原样输出
+        if ch == 10 || ch == 13 {
+            var _p2: *u8 = buf + outPos
+            *_p2 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+            i = i + 1
+        } else if isQPrintable(ch) {
+            // 可打印 ASCII 原样输出
+            var _p3: *u8 = buf + outPos
+            *_p3 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+            i = i + 1
+        } else {
+            // 转为 =XX
+            var _p4: *u8 = buf + outPos
+            *_p4 = unsafe.cast[u8](61)
+            var hi: u8 = (ch >> 4) & 15
+            var lo: u8 = ch & 15
+            var _p5: *u8 = buf + outPos + 1
+            *_p5 = unsafe.cast[u8](hexDigit(hi))
+            var _p6: *u8 = buf + outPos + 2
+            *_p6 = unsafe.cast[u8](hexDigit(lo))
+            outPos = outPos + 3
+            i = i + 1
+        }
+    }
+    var _p7: *u8 = buf + outPos
+    *_p7 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}
+
+// decode 将 Quoted-Printable 编码的字符串解码
+// =XX 转换为对应字节，软换行 =\r\n 或 =\n 被移除
+fn decode(s string) string {
+    var sPtr: ptr = strings.toCstring(s)
+    var sLen: uint = strings.len(s)
+    var buf: ptr = memory.malloc(sLen + 1)
+    var outPos: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var _p8: *u8 = sPtr + i
+        var ch: u8 = *_p8
+        if ch == 61 && i + 2 < sLen {
+            // '=' 开头的编码序列
+            var _p9: *u8 = sPtr + i + 1
+            var next1: u8 = *_p9
+            // 软换行检查：=\r\n 或 =\n
+            if next1 == 13 || next1 == 10 {
+                // 跳过 =\r\n 或 =\n
+                var _p10: *u8 = sPtr + i + 2
+                if next1 == 13 && i + 2 < sLen && *_p10 == 10 {
+                    i = i + 3
+                } else {
+                    i = i + 2
+                }
+            } else {
+                var hi: u8 = fromHex(next1)
+                var lo: u8 = 255
+                if i + 2 < sLen {
+                    var _p11: *u8 = sPtr + i + 2
+                    lo = fromHex(*_p11)
+                }
+                if hi != 255 && lo != 255 {
+                    var decoded: u8 = (hi << 4) | lo
+                    var _p12: *u8 = buf + outPos
+                    *_p12 = unsafe.cast[u8](decoded)
+                    outPos = outPos + 1
+                    i = i + 3
+                } else {
+                    // 无效编码，原样输出
+                    var _p13: *u8 = buf + outPos
+                    *_p13 = unsafe.cast[u8](ch)
+                    outPos = outPos + 1
+                    i = i + 1
+                }
+            }
+        } else {
+            var _p14: *u8 = buf + outPos
+            *_p14 = unsafe.cast[u8](ch)
+            outPos = outPos + 1
+            i = i + 1
+        }
+    }
+    var _p15: *u8 = buf + outPos
+    *_p15 = unsafe.cast[u8](0)
+    ret strings.makeString(buf, outPos, outPos)
+}

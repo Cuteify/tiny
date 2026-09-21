@@ -1,0 +1,9 @@
+{
+    "name": "flate_test",
+    "version": "1.0.0",
+    "imports": {
+        "flate": "std:compress/flate",
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

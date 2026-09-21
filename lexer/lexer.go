@@ -44,6 +44,10 @@ func (t Token) Len() int {
 	return len(t.Value)
 }
 
+func (t Token) IsLineEnd() bool {
+	return t.IsEmpty() || (t.Type == SEPARATOR && (t.Value == "\n" || t.Value=="\r"))
+}
+
 func NewLexer(filename string) *Lexer {
 	l := &Lexer{
 		Filename: filename,
@@ -131,9 +135,9 @@ func (l *Lexer) SkipSep() {
 	if l.Cursor >= l.TextLength {
 		return
 	}
-	if l.Text[l.Cursor] == ' ' {
+	if l.Text[l.Cursor] == ' ' || l.Text[l.Cursor] == '\t' {
 		for i := l.Cursor; i < l.TextLength; i++ {
-			if l.Text[i] != ' ' {
+			if l.Text[i] != ' ' && l.Text[i] != '\t' {
 				l.SetCursor(i)
 				break
 			}
@@ -155,8 +159,8 @@ func (l *Lexer) GetWord() (string, bool) {
 
 	for i := l.Cursor; i < l.TextLength; i++ {
 		//判断是否是分隔符
-		// 遍历分隔符列表
-		for e := 2; e > 0; e-- {
+		// 遍历分隔符列表（先检查3字符，再2字符，再1字符）
+		for e := 3; e > 0; e-- {
 			if i+e-1 >= l.TextLength {
 				continue
 			}

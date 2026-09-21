@@ -1,0 +1,9 @@
+{
+    "name": "fnv",
+    "version": "1.0.0",
+    "description": "FNV-1 and FNV-1a hash package (32-bit and 64-bit)",
+    "imports": {
+        "memory": "std:memory",
+        "strings": "std:strings"
+    }
+}

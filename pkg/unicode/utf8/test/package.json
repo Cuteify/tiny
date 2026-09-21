@@ -1,0 +1,7 @@
+{
+    "name": "utf8_test",
+    "version": "1.0.0",
+    "imports": {
+        "utf8": "std:utf8"
+    }
+}

@@ -1,0 +1,63 @@
+// pkg/thread/thread_x86_64.cute — x86_64 thread primitives
+build arch("x86_64")
+
+// ThreadCtx: [func_ptr(8) | arg_ptr(8) | retval(8)] = 24 bytes
+type ThreadCtx struct {
+    funcPtr: ptr
+    argPtr: ptr
+    retval: ptr
+}
+
+// threadEntryRaw is the C-compatible function called by pthread_create.
+fn threadEntryRaw(ctxPtr: ptr) ptr {
+    build asm {
+        mov rbx, rdi
+        mov rax, [rbx]
+        mov rdi, [rbx + 8]
+        call rax
+        mov [rbx + 16], rax
+    }
+    ret 0
+}
+
+// Mark threadEntryRaw as Useful via function-as-value (no asm lea needed)
+var _entryFn: ptr = threadEntryRaw
+
+// threadCreateRaw creates a pthread running threadEntryRaw(ctx).
+// Returns 0 on success.
+fn threadCreateRaw(tidPtr: ptr, ctx: ptr) i32 {
+    var rc: i32 = 0
+    build asm {
+        and rsp, -16
+        mov rdi, [rbp+16]
+        xor esi, esi
+        lea rdx, [std_thread_threadEntryRaw__ptr]
+        mov rcx, [rbp+24]
+        call pthread_create
+        mov [rbp-8], eax
+    }
+    ret rc
+}
+
+// threadJoinRaw joins a thread by tid.
+fn threadJoinRaw(tid: u64) i32 {
+    var rc: i32 = 0
+    build asm {
+        and rsp, -16
+        mov rdi, [rbp+16]
+        xor esi, esi
+        call pthread_join
+        mov [rbp-8], eax
+    }
+    ret rc
+}
+
+fn threadSelf() u64 {
+    var tid: u64 = 0
+    build asm {
+        and rsp, -16
+        call pthread_self
+        mov [rbp-8], rax
+    }
+    ret tid
+}

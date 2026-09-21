@@ -1,0 +1,51 @@
+fn main() int {
+    var failures: int = 0
+
+    // Test flate Writer + Close
+    var w: *flate.Writer = flate.NewWriter()
+
+    // Write some data
+    var src: string = "hello world"
+    var srcPtr: ptr = strings.toCstring(src)
+    var written: int = flate.Write(w, srcPtr, strings.len(src))
+    if written != 11 {
+        failures = failures + 1
+    }
+
+    // Close to get compressed data
+    var compressed: string = flate.Close(w)
+    var compLen: uint = strings.len(compressed)
+    // Compressed data should be non-empty
+    if compLen == 0 {
+        failures = failures + 1
+    }
+
+    // Test flate Reader
+    var r: *flate.Reader = flate.NewReader(compressed)
+    var readBuf: ptr = memory.malloc(64)
+    var bytesRead: int = flate.Read(r, readBuf, 64)
+
+    // Should read back 11 bytes ("hello world")
+    if bytesRead != 11 {
+        failures = failures + 1
+    }
+
+    // Verify content
+    if bytesRead == 11 {
+        // 'h' = 104
+        var _p1: *u8 = readBuf
+        if *_p1 != 104 {
+            failures = failures + 1
+        }
+        // 'w' = 119
+        var _p2: *u8 = readBuf + 6
+        if *_p2 != 119 {
+            failures = failures + 1
+        }
+    }
+
+    if failures == 0 {
+        syscall.exit(42)
+    }
+    syscall.exit(1)
+}

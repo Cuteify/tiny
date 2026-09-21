@@ -1,0 +1,160 @@
+== /home/gx/Desktop/______/tiny/pkg/builtin.panic
+== /home/gx/Desktop/______/tiny/pkg/builtin.print
+== /home/gx/Desktop/______/tiny/pkg/builtin.println
+== /home/gx/Desktop/______/tiny/pkg/math/bits.bitLen
+== /home/gx/Desktop/______/tiny/pkg/math/bits.bitLen64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.bitLenU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.div
+== /home/gx/Desktop/______/tiny/pkg/math/bits.div64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.divU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.leadingZeros
+== /home/gx/Desktop/______/tiny/pkg/math/bits.leadingZeros64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.leadingZerosU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.mod
+== /home/gx/Desktop/______/tiny/pkg/math/bits.mod64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.modU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.onesCount
+== /home/gx/Desktop/______/tiny/pkg/math/bits.onesCount64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.onesCountU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.reverse
+== /home/gx/Desktop/______/tiny/pkg/math/bits.reverse64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.reverseBytes
+== /home/gx/Desktop/______/tiny/pkg/math/bits.reverseBytes64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateLeft
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateLeft64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateLeftU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateRight
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateRight64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.rotateRightU32
+== /home/gx/Desktop/______/tiny/pkg/math/bits.trailingZeros
+== /home/gx/Desktop/______/tiny/pkg/math/bits.trailingZeros64
+== /home/gx/Desktop/______/tiny/pkg/math/bits.trailingZerosU32
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.coalesce
+== /home/gx/Desktop/______/tiny/pkg/memory.commit
+== /home/gx/Desktop/______/tiny/pkg/memory.free
+== /home/gx/Desktop/______/tiny/pkg/memory.freeNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freePrev
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.headOf
+== /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.load32
+== /home/gx/Desktop/______/tiny/pkg/memory.load64
+== /home/gx/Desktop/______/tiny/pkg/memory.load8
+== /home/gx/Desktop/______/tiny/pkg/memory.malloc
+== /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+== /home/gx/Desktop/______/tiny/pkg/memory.memset
+== /home/gx/Desktop/______/tiny/pkg/memory.realloc
+== /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.setHead
+== /home/gx/Desktop/______/tiny/pkg/memory.sizeof
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOf
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.store32
+== /home/gx/Desktop/______/tiny/pkg/memory.store64
+== /home/gx/Desktop/______/tiny/pkg/memory.store8
+== /home/gx/Desktop/______/tiny/pkg/memory.tierOf
+== /home/gx/Desktop/______/tiny/pkg/strings.atoi
+== /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.bufNew
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
+== /home/gx/Desktop/______/tiny/pkg/strings.bufToString
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.cap
+== /home/gx/Desktop/______/tiny/pkg/strings.compare
+== /home/gx/Desktop/______/tiny/pkg/strings.contains
+== /home/gx/Desktop/______/tiny/pkg/strings.containsAny
+== /home/gx/Desktop/______/tiny/pkg/strings.containsRune
+== /home/gx/Desktop/______/tiny/pkg/strings.count
+== /home/gx/Desktop/______/tiny/pkg/strings.eq
+== /home/gx/Desktop/______/tiny/pkg/strings.formatBool
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.fromI64
+== /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
+== /home/gx/Desktop/______/tiny/pkg/strings.index
+== /home/gx/Desktop/______/tiny/pkg/strings.indexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.itoa
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
+== /home/gx/Desktop/______/tiny/pkg/strings.len
+== /home/gx/Desktop/______/tiny/pkg/strings.makeString
+== /home/gx/Desktop/______/tiny/pkg/strings.ne
+== /home/gx/Desktop/______/tiny/pkg/strings.notFound
+== /home/gx/Desktop/______/tiny/pkg/strings.parse
+== /home/gx/Desktop/______/tiny/pkg/strings.parseBool
+== /home/gx/Desktop/______/tiny/pkg/strings.repeat
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.replace
+  obj[0] s site=param:s ESCAPED
+  obj[1] old site=param:old ESCAPED
+  obj[2] new site=param:new ESCAPED
+  obj[3]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.strcmp
+== /home/gx/Desktop/______/tiny/pkg/strings.strcpy
+== /home/gx/Desktop/______/tiny/pkg/strings.strlen
+== /home/gx/Desktop/______/tiny/pkg/strings.toCstring
+== /home/gx/Desktop/______/tiny/pkg/strings.toLower
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.toString
+== /home/gx/Desktop/______/tiny/pkg/strings.toU64
+== /home/gx/Desktop/______/tiny/pkg/strings.toUpper
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trim
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimRight ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+  obj[0] s site=param:s ESCAPED
+  obj[1] prefix site=param:prefix ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimRight
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
+  obj[0] s site=param:s ESCAPED
+  obj[1] suffix site=param:suffix ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/syscall.brk
+== /home/gx/Desktop/______/tiny/pkg/syscall.close
+== /home/gx/Desktop/______/tiny/pkg/syscall.exit
+== /home/gx/Desktop/______/tiny/pkg/syscall.fstat
+== /home/gx/Desktop/______/tiny/pkg/syscall.getcwd
+== /home/gx/Desktop/______/tiny/pkg/syscall.getdents
+== /home/gx/Desktop/______/tiny/pkg/syscall.lseek
+== /home/gx/Desktop/______/tiny/pkg/syscall.mkdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.open
+== /home/gx/Desktop/______/tiny/pkg/syscall.read
+== /home/gx/Desktop/______/tiny/pkg/syscall.rename
+== /home/gx/Desktop/______/tiny/pkg/syscall.rmdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.stat
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall6
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall64
+== /home/gx/Desktop/______/tiny/pkg/syscall.unlink
+== /home/gx/Desktop/______/tiny/pkg/syscall.write
+== main

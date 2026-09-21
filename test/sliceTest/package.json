@@ -1,0 +1,6 @@
+{
+    "name": "sliceTest",
+    "imports": {
+        "slices": "std:slices"
+    }
+}

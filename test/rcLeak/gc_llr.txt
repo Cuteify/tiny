@@ -1,0 +1,225 @@
+== /home/gx/Desktop/______/tiny/pkg/builtin.panic
+== /home/gx/Desktop/______/tiny/pkg/builtin.print
+== /home/gx/Desktop/______/tiny/pkg/builtin.println
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.coalesce
+== /home/gx/Desktop/______/tiny/pkg/memory.commit
+== /home/gx/Desktop/______/tiny/pkg/memory.flagLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.flagStore
+== /home/gx/Desktop/______/tiny/pkg/memory.free
+== /home/gx/Desktop/______/tiny/pkg/memory.freeAt
+== /home/gx/Desktop/______/tiny/pkg/memory.freeNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freePrev
+== /home/gx/Desktop/______/tiny/pkg/memory.freeRC
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.headOf
+== /home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads
+== /home/gx/Desktop/______/tiny/pkg/memory.initLeakTracker
+== /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.leakLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.leakStore
+== /home/gx/Desktop/______/tiny/pkg/memory.malloc
+== /home/gx/Desktop/______/tiny/pkg/memory.mallocRC
+== /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+== /home/gx/Desktop/______/tiny/pkg/memory.memset
+== /home/gx/Desktop/______/tiny/pkg/memory.rcAdd
+== /home/gx/Desktop/______/tiny/pkg/memory.rcDec
+== /home/gx/Desktop/______/tiny/pkg/memory.rcGet
+== /home/gx/Desktop/______/tiny/pkg/memory.rcInc
+== /home/gx/Desktop/______/tiny/pkg/memory.rcIsOne
+== /home/gx/Desktop/______/tiny/pkg/memory.rcLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSet
+== /home/gx/Desktop/______/tiny/pkg/memory.rcStore
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSub
+== /home/gx/Desktop/______/tiny/pkg/memory.rcTryRelease
+== /home/gx/Desktop/______/tiny/pkg/memory.realloc
+== /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllocCount
+== /home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount
+== /home/gx/Desktop/______/tiny/pkg/memory.reportLeaks
+== /home/gx/Desktop/______/tiny/pkg/memory.resetLeakTracker
+== /home/gx/Desktop/______/tiny/pkg/memory.setHead
+== /home/gx/Desktop/______/tiny/pkg/memory.sizeof
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOf
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.tierOf
+== /home/gx/Desktop/______/tiny/pkg/memory.trackAlloc
+== /home/gx/Desktop/______/tiny/pkg/memory.trackFree
+== /home/gx/Desktop/______/tiny/pkg/strings.atoi
+== /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.bufNew
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
+== /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
+== /home/gx/Desktop/______/tiny/pkg/strings.bufToString
+  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.cap
+== /home/gx/Desktop/______/tiny/pkg/strings.clone
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p51 site=null_init ESCAPED
+  obj[2] _p52 site=null_init ESCAPED
+  obj[3] _p53 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.compare
+== /home/gx/Desktop/______/tiny/pkg/strings.contains
+== /home/gx/Desktop/______/tiny/pkg/strings.containsAny
+== /home/gx/Desktop/______/tiny/pkg/strings.containsRune
+== /home/gx/Desktop/______/tiny/pkg/strings.count
+== /home/gx/Desktop/______/tiny/pkg/strings.countByte
+== /home/gx/Desktop/______/tiny/pkg/strings.eq
+== /home/gx/Desktop/______/tiny/pkg/strings.equalFold
+== /home/gx/Desktop/______/tiny/pkg/strings.formatBool
+  obj[0] _p34 site=null_init ESCAPED
+  obj[1] _p35 site=null_init ESCAPED
+  obj[2] _p36 site=null_init ESCAPED
+  obj[3] _p37 site=null_init ESCAPED
+  obj[4] _p38 site=null_init ESCAPED
+  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[6] _p39 site=null_init ESCAPED
+  obj[7] _p40 site=null_init ESCAPED
+  obj[8] _p41 site=null_init ESCAPED
+  obj[9] _p42 site=null_init ESCAPED
+  obj[10] _p43 site=null_init ESCAPED
+  obj[11] _p44 site=null_init ESCAPED
+  obj[12]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.fromI64
+== /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffixAny
+== /home/gx/Desktop/______/tiny/pkg/strings.index
+== /home/gx/Desktop/______/tiny/pkg/strings.indexAny
+== /home/gx/Desktop/______/tiny/pkg/strings.indexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.isSpace
+== /home/gx/Desktop/______/tiny/pkg/strings.itoa
+  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.join
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndexByte
+== /home/gx/Desktop/______/tiny/pkg/strings.len
+== /home/gx/Desktop/______/tiny/pkg/strings.makeString
+== /home/gx/Desktop/______/tiny/pkg/strings.ne
+== /home/gx/Desktop/______/tiny/pkg/strings.notFound
+== /home/gx/Desktop/______/tiny/pkg/strings.parse
+== /home/gx/Desktop/______/tiny/pkg/strings.parseBool
+== /home/gx/Desktop/______/tiny/pkg/strings.repeat
+== /home/gx/Desktop/______/tiny/pkg/strings.repeatN
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.repeat ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.replace
+== /home/gx/Desktop/______/tiny/pkg/strings.reverse
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p54 site=null_init ESCAPED
+  obj[2] _p55 site=null_init ESCAPED
+  obj[3] _p56 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.strcmp
+== /home/gx/Desktop/______/tiny/pkg/strings.strcpy
+== /home/gx/Desktop/______/tiny/pkg/strings.strlen
+== /home/gx/Desktop/______/tiny/pkg/strings.toCstring
+== /home/gx/Desktop/______/tiny/pkg/strings.toLower
+== /home/gx/Desktop/______/tiny/pkg/strings.toString
+== /home/gx/Desktop/______/tiny/pkg/strings.toU64
+== /home/gx/Desktop/______/tiny/pkg/strings.toUpper
+== /home/gx/Desktop/______/tiny/pkg/strings.trim
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimRight ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2] _p1 site=null_init ESCAPED
+  obj[3] _p2 site=null_init ESCAPED
+  obj[4] _p3 site=null_init ESCAPED
+  obj[5] _p4 site=null_init ESCAPED
+  obj[6] _p5 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+== /home/gx/Desktop/______/tiny/pkg/strings.trimRight
+  obj[0] s site=param:s ESCAPED
+  obj[1] cutset site=param:cutset ESCAPED
+  obj[2] _p6 site=null_init ESCAPED
+  obj[3] _p7 site=null_init ESCAPED
+  obj[4] _p8 site=null_init ESCAPED
+  obj[5] _p9 site=null_init ESCAPED
+  obj[6] _p10 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
+== /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
+== /home/gx/Desktop/______/tiny/pkg/syscall.brk
+== /home/gx/Desktop/______/tiny/pkg/syscall.close
+== /home/gx/Desktop/______/tiny/pkg/syscall.exit
+== /home/gx/Desktop/______/tiny/pkg/syscall.fstat
+== /home/gx/Desktop/______/tiny/pkg/syscall.getcwd
+== /home/gx/Desktop/______/tiny/pkg/syscall.getdents
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenv
+== /home/gx/Desktop/______/tiny/pkg/syscall.getenvName_eq
+== /home/gx/Desktop/______/tiny/pkg/syscall.lseek
+== /home/gx/Desktop/______/tiny/pkg/syscall.mkdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.open
+== /home/gx/Desktop/______/tiny/pkg/syscall.read
+== /home/gx/Desktop/______/tiny/pkg/syscall.rename
+== /home/gx/Desktop/______/tiny/pkg/syscall.rmdir
+== /home/gx/Desktop/______/tiny/pkg/syscall.stat
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall6
+== /home/gx/Desktop/______/tiny/pkg/syscall.syscall64
+== /home/gx/Desktop/______/tiny/pkg/syscall.unlink
+== /home/gx/Desktop/______/tiny/pkg/syscall.write
+== buildTree
+  obj[0] root site=call:newLeaf ESCAPED
+  obj[1] left site=call:newLeaf FRAME_OWN
+  obj[2] right site=call:newLeaf FRAME_OWN
+  FREE left [unknown]
+  FREE right [unknown]
+  FIELD_FREE left.left [unknown]
+  FIELD_FREE left.right [unknown]
+  FIELD_FREE right.left [unknown]
+  FIELD_FREE right.right [unknown]
+== check
+== countNodes
+== deepClone
+  obj[0] node site=param:node ESCAPED
+  obj[1] c site=call:newLeaf ESCAPED
+  obj[2] cl site=call:deepClone FRAME_OWN
+  obj[3] cr site=call:deepClone FRAME_OWN
+  FREE cl [unknown]
+  FREE cr [unknown]
+  FIELD_FREE cl.left [unknown]
+  FIELD_FREE cl.right [unknown]
+  FIELD_FREE cr.left [unknown]
+  FIELD_FREE cr.right [unknown]
+== findNode
+  obj[0] node site=param:node ESCAPED
+  obj[1]  site=call:findNode ESCAPED
+  obj[2] found site=call:findNode ESCAPED
+== main
+  obj[0] tree site=call:buildTree FRAME_OWN
+  obj[1] found site=call:findNode FRAME_OWN
+  obj[2] notfound site=call:findNode FRAME_OWN
+  obj[3] clone site=call:deepClone FRAME_OWN
+  FREE tree [unknown]
+  FREE found [unknown]
+  FREE notfound [unknown]
+  FREE clone [unknown]
+  FIELD_FREE tree.left [unknown]
+  FIELD_FREE tree.right [unknown]
+  FIELD_FREE found.left [unknown]
+  FIELD_FREE found.right [unknown]
+  FIELD_FREE notfound.left [unknown]
+  FIELD_FREE notfound.right [unknown]
+  FIELD_FREE clone.left [unknown]
+  FIELD_FREE clone.right [unknown]
+== newLeaf
+== subtreeSum
+== swapChildren
+== treeHeight

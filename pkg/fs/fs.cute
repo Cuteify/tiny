@@ -24,3 +24,76 @@ fn write(fd i32, buf *u64, count u64) i32 {
 fn close(fd i32) i32 {
     ret syscall.close(fd)
 }
+
+fn seek(fd i32, offset i64, whence i32) i64 {
+    ret syscall.lseek(fd, offset, whence)
+}
+
+fn mkdir(path string, mode u32) i32 {
+    ret syscall.mkdir(strings.toCstring(path), mode)
+}
+
+fn remove(path string) i32 {
+    ret syscall.unlink(strings.toCstring(path))
+}
+
+fn rename(old string, new string) i32 {
+    ret syscall.rename(strings.toCstring(old), strings.toCstring(new))
+}
+
+fn stat(path string, statbuf ptr) i32 {
+    ret syscall.stat(strings.toCstring(path), statbuf)
+}
+
+fn fstat(fd i32, statbuf ptr) i32 {
+    ret syscall.fstat(fd, statbuf)
+}
+
+fn create(path string, mode u32) i32 {
+    ret syscall.open(strings.toCstring(path), O_CREAT | O_TRUNC | O_WRONLY, mode)
+}
+
+fn readFile(path string) ptr {
+    var fd: i32 = open(path, O_RDONLY, 0)
+    if fd < 0 {
+        ret 0
+    }
+    // 获取文件大小
+    var statBuf: []u8
+    var bufPtr: ptr = &statBuf
+    if fstat(fd, bufPtr) < 0 {
+        close(fd)
+        ret 0
+    }
+    // stat 结构体中文件大小偏移 (x86: +44, x86_64: +48)
+    // 简化处理：先读取到缓冲区
+    var buf: ptr = memory.malloc(4096)
+    var totalRead: uint = 0
+    var bytesRead: i32 = 1
+    for ; bytesRead > 0; {
+        bytesRead = read(fd, buf + totalRead, 4096 - totalRead)
+        if bytesRead > 0 {
+            totalRead = totalRead + bytesRead
+        }
+    }
+    close(fd)
+    ret buf
+}
+
+fn writeFile(path string, data ptr, len uint) i32 {
+    var fd: i32 = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)
+    if fd < 0 {
+        ret -1
+    }
+    var written: uint = 0
+    for ; written < len; {
+        var n: i32 = write(fd, data + written, len - written)
+        if n <= 0 {
+            close(fd)
+            ret -1
+        }
+        written = written + n
+    }
+    close(fd)
+    ret 0
+}

@@ -1,0 +1,7 @@
+== main (6 vars)
+  a [unknown] site=call:level3 off=-1
+  b [unknown] site=call:level4 off=-1
+  c [unknown] site=call:level5 off=-1
+  deep [unknown] site=call:level5 off=-1
+  local [unknown] site=call:makeUser off=-1
+  u1 [unknown] site=call:level5 off=-1

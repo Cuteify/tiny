@@ -1,0 +1,31 @@
+// test/sortStrOnly/main.cute - minimal string comparison test
+
+fn main() int {
+    println("start")
+
+    // Directly test compareStrings with string literals
+    var r1: int = sort.compareStrings("apple", "banana")
+    println("done1")
+
+    memory.free(memory.malloc(8))
+    println("done2")
+
+    // Test makeString manually
+    var buf: ptr = memory.malloc(24)
+    var _p1: *ptr = buf
+    *_p1 = unsafe.cast[ptr](strings.toCstring("hello"))
+    var _p2: *ptr = buf + 8
+    *_p2 = unsafe.cast[ptr](strings.len("hello"))
+    var _p3: *ptr = buf + 16
+    *_p3 = unsafe.cast[ptr](strings.len("hello"))
+    var _p4: *ptr = buf
+    var _p5: *ptr = buf + 8
+    var _p6: *ptr = buf + 16
+    var s: string = strings.makeString(*_p4, *_p5, *_p6)
+    console.println(s)
+    println("done3")
+
+    memory.free(buf)
+    println("end")
+    ret 0
+}
