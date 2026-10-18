@@ -7,18 +7,17 @@ import (
 
 // CallBlock 函数调用结构体
 type CallBlock struct {
-	Name          Name
-	Args          []*ArgBlock
-	Func          *FuncBlock
-	Node          *Node
-	ThisVar       *VarBlock
-	NewType       typeSys.Type    // new(T) 的目标类型（内建堆对象创建）
-	IsRC          bool            // 是否为 RC（引用计数）调用
-	IsVariadic    bool            // 调用是否包含变参参数
-	VariadicType  typeSys.Type    // 变参参数的元素类型
-	VariadicArgs  []*ArgBlock     // 变参参数列表
+	Name         Name
+	Args         []*ArgBlock
+	Func         *FuncBlock
+	Node         *Node
+	ThisVar      *VarBlock
+	NewType      typeSys.Type // new(T) 的目标类型（内建堆对象创建）
+	IsRC         bool         // 是否为 RC（引用计数）调用
+	IsVariadic   bool         // 调用是否包含变参参数
+	VariadicType typeSys.Type // 变参参数的元素类型
+	VariadicArgs []*ArgBlock  // 变参参数列表
 }
-
 
 // safeTypeName nil 安全的类型名（首趟未解析的跨包调用实参 Type 为 nil）
 func safeTypeName(t typeSys.Type) string {
@@ -197,6 +196,13 @@ func (c *CallBlock) ParseCall(p *Parser) {
 		oldCursor := p.Lexer.Cursor
 		for {
 			token = p.Lexer.Next()
+			// 输入到头还没碰上 ')' 或 ','：必须在这里停。
+			// 原来没有这个判断，畸形调用（缺右括号）会把这个 for 转死循环。
+			if token.IsEmpty() {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "missing ')' in call")
+				c.Check(p)
+				return
+			}
 
 			if token.Type == lexer.SEPARATOR && token.Value == "(" {
 				depth++
@@ -237,7 +243,6 @@ func (c *CallBlock) ParseCall(p *Parser) {
 			}
 		}
 	}
-	c.Check(p)
 }
 
 func (c *CallBlock) Parse(p *Parser) {
@@ -251,6 +256,38 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	case "new":
 		// new(T[, v...])：堆对象创建内建，返回 *T；
 		// new(list[T], len[, cap])：列表创建内建，按值返回列表
+		if c.NewType != nil {
+			retType := typeSys.Type(typeSys.MakePointer(c.NewType))
+			if lt, ok := c.NewType.(*typeSys.ListType); ok && lt.Elem() != nil {
+				retType = lt
+			}
+			c.Func = &FuncBlock{
+				Return: []typeSys.Type{retType},
+			}
+			for _, arg := range c.Args {
+				if arg != nil && arg.Value != nil {
+					arg.Value.Check(p)
+				}
+			}
+			return true
+		}
+	case "sizeof":
+		// sizeof[T]()：T 的字节大小。编译器内建 —— pkg/memory 里那个
+		// sizeof[T] 只是 link 到 __memory_sizeof 的壳，直接调用不带命名空间，
+		// 所以必须在这里分派。提前标记 provider Useful，否则它会因"无人显式
+		// 调用"被死代码消除，链接期符号未定义（同 len/cap 的处理）。
+		if c.NewType != nil {
+			if fb, ok := LinkProviders["__memory_sizeof"]; ok {
+				fb.Useful = true
+			}
+			c.Func = &FuncBlock{
+				Return: []typeSys.Type{typeSys.GetSystemType("int")},
+			}
+			return true
+		}
+	case "newRC":
+		// newRC(T[, v...])：同 new，但块带 RC 头。逃逸分析把 RC 块判成借用
+		// （DisposalBorrow），作用域释放管不到，交回用户手工 rcDec。
 		if c.NewType != nil {
 			retType := typeSys.Type(typeSys.MakePointer(c.NewType))
 			if lt, ok := c.NewType.(*typeSys.ListType); ok && lt.Elem() != nil {
@@ -321,9 +358,13 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	return false
 }
 
-
 // ParseNew 解析 new(T[, v1, v2...])：首个参数为类型名（parseTypeAnnotation），其余为字段初值
 func (c *CallBlock) ParseNew(p *Parser) {
+	// newRC(T) 与 new(T) 同形态，区别是块带 RC 头、生命周期由用户手工 rcDec 管。
+	// 解析期就置位：逃逸分析的 isRCExpr / wfRC 分支都读这个位。
+	if c.Name != nil && c.Name.String() == "newRC" {
+		c.IsRC = true
+	}
 	p.Lexer.Skip('(')
 	c.NewType = p.parseTypeAnnotation()
 	if c.NewType == nil {
@@ -374,4 +415,54 @@ func (c *CallBlock) ParseNew(p *Parser) {
 			}
 		}
 	}
+}
+
+// typeSubst 泛型调用的类型实参替换表：被调函数的类型参数名 → 具体类型。
+//
+// 泛型实参没有单独存（`f[int](x)` 的 int 在解析时就被 AutoType 吃掉），
+// 所以只能从实参反推：被调方的第 i 个形参类型若是 TypeParam，就把它绑到
+// 调用方第 i 个实参的具体类型上。
+//
+// 推不出来的参数不出现在表里 —— SubstituteTypeParams 遇到表里没有的类型
+// 参数会原样保留占位符，那正是"没写实参也没法推断"的情况，交给后面的
+// AutoType 兜底，不要在这里瞎猜。
+func (cb *CallBlock) typeSubst() map[string]typeSys.Type {
+	if cb == nil || cb.Func == nil || len(cb.Func.TypeParams) == 0 {
+		return nil
+	}
+	subst := map[string]typeSys.Type{}
+	bind := func(declared, actual typeSys.Type) {
+		if declared == nil || actual == nil {
+			return
+		}
+		if _, isTP := declared.(*typeSys.TypeParam); !isTP {
+			return
+		}
+		name := declared.Type()
+		// 同一个类型参数被多个实参绑定：取第一个非空的，后续冲突不覆盖
+		// （泛型函数体内同一个 T 必须处处同型，冲突说明推断不可靠，宁可留空）。
+		if cur, ok := subst[name]; ok && cur != nil {
+			return
+		}
+		if _, isTP := actual.(*typeSys.TypeParam); isTP {
+			return // 实参本身还是占位符，推不出具体类型
+		}
+		subst[name] = actual
+	}
+	for i, ag := range cb.Args {
+		if ag == nil || i >= len(cb.Func.Args) {
+			continue
+		}
+		bind(cb.Func.Args[i].Type, ag.Type)
+	}
+	// 变参：被调方的形参列表里最后那个是 "list[T]"，实参是元素类型。
+	if n := len(cb.Func.Args); n > 0 && len(cb.VariadicArgs) > 0 {
+		if dt := cb.Func.Args[n-1].Type; dt != nil {
+			bind(dt.Elem(), cb.VariadicArgs[0].Type)
+		}
+	}
+	if len(subst) == 0 {
+		return nil
+	}
+	return subst
 }

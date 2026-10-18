@@ -200,6 +200,9 @@ type FindResult struct {
 	Value any
 	Path  []any
 	Type  FindType
+	// MultiIndex 命中的是多返回值解构（a, b := foo()）里的第几个名字。
+	// 引用处按它取对应栈槽（见 VarBlock.MultiIndex 与 MultiOffsets）。
+	MultiIndex int
 }
 
 type FindResults []FindResult
@@ -254,6 +257,14 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 				var tmp *VarBlock
 				if v.Init != nil && v.Init.Var != nil && v.Init.Var.IsDefine {
 					tmp = v.Init.Var
+				}
+				// for i, v in coll：循环变量在体内可见，登记方式与 Init.Var 一致。
+				if len(v.RangeNames) > 0 {
+					for _, rn := range v.RangeNames {
+						if rn != nil && rn.IsDefine && name.Eq(rn.Name) {
+							res = append(res, FindResult{Node: child, Value: rn, Path: []any{rn}, Type: FindTypeVar})
+						}
+					}
 				}
 				if v.Increment != nil && v.Increment.Var != nil && v.Increment.Var.IsDefine {
 					tmp = v.Increment.Var
@@ -346,11 +357,10 @@ func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {
 			}
 
 			// 检查NamePart是否为切片还是索引
+			// 无上界的下标（list[i]）取元素类型；有上界的是切片，
+			// 类型就是容器本身（list[a:b] 的结果仍是 list）。
 			if n[0].Slice.End == nil {
-				nowType = nowType.Elem() // 找到List里类型
-			} else {
-				// 类型应该和nowType一样，因为是切片
-				nowType = nowType
+				nowType = nowType.Elem()
 			}
 			n = n[1:]
 			findPath = append(findPath, nowType)

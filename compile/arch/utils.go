@@ -159,6 +159,19 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 				*offset -= varSize
 				initVar.Offset = *offset
 			}
+			// for i, v := range coll：索引与值各占一个栈槽。索引是平台整型，
+			// 值与被遍历容器的元素同型。
+			for _, rn := range v.RangeNames {
+				if rn == nil || rn.Offset != 0 {
+					continue
+				}
+				varSize := 8
+				if rn.Type != nil && rn.Type.Size() > 0 {
+					varSize = rn.Type.Size()
+				}
+				*offset -= varSize
+				rn.Offset = *offset
+			}
 			collectVarOffsets(child, offset)
 		case *parser.IfBlock:
 			// 递归处理 if 块中的变量

@@ -6,7 +6,8 @@ var (
 		"if":        PROCESSCONTROL,
 		"while":     PROCESSCONTROL,
 		"for":       PROCESSCONTROL,
-		"ret":       PROCESSCONTROL,
+		"return":    PROCESSCONTROL,
+		"ret":       PROCESSCONTROL, // 旧拼法，保留兼容
 		"break":     PROCESSCONTROL,
 		"continue":  PROCESSCONTROL,
 		"else":      PROCESSCONTROL,

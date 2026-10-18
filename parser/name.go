@@ -207,16 +207,22 @@ func (n *Name) SetSlice(index int, start, end, step *Expression) {
 func (n Name) Check() bool {
 	ok := !n.IsEmpty()
 	for _, part := range n {
+		// 含 / 的名字是包路径：词法器把 pkg/slices 当成一个 NAME token 吐出来，
+		// 不是标识符，不该走 CheckName（它只认字母数字下划线）。
+		isPkg := part.IsPkgPath || strings.Contains(part.Name, "/")
 		if part.Name != "" {
-			if !part.IsPkgPath {
+			if !isPkg {
 				ok = ok && utils.CheckName(part.Name)
 			}
 		}
 		if part.Name == "" {
 			ok = ok && part.Slice != nil
 		}
-		if part.Slice != nil {
-			ok = ok && part.Name == ""
+		// part.Name 与 part.Slice 可以并存：泛型调用的类型实参复用 slice
+		// 语法，`slices.set[int](s, i, v)` 的最后一段是 Name="set" +
+		// Slice=[int]。反过来（只有 Slice 没有 Name）不合法 —— 那是无名片段。
+		if part.Slice != nil && part.Name == "" {
+			ok = false
 		}
 	}
 	return ok

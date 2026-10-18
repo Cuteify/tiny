@@ -9,6 +9,7 @@ import (
 
 type Build struct {
 	Type         string
+	Export       string // export("alias")：把当前函数以别名导出
 	Asm          string
 	Ext          string
 	ExtRet       string

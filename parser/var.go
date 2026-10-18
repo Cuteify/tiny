@@ -24,7 +24,7 @@ type VarBlock struct {
 	Type          typeSys.Type   // 变量的数据类型
 	IsGlobal      bool           // 是否为全局变量（顶层定义）
 	RangeVar      bool           // range 循环变量（无初始化值，不参与"need value"检查）
-	MultiNames    []string       // 多返回值变量名列表
+	MultiNames    []Name         // 多返回值变量名列表（持 Name 以便按段取首段名）
 	MultiOffsets  []int          // 多返回值偏移量列表
 	MultiTypes    []typeSys.Type // 多返回值类型列表
 	MultiIndex    int            // 多返回值索引
@@ -398,7 +398,7 @@ func (v *VarBlock) multiNameHit(name Name) bool {
 	}
 	first := name.First()
 	for _, mn := range v.MultiNames {
-		if mn == first {
+		if mn.First() == first {
 			return true
 		}
 	}
@@ -437,7 +437,7 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 					// 多返回值解构：取自己在 MultiNames 中的槽位与类型
 					if len(vb.MultiNames) > 1 {
 						for i, mn := range vb.MultiNames {
-							if mn == v.Name.First() {
+							if mn.First() == v.Name.First() {
 								v.MultiIndex = i
 								if i < len(vb.MultiTypes) && vb.MultiTypes[i] != nil {
 									v.Type = vb.MultiTypes[i]

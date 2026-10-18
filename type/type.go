@@ -41,6 +41,9 @@ type Type interface {
 	// Methods returns the methods of the type.
 	// []any as []*FuncBlock.
 	Methods() []any
+	// IsOwning returns true if the type itself carries a heap pointer
+	// (*T / list / string) and therefore needs reference management.
+	IsOwning() bool
 }
 
 type StructFileds []*StructField
@@ -57,6 +60,25 @@ type RType struct {
 
 func (r *RType) Kind() string {
 	return getSystemKind(r)
+}
+
+// IsOwning 类型自己就带一个堆指针（*T / list / string）→ 需要引用管理。
+//
+// 不含接口与含 owning 字段的结构体值：那两类是"复制会把字段指针一起带走"
+// （判据见 parser/gc_pred.go 的 copiesFields），语义不同 —— 一个是"我自己
+// 有块"，一个是"我拖着别人的块"。
+func (r *RType) IsOwning() bool {
+	if r == nil {
+		return false
+	}
+	if r.IsPtr {
+		return true // *T：堆块的唯一入口
+	}
+	switch r.Kind() {
+	case "list", "string":
+		return true
+	}
+	return false
 }
 
 func (r RType) Alignment() int {
@@ -413,6 +435,20 @@ func MakePointer(t Type) Type {
 	}
 }
 
+// IsKindOf t 的 Kind 是否属于给定的任一 Kind。
+func IsKindOf(t Type, kinds ...string) bool {
+	if t == nil {
+		return false
+	}
+	k := t.Kind()
+	for _, want := range kinds {
+		if k == want {
+			return true
+		}
+	}
+	return false
+}
+
 func AutoType(before, after Type, IsConst bool) (ok bool) {
 	if before != nil && after != nil {
 		// TypeParam (generic type parameter) accepts any type
@@ -454,6 +490,13 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 		// 数值同 Kind 尺寸不同 → 允许隐式转换（零扩展/截断，如 x86 上 u32 地址扩展为 u64）
 		if KindEqual(before, after) && !beforePtr && !afterPtr && IsNum(before) && IsNum(after) &&
 			before.Size() != after.Size() {
+			return true
+		}
+		// 整型符号位互换：uint 与 int 是同一类位模式，语言层面不区分有符号，
+		// 指针偏移量、长度、下标这类地方两边混用是常态。尺寸不等时按截断处理
+		// —— 与上面"同 Kind 尺寸不同"那条一致。float 不在此列。
+		if !beforePtr && !afterPtr &&
+			IsKindOf(before, "int", "uint") && IsKindOf(after, "int", "uint") {
 			return true
 		}
 		if KindEqual(before, after) && before.IsPointer() == after.IsPointer() {

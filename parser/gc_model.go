@@ -262,3 +262,8 @@ func CopyLife(dst, src *VarBlock) {
 	dst.Life = src.Life
 	dst.Life.owner = dst // 宿主要指向拷贝自己，不能指回原节点
 }
+
+// Objects 本次编译分配出的全部对象，只读。
+// 给包外的诊断工具（tools/esccheck）用 —— objects 本身是包级私有的。
+// 属于"文件缺失逼出来的改动"：esccheck 源码丢了，重写它需要这个入口。
+func Objects() []*Object { return objects }

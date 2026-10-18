@@ -16,7 +16,7 @@ type FuncBlock struct {
 	BuildFlags      []*Build                // 编译标志
 	Useful          bool                    // 是否有用（用于优化）
 	ReturnsOwned    bool                    // 过程摘要：返回值含本帧分配、所有权转移给调用者的对象
-	TypeParams      []string                // 泛型类型参数名列表
+	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
 }
@@ -314,13 +314,13 @@ func (f *FuncBlock) parseTypeParams(p *Parser) {
 			break
 		}
 		tpName := n[0].Name
-		f.TypeParams = append(f.TypeParams, tpName)
 		if f.typeParamTypes == nil {
 			f.typeParamTypes = map[string]typeSys.Type{}
 		}
 		// 每个类型参数对应一个 TypeParam 占位类型，解析期用它替代真实类型，
 		// 编译期由 monomorphize.substituteBodyTypes 替换为具体类型。
 		f.typeParamTypes[tpName] = typeSys.NewTypeParam(tpName)
+		f.TypeParams = append(f.TypeParams, TypeParamInfo{Name: tpName, Type: f.typeParamTypes[tpName]})
 
 		peek := p.Lexer.Next()
 		if peek.Type == lexer.SEPARATOR && peek.Value == "," {
@@ -669,4 +669,11 @@ func (f *FuncBlock) Check(p *Parser) bool {
 		argCount += v.Type.Size()
 	}
 	return true
+}
+
+// TypeParamInfo 一个泛型类型参数：名字（源码里写的）与它对应的占位类型。
+// 占位类型在解析期用来把 T 顶住，编译期由 monomorphize 换成具体类型。
+type TypeParamInfo struct {
+	Name string
+	Type typeSys.Type
 }

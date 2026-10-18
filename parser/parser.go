@@ -261,7 +261,7 @@ func (p *Parser) processControlToken(code lexer.Token) {
 	case "else":
 		block := &ElseBlock{}
 		block.Parse(p)
-	case "ret":
+	case "return", "ret":
 		ret := &ReturnBlock{}
 		ret.Parse(p)
 	case "for":
@@ -381,13 +381,13 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 func (p *Parser) parseMultiDeclare(beforeCursor int) {
 	p.Lexer.SetCursor(beforeCursor)
 
-	var names []string
+	var names []Name
 	for {
 		name, _ := p.ParseName(false)
 		if name.Length() != 1 {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need variable name")
 		}
-		names = append(names, name.First())
+		names = append(names, name)
 		code := p.Lexer.Next()
 		if code.Value == "," {
 			continue
@@ -407,7 +407,7 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 	exp.SetStmt()
 
 	vb := &VarBlock{
-		Name:          NewName(names[0]),
+		Name:          names[0],
 		IsDefine:      true,
 		IsInitialized: true,
 		Value:         exp,
