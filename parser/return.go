@@ -7,6 +7,7 @@ import (
 // ReturnBlock return 语句结构体
 type ReturnBlock struct {
 	Value []*Expression
+	node  *Node // 所属 AST 节点（Check 时向上找所属函数）
 }
 
 // Parse 解析 return 语句
@@ -67,6 +68,7 @@ func (r *ReturnBlock) Parse(p *Parser) {
 	}
 
 	node := &Node{Value: r}
+	r.node = node
 	p.ThisBlock.AddChild(node)
 }
 
@@ -78,5 +80,19 @@ func (r *ReturnBlock) Check(p *Parser) bool {
 		}
 	}
 
+	// 返回值携带拥有指针时，引用它的变量算逃逸到调用者（见 gc_write.go）
+	if fb := enclosingFunc(r.node); fb != nil {
+		markRets(fb, r.Value)
+	}
 	return true
+}
+
+// enclosingFunc 从当前节点向上找所属函数的 FuncBlock。
+func enclosingFunc(n *Node) *FuncBlock {
+	for ; n != nil; n = n.Father {
+		if fb, ok := n.Value.(*FuncBlock); ok {
+			return fb
+		}
+	}
+	return nil
 }

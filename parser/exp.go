@@ -20,10 +20,23 @@ type Expression struct {
 	StringVal string         // 字符串常量值
 	Bool      bool           // 布尔常量值
 	ConstBool bool           // 是否为常量布尔（当前未使用，预留）
+	ConstNil  bool           // 是否为常量 nil
 	Type      typeSys.Type   // 表达式的数据类型，由Check阶段推导
 	checked   bool           // 是否已通过语义检查，防止重复检查
+	stmt      bool           // 该表达式位于语句位置（非值位置），void 调用合法
 	Index     [3]*Expression // 列表索引
 	ListElems []*Expression  // 列表字面量元素，Separator="list_lit"时有效
+}
+
+// SetStmt 标记该表达式位于语句位置（如 `slices.set[T](...)` 这样的裸调用语句）。
+// 语句位置的 void 调用没有返回值是合法的；值位置（赋值右侧、ret、if 条件）仍会报错。
+func (exp *Expression) SetStmt() {
+	exp.stmt = true
+}
+
+// SetChecked 设置表达式的检查状态
+func (exp *Expression) SetChecked(v bool) {
+	exp.checked = v
 }
 
 // String 返回表达式的字符串表示
@@ -301,12 +314,23 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 		if current.Separator != "" && exp.Separator != "" {
 			if justClosedBracket {
 				// 刚关闭括号：括号根作为整体操作数参与运算。
-				// 若括号根挂在外部节点上（如 a-(b+c)*d），运算符取代其在父节点的位置；
+				// 若括号根挂在外部节点上（如 a-(b+c)*d），按优先级决定挂接：
+				//   新运算符优先级更高 → 取代父节点的右子（括号组成为其左子）；
+				//   优先级不高于父节点 → 左结合：从父节点上溯到优先级更低的祖先再挂接，
+				//   否则 A * (B) / C 会被错误解析成 A * (B / C)。
 				// 若括号根独立（如 (a+b)*c、(x-y)/z），运算符成为其父（上溯 + BeParent）。
 				if bracketRoot != nil && bracketRoot.Father != nil {
 					father := bracketRoot.Father
-					exp.SetLeft(bracketRoot)
-					father.Insert(exp)
+					if opTable[father.Separator] < opTable[exp.Separator] {
+						exp.SetLeft(bracketRoot)
+						father.Insert(exp)
+					} else {
+						current = father
+						for current.Father != nil && opTable[current.Father.Separator] >= opTable[exp.Separator] {
+							current = current.Father
+						}
+						current.BeParent(exp)
+					}
 				} else {
 					for current.Father != nil && opTable[current.Father.Separator] >= opTable[exp.Separator] {
 						current = current.Father
@@ -342,6 +366,8 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			// TODO：错误返回导致ROOT被覆盖
 			current = exp
 		} else if current.Separator == "" && exp.Separator != "" {
+			// 括号组（叶子，如 (b)）刚被消费为左操作数，标记不再有效
+			justClosedBracket = false
 			// ++ and -- after a value are postfix operators (no right operand needed)
 			if exp.Separator == "++" || exp.Separator == "--" {
 				exp.SetLeft(current)
@@ -356,6 +382,7 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 			current = exp            // 把exp作为当前节点
 			justEnterBracket = false // 增加进入括号的计数
 		} else if current.Separator != "" && exp.Separator == "" {
+			justClosedBracket = false // 右操作数已消费，括号标记失效
 			current.Insert(exp)
 		} else {
 			p.Error.MissError("Expression Error", p.Lexer.Cursor, "unexpected token: "+utils.MakeVisible(exp.Separator))
@@ -373,8 +400,9 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 	}
 
 	if current != nil && current.Separator != "" && current.Right == nil {
-		// ++, -- can be postfix; list_lit is a complete literal
-		if current.Separator != "++" && current.Separator != "--" && current.Separator != "list_lit" {
+		// ++, -- can be postfix; list_lit / array_lit is a complete literal
+		if current.Separator != "++" && current.Separator != "--" &&
+			current.Separator != "list_lit" && current.Separator != "array_lit" {
 			p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected right operand")
 			return nil
 		}
@@ -421,6 +449,16 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 		}
 
 	case lexer.BOOL:
+		// nil 是空指针常量（词法归入 BOOL 关键字）。
+		// 类型取系统 ptr：这样它才能赋给 ptr / *T 形参、实参，
+		// 并参与指针比较；codegen 的 val() 里 ConstNil 分支优先返回 "0"。
+		if code.Value == "nil" {
+			return &Expression{
+				ConstBool: true,
+				ConstNil:  true,
+				Type:      typeSys.GetSystemType("ptr"),
+			}
+		}
 		return &Expression{
 			ConstBool: true,
 			Bool:      code.Value == "true",
@@ -442,6 +480,44 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 	return nil
 }
 
+// isGenericCallAhead 判断光标处（停在 '[' 上）是否为泛型调用 f[T](...)。
+// 只有扫描到配对的 ']' 且其后紧跟 '(' 才成立；否则视为普通索引 arr[i]。
+// 无论结果如何都不消费 token（defer 恢复游标）。方括号内只放行类型表达式
+// 成分（名称、'*'、'.'、嵌套方括号），出现运算符/换行/赋值即判定为索引，
+// 从而区分 f[int](x) 与 arr[i] = x。
+func (p *Parser) isGenericCallAhead() bool {
+	saved := p.Lexer.Cursor
+	defer p.Lexer.SetCursor(saved)
+
+	depth := 0
+	for {
+		token := p.Lexer.Next()
+		if token.IsEmpty() {
+			return false
+		}
+		if token.Type != lexer.SEPARATOR {
+			if token.Type == lexer.NAME {
+				continue
+			}
+			return false
+		}
+		switch token.Value {
+		case "[":
+			depth++
+		case "]":
+			depth--
+			if depth == 0 {
+				next := p.Lexer.Next()
+				return next.Type == lexer.SEPARATOR && next.Value == "("
+			}
+		case "*", ".":
+			// 类型表达式成分：*T、pkg.Type
+		default:
+			return false
+		}
+	}
+}
+
 func (p *Parser) handleName() *Expression {
 	nameStart := p.Lexer.Cursor
 	name, _ := p.ParseName(false)
@@ -454,7 +530,7 @@ func (p *Parser) handleName() *Expression {
 		switch token.Value {
 		case "(":
 			callBlock := &CallBlock{Name: name}
-			if name.String() == "new" {
+			if name.String() == "new" || name.String() == "newRC" {
 				callBlock.ParseNew(p)
 			} else {
 				callBlock.ParseCall(p)
@@ -464,6 +540,18 @@ func (p *Parser) handleName() *Expression {
 				exp.Type = typeSys.MakePointer(callBlock.NewType)
 			}
 			return exp
+		case "[":
+			// 泛型调用 f[T](args)：只有配对 ']' 之后紧跟 '(' 才是类型参数列表。
+			// 否则保持变量引用原样返回，交回 ParseExp 走 handleIndex 处理普通索引。
+			if p.isGenericCallAhead() {
+				callBlock := &CallBlock{Name: name}
+				p.Lexer.Skip('[')
+				callBlock.NewType = p.parseTypeRef()
+				p.Lexer.Skip(']')
+				callBlock.ParseCall(p)
+				exp.Call = callBlock
+				return exp
+			}
 		case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--":
 			// 在解引用语句（*p = v）中，"=" 必须留在表达式树中作为运算符
 			if p.PreventNameAssign && token.Value == "=" {
@@ -558,12 +646,26 @@ func (p *Parser) handleIndex() *Expression {
 // isListLitAfterBracket checks if we're at a Go-style list literal `[]type{...}`.
 // Assumes cursor is positioned AFTER the opening `[` (already consumed).
 // Returns true if next tokens are `]` then a type name then `{`.
+// 也识别定长数组字面量 `[N]type{...}`（`[` 后是长度常量）。
 func (p *Parser) isListLitAfterBracket() bool {
 	savedCursor := p.Lexer.Cursor
 
-	// Must be `]`
+	// Must be `]`，或长度常量 `N]`
 	next := p.Lexer.Next()
-	if next.Type != lexer.SEPARATOR || next.Value != "]" {
+	if next.Type == lexer.NUMBER {
+		n, atoiErr := strconv.Atoi(next.Value)
+		if atoiErr != nil || n <= 0 {
+			p.Lexer.SetCursor(savedCursor)
+			return false
+		}
+		closer := p.Lexer.Next()
+		if closer.Type != lexer.SEPARATOR || closer.Value != "]" {
+			p.Lexer.SetCursor(savedCursor)
+			return false
+		}
+	} else if next.Type == lexer.SEPARATOR && next.Value == "]" {
+		// 空列表 `[]T{...}`
+	} else {
 		p.Lexer.SetCursor(savedCursor)
 		return false
 	}
@@ -590,9 +692,24 @@ func (p *Parser) handleListLit() *Expression {
 	// Parse []type{elem1, elem2, ...}
 	// Cursor is positioned after the opening '[' (already consumed by getExp)
 
-	// Consume "]"
+	// Consume "]"（定长数组字面量则为长度常量 + "]"）
+	arrayLen := 0
 	token := p.Lexer.Next()
-	if token.Type != lexer.SEPARATOR || token.Value != "]" {
+	if token.Type == lexer.NUMBER {
+		n, atoiErr := strconv.Atoi(token.Value)
+		if atoiErr != nil {
+			p.Error.MissError("Expression Error", p.Lexer.Cursor, "bad array length")
+			return nil
+		}
+		arrayLen = n
+		closer := p.Lexer.Next()
+		if closer.Type != lexer.SEPARATOR || closer.Value != "]" {
+			p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected ']'")
+			return nil
+		}
+	} else if token.Type == lexer.SEPARATOR && token.Value == "]" {
+		// 空列表 `[]T{...}`
+	} else {
 		p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected ']'")
 		return nil
 	}
@@ -615,6 +732,15 @@ func (p *Parser) handleListLit() *Expression {
 	elems := p.parseBraceList()
 	if elems == nil {
 		return nil
+	}
+
+	// [N]T{...} → 定长数组字面量
+	if arrayLen > 0 {
+		return &Expression{
+			Separator: "array_lit",
+			ListElems: elems,
+			Type:      typeSys.NewArray(elemType, arrayLen),
+		}
 	}
 
 	return &Expression{

@@ -158,9 +158,43 @@ func lo8(name string) string {
 	}
 }
 
+// adjEsp 为"栈顶下方 depth 字节"处访问的 esp 相对操作数补上位移。
+// dst/src 可能是实参缓冲区 [esp+K]，InstBinary 内部的 push 会让 ESP 下移，
+// 未修正会读到压栈垃圾并写错槽位（与 x86_64 adjRsp 同一缺陷）。
+// 非 esp 相对地址（ebp 相对/寄存器/立即数/寄存器间接）原样返回。
+func adjEsp(op string, depth int) string {
+	if depth == 0 || !strings.Contains(op, "[esp") {
+		return op
+	}
+	start := strings.Index(op, "[esp")
+	end := strings.Index(op[start:], "]")
+	if end < 0 {
+		return op
+	}
+	closeIdx := start + end
+	inner := op[start+5 : closeIdx] // "" / "+4" / "-8" / 其他
+	n := 0
+	if inner != "" {
+		v, err := strconv.Atoi(inner)
+		if err != nil {
+			return op
+		}
+		n = v
+	}
+	n += depth
+	repl := "[esp]"
+	if n > 0 {
+		repl = "[esp+" + strconv.Itoa(n) + "]"
+	} else if n < 0 {
+		repl = "[esp" + strconv.Itoa(n) + "]"
+	}
+	return op[:start] + repl + op[closeIdx+1:]
+}
+
 // InstBinary 生成二元运算指令。
 // dst 可以是寄存器或内存地址（如 DWORD[ebp-8]）。
 // 除法/取模通过 push 除数到栈上避免寄存器冲突（EAX/EDX 被 cdq 占用）。
+// 注意：凡内部有 push 的分支，esp 相对的 dst/src 必须用 adjEsp 按当前栈深修正。
 func (a *x86Ops) InstBinary(dst, op, src string) string {
 	switch op {
 	case "+":
@@ -170,34 +204,36 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 	case "*":
 		if strings.Contains(dst, "[") {
 			// nasm 不支持 imul 内存目标，经栈中转
+			// 栈深：push 乘数后 4；dst 装载/写回在 4，src 装载在 0
 			code := ""
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov EAX, " + src)
+				code += utils.Format("mov EAX, " + adjEsp(src, 0))
 				src = "EAX"
 			}
 			code += utils.Format("push " + src + "; 暂存乘数")
-			code += utils.Format("mov EAX, " + dst)
+			code += utils.Format("mov EAX, " + adjEsp(dst, 4))
 			code += utils.Format("imul EAX, dword [esp]")
-			code += utils.Format("mov " + dst + ", EAX")
+			code += utils.Format("mov " + adjEsp(dst, 4) + ", EAX")
 			code += utils.Format("add esp, 4; 清理乘数")
 			return code
 		}
 		return utils.Format("imul " + dst + ", " + src)
 	case "/":
-		code := utils.Format("push " + src + "; 保存除数")
-		code += utils.Format("mov eax, " + dst)
+		// 栈深：push 除数后 4；dst 装载在 4，写回在 0（add esp,4 后）
+		code := utils.Format("push " + adjEsp(src, 0) + "; 保存除数")
+		code += utils.Format("mov eax, " + adjEsp(dst, 4))
 		code += utils.Format("cdq")
 		code += utils.Format("idiv dword [esp]")
 		code += utils.Format("add esp, 4; 清理除数")
-		code += utils.Format("mov " + dst + ", eax")
+		code += utils.Format("mov " + adjEsp(dst, 0) + ", eax")
 		return code
 	case "%":
-		code := utils.Format("push " + src + "; 保存除数")
-		code += utils.Format("mov eax, " + dst)
+		code := utils.Format("push " + adjEsp(src, 0) + "; 保存除数")
+		code += utils.Format("mov eax, " + adjEsp(dst, 4))
 		code += utils.Format("cdq")
 		code += utils.Format("idiv dword [esp]")
 		code += utils.Format("add esp, 4; 清理除数")
-		code += utils.Format("mov " + dst + ", edx")
+		code += utils.Format("mov " + adjEsp(dst, 0) + ", edx")
 		return code
 	case "^":
 		return utils.Format("xor " + dst + ", " + src)
@@ -208,14 +244,15 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 	case "<<":
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
 			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL
+			// 栈深：push 移位计数后 4，dst 引用在 4
 			code := ""
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov EAX, " + src)
+				code += utils.Format("mov EAX, " + adjEsp(src, 0))
 				src = "EAX"
 			}
 			code += utils.Format("push " + src + "; 暂存移位计数")
 			code += utils.Format("mov cl, byte [esp]")
-			code += utils.Format("shl " + dst + ", cl")
+			code += utils.Format("shl " + adjEsp(dst, 4) + ", cl")
 			code += utils.Format("add esp, 4; 清理移位计数")
 			return code
 		}
@@ -224,33 +261,38 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
 			code := ""
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov EAX, " + src)
+				code += utils.Format("mov EAX, " + adjEsp(src, 0))
 				src = "EAX"
 			}
 			code += utils.Format("push " + src + "; 暂存移位计数")
 			code += utils.Format("mov cl, byte [esp]")
-			code += utils.Format("sar " + dst + ", cl")
+			code += utils.Format("sar " + adjEsp(dst, 4) + ", cl")
 			code += utils.Format("add esp, 4; 清理移位计数")
 			return code
 		}
 		return utils.Format("sar " + dst + ", " + src)
 	case "==", "!=", "<", ">", "<=", ">=":
 		code := utils.Format("cmp " + dst + ", " + src)
+		target, writeback := arch.SetccTarget(dst, lo8(dst))
 		switch op {
 		case "==":
-			code += utils.Format("sete " + lo8(dst))
+			code += utils.Format("sete " + target)
 		case "!=":
-			code += utils.Format("setne " + lo8(dst))
+			code += utils.Format("setne " + target)
 		case "<":
-			code += utils.Format("setl " + lo8(dst))
+			code += utils.Format("setl " + target)
 		case ">":
-			code += utils.Format("setg " + lo8(dst))
+			code += utils.Format("setg " + target)
 		case "<=":
-			code += utils.Format("setle " + lo8(dst))
+			code += utils.Format("setle " + target)
 		case ">=":
-			code += utils.Format("setge " + lo8(dst))
+			code += utils.Format("setge " + target)
 		}
-		code += utils.Format("movzx " + dst + ", " + lo8(dst))
+		if writeback {
+			code += arch.StoreAlTo(dst)
+		} else if target != dst {
+			code += utils.Format("movzx " + dst + ", " + target)
+		}
 		return code
 	default:
 		return ""
@@ -319,10 +361,10 @@ func (a *x86Ops) MultiVarDecl(varBlock *parser.VarBlock) string {
 		switch i {
 		case 0:
 			// 第一个返回值在 EAX
-			code += utils.Format("mov " + addr + ", " + ln + " EAX; multi-return: " + name.First())
+			code += utils.Format("mov " + addr + ", " + ln + " EAX; multi-return: " + name)
 		case 1:
 			// 第二个返回值在 EDX
-			code += utils.Format("mov " + addr + ", " + ln + " EDX; multi-return: " + name.First())
+			code += utils.Format("mov " + addr + ", " + ln + " EDX; multi-return: " + name)
 		default:
 			code += utils.Format("; TODO: third+ return value not yet supported")
 		}
@@ -533,12 +575,30 @@ func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
 		}
 
 		code += a.compileCond64(cond, jumpLabel)
-	case "&&", "||":
+	case "&&":
 		if cond.Left != nil {
 			code += a.compileCond(cond.Left, jumpLabel)
 		}
 		if cond.Right != nil {
 			code += a.compileCond(cond.Right, jumpLabel)
+		}
+	case "||":
+		// 逻辑或：仅两侧都为假才跳到 jumpLabel（jumpLabel = 条件为假的目标）
+		if cond.Left == nil || cond.Right == nil {
+			if cond.Left != nil {
+				code += a.compileCond(cond.Left, jumpLabel)
+			} else if cond.Right != nil {
+				code += a.compileCond(cond.Right, jumpLabel)
+			}
+		} else {
+			a.ctx.IfCount++
+			next := "or32_next_" + strconv.Itoa(a.ctx.IfCount)
+			taken := "or32_true_" + strconv.Itoa(a.ctx.IfCount)
+			code += a.compileCond(cond.Left, next)
+			code += utils.Format("jmp " + taken + "; || 左侧为真，条件成立")
+			code += utils.Format(next + ":")
+			code += a.compileCond(cond.Right, jumpLabel)
+			code += utils.Format(taken + ":")
 		}
 	default:
 		code += a.exp(cond, scratchReg1, "condition")

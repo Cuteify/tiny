@@ -6,6 +6,20 @@ import (
 	"strings"
 )
 
+// isTypeParam 判断类型是否为泛型类型参数（T），单态化前没有具体 Kind/Size。
+func isTypeParam(t typeSys.Type) bool {
+	_, ok := t.(*typeSys.TypeParam)
+	return ok
+}
+
+// isPtrLike 判断是否为地址语义类型：系统 ptr 或任意 *T。
+func isPtrLike(t typeSys.Type) bool {
+	if t == nil {
+		return false
+	}
+	return t.IsPointer() || t.Type() == "ptr"
+}
+
 // Check 表达式语义检查入口：类型推导 + 常量折叠。
 // 按优先级分发：变量引用 → 函数调用 → 运算符检查 → 常量。
 func (exp *Expression) Check(p *Parser) bool {
@@ -56,8 +70,20 @@ func (exp *Expression) checkCall(p *Parser) bool {
 	}
 
 	if exp.Call.Func != nil {
-		if len(exp.Call.Func.Return) == 1 {
+		if nret := len(exp.Call.Func.Return); nret == 1 || (nret > 1 && exp.stmt) {
 			exp.Type = exp.Call.Func.Return[0]
+			// 泛型调用：把返回类型中的类型参数换成显式类型实参或实参推断出的具体类型
+			if subst := exp.Call.typeSubst(); len(subst) > 0 {
+				if ret := typeSys.SubstituteTypeParams(exp.Type, subst); ret != nil {
+					exp.Type = ret
+				}
+			}
+			return true
+		}
+		// 语句位置的 void 调用（slices.push[T](...) / slices.set[T](...) 等）：
+		// 经 ParseExp 走表达式路径，本身没有返回值是合法的，Type 留空即可。
+		if len(exp.Call.Func.Return) == 0 && exp.stmt {
+			exp.Type = nil
 			return true
 		}
 		p.Error.MissError("Type Error", p.Lexer.Cursor, "function call must return one value")
@@ -75,7 +101,7 @@ func (exp *Expression) checkOp(p *Parser) bool {
 	}
 
 	switch exp.Separator {
-	case "list_lit":
+	case "list_lit", "array_lit":
 		return exp.checkListLiteral(p)
 	case "!", "~":
 		return exp.checkUnary(p)
@@ -355,6 +381,17 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 		}
 		return true
 
+	case "array":
+		// 定长数组不支持切片：a[i] 返回元素类型
+		if exp.Index[1] != nil || exp.Index[2] != nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot slice a fixed-size array")
+			return false
+		}
+		if arrType, ok := indexed.Type.(*typeSys.ArrayType); ok && arrType.Elem() != nil {
+			exp.Type = arrType.Elem()
+		}
+		return true
+
 	default:
 		// 自定义类型，尝试运算符重载
 		return exp.checkOverload(p)
@@ -381,7 +418,27 @@ func (exp *Expression) checkListLiteral(p *Parser) bool {
 	}
 
 	listType, ok := exp.Type.(*typeSys.ListType)
-	if !ok || listType.Elem() == nil {
+	if !ok {
+		// 定长数组字面量：逐元素检查类型 + 元素个数
+		if arrType, isArr := exp.Type.(*typeSys.ArrayType); isArr && arrType.Elem() != nil {
+			if len(exp.ListElems) != arrType.Len() {
+				p.Error.MissError("Type Error", p.Lexer.Cursor,
+					"array literal has "+itoa(len(exp.ListElems))+" elements but wants "+
+						itoa(arrType.Len()))
+				return false
+			}
+			for _, elem := range exp.ListElems {
+				if !elem.Check(p) {
+					return false
+				}
+				if elem.Type != nil && !typeSys.AutoType(elem.Type, arrType.Elem(), elem.IsConst()) {
+					p.Error.MissError("Type Error", p.Lexer.Cursor,
+						"cannot use "+safeTypeName(elem.Type)+" as type "+arrType.Elem().Type()+
+							" in array literal")
+					return false
+				}
+			}
+		}
 		return true
 	}
 
@@ -535,6 +592,18 @@ func (exp *Expression) checkArith(p *Parser) bool {
 		return exp.checkOverload(p)
 	}
 
+	// 泛型类型参数优先：TypeParam.Size()==-1，走位宽比较会把 T * int
+	// 误推导成 int（位宽不符），必须保留 TypeParam 一侧，具体类型
+	// 在单态化时由 substituteBodyTypes 替换。
+	if isTypeParam(exp.Left.Type) {
+		exp.Type = exp.Left.Type
+		return true
+	}
+	if isTypeParam(exp.Right.Type) {
+		exp.Type = exp.Right.Type
+		return true
+	}
+
 	// 类型推导：float→f64；否则宽类型获胜。
 	// 修复：int * u64 原先推导为 int，32 位架构下乘积被截断
 	// （如 365*DAY 纳秒数），必须提升到 8 字节操作数的类型。
@@ -558,7 +627,11 @@ func (exp *Expression) checkArith(p *Parser) bool {
 // checkEq 检查相等比较（== !=），只要左右类型相同即可。
 func (exp *Expression) checkEq(p *Parser) bool {
 
-	if !typeSys.TypeEqual(exp.Left.Type, exp.Right.Type) {
+	// nil 与任意指针类型（ptr / *T）比较恒合法
+	nilL := exp.Left.ConstNil && isPtrLike(exp.Right.Type)
+	nilR := exp.Right.ConstNil && isPtrLike(exp.Left.Type)
+	if !nilL && !nilR && !isTypeParam(exp.Left.Type) && !isTypeParam(exp.Right.Type) &&
+		!typeSys.TypeEqual(exp.Left.Type, exp.Right.Type) {
 		// 数值常量可与任何数值类型比较（如 u64 == 0）
 		constNum := (exp.Left.IsConst() && typeSys.IsNum(exp.Left.Type) && typeSys.IsNum(exp.Right.Type)) ||
 			(exp.Right.IsConst() && typeSys.IsNum(exp.Right.Type) && typeSys.IsNum(exp.Left.Type))
@@ -634,7 +707,14 @@ func (exp *Expression) foldArith(p *Parser) bool {
 			p.Error.MissError("Runtime Error", p.Lexer.Cursor, "division by zero")
 			return false
 		}
-		exp.Num = left / right
+		// 整数常量折叠：与运行期 idiv 语义一致（向零截断）。
+		// 否则 ((10+5)*2-8)/4+3 会折成 8.5 并赋 int 类型，
+		// 生成非法的 "mov RAX, 8.5"。
+		if left == float64(int64(left)) && right == float64(int64(right)) {
+			exp.Num = float64(int64(left) / int64(right))
+		} else {
+			exp.Num = left / right
+		}
 	case "%":
 		if right == 0 {
 			p.Error.MissError("Runtime Error", p.Lexer.Cursor, "modulo by zero")

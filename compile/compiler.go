@@ -249,8 +249,12 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 			bssCode += "    " + name + " resb " + strconv.Itoa(size) + "\n"
 			continue
 		}
-		// å¸¸é‡åˆå§‹åŒ–å€¼æ”¾å…¥ .dataï¼Œå…¶ä½™æ”¾ .bss
-		if vb.IsConst && vb.Value != nil {
+		// ç¼–è¯‘æœŸå¸¸é‡åˆå§‹åŒ–å€¼æ”¾å…¥ .dataï¼Œå…¶ä½™æ”¾ .bssã€‚
+		// ä¸èƒ½ä¾èµ– vb.IsConstï¼šsetVarConst åŒ¹é… "CONST"/"VAR" å¤§å†™ï¼Œ
+		// è€Œ lexer å…³é”®å­— Value æ˜¯å°å†™ "const"/"var"ï¼ŒIsConst æ’ä¸º falseï¼Œ
+		// å¯¼è‡´ const å…¨å±€ï¼ˆmemory çš„ ptrSize/LARGE_MAX ç­‰ï¼‰è½ .bss è¯»åˆ° 0ï¼Œ
+		// malloc åˆ†çº§åˆ¤æ–­å…¨é”™ã€‚æ”¹ä»¥åˆå§‹åŒ–è¡¨è¾¾å¼æ˜¯å¦ä¸ºç¼–è¯‘æœŸå¸¸é‡ä¸ºå‡†ã€‚
+		if vb.Value != nil && vb.Value.IsConst() {
 			val := int64(vb.Value.Num)
 			if size == 8 {
 				dataCode += "    " + name + " dq " + strconv.FormatInt(val, 10) + "\n"
@@ -471,13 +475,32 @@ func (c *Compiler) compileCondition(cond *parser.Expression, jumpLabel string) s
 			}
 		}
 		code += utils.Format(jumpOp + " " + jumpLabel)
-	case "&&", "||":
-		// å¤„ç†é€»è¾‘ä¸/æˆ–
+	case "&&":
+		// é€»è¾‘ä¸ï¼šä»»ä¸€ä¾§ä¸ºå‡å³è·³åˆ° jumpLabelï¼ˆjumpLabel = æ¡ä»¶ä¸ºå‡çš„ç›®æ ‡ï¼‰
 		if cond.Left != nil {
 			code += c.compileCondition(cond.Left, jumpLabel)
 		}
 		if cond.Right != nil {
 			code += c.compileCondition(cond.Right, jumpLabel)
+		}
+	case "||":
+		// é€»è¾‘æˆ–ï¼šæ•´ä½“ä»…åœ¨ä¸¤ä¾§éƒ½ä¸ºå‡æ—¶æ‰è·³åˆ° jumpLabelã€‚
+		// å·¦ä¸ºå‡ â†’ ç»§ç»­æ£€æŸ¥å³ï¼›å·¦ä¸ºçœŸ â†’ ç›´æ¥è·³è¿‡ï¼ˆæ¡ä»¶æˆç«‹ï¼‰ï¼›å³ä¹Ÿä¸ºå‡ â†’ æ•´ä½“ä¸ºå‡ã€‚
+		if cond.Left == nil || cond.Right == nil {
+			if cond.Left != nil {
+				code += c.compileCondition(cond.Left, jumpLabel)
+			} else if cond.Right != nil {
+				code += c.compileCondition(cond.Right, jumpLabel)
+			}
+		} else {
+			c.Ctx.IfCount++
+			next := fmt.Sprintf("or_next_%d", c.Ctx.IfCount)
+			taken := fmt.Sprintf("or_true_%d", c.Ctx.IfCount)
+			code += c.compileCondition(cond.Left, next)
+			code += utils.Format("jmp " + taken + "; || å·¦ä¾§ä¸ºçœŸï¼Œæ¡ä»¶æˆç«‹")
+			code += utils.Format(next + ":")
+			code += c.compileCondition(cond.Right, jumpLabel)
+			code += utils.Format(taken + ":")
 		}
 	default:
 		// å•ä¸ªè¡¨è¾¾å¼ï¼Œç¼–è¯‘åˆ° scratchReg1 å¹¶æµ‹è¯•æ˜¯å¦ä¸º 0
@@ -713,6 +736,11 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 	if forBlock.Range.Var != nil {
 		// å˜é‡å¼•ç”¨ï¼šåŠ è½½å…¶æ ˆåœ°å€
 		vb := forBlock.Range.Var
+		// å¼•ç”¨èŠ‚ç‚¹ä¸Šçš„ Offset æ˜¯æ£€æŸ¥æœŸæŠ„ä¸‹çš„ï¼Œå¯èƒ½è½åäºæœ€ç»ˆåˆ†é…ï¼›
+		// ç”¨å®šä¹‰å¤„çš„çœŸå® VarBlock åˆ·æ–°åç§»ï¼ˆä¸ GenVarAddr ä¸€è‡´ï¼‰
+		if d, ok := vb.Define.Value.(*parser.VarBlock); ok && d != nil {
+			vb = d
+		}
 		var baseAddr string
 		if vb.IsGlobal {
 			baseAddr = "[rel __global_" + utils.ToNASMName(vb.Name.String()) + "]"
@@ -869,12 +897,7 @@ func (c *Compiler) generateDataSection() string {
 	code += "    _oob_msg db \"index out of range\", 10\n"
 	code += "    _oob_msg_len equ $ - _oob_msg\n"
 	for val, label := range c.Ctx.StringConsts {
-		escaped := strings.ReplaceAll(val, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
-		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
-		code += fmt.Sprintf("    %s db \"%s\", 0\n", label, escaped)
+		code += fmt.Sprintf("    %s db %s, 0\n", label, nasmStringBytes(val))
 		code += fmt.Sprintf("    %s_len equ $ - %s\n", label, label)
 	}
 	// å…¨å±€ string å˜é‡ï¼šptr/len/cap ä¸‰æ§½ï¼Œæ§½å®½éšæ¶æ„æŒ‡é’ˆå¤§å°ï¼ˆx86 ä¸º ddï¼‰
@@ -908,6 +931,37 @@ func (c *Compiler) getStringLabel(val string) string {
 	label := "str_" + strconv.Itoa(c.Ctx.StrCount)
 	c.Ctx.StringConsts[val] = label
 	return label
+}
+
+// nasmStringBytes æŠŠ Go å­—ç¬¦ä¸²è½¬æˆ NASM db æ“ä½œæ•°åˆ—è¡¨ã€‚
+// NASM åŒå¼•å·å­—ç¬¦ä¸²åªè¯†åˆ« \\ ä¸ \" ä¸¤ç§è½¬ä¹‰ï¼ˆdb "a\nb" ä¼šåŸæ ·è¾“å‡º
+// åæ–œæ +nï¼Œå®æµ‹ 61 5c 6e 62ï¼‰ï¼Œæ¢è¡Œ/åˆ¶è¡¨ç¬¦/NUL ç­‰æ§åˆ¶å­—èŠ‚å¿…é¡»ç”¨
+// æ•°å€¼å­—é¢é‡ï¼›å¯æ‰“å°ç‰‡æ®µï¼ˆ0x20-0x7Eï¼‰ç”¨å¼•å·åŒ…è£¹ï¼Œå…¶ä¸­ \ å’Œ " å†è½¬ä¹‰ã€‚
+func nasmStringBytes(s string) string {
+	if s == "" {
+		return `""`
+	}
+	var parts []string
+	var run []byte
+	flush := func() {
+		if len(run) > 0 {
+			esc := strings.ReplaceAll(string(run), `\`, `\\`)
+			esc = strings.ReplaceAll(esc, `"`, `\"`)
+			parts = append(parts, `"`+esc+`"`)
+			run = nil
+		}
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x20 && c < 0x7f {
+			run = append(run, c)
+		} else {
+			flush()
+			parts = append(parts, strconv.Itoa(int(c)))
+		}
+	}
+	flush()
+	return strings.Join(parts, ", ")
 }
 
 func (c *Compiler) hasMainFunction(node *parser.Node) bool {
@@ -1110,9 +1164,19 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 
 	// GC å‡ºå£é‡Šæ”¾ï¼ˆPhase 3ï¼‰ï¼šæ‰€æœ‰ return éƒ½ jmp åˆ° func_endï¼ˆç”± Epilogue å‘å‡ºï¼‰ï¼Œ
 	// fallthrough ä¹Ÿæ±‡åˆäºæ­¤ï¼Œæ•…åœ¨ body ä¹‹åã€epilogue ä¹‹å‰æ‹¼æ¥ä¸€æ¬¡é‡Šæ”¾åºåˆ—
-	// å³å¯è¦†ç›–å…¨éƒ¨å‡ºå£ã€‚main æ— éœ€ GCï¼›build link åˆ«åæ˜¯é“¾æ¥ç¬¦å·åŒ…è£…å™¨ï¼Œè·³è¿‡ã€‚
+	//å³å¯è¦†ç›–å…¨éƒ¨å‡ºå£ã€‚main æ— éœ€ GCï¼›build link åˆ«åæ˜¯é“¾æ¥ç¬¦å·åŒ…è£…å™¨ï¼Œè·³è¿‡ã€‚
 	if funcBlock.Name.String() != "main" && alias == "" {
 		code += c.emitGCFrees(funcBlock, node)
+	}
+
+	// éšå¼è¿”å›é›¶å€¼ï¼ˆæ”¾åœ¨ Epilogue æ ‡ç­¾ä¹‹å‰ï¼‰ï¼šæ˜¾å¼ `ret` å…ˆè®¾ RAX å†
+	// jmp func_end_<fn>ï¼Œç›´æ¥è½åˆ°æ ‡ç­¾å¤„ã€è·³è¿‡è¿™æ¡æ¸…é›¶ï¼›å‡½æ•°ä½“è‡ªç„¶è½å‡º
+	//ï¼ˆå¦‚ main ä¸å†™ retï¼‰æ—¶ RAX æ®‹ç•™çš„æ˜¯ syscall è¿”å›å€¼ï¼ˆwrite çš„å­—èŠ‚æ•°ç­‰ï¼‰ï¼Œ
+	// è¿›ç¨‹é€€å‡ºç ä¼šå˜æˆåƒåœ¾â€”â€”è½å‡ºè·¯å¾„æ¸…é›¶ï¼Œä¸ Go çš„"ç¼ºçœè¿”å›é›¶å€¼"ä¸€è‡´ã€‚
+	// ä»…é™æ— è¿”å›å€¼å‡½æ•°ï¼šæœ‰è¿”å›å€¼å‡½æ•°ï¼ˆå¦‚ syscall64 ä»¥ syscall ç»“å°¾è‡ªç„¶è½å‡ºï¼‰
+	// çš„ RAX æ˜¯çœŸå®è¿”å›å€¼ï¼Œæ¸…é›¶ä¼šæ¯æ‰å®ƒï¼ˆbrk æ’è¿”å› 0 â†’ åˆ†é…å™¨åˆå§‹åŒ–å¤±è´¥ï¼‰ã€‚
+	if len(funcBlock.Return) == 0 {
+		code += utils.Format("xor " + c.Ctx.Arch.ReturnReg() + ", " + c.Ctx.Arch.ReturnReg() + "; éšå¼è¿”å›é›¶å€¼")
 	}
 
 	// ç”Ÿæˆ epilogueï¼ˆæ¸…ç†æ ˆã€æ¢å¤å¯„å­˜å™¨ã€è¿”å›ï¼‰
@@ -1313,53 +1377,8 @@ func findLocalVarOffset(node *parser.Node, name string) int {
 
 // findStructFieldOffset æŸ¥æ‰¾ struct å­—æ®µåœ¨ struct å†…çš„åç§»é‡ã€‚
 func (c *Compiler) findStructFieldOffset(funcBlock *parser.FuncBlock, node *parser.Node, varName, fieldName string) int {
-	var structType *typeSys.StructType
-	// æŸ¥æ‰¾å‡½æ•°å‚æ•°
-	for _, ag := range funcBlock.Args {
-		if ag.Name != nil && ag.Name.First() == varName {
-			if st, ok := ag.Type.(*typeSys.StructType); ok {
-				structType = st
-			}
-			if ag.Type != nil && ag.Type.IsPointer() {
-				if st, ok := ag.Type.Elem().(*typeSys.StructType); ok {
-					structType = st
-				}
-			}
-			break
-		}
-	}
-	// æŸ¥æ‰¾å‡½æ•°ä½“ä¸­çš„å˜é‡å®šä¹‰
-	if structType == nil {
-		var walk func(n *parser.Node)
-		walk = func(n *parser.Node) {
-			if n == nil || structType != nil {
-				return
-			}
-			if vb, ok := n.Value.(*parser.VarBlock); ok && vb.IsDefine &&
-				vb.Type != nil && vb.Name != nil && vb.Name.First() == varName {
-				if st, ok := vb.Type.(*typeSys.StructType); ok {
-					structType = st
-				}
-				if vb.Type.IsPointer() {
-					if st, ok := vb.Type.Elem().(*typeSys.StructType); ok {
-						structType = st
-					}
-				}
-				return
-			}
-			for _, ch := range n.Children {
-				walk(ch)
-			}
-		}
-		walk(node)
-	}
-	if structType == nil {
-		return -1
-	}
-	structType.Layout()
-	field := structType.Field(fieldName)
-	if field == nil {
-		return -1
-	}
-	return field.Offset
-}
+	var structıX|“›ıÊe&¾ıúõ=n§xiß*iÊOâ+,ˆz€;B_O ï+ıÜ¿€š_J¿UãŞã©	{©“Y¢(İWÒ'§Åı÷öıª0Ì“@Nãôóşq14‡Ô¼ç¥Ñ”!Äê
++úV)vêˆRVh™wR¸ìãe7bv4züœ¦¢ôü3‹×ù
+Ø­†‘¼KŠŞË-}ñ-‰”Zƒ¿©SŒy$kŞ.ªu)î1²áŠZá¾Vä­¤*´ø{¾4ÌG-äg½.»&ÂmPƒúœİ^ñ–òÊ_JYìğê¦Ú²fŒ²é®ÌQÈ[j” ½‹éâ_9Çøôá¸9ı,'¢»räNOr1¸‚Ş)¿›è~%‡—¤¯ß4^U
+.
+6ˆÎo¸ƒ†HÕiÃJZb­4:íMß4Ì?ŸqÜàaÎâò:Dô•ÇøwªÆ²²ËÂ"Í$yº“R½]Ca'®ö›P«ÏO›/)RıjØé)Ê`L/í…&Y3Aû¿0÷ï<£”—ÊÄoxa³’†‡^¤0)œæÓÍ¦È¿ığœù8”Ş,+ Ø7hÃÿ½ê±æ€ÉÓO).†|QZGrû`ôâÚdWG”ŠşÉù™åÁF wâ·;	ìš¨Ó%òj=‘¡¨Cö›Geí¢„¨ÊìR£ADWğâ/¢îñşæ‚şhï¢b£`ĞÊÑIõôƒPGHè û!Y†½’Jğ¾äÖË[Ùyïü¡²Øæ.0»†âsæbƒ4†¸ö‰Ø»ãˆ¤Üy1p•¥cOT[=³š~å`©(#¦—®ƒL•½ªĞtËéØ~6pğ½sANKïÈlªšĞ•Æä…]QàãUt¤{],eâ5J>KL™õ«(šóbÌÙ«–ôØÀª¿/ƒÑƒÆuÙÂn;°êÌî*yÙûU¹|¨ı>Óp«u¶‘/ A«R1”·	D8÷Ş¾;¨Å“ğõ9d¾•åÚ(D êÁáM›ba“‘¶üÖÜ1N <ÃÙ+KígîZtx×í•Y4j5‰on+ìGH»fÜÃ¥Q.ÔÂïåE=äR—vGO]YâNá|ù®²ŸoUB{Î+a+QÈíÕœG§Û?"Åƒ)êcgÏBgg?ÈÚÜ^ÙDƒ‡©QœfOu	cÂÚ¥Ğõ·qGğad~‹êãm»ïp-só±ä²=Lw~—oÌ §“ƒ9 äZëŞŠC'F”N²ü0Ğ½SAÔÍËf×ûÜ;ëò âø•$–«¦Ét˜QPIüv-İï³®qƒÛßY‘»£˜ğbìM9@ƒ	e0ìhhÜöP@AÂuº“œäf5øŸ„àÊß€Æ'î¥Ã6Ç`ØÂûî9»è ·X!á”Ï‡àŒ‘ƒ5˜Ÿ+Ü{&ïe~¬BšÆdG“*œ(Ê[½N97i/âÚ,”‘/´G®+E*ÖvÈ.ĞŠ²=ÿN„…¨Så

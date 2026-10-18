@@ -6,6 +6,7 @@ import (
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -18,9 +19,16 @@ type Parser struct {
 	Package           *packageFmt.Info
 	DontBack          int
 	PreventNameAssign bool
-	CurStructName     string       // 当前正在解析的结构体名（支持自引用字段 *T）
-	CurStructType     typeSys.Type // 当前正在解析的结构体类型实例（与注册后同一实例）
+	CurStructName     string                  // 当前正在解析的结构体名（支持自引用字段 *T）
+	CurStructType     typeSys.Type            // 当前正在解析的结构体类型实例（与注册后同一实例）
+	CurTypeParams     map[string]typeSys.Type // 当前泛型函数的类型参数（fn f[T]{} 体内 T 解析为 TypeParam）
 }
+
+// ParsePhase 为 true 表示各包/各文件尚未合并成同一棵树。
+// 此时查不到的名称可能是跨文件前向引用（文件按字母序解析），
+// 不立即报错，标记 Unresolved 留给 rootNode.Check 重试；
+// 合并完成后 package 包会把它置 false，此后再查不到才是真错误。
+var ParsePhase = true
 
 // Next 解析下一个语法单元，返回是否结束
 func (p *Parser) Next() (finish bool) {
@@ -32,6 +40,15 @@ func (p *Parser) Next() (finish bool) {
 	}
 
 	if code.Value == "}" && code.Type == lexer.SEPARATOR {
+		// case 分支与所属 switch 只共用一个 '}'：若当前停在 case 上，
+		// 要连退两层，否则 switch 之后的语句会被挂进 switch 节点里。
+		if _, isCase := p.ThisBlock.Value.(*CaseBlock); isCase {
+			p.Back(1)
+			if _, isSwitch := p.ThisBlock.Value.(*SwitchBlock); isSwitch {
+				p.Back(1)
+			}
+			return
+		}
 		p.Back(1)
 		return
 	}
@@ -76,7 +93,12 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 		return nil
 	}
 
-	// 检查是否是 []Type 语法
+	// 检查是否是 fn(...) R 函数类型
+	if token.Type == lexer.FUNC {
+		return p.parseFuncTypeRef()
+	}
+
+	// 检查是否是 []Type / [N]Type 语法
 	if token.Type == lexer.SEPARATOR && token.Value == "[" {
 		nextToken := p.Lexer.Next()
 		if nextToken.Type == lexer.SEPARATOR && nextToken.Value == "]" {
@@ -86,6 +108,20 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 				return nil
 			}
 			return typeSys.NewList(elemType)
+		}
+		// [N]Type 定长数组：`[` 后是长度常量
+		if nextToken.Type == lexer.NUMBER {
+			n, atoiErr := strconv.Atoi(nextToken.Value)
+			closeToken := p.Lexer.Next()
+			if atoiErr != nil || closeToken.Type != lexer.SEPARATOR || closeToken.Value != "]" {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ']' in array type")
+				return nil
+			}
+			elemType := p.parseTypeRef()
+			if elemType != nil {
+				return typeSys.NewArray(elemType, n)
+			}
+			return nil
 		}
 		// 不是 []，退格
 		p.Lexer.SetCursor(token.Cursor)
@@ -100,6 +136,18 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 		return nil
 	}
 
+	// 泛型类型参数（fn f[T]{} 体内的 sizeof[T]() 等）：T 解析为 TypeParam 占位类型
+	if t, ok := p.CurTypeParams[typeName.String()]; ok {
+		return t
+	}
+
+	// map[K]V 语法：Name 解析在 '[' 处停住，此处补读键/值类型
+	if typeName.String() == "map" {
+		if t := p.parseMapTypeRef(); t != nil {
+			return t
+		}
+	}
+
 	// 再查找用户定义类型
 	results := p.Find(Name(typeName), FindTypeType)
 	if len(results) > 0 {
@@ -109,6 +157,86 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 	}
 
 	return nil
+}
+
+// parseMapTypeRef 解析 map[K]V 的 [K]V 部分（游标位于 '[' 处）。
+// 解析成功返回 MapType；不是 map[K]V 语法时回退游标并返回 nil，
+// 由调用方按普通类型名继续处理（最终报 "need type"）。
+func (p *Parser) parseMapTypeRef() typeSys.Type {
+	openCursor := p.Lexer.Cursor
+	open := p.Lexer.Next()
+	if open.Type != lexer.SEPARATOR || open.Value != "[" {
+		p.Lexer.SetCursor(openCursor)
+		return nil
+	}
+	keyType := p.parseTypeRef()
+	if keyType == nil {
+		p.Lexer.SetCursor(openCursor)
+		return nil
+	}
+	closeToken := p.Lexer.Next()
+	if closeToken.Type != lexer.SEPARATOR || closeToken.Value != "]" {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ']' in map type")
+		return nil
+	}
+	valType := p.parseTypeRef()
+	if valType == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value type in map[K]V")
+		return nil
+	}
+	return typeSys.NewMapType(keyType, valType)
+}
+
+// parseFuncTypeRef 解析 fn(T1, T2) [R] 函数类型。
+// 调用时 'fn' 已被消费。
+func (p *Parser) parseFuncTypeRef() typeSys.Type {
+	open := p.Lexer.Next()
+	if open.Type != lexer.SEPARATOR || open.Value != "(" {
+		p.Lexer.SetCursor(open.Cursor)
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need '(' in fn type")
+		return nil
+	}
+	var args []typeSys.Type
+	for {
+		t := p.Lexer.Next()
+		if t.IsEmpty() {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "unexpected EOF in fn type")
+			return nil
+		}
+		if t.Type == lexer.SEPARATOR && t.Value == ")" {
+			break
+		}
+		if t.Type == lexer.SEPARATOR && t.Value == "," {
+			continue
+		}
+		p.Lexer.SetCursor(t.Cursor)
+		at := p.parseTypeAnnotation()
+		if at == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "need type in fn type")
+			return nil
+		}
+		args = append(args, at)
+	}
+	// 可选返回类型：')' 之后、同一行内的类型
+	rets := []typeSys.Type{}
+	lineEnd := p.FindEndCursor()
+	t := p.Lexer.Next()
+	if !t.IsEmpty() && t.Cursor < lineEnd &&
+		(t.Type == lexer.NAME || t.Type == lexer.FUNC || t.Type == lexer.SEPARATOR && t.Value == "*" ||
+			t.Type == lexer.SEPARATOR && t.Value == "[") {
+		p.Lexer.SetCursor(t.Cursor)
+		rt := p.parseTypeAnnotation()
+		if rt != nil {
+			rets = append(rets, rt)
+		}
+	} else if !t.IsEmpty() {
+		p.Lexer.SetCursor(t.Cursor)
+	}
+	return &typeSys.FuncType{
+		RType:   typeSys.RType{TypeName: "fn"},
+		Args:    args,
+		Returns: rets,
+	}
 }
 
 func (p *Parser) handleEmptyToken(beforeCursor int) bool {
@@ -144,6 +272,15 @@ func (p *Parser) processControlToken(code lexer.Token) {
 		block.Parse(p)
 		node := &Node{Value: block}
 		p.ThisBlock.AddChild(node)
+	case "switch":
+		block := &SwitchBlock{}
+		block.Parse(p)
+	case "case":
+		block := &CaseBlock{}
+		block.Parse(p)
+	case "default":
+		block := &CaseBlock{IsDefault: true}
+		block.Parse(p)
 	}
 }
 
@@ -188,6 +325,7 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		}
 		// Not an assignment, just field access
 		p.Lexer.SetCursor(assignOp.Cursor)
+		exp.SetStmt()
 		p.AddChild(&Node{Value: exp})
 		return
 	}
@@ -204,6 +342,7 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 			stopCursor := p.FindEndCursor()
 			exp := p.ParseExp(stopCursor)
 			if exp != nil {
+				exp.SetStmt()
 				exp.Check(p)
 				p.AddChild(&Node{Value: exp})
 			}
@@ -212,17 +351,72 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.Parse(p)
+	case ":":
+		// 类型注解声明（省略 var 的写法）：x: int = 5
+		p.Lexer.SetCursor(beforeCursor)
+		block := &VarBlock{}
+		block.ParseKeywordVar(p, lexer.Token{Type: lexer.VAR, Value: "VAR"}, p.FindEndCursor())
+		p.AddChild(&Node{Value: block})
+	case ",":
+		// 多返回值声明：q, r := divide(17, 5)
+		p.parseMultiDeclare(beforeCursor)
 	case "[":
 		p.Lexer.SetCursor(beforeCursor)
 		stopCursor := p.FindEndCursor()
 		exp := p.ParseExp(stopCursor)
 		if exp != nil {
+			exp.SetStmt()
 			p.AddChild(&Node{Value: exp})
 		}
 	default:
 		beforeCursor++
 		p.Error.MissErrors("Syntax Error", beforeCursor, beforeCursor+code.Len(), "'"+name.String()+"' is not a valid expression")
 	}
+}
+
+// parseMultiDeclare 解析多返回值声明 `a, b := f(...)`。
+// 只生成一个 owner VarBlock：栈槽由它的 MultiOffsets 统一分配，
+// 所有名字都命中这个 owner（见 multiNameHit），引用处按自己在
+// MultiNames 中的下标 MultiIndex 取对应槽位（见 GenVarAddr）。
+func (p *Parser) parseMultiDeclare(beforeCursor int) {
+	p.Lexer.SetCursor(beforeCursor)
+
+	var names []string
+	for {
+		name, _ := p.ParseName(false)
+		if name.Length() != 1 {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need variable name")
+		}
+		names = append(names, name.First())
+		code := p.Lexer.Next()
+		if code.Value == "," {
+			continue
+		}
+		if code.Value == ":=" {
+			break
+		}
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ':=' in multi-value declaration")
+	}
+
+	exp := p.ParseExp(p.FindEndCursor())
+	if exp == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value")
+	}
+	// 右侧是多返回值调用：按语句位置检查，绕开 "must return one value"，
+	// 每个槽位的具体类型由 VarBlock.Check 在 Func 解析出来后填充。
+	exp.SetStmt()
+
+	vb := &VarBlock{
+		Name:          NewName(names[0]),
+		IsDefine:      true,
+		IsInitialized: true,
+		Value:         exp,
+		MultiNames:    names,
+	}
+	if !vb.Check(p) {
+		return
+	}
+	p.AddChild(&Node{Value: vb})
 }
 
 // fieldExpr 解析字段访问表达式（如 a.b.c），返回表达式节点。
@@ -311,8 +505,31 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 		block.Parse(p)
 		p.AddChild(&Node{Value: block})
 	case "struct":
-		block := &StructBlock{}
-		block.Parse(p)
+		// struct Name { ... } 与 type Name struct { ... } 等价：统一构造 TypeBlock。
+		// 若只挂一个裸 StructBlock，p.Find(name, FindTypeType) 认不出它
+		// （finder 只匹配 *TypeBlock），导致 `var d: Dog` 与 `fn Dog.m()` 的
+		// Class 绑定都失败，也拿不到全局类型注册与 Struct.Layout()。
+		block := &TypeBlock{Kind: TypeStruct, Struct: &StructBlock{}}
+		block.StartCursor = p.Lexer.Cursor
+		p.CurTypeParams = nil
+		nameToken := p.Lexer.Next()
+		if nameToken.Type != lexer.NAME {
+			p.Error.MissError("Struct Error", nameToken.Cursor, "expected struct name")
+		}
+		block.Name = NewName(nameToken.Value)
+		// StructBlock.Parse 会自行读取结构体名称，回退到名称位置
+		p.Lexer.SetCursor(nameToken.Cursor)
+		savedName := p.CurStructName
+		savedType := p.CurStructType
+		p.CurStructName = nameToken.Value
+		p.CurStructType = &block.Struct.Type
+		block.Struct.Parse(p)
+		p.CurStructName = savedName
+		p.CurStructType = savedType
+		block.EndCursor = block.Struct.EndCursor
+		if p.Package != nil && p.Package.Path != "" {
+			packageFmt.RegisterType(p.Package.Path, block.Name.String(), block.Type())
+		}
 		p.AddChild(&Node{Value: block})
 	case "interface":
 		block := &InterfaceDef{}
@@ -337,6 +554,7 @@ func (p *Parser) processDerefStmt(beforeCursor int) {
 	if exp == nil {
 		return
 	}
+	exp.SetStmt()
 	p.AddChild(&Node{Value: exp})
 }
 

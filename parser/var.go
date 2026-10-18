@@ -2,36 +2,68 @@
 package parser
 
 import (
-	packageFmt "cuteify/package/fmt"
 	"cuteify/lexer"
+	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 	"cuteify/utils"
+	"strconv"
 )
 
 // VarBlock 描述一个变量的声明或定义
 // 包含变量的名称、类型、值、作用域信息等
 type VarBlock struct {
-	Name          Name         // 变量名（支持路径形式，如 "obj.field"）
-	IsConst       bool         // 是否为常量（const关键字）
-	Value         *Expression  // 变量的值表达式（如初始化表达式）
-	IsDefine      bool         // 是否为定义（:=）而非声明（=）
-	IsInitialized bool         // 是否已初始化
-	Define        FindResult   // 查找结果（Value 是真正的定义对象）
-	Used          bool         // 变量是否已被使用（用于优化/警告）
-	StartCursor   int          // 变量名在源代码中的起始位置
-	Offset        int          // 变量在栈帧中的偏移量（编译时使用）
-	Type          typeSys.Type // 变量的数据类型
-	IsGlobal      bool         // 是否为全局变量（顶层定义）
+	Name          Name           // 变量名（支持路径形式，如 "obj.field"）
+	IsConst       bool           // 是否为常量（const关键字）
+	Value         *Expression    // 变量的值表达式（如初始化表达式）
+	IsDefine      bool           // 是否为定义（:=）而非声明（=）
+	IsInitialized bool           // 是否已初始化
+	Define        FindResult     // 查找结果（Value 是真正的定义对象）
+	Used          bool           // 变量是否已被使用（用于优化/警告）
+	StartCursor   int            // 变量名在源代码中的起始位置
+	Offset        int            // 变量在栈帧中的偏移量（编译时使用）
+	Type          typeSys.Type   // 变量的数据类型
+	IsGlobal      bool           // 是否为全局变量（顶层定义）
+	RangeVar      bool           // range 循环变量（无初始化值，不参与"need value"检查）
+	MultiNames    []string       // 多返回值变量名列表
+	MultiOffsets  []int          // 多返回值偏移量列表
+	MultiTypes    []typeSys.Type // 多返回值类型列表
+	MultiIndex    int            // 多返回值索引
+	Unresolved    bool           // 解析期未找到定义（跨文件前向引用），留待合并后重查
+	// Life 归属与逃逸信息（Obj/Scope/Escapes/WroteTo…，见 escape.go）。
+	//
+	// 具名字段而非匿名内嵌：内嵌会把 Obj/Scope/Escapes 提升成 VarBlock 自己的字段，
+	// 于是 v.Obj 和 v.Life.Obj 两种写法都成立，读代码时分不清"这是变量的属性"
+	// 还是"这是生命周期记录的属性"。具名之后只有一种写法，也不会意外让
+	// VarBlock 继承 Life 的方法。
+	Life Life
 }
 
 func (p *Parser) parseTypeAnnotation() typeSys.Type {
 	code := p.Lexer.Next()
+	if code.Type == lexer.FUNC {
+		// fn(T1, T2) R 函数类型注解
+		return p.parseFuncTypeRef()
+	}
 	if code.Type == lexer.SEPARATOR && code.Value == "[" {
 		next := p.Lexer.Next()
 		if next.Type == lexer.SEPARATOR && next.Value == "]" {
 			elemType := p.parseTypeAnnotation()
 			if elemType != nil {
 				return typeSys.NewList(elemType)
+			}
+			return nil
+		}
+		// [N]Type 定长数组：`[` 后是长度常量
+		if next.Type == lexer.NUMBER {
+			n, atoiErr := strconv.Atoi(next.Value)
+			closeToken := p.Lexer.Next()
+			if atoiErr != nil || closeToken.Type != lexer.SEPARATOR || closeToken.Value != "]" {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ']' in array type")
+				return nil
+			}
+			elemType := p.parseTypeAnnotation()
+			if elemType != nil {
+				return typeSys.NewArray(elemType, n)
 			}
 			return nil
 		}
@@ -77,9 +109,19 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 		}
 		// next 不是 "."，回退到 next 之前的位置
 		p.Lexer.SetCursor(next.Cursor)
+		// map[K]V：Name 解析在 '[' 处停住，此处补读键/值类型
+		if nameStr == "map" {
+			if t := p.parseMapTypeRef(); t != nil {
+				return t
+			}
+		}
 		// 先检查系统类型
 		if sysType := typeSys.GetSystemType(nameStr); sysType != nil {
 			return sysType
+		}
+		// 泛型类型参数（fn f[T](x: T)）：T 解析为 TypeParam 占位类型
+		if t, ok := p.CurTypeParams[nameStr]; ok {
+			return t
 		}
 		// 自引用结构体字段（type Node struct { next: *Node }）：当前结构体尚未注册到作用域
 		if p.CurStructName != "" && nameStr == p.CurStructName {
@@ -309,6 +351,60 @@ func (v *VarBlock) parseVarName(p *Parser, code lexer.Token) {
 	v.Name = name
 }
 
+// fillMultiTypes 多返回值声明的槽位类型：从被调函数的返回类型表取得。
+// 调用尚未解析（跨文件前向引用）时静默返回，留给下一轮 Check 重试。
+func (v *VarBlock) fillMultiTypes(p *Parser) {
+	if len(v.MultiTypes) == len(v.MultiNames) {
+		return
+	}
+	if v.Value == nil || v.Value.Call == nil || v.Value.Call.Func == nil {
+		return
+	}
+	rets := v.Value.Call.Func.Return
+	if len(rets) != len(v.MultiNames) {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"assignment mismatch: "+itoa(len(v.MultiNames))+" variables but "+itoa(len(rets))+" return values")
+	}
+	v.MultiTypes = rets
+	if v.Type == nil && len(rets) > 0 {
+		v.Type = rets[0]
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(b)
+	}
+	return string(b)
+}
+
+// multiNameHit 多返回值声明里除第一个名字外的变量也由同一个 owner VarBlock
+// 定义（q, r := foo() 只产生一个节点），查找时按 MultiNames 兜底命中。
+func (v *VarBlock) multiNameHit(name Name) bool {
+	if len(v.MultiNames) <= 1 || name.Length() != 1 {
+		return false
+	}
+	first := name.First()
+	for _, mn := range v.MultiNames {
+		if mn == first {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseDefine 解析变量引用，查找变量定义的位置
 // 这是变量解析的核心函数，会沿着作用域链向上查找
 func (v *VarBlock) ParseDefine(p *Parser) bool {
@@ -338,6 +434,18 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 					v.Offset = vb.Offset
 					v.IsGlobal = vb.IsGlobal
 					v.Define = result
+					// 多返回值解构：取自己在 MultiNames 中的槽位与类型
+					if len(vb.MultiNames) > 1 {
+						for i, mn := range vb.MultiNames {
+							if mn == v.Name.First() {
+								v.MultiIndex = i
+								if i < len(vb.MultiTypes) && vb.MultiTypes[i] != nil {
+									v.Type = vb.MultiTypes[i]
+								}
+								break
+							}
+						}
+					}
 				}
 			case FindTypeArg:
 				if ab, ok := result.Value.(*ArgBlock); ok {
@@ -364,6 +472,20 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 			if v.Define.Node != nil {
 				p.ThisBlock = oldThisBlock
 				return true
+			}
+		}
+		// 不是变量：函数名作为值使用（函数指针 / 取函数地址）
+		if v.Define.Node == nil {
+			for _, fr := range p.Find(v.Name, FindTypeFunc) {
+				if fb, ok := fr.Value.(*FuncBlock); ok && fb != nil {
+					v.Type = funcTypeOf(fb)
+					v.Define = FindResult{Node: fr.Node, Value: fb, Path: fr.Path, Type: FindTypeFunc}
+					// 函数被作为值引用：标记 Useful，否则死代码消除会不发这个
+					// 函数的标签，取地址处 lea rax, [name] 链接期符号未定义
+					fb.Useful = true
+					p.ThisBlock = oldThisBlock
+					return true
+				}
 			}
 		}
 		p.ThisBlock = oldThisBlock
@@ -432,6 +554,10 @@ func (v *VarBlock) Check(p *Parser) bool {
 			if ok := v.Value.Check(p); !ok {
 				return false
 			}
+			// 多返回值解构：调用解析出 Func 后补齐每个槽位的类型
+			if len(v.MultiNames) > 0 {
+				v.fillMultiTypes(p)
+			}
 			if v.Value.Type == nil {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type")
 			}
@@ -444,14 +570,26 @@ func (v *VarBlock) Check(p *Parser) bool {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
 		}
+		// 无初始值的声明（var result: *Node）也要登记：它同样属于某个作用域，
+		// 后面被赋值时要按"绑定名里最外层的作用域"算释放点。
+		v.Life.markDefine(v)
 	} else {
 		// 使用分支：x = 5（使用已定义的变量）
 		if v.Define.Value == nil {
 			v.ParseDefine(p)
 		}
 		if v.Define.Value == nil {
+			// 包内文件按字母序解析，跨文件的全局变量前向引用此时还查不到
+			// （如 pkg/memory 的 allocator.cute 引用 memory.cute 里的 gDbgD）。
+			// 解析期不报错，标记未解析并让 AddChild 置 Checked=false，
+			// 等所有包合并成一棵树后的 rootNode.Check 再重查；仍找不到才报错。
+			if ParsePhase {
+				v.Unresolved = true
+				return true
+			}
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name.String())
 		}
+		v.Unresolved = false
 		if v.Value == nil {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need value for "+v.Name.String())
 		}
@@ -467,6 +605,9 @@ func (v *VarBlock) Check(p *Parser) bool {
 			if !typeSys.AutoType(v.Value.Type, v.Type, v.Value.IsConst()) {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
+		}
+		if l := LifeOf(v); l != nil {
+			l.markAssign(v)
 		}
 	}
 	return true

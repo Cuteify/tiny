@@ -7,13 +7,16 @@ import (
 
 // CallBlock 函数调用结构体
 type CallBlock struct {
-	Name    Name
-	Args    []*ArgBlock
-	Func    *FuncBlock
-	Node    *Node
-	ThisVar *VarBlock
-	NewType typeSys.Type // new(T) 的目标类型（内建堆对象创建）
-	IsRC    bool         // 是否为 RC（引用计数）调用
+	Name          Name
+	Args          []*ArgBlock
+	Func          *FuncBlock
+	Node          *Node
+	ThisVar       *VarBlock
+	NewType       typeSys.Type    // new(T) 的目标类型（内建堆对象创建）
+	IsRC          bool            // 是否为 RC（引用计数）调用
+	IsVariadic    bool            // 调用是否包含变参参数
+	VariadicType  typeSys.Type    // 变参参数的元素类型
+	VariadicArgs  []*ArgBlock     // 变参参数列表
 }
 
 

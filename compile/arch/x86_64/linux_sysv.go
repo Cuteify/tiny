@@ -7,9 +7,6 @@ import (
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"cuteify/utils"
-	"fmt"
-	"os"
-	"runtime/debug"
 	"strings"
 	"strconv"
 )
@@ -36,6 +33,7 @@ func NewSysV(ctx *context.Context) *SysV {
 	ctx.PointerSize = 8
 	ctx.Is64Bit = true
 	ctx.StackAlignment = 16
+	ctx.ThisSlot = -48 // Prologue å°† this ä¿å­˜åˆ° [rbp-48]
 	return a
 }
 
@@ -71,16 +69,26 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		code += utils.Format("push " + regName + "; ä¿å­˜" + regName)
 	}
 
-	// è®¡ç®—å‚æ•°ä¿å­˜æ‰€éœ€ç©ºé—´ï¼Œå°†å…¶çº³å…¥å±€éƒ¨å˜é‡åŒºï¼ˆå‚æ•°åœ¨ callee-saved regs ä¹‹ä¸‹ï¼‰
-	argSaveBytes := 0
-	if fn.Class != nil {
-		argSaveBytes += 8 // this æŒ‡é’ˆ
-	}
-	for i := 0; i < len(fn.Args); i++ {
-		argSaveBytes += fn.Args[i].Type.Size()
+	// å‚æ•°æ§½æ‰“åŒ…åŒºåº•ç•Œï¼ˆè§ setArgsOffsetï¼šæ§½ä½å‘ä¸Šç”Ÿé•¿ï¼Œé¦–å‚ @-48ï¼Œ
+	// åç»­å„å‚æ•°æ•´ä½“ä¸‹ç§»æœ¬å‚æ•°å¤§å°ï¼‰ã€‚å±€éƒ¨å˜é‡å¿…é¡»ä»è¯¥åº•ç•Œç»§ç»­å‘ä¸‹åˆ†é…ï¼Œ
+	// å¦åˆ™ä¼šä¸æœ€åä¸€ä¸ªå‚æ•°æ§½é‡å ã€‚ç­‰ä»·å…³ç³»ï¼šå…¨ 8 å­—èŠ‚å‚æ•°æ—¶
+	// åº•ç•Œ = -40 - Î£sizeï¼Œä¸æ—§å…¬å¼ä¸€è‡´ï¼›é¦–å‚æ•°ä¸è¶³ 8 å­—èŠ‚æ—¶æ—§å…¬å¼ä¼šåæµ…ã€‚
+	argsBottom := -8 * len(csRegs)
+	if len(fn.Args) > 0 {
+		first := -48
+		if fn.Class != nil {
+			first = -56
+		}
+		rest := 0
+		for i := 1; i < len(fn.Args); i++ {
+			rest += fn.Args[i].Type.Size()
+		}
+		argsBottom = first - rest
+	} else if fn.Class != nil {
+		argsBottom = -48 // ä»… this æŒ‡é’ˆ @-48
 	}
 
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs)-argSaveBytes)
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, argsBottom)
 
 	// é¢„ç•™å¤§å€¼è¿”å›æ§½ï¼šå®¹å™¨ 24B + R10 ä¿å­˜ 8Bï¼›ç»“æ„ä½“æŒ‰æ§½æ•°ï¼ˆSize/8ï¼‰è®¡ç®—
 	retBytes := 24
@@ -466,12 +474,6 @@ normalCall:
 		code += utils.Format("call rax; é—´æ¥è°ƒç”¨")
 	} else {
 		name := formatFuncName(fn)
-		if name == "" {
-			// DEBUG: trace empty function name
-			fmt.Fprintf(os.Stderr, "[DEBUG-CALL] empty func name! fn=%p fn.Name=%v fn.Name.NASM()=%q fn.MangledOverride=%q fn.Args=%d\n",
-				fn, fn.Name, fn.Name.NASM(), fn.MangledOverride, len(fn.Args))
-			fmt.Fprintf(os.Stderr, "[DEBUG-CALL] stack:\n%s\n", string(debug.Stack()))
-		}
 		code += utils.Format("call " + name)
 	}
 
@@ -492,8 +494,15 @@ normalCall:
 	return code
 }
 
-// stripOuterBrackets å»æ‰å¤–å±‚æ–¹æ‹¬å·
+// stripOuterBrackets å»æ‰å®½åº¦å‰ç¼€ä¸å¤–å±‚æ–¹æ‹¬å·ï¼šQWORD[rbp-96] â†’ rbp-96
 func stripOuterBrackets(addr string) string {
+	addr = strings.TrimSpace(addr)
+	for _, p := range []string{"BYTE", "WORD", "DWORD", "QWORD"} {
+		if strings.HasPrefix(addr, p) {
+			addr = strings.TrimSpace(addr[len(p):])
+			break
+		}
+	}
 	if len(addr) >= 2 && strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
 		return addr[1 : len(addr)-1]
 	}
@@ -586,104 +595,16 @@ func (a *SysV) loadContainer3(exp *parser.Expression, regs []string, desc string
 	}
 	// åµŒå¥—è°ƒç”¨ï¼šå…ˆ callï¼ˆè¿”å›å€¼åœ¨æœ¬å¸§è¿”å›æ§½ï¼‰ï¼Œå†ä»è¿”å›æ§½è¯»ä¸‰æ§½
 	if exp.Call != nil {
-		code := a.Call(exp.Call)
-		code += utils.Format("mov " + regs[0] + ", " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]")
-		code += utils.Format("mov " + regs[1] + ", " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+ps) + "]")
-		code += utils.Format("mov " + regs[2] + ", " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+2*ps) + "]")
-		return code
-	}
-	// å­—ç¬¦ä¸²å¸¸é‡
-	if exp.IsConst() {
-		label := "0"
-		if exp.StringVal != "" {
-			label = a.stringLabel(exp.StringVal)
-		}
-		slen := len(exp.StringVal)
-		return utils.Format("mov " + regs[0] + ", " + label) +
-			utils.Format("mov " + regs[1] + ", " + strconv.Itoa(slen)) +
-			utils.Format("mov " + regs[2] + ", " + strconv.Itoa(slen))
-	}
-	// å®¹å™¨å˜é‡ï¼šä»å†…å­˜è¯»ä¸‰æ§½
-	if exp.Var != nil {
-		src := stripOuterBrackets(GenVarAddr(a.ctx, exp.Var))
-		code := utils.Format("mov " + regs[0] + ", " + ln + " [" + src + "]")
-		code += utils.Format("mov " + regs[1] + ", " + ln + " [" + src + "+" + strconv.Itoa(ps) + "]")
-		code += utils.Format("mov " + regs[2] + ", " + ln + " [" + src + "+" + strconv.Itoa(2*ps) + "]")
-		return code
-	}
-	return ""
-}
-
-// pushContainer å®¹å™¨ï¼ˆlist/stringï¼‰å®å‚å‹ 3 æ§½ï¼ˆcap/len/ptrï¼Œptr æœ€åå‹è½åœ¨ä½åœ°å€ [rbp+16] æ§½ï¼‰
-func (a *SysV) pushContainer(exp *parser.Expression, desc string) string {
-	ps := a.ctx.PointerSize
-	ln := a.ctx.Arch.LengthName(ps)
-	if exp == nil {
-		return utils.Format("push 0") + utils.Format("push 0") + utils.Format("push 0; ç©ºå®¹å™¨")
-	}
-	// åµŒå¥—è°ƒç”¨ï¼šå…ˆ callï¼ˆè¿”å›å€¼åœ¨æœ¬å¸§è¿”å›æ§½ï¼‰ï¼Œä»è¿”å›æ§½å‹ä¸‰æ§½
-	if exp.Call != nil {
-		code := a.Call(exp.Call)
-		code += utils.Format("push " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+2*ps) + "]")
-		code += utils.Format("push " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+ps) + "]")
-		code += utils.Format("push " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]")
-		return code
-	}
-	// å­—ç¬¦ä¸²å¸¸é‡
-	if exp.IsConst() {
-		label := "0"
-		if exp.StringVal != "" {
-			label = a.stringLabel(exp.StringVal)
-		}
-		slen := len(exp.StringVal)
-		return utils.Format("push " + strconv.Itoa(slen)) +
-			utils.Format("push " + strconv.Itoa(slen)) +
-			utils.Format("push " + label)
-	}
-	// å®¹å™¨å˜é‡ï¼šä»å†…å­˜å‹ä¸‰æ§½
-	if exp.Var != nil {
-		src := stripOuterBrackets(GenVarAddr(a.ctx, exp.Var))
-		code := utils.Format("push " + ln + " [" + src + "+" + strconv.Itoa(2*ps) + "]")
-		code += utils.Format("push " + ln + " [" + src + "+" + strconv.Itoa(ps) + "]")
-		code += utils.Format("push " + ln + " [" + src + "]")
-		return code
-	}
-	return utils.Format("push 0") + utils.Format("push 0") + utils.Format("push 0; ç©ºå®¹å™¨")
-}
-
-// Exp ç¼–è¯‘è¡¨è¾¾å¼
-func (a *SysV) Exp(exp *parser.Expression, result, desc string) string {
-	return a.exp(exp, result, desc)
-}
-
-// sysvWidthName è¿”å›å¯„å­˜å™¨æŒ‡å®šå®½åº¦çš„åå­—ï¼ˆRDIâ†’EDI/DIL/DIï¼ŒR8â†’R8D/R8B/R8Wï¼‰
-func sysvWidthName(reg string, size int) string {
-	isR8 := len(reg) == 2 && reg[0] == 'R' && reg[1] >= '8' && reg[1] <= '9'
-	switch size {
-	case 1:
-		if isR8 {
-			return reg + "B"
-		}
-		switch reg {
-		case "RDI":
-			return "DIL"
-		case "RSI":
-			return "SIL"
-		case "RDX":
-			return "DL"
-		case "RCX":
-			return "CL"
-		}
-	case 2:
-		if isR8 {
-			return reg + "W"
-		}
-		return reg[1:] + "I"
-	case 4:
-		if isR8 {
-			return reg + "D"
-		}
-		return "E" + reg[1:]
-	}
-	return reg
-}
+		code := a.Call(exp.Call)Áî0Æ©¿Ğ xk¶Or‘3N{‘°eO[SpÆ¶—rcj¤-´ØÜO_a¸)È¹àºfF¦jİ
+0ûiVVm’bá<.&E5§ğc}¯¡¼„"IÃ\¶ã1’’^)C;_İö¬Gc¶¦"=¨f‘èÓVfzf×‘¦¶
+`ôîÆİû+_”!|¡¬ÂT>zMtxà–Ã»÷&«ş¨ ºYs[ÍœáDgÊ =Èß«ÛòÇR|‘TÉò/!âíd¹&Wˆéñ5xò$w*©U™
+¤Ğç#A¥*Ğ1ñù+Ù½^.MuSÁıÚ®¾Ş{]™}I#ro¡ïÇ1ØqëD—:`xë8Ôá	…ÔF&ªŞL£æG}5÷'çËœÂ-Ô[rÜa,â¿æ3k‡aôc{]FŞ=sôÎ¢–‹ÖÃõ8seö¶p÷ÇÀ'Kı&Û  ç@·Z#°Z¦ ¦Ğ”}0ß”`³P×ÒkÔ‚ƒ2$fgø„]~ùìßxÓ-èç*·+yTİy»Ôâdìùt´ëğ®z¢&ô!„Y»<Ğá<±Æt,Z—îpU)Øœ•”‰ãòØÏ[İ¡I’"TêHíè7*UGï"*³§2"©œQ~¸q_§S‡“ú´òÉ	Ó:ók·yùvÑªğk)‰t-ù=mĞUd²Ó®<¹èpG…èÕ';Öè®BmkòáSOÁù4ªºàACw¥(¯¯œ’ŒkÔ¯9&eÁãY qÿ,‘œ¼¶§n¦‡5ö‚!sœ.8F™%¥–|hMÄÃ99†ÀÆßÈ”Ç«vı’åè5tùh4Î3‡4‚ÒÇ)_TÚ˜ËtK…”Ì¹(ûtGi‡Ô<|J~¿™2Ç„“»Õ*fÅR`PØ#Ù:-â*»i™fç”CåU¹¼p¦„¥'<ƒãŒVAíô}ÍŠ»ı•¼¾H;Mš!~^Û“‚èR]u„ª #{ìaÓÍ´ísÃÑu›¿8T¸?å£Ní|¼ó"ÙàÓüì3Æ1MÉ±ğ9ÎµÁÒ÷úBÑ·H~Àõ„‘,ÄåÏÁa'>ÿå	Q²İ)·ÿ*àqq.½~wQêiˆç<QQÖPtKÕ<-zs¡®¨8ÊR¬C°xÉÔ¸¡Ùœ#êHæc€°†B”îø-~OOñTí>7á½1Ïuyö<½Æ†émcnvåQVn4*PıÅ²é——“Ò•7Ò>‡Â‘nõmŠ•¶©:O= eÉg«Óæeß´Ä²* à´‹3/'0Õµ„Û¬ìÈ;Å8ÿUçşÖÇ†2í#7L¥GÅæ®açŒÉ‡_E[´ ÌÖe“æÅÀ[ø¡ƒfåû#®[Îh¹\DFŸøójXnÜa*PzT½¨e)šÿ*985ÅO?(ÇuUã'ÀØûüï/IûùÑ‰‡9jg{nyÙ‘šóŞFİ_å!fö{*Ş´Éú· £ä`S{ãüÀÍ8-ñ$ÓôÃ=¼XĞY#nş%6RCëBmàÙs8XŸ¶FyÏAñ¡SY‰¬x6f;£¡ÌÙW¼˜İ©Ç#ê¢ÿxl‹Våò,H<ÙÕ> Ñîü&|°íõÅ¤ Óˆ6Á‰çˆ€$7£ë³k—…ÔW£øŠÕvCXqhúâÁàËÇÙ™õ$–2¹]Š`[ZXÎïGIíBİšÈpßzñ5‰…_0•>5sÙ±Øó0HåìJ5+lE&¦+ÈRõkgÌşG`ëYƒ¶KE:
+† ÿÔÄ©†ˆêÂ%4ÅÀ“ò·z·a*5O´±WŠşÓ˜ceˆ§ÙbjîYÁ%½T9E(&CÙ×:ä—nÌ7—k/õƒ-›Ş·OªeÀiTè3ª5vˆíÎÈÅY_õ«ÍôI*('¢s‰;X×ZZiçüîÊôõo¡H Szßè&OÜ–’P=f^|L¾GâxŞşL! ¦ÒŞ4¶ü£v©%×Õ‹Š‚»)œÂ€à[Á?fÕÄ­ÙÛ&èVk;ª{‚ĞBm‹dJa'u‘@áªÕáŸPú‰ÓøVoŒ‡äÍX½à¦Ÿwe«©hàŸ›/àÊµ­¶n„2·ØéàäŠı“çdúpZTÒÙö¾47µs2ıª¬N<o…AKBİ§€¸ŒüV*ì`»ğ²{z}´½fd»	Æ+˜<{J=½ãÚm¬kI¾9ÌØ¾6ˆäõHö:œïáW+)v<®ô²ØÃ›~V4z%Ñ=-7.ÅDD¾ƒú4ã¹`Â^o«¿¿˜vñÄË×/¶Ş¹“³éªD
+r>¬¥Ÿå"»ÙÎˆB_"öÍŠÎL{ŞY ú48à!ôÒğLM8ûÚüV=ªB°ÅXº\dórÛv²i9@VZkâà×ËpT${ş§›©»ÕC|­4œáÅLh(ÃLÀº.æ\¤ê@º/ä˜işó¨ı×ŒIèåƒ%Rß”ÍífÚZ­As³éÊßÂ½}éB¾H.xu±“Kñ2£Ñ¿›˜•‡/S©we1Ï²Ö•!+ìR½§­QŒç0Å>W@3c&öi;Êù“/ØÃ>°6¨­›OVÎvµÚ˜Qqe3gÃ_ª¥@\¬S¸ë—uW¡İëç?Š[l¾Ó¼‡’Õ©¨mE˜óWÒ1Ğ]hA˜«ä¦5æ<TcpËÊÿ£øÂ.Y½gc¶(º^°ÏÔ…áÂSˆHz§OıĞßÎ›ò èó¨6#.¶øoåZè‚ã$tï³_Õ|}s[§¥;„‡g]D‚YšÀÖôwkMC˜ó#UOÕiÖPtzTPêÙŸSC«ß,¶Ã¥´€¨ÉvYğ q¡1û0ÆrHÓIöÈê~Í+ÎñÃ½‹™İŸ½ôwÛº6¢BñìQ›ø©ã¬ëCøıUÑíîñğn/ÂZí~OôauUÁWëúZ§‰¶}™„ë.ù0}ÿ—D¢>§2öÕ´Zó“ ü¥¥‚gêÆğNåQVçİÎ4$ "JĞ÷DEœÏÒít˜ Ó:#Õ¹a\Û\?¦GÛéäŞß×MÃ3SôE´1áLÚ00ªA·µØÊacUy©_Ïã®’tñ©‰jœMš2J¥³£µì:^œÅ0-ª…´»ˆhònVñıß£«e•eyáö˜«Öº¸òÅå1¯ÏçŞ¼“äŸ
+ô§zª±ÓÆ±ü)£‡B‚é¬
+ø¨¤”'ÚDqeñµ†šn­åHHÖÈ'úúªë=bA_#‡}r›µ	jä+¿±½ùãâaFª]¸²sÅŠ‹ô¶¶ŒŞm¥
+4ãƒ!ÿ½­ò6ôz¡G2>÷òÌvSĞ=ÂoÑ;ñO–¿³å÷…“å§ÒÔ´Æ’y'	ß¥›ß^¬4mw¦Ô¤Õ*Å®Òã˜ÍÚzÅúÇô63 ‹6Nl'ÀgÖh´§£Œj®‘†Oñ,<j#û+Œ·¬Û`a8ùêY«K­a+†¨mRPº|fè!--YO«jjj?A“tQ·-MŒ={€(ö(O²à&ã|·³ÂÎöOÑU³¶Öü±¥øºâêÁ$áZım]3‚L´Ö¿¥ F-EuyMç¿öÉiÈ™ë€ï“oƒó¢½·f¸/BõÜÏü¡‰AÈpË26šcş˜öÌ!>N³½ÌçéÿÔ¿ß÷J‹ ”WıIı$ßÂê|Ô“:(ğ¿[1ß•!ø;%4õÛNú›K^.)lSè£áÛ]!Œ…@»Ï³†øGšà—PÆ0•´D5†hşFAœ¨¢P›åy-¯jc,êQüÿ‡I¸"}øs–RõqOéŸ‘TäUÍºÖÂ’›tœó©öo…á×¤QøHÂs€®Z#—?ô$_`¬h£÷MƒÍ€5rïsÚêvJµëEB‡e ÁˆÈô”¶Ğíek³3] '»¿ƒ	8¿˜€ Ø8‡Ñ?ÓĞ¬Àdªò|I‹@ú
+§¿]Pa\2öY_ï^˜`ò‚‚g#0æĞ‚ËfŒUQ¯Lù
+JòbJEœ—Û€]JNù¸ó	ë! ½\Á^ cbMèp‚¤pëÚbÔ:‘4f]ç…Ï‘ÓàÂ³°ÔÇ$–Z¬ìº=Í8d/LSÜ™tm†ïöQ2åñUà¦:?VÆıàõß!cjvŸÄ
+´qM3ÄCµ:²œŞ›İÃ¶¸TC$D1PnÜñ$»ë5’'µ[H¹ºeV
+Ü
