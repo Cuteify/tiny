@@ -64,36 +64,6 @@
 
 package parser
 
-// ============================================================
-// 跨函数过程摘要：入参指针是否逃逸
-// ============================================================
-//
-// §2.2 的三类摘要之一。调用点不必读被调函数体，只查这张表：
-//
-//	ArgEscapeOf(call, idx) == false  →  第 idx 号实参是"只读不存"的，
-//	                                   调用方可以继续按作用域释放
-//	                              true   →  被调方可能把它存到别处，退回保守
-//
-// 判定规则（sound 的 may 分析）：
-//
-//	参数逃逸 ⟸ 被存进全局 / 被装箱进接口或结构体值 / 被写进结构体字段
-//	参数逃逸 ⟸ 作为第 j 个实参传出，且被调函数的第 j 号参数也逃逸
-//	参数逃逸 ⟸ 被调函数认不出来（泛型未解析 / 不在合并树里）
-//
-// 用**最小定点**：may 分析的结论应当是"存在一条推导链能证明逃逸"。
-// 最大定点（从全逃逸往回收缩）会把纯递归锁死 —— quickSortInts(s) 递归调用自己，
-// 那条边自己依赖自己，收缩不掉 → 整个函数判逃逸 → 摘要白做。
-// 最小定点下，没有地面事实（存全局 / 装箱 / 字段写入）的递归环推不出逃逸，
-// 判不逃逸，这才是对的 —— 环里没有一条真的把指针存到了外面。
-//
-// 不算逃逸的情况：读取、作为返回值传出（返回参数意味着所有权仍在调用方，
-// 见 markRets 的所有权转移）、只在本帧局部之间倒手。
-//
-// ── 为什么懒算而不是全局预扫描 ──
-// GetPackage 是递归的：依赖包的 Check 在外层建表之前就跑完了。表是包级全局，
-// 预扫描的结果会被内层的 Check 读走（拿到空表 → 全判逃逸），而 Escapes 单调
-// 递增，这个保守值会永久留下。懒算把顺序彻底解耦：谁问谁算，只算那棵子树。
-
 var (
 	paramBusy   = map[*FuncBlock]bool{} // 正在计算中（防递归重入）
 	paramMemo   map[*FuncBlock][]bool   // 算完的结果（定点收敛后）
@@ -261,7 +231,7 @@ func scanFuncFacts(f *FuncBlock) {
 	}
 
 	ground := make([]bool, len(f.Args))
-	mark := func(p *ArgBlock) {
+	markGround := func(p *ArgBlock) {
 		if p == nil {
 			return
 		}
@@ -280,8 +250,9 @@ func scanFuncFacts(f *FuncBlock) {
 		if p == nil {
 			return
 		}
-		p.Life.PassedTo = append(p.Life.PassedTo, idx)
-		p.Life.passedAt = append(p.Life.passedAt, cb)
+		// 与 collectArgs 记的是同一条事实（参数被当作第 idx 个实参传出），
+		// 走同一个施点亮点，别在这里直接写字段。
+		applyMark(mark{flag: mkParamOut, l: &p.Life, i: idx, cb: cb})
 	}
 
 	eachSubNode(BlockNode(f), func(n *Node) {
@@ -296,14 +267,14 @@ func scanFuncFacts(f *FuncBlock) {
 			}
 			switch {
 			case t.IsGlobal:
-				mark(p) // 存进全局
+				markGround(p) // 存进全局
 			case len(t.Name) > 1 && fieldTypeOwning(t.Value.Type, t.Name.Last()):
 				// b.inner = p：写结构体字段就算逃逸。基对象是本帧的还是要存的，
 				// 这里分不出来，而字段里存的指针完全可能活得比本帧久
 				// （基对象随后被存进全局或返回出去）。漏判就是提前释放，所以保守。
-				mark(p)
+				markGround(p)
 			case !t.IsDefine && copiesFields(t.Type):
-				mark(p) // 装箱进接口 / 结构体值
+				markGround(p) // 装箱进接口 / 结构体值
 			}
 		case *CallBlock:
 			for i, ag := range t.Args {
