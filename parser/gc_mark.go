@@ -45,7 +45,6 @@ const (
 	mkParamOut // m.l.PassedTo += m.i；m.l.passedAt += m.cb
 
 	// --- 返回点（collectRet）---
-	mkReturned    // m.l.Returned = true
 	mkTransferObj // m.o.Transferred = true：交给调用者，callee 侧不再释放
 	mkFuncOwns    // m.fb.ReturnsOwned = true：返回值里有本帧分配的对象
 
@@ -110,8 +109,6 @@ func applyMark(m mark) {
 	case mkParamOut:
 		m.l.PassedTo = append(m.l.PassedTo, m.i)
 		m.l.passedAt = append(m.l.passedAt, m.cb)
-	case mkReturned:
-		m.l.Returned = true
 	case mkTransferObj:
 		m.o.Transferred = true
 	case mkFuncOwns:

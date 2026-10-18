@@ -230,13 +230,13 @@ func (c *Compiler) MonomorphizeFunction(fn *parser.FuncBlock, typeSubst map[stri
 	specializedName := parser.NewName(newName)
 
 	specialized := &parser.FuncBlock{
-		Args:           specializedArgs,
-		Class:          typeSys.SubstituteTypeParams(fn.Class, typeSubst),
-		Return:         specializedReturn,
-		Name:           specializedName,
-		BuildFlags:     fn.BuildFlags,
-		Useful:         true,
-		TypeParams:     nil, // 特化后不再是泛型
+		Args:            specializedArgs,
+		Class:           typeSys.SubstituteTypeParams(fn.Class, typeSubst),
+		Return:          specializedReturn,
+		Name:            specializedName,
+		BuildFlags:      fn.BuildFlags,
+		Useful:          true,
+		TypeParams:      nil,     // 特化后不再是泛型
 		MangledOverride: newName, // 确保 MangledName() 返回正确的单态化标签
 	}
 
@@ -365,6 +365,10 @@ func deepCopyVarBlock(v *parser.VarBlock) *parser.VarBlock {
 		Type:          v.Type, // Type is an interface; SubstituteTypeParams returns a new value
 		IsGlobal:      v.IsGlobal,
 	}
+	// Life 必须单独拷：它是非导出字段，结构体字面量不会带上它。漏拷会让特化
+	// 副本的归属与逃逸信息全丢（Obj/Scope/owner 都是零值）—— 副本里的
+	// new() 分配因此不被记录，块永远没人 free。
+	parser.CopyLife(cp, v)
 	// MultiTypes is []typeSys.Type — shallow copy the slice; individual types
 	// are immutable interfaces replaced (not mutated) by SubstituteTypeParams.
 	if v.MultiTypes != nil {

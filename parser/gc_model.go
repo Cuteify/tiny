@@ -33,7 +33,6 @@ type FieldBinding struct {
 // 字段值通常自己也有 FreeScope，按两者并集释放会双重释放。
 type Object struct {
 	ID          int            // 标号：第几次分配（调试、诊断、后端表索引用）
-	At          *VarBlock      // 分配语句（x = new(T) 那一条）
 	Owner       *VarBlock      // 初始持有者（创建处的栈槽；可能已被改绑）
 	Scope       Block          // 创建作用域（块，不是语句）
 	Escapes     bool           // 是否有绑定名跑出本帧（→ 退回 RC）
@@ -69,17 +68,14 @@ type Life struct {
 	OldObj      *Object // 写入前的旧对象
 
 	// --- 使用 ---
-	Escapes  bool        // 我是否跑出本帧
-	WroteTo  []*VarBlock // 我作为**右值**被写进过哪些左值。释放点取这些左值作用域的最大值。
-	Returned bool        // 作为返回值转移给调用者（ret 本帧分配的对象）
-	// 记在右值上而不是左值上：左值一个槽只能存一个对象，
-	// 后写的会把先写的挤掉（分支里 result = n1 / n2 就是这样）；
-	// 记在右值上两条边都在，不需要"这次赋值是分支还是顺序"的判据。
+	Escapes bool        // 我是否跑出本帧
+	WroteTo []*VarBlock // 我作为**右值**被写进过哪些左值。释放点取这些左值作用域的最大值。
+	// WroteTo 记在右值上而不是左值上：左值一个槽只能存一个对象，后写的会
+	// 把先写的挤掉（分支里 result = n1 / n2 就是这样）；记在右值上两条边都在。
 
 	// --- 参数链（跨函数摘要用，见 gc_summary.go）
 	arg       *ArgBlock    // 非 nil 表示我是某个参数
 	fromParam *ArgBlock    // 我这个借用来自哪个参数
-	OutEscape bool         // 我（作为参数）确实被传出本帧了；不含"参数天然归调用方"这条基线
 	PassedTo  []int        // 我作为第 i 个实参被传出过，目标函数的第几号参数
 	passedAt  []*CallBlock // 与 PassedTo 一一对应的调用点
 
@@ -174,7 +170,6 @@ func (l *Life) markEscapes() {
 	if l.fromParam != nil {
 		// 我是某个参数的借用：真正的逃逸要算到那个参数头上，
 		// 否则 var q = p; g = q 这种会把参数的逃逸吃掉。
-		l.fromParam.Life.OutEscape = true
 		l.fromParam.Life.Escapes = true
 	}
 }
@@ -200,7 +195,6 @@ func (l *Life) claim(stmt *VarBlock) {
 	o := stmt.Life.alloc
 	if o == nil {
 		o = newObject(l.owner, l.Scope)
-		o.At = stmt
 		stmt.Life.alloc = o
 	} else {
 		o.Owner, o.Scope = l.owner, l.Scope

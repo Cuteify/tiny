@@ -272,7 +272,6 @@ func scanFuncFacts(f *FuncBlock) {
 				ground[i] = true
 			}
 		}
-		p.Life.OutEscape = true
 	}
 	// 预扫描在 Check 之前跑，Life.owner 还没填，所以一律走 VarBlock 解析。
 	paramOf := func(e *Expression) *ArgBlock { return resolveParam(bareVar(e)) }

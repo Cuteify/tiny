@@ -257,7 +257,7 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 		if l.owner == nil || l.owner.IsGlobal {
 			return nil // 参数 / 全局：调用者或全局本来就有，不转移
 		}
-		m := []mark{{flag: mkReturned, l: l}}
+		var m []mark
 		if o := l.Obj; o != nil && !o.Escapes {
 			m = append(m,
 				mark{flag: mkTransferObj, l: l, o: o},
