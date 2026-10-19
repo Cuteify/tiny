@@ -82,9 +82,8 @@ func applyMark(m mark) {
 	case mkScope:
 		m.l.Scope = curScope
 	case mkOldObj:
-		// 覆盖前把旧对象记在**语句块**上（不是定义的 Life —— 同一变量可能被
-		// 赋值多次，记在定义上会互相覆盖）。旧对象"失去这个名字"是 Obj 被
-		// 覆盖的自然结果，不需要撤销任何东西。
+		// 记在语句块而不是定义的 Life：同一变量多次赋值会互相覆盖。
+		// 旧对象"失去这个名字"是 Obj 被覆盖的自然结果，无需撤销。
 		m.v.Life.OldObj = m.l.Obj
 	case mkObjClaim:
 		m.l.claim(m.v)
@@ -96,9 +95,7 @@ func applyMark(m mark) {
 		if m.l.owner != nil {
 			m.src.WroteTo = append(m.src.WroteTo, m.l.owner)
 		}
-	case mkFromParam:
-		// 记住这个借用来自哪个参数：后面它被存到全局之类时，逃逸要能算回
-		// 那个参数头上（跨函数摘要要用）。
+	case mkFromParam: // 摘要要靠它把逃逸算回参数头上
 		if m.src.arg != nil {
 			m.l.fromParam = m.src.arg
 		} else {

@@ -65,40 +65,44 @@ func (l *Life) markAssign(v *VarBlock) {
 // writeFormOf（gc_pred.go）把形态算成 bitflag，这里按形态收成事实。
 // 优先序只写在 writeFormOf 里，这里不重复判条件。
 func (l *Life) collectWrite(v *VarBlock) []mark {
+	// fact 本站点的事实构造器：l / v / src 恒定，只有 flag 在变 ——
+	// 由它统一填，switch 里只剩"产生哪几条事实"。
+	fact := func(flag markFlag, src *Life) mark {
+		return mark{flag: flag, l: l, v: v, src: src}
+	}
 	var m []mark
 	if v.IsDefine {
 		// 作用域先记：它对任何变量都有意义，不能被形态闸门挡掉。
 		// 曾因闸门提前返回导致"有 Obj 却没 Scope"，释放点塌缩回创建作用域 → 提前释放。
-		m = append(m, mark{flag: mkScope, l: l})
+		m = append(m, fact(mkScope, nil))
 	}
 	form, src := writeFormOf(v)
 	if form&wfCoverOld != 0 {
-		m = append(m, mark{flag: mkOldObj, l: l, v: v})
+		m = append(m, fact(mkOldObj, nil))
 	}
 	switch form & formKind {
-	case wfSkip:
-		// int / bool / float：赋值与 GC 无关
+	case wfSkip: // int / bool / float：赋值与 GC 无关
 	case wfGlobal:
-		m = append(m, mark{flag: mkEscape, l: l}) // 全局不在任何栈帧内
+		m = append(m, fact(mkEscape, nil)) // 全局不在任何栈帧内
 		if src != nil {
-			m = append(m, mark{flag: mkWroteTo, l: l, src: src})
+			m = append(m, fact(mkWroteTo, src))
 		}
 		return collectExpr(m, v.Value, true)
 	case wfRC:
-		m = append(m, mark{flag: mkObjNil, l: l}) // 生命周期由调用者手工 rcDec 管
+		m = append(m, fact(mkObjNil, nil)) // 生命周期由调用者手工 rcDec 管
 	case wfFresh:
-		m = append(m, mark{flag: mkObjClaim, l: l, v: v})
+		m = append(m, fact(mkObjClaim, nil))
 	case wfAlias:
 		if form&wfCopies != 0 {
 			// 容器复制：源的字段指针被带走，去向不可追
 			return append(m, mark{flag: mkEscape, l: src})
 		}
 		m = append(m,
-			mark{flag: mkObjAlias, l: l, src: src},
-			mark{flag: mkWroteTo, l: l, src: src},
-			mark{flag: mkFromParam, l: l, src: src})
+			fact(mkObjAlias, src),
+			fact(mkWroteTo, src),
+			fact(mkFromParam, src))
 	default: // wfBorrow
-		m = append(m, mark{flag: mkObjNil, l: l}) // 字段读 / 索引 / 调用结果：借用
+		m = append(m, fact(mkObjNil, nil)) // 字段读 / 索引 / 调用结果：借用
 	}
 	return m
 }
