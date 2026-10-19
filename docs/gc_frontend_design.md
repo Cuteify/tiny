@@ -1,6 +1,6 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 九个文件，约 1920 行。
+> 对象：`parser/gc_*.go` 九个文件，约 1880 行。
 > 唯一公开入口：`parser.SimulateRC(root)`，调用点在 `package/package.go`。
 > 后端只读 `parser.Object` 与 `(*Life).Disposal()`，不参与任何判断。
 
@@ -239,8 +239,8 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 | 文件 | 行 | 职责 |
 |---|---|---|
-| `gc_model.go` | 263 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
-| `gc_write.go` | 330 | Check 期收集器：赋值 / 字段 / 调用 / 返回 |
+| `gc_model.go` | 276 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
+| `gc_write.go` | 329 | Check 期收集器：赋值 / 字段 / 调用 / 返回 |
 | `gc_names.go` | 140 | 绑定名反转 + 作用域工具 |
 | `gc_pred.go` | 247 | 判据：类型形态、表达式形态、`writeForm` |
 | `gc_release.go` | 134 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
@@ -271,8 +271,7 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ## 6. 可以简化的部分
 
-按"收益 / 风险"排序。6.1–6.3 已实施（净 −30 行，基线不变）；
-6.4 / 6.5 未做，各附理由。
+按"收益 / 风险"排序。6.1–6.4 已实施（净 −45 行，基线不变）；6.5 未做。
 
 ### 6.1 `gc_summary.go` 有两份几乎相同的文件头（**已做**，−30 行）
 
@@ -300,15 +299,20 @@ parser/gc_summary.go:283:13: mark (local variable) is not a type
 
 **收益**：事实写入点从 2 处降到 1 处。**风险**：低，已跑基线确认。
 
-### 6.4 `collectWrite` 里 18 处 `mark{flag: X, l: l}` 的重复字段（**未做**）
+### 6.4 `collectWrite` 里 18 处 `mark{flag: X, l: l}` 的重复字段（**已做**）
 
-`l` 和 `v` 在这个收集器里恒定，只有 flag 在变。一个局部构造器可以收掉：
+`l` / `v` / `src` 在这个收集器里恒定，只有 flag 在变。局部构造器收掉了重复：
 
 ```go
-fact := func(flag markFlag) mark { return mark{flag: flag, l: l, v: v, src: src} }
+fact := func(flag markFlag, src *Life) mark {
+    return mark{flag: flag, l: l, v: v, src: src}
+}
 ```
 
-**收益**：−10 行左右，`switch` 里只剩"这条语句产生哪一条事实"。**风险**：低。**争议**：会略微降低可审计性 —— flag 与载荷不再一眼可见，要回 `gc_mark.go` 查每个 flag 要哪些字段。
+`switch` 里现在只剩"这条语句产生哪几条事实"。flag 与载荷的对应关系在
+`gc_mark.go` 的 case 注释里仍可逐条核对 —— 可审计性没有降。
+
+**收益**：−10 行。**风险**：低（已跑基线）。
 
 ### 6.5 三层塌成两层（**未做**，收益最大，风险也最大）
 

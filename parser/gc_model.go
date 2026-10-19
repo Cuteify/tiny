@@ -82,6 +82,16 @@ type Life struct {
 	owner *VarBlock // 宿主变量（登记时写入）；参数为 nil
 }
 
+// paramRoot 这个借用的最早来源：直接是参数（arg），或经由借用链记到的
+// 参数（fromParam）。collectArgs 记实参传出、mkFromParam 记借用来源时
+// 都要做同一件事 —— 二选一的判断只在这里写一次。
+func (l *Life) paramRoot() *ArgBlock {
+	if l.arg != nil {
+		return l.arg
+	}
+	return l.fromParam
+}
+
 // Disposal 一个对象怎么处置。后端只调这一个方法，不要自己拼条件。
 type Disposal uint8
 

@@ -96,11 +96,7 @@ func applyMark(m mark) {
 			m.src.WroteTo = append(m.src.WroteTo, m.l.owner)
 		}
 	case mkFromParam: // 摘要要靠它把逃逸算回参数头上
-		if m.src.arg != nil {
-			m.l.fromParam = m.src.arg
-		} else {
-			m.l.fromParam = m.src.fromParam
-		}
+		m.l.fromParam = m.src.paramRoot()
 	case mkFieldBind:
 		m.v.Life.bindField(m.name, m.src.owner)
 	case mkParamOut:

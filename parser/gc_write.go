@@ -204,9 +204,7 @@ func collectArgs(cb *CallBlock) []mark {
 		m = collectExpr(m, ag.Value, ArgEscapeOf(cb, i))
 		// 参数 / 参数借用被当作第 i 个实参传出 → 记进参数链，供摘要判定
 		if l := bareRef(ag.Value); l != nil {
-			if p := l.arg; p != nil {
-				m = append(m, mark{flag: mkParamOut, l: &p.Life, i: i, cb: cb})
-			} else if p := l.fromParam; p != nil {
+			if p := l.paramRoot(); p != nil {
 				m = append(m, mark{flag: mkParamOut, l: &p.Life, i: i, cb: cb})
 			}
 		}
