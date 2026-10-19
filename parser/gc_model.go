@@ -224,7 +224,6 @@ func (l *Life) bindField(field string, val *VarBlock) {
 // 作用域
 // ============================================================
 
-// LifeOf 解析一个引用 VarBlock 指向的定义的归属信息；解析不出返回 nil。
 // LifeOf 解析一个**引用** VarBlock（lhs = rhs 里的 rhs 那种）指向的定义的
 // 归属信息；解析不出返回 nil。
 func LifeOf(ref *VarBlock) *Life {

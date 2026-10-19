@@ -141,7 +141,6 @@ func fieldBaseOf(scope Block, v *VarBlock) *VarBlock {
 // 字段语句块的 Define 指向 StructField，拿不到基对象，只能靠名字反查。
 // 出现多个不同定义（遮蔽）时返回 ambiguous —— 调用方要按 nil 处理，
 // 因为选错基对象会 free 错块。
-// lookupInFunc 在当前函数体里按名字找定义；出现多个不同定义（遮蔽）时返回 ambiguous。
 func lookupInFunc(scope Block, name string) (def *VarBlock, ambiguous bool) {
 	fn := scope
 	for fn != nil {
@@ -324,7 +323,3 @@ func collectExpr(out []mark, e *Expression, escapes bool) []mark {
 	}
 	return out
 }
-
-// ============================================================
-// Check 期标记入口（写站点）
-// ============================================================

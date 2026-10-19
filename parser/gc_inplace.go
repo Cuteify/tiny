@@ -58,10 +58,6 @@ func (s *rcSim) walk(n *Node) {
 		s.stmt(v)
 	case *CallBlock:
 		s.call(v)
-	case *ReturnBlock:
-		for _, e := range v.Value {
-			s.ref(e)
-		}
 	}
 	eachSubNode(n, s.walk)
 }
@@ -106,17 +102,6 @@ func (s *rcSim) referenced(o *Object) bool {
 		}
 	}
 	return false
-}
-
-// ref 表达式取值产生一次新引用：判据与 evalCopy 相同（只认裸变量）。
-// 字段读（p.f）按"不增加引用"处理 —— 与 Check 期把字段读判为借用一致。
-// 后果：只被字段持有的对象，模拟器看不到这条引用，由 scopeRelease 的兜底兜住。
-func (s *rcSim) ref(e *Expression) {
-	l := bareRef(e)
-	if l == nil {
-		return
-	}
-	s.slotOf(hostOf(l.owner)) // 被调方可能把它存下，登记一下当前指向
 }
 
 // slotOf 变量当前持有的对象；未初始化过则回退到 Life.Obj。
@@ -258,24 +243,11 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	}
 }
 
-// call 调用点：实参与接收者各产生一次引用（被调方可能把它存下）。
+// call 调用点暂时是空维护：实参"被被调方存下"这件事由跨函数摘要（mkEscape
+// 那条路）判，落脚点在 Check 期而不是模拟期。模拟器只跟踪本帧槽位，
+// 摘要判逃逸的对象本来就不会进槽位表（o.Escapes 过滤）。
 func (s *rcSim) call(cb *CallBlock) {
-	if cb == nil {
-		return
-	}
-	for _, ag := range cb.Args {
-		if ag != nil {
-			s.ref(ag.Value)
-		}
-	}
-	for _, ag := range cb.VariadicArgs {
-		if ag != nil {
-			s.ref(ag.Value)
-		}
-	}
-	if cb.ThisVar != nil {
-		s.ref(&Expression{Var: cb.ThisVar})
-	}
+	_ = cb
 }
 
 // cur 当前作用域（作用域栈顶）。

@@ -18,15 +18,10 @@ package parser
 // 全部绑定名"。Check 期因此不需要任何撤销逻辑：重绑只是覆盖 Obj，旧对象在
 // 这一步自然就不再含有那个名字。释放点不在这里定 —— 那是 SimulateRC 的时序结论。
 //
-// 反转是这里唯一算"谁指向谁"的地方 —— Check 期只写正向事实（Life.Obj
-// 与「右值记左值」的 WroteTo 边），"某对象当前被哪些名字指着"是一次性反转
-// 出来的，不增量维护。
+// 反转是这里唯一算“谁指向谁”的地方：Check 期只写正向事实
+// （Life.Obj 与「右值记左值」的 WroteTo 边），反向表一次性建出来，不增量维护。
 func collectNames(root *Node) {
-	// 阶段 1：建反向索引 + 反转绑定名。
-	//
-	// 反转是这里唯一算"谁指向谁"的地方 —— Check 期只写正向事实（Obj），
-	// "某对象当前被哪些名字指着"是一次性反转出来的，不增量维护。
-	// 顺带把 blockNode 补全：建树有几处绕过 AddChild（ifelse 的 if/else 节点、
+	// 阶段 1：建反向索引 + 反转绑定名。顺带把 blockNode 补全：建树有几处绕过 AddChild（ifelse 的 if/else 节点、
 	// package 合并根节点时的 append），走一遍全树保证反查索引没有空洞。
 	names := map[*Object][]*VarBlock{} // 对象 → 当前指向它的全部名字
 	var lives []*VarBlock              // 参与反转的 Life 宿主，按树序

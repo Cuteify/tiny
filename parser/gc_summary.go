@@ -24,7 +24,7 @@
 //	参数逃逸 ⟸ 被调函数认不出来（泛型未解析 / 不在合并树里）
 //
 // 不算逃逸：读取、只在本帧局部之间倒手、作为返回值传出
-// （返回参数意味着所有权仍在调用方，见 gc_write.go 的 retValue）。
+// （返回参数意味着所有权仍在调用方，见 gc_write.go 的 collectRet）。
 //
 // ============================================================
 // 为什么用最小定点，不是最大定点
@@ -59,9 +59,6 @@
 // 记录的东西。这样就不依赖"被调方查完了吗"那个判断（Check 期间不可靠），
 // 代价是多一个局部别名表的不动点（scopeOf 认不出 src 来自哪个参数时，
 // 得靠别名表把 a = p; b = a; g = b 这种链条接上）。
-//
-//   0 行注释 ←───────────────────────────────────────────────────
-
 package parser
 
 var (
@@ -70,7 +67,6 @@ var (
 	paramGround map[*FuncBlock][]bool   // 地面事实：存全局 / 装箱 / 写字段
 )
 
-// paramEscapeOfFunc 被调函数第 idx 号参数是否逃逸；认不出来返回 true。
 // paramEscapeOfFunc 被调函数第 idx 号参数是否逃逸。
 //
 // 认不出来（泛型未解析 / 不在合并树 / 序号越界）一律 true —— 判逃逸 = 退回
@@ -97,8 +93,6 @@ func paramEscapeOfFunc(fb *FuncBlock, idx int) bool {
 	return esc[idx]
 }
 
-// computeParamSummary 求以 fb 为根的调用图闭包上的最小定点。
-// 结果写进 paramMemo，重复查询直接命中。
 // computeParamSummary 求以 fb 为根的调用图闭包上的最小定点。
 //
 // 做法：
@@ -235,8 +229,6 @@ func scanFuncFacts(f *FuncBlock) {
 		if p == nil {
 			return
 		}
-		// ground[i] 必须无条件置位：OutEscape 可能已被 markEscapes 的
-		// 参数链传播提前置上，而本次扫描看到的不是第一次。
 		for i, a := range f.Args {
 			if a == p {
 				ground[i] = true
