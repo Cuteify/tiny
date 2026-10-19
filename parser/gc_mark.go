@@ -6,8 +6,9 @@
 //	                      查跨函数摘要，结果收成若干条 mark。**不写任何状态。**
 //	applyMark（本文件）    只施加。mark → 具体字段写。**不判任何条件。**
 //
-// 为什么拆：探测要读的东西五花八门，而且带顺序约束（wfRC 必须先于 wfFresh，
-// 否则 newRC 的块会被当普通新分配 claim 掉）；施加只写 Life / Object /
+// 为什么拆：探测要读的东西五花八门，而且带顺序约束（isRCExpr 必须先于
+// freshAllocExpr 判，否则 newRC 的块会被当普通新分配 claim 掉 —— 约束由
+// collectWrite 的分派顺序保证）；施加只写 Life / Object /
 // ArgBlock / FuncBlock 上十几个固定字段。混在一起时，"这套分析能记哪些
 // 事实"要读遍所有收集器才拼得出来 —— 现在看 applyMark 的 case 列表就是全集，
 // 且每个 case 都标明由哪个收集器发出。
@@ -29,14 +30,17 @@ type markFlag uint16
 
 const (
 	// --- 变量写站点（collectWrite，gc_write.go）---
-	mkInit      markFlag = 1 << iota // m.l.Init(m.v)：清空（保 alloc），owner = m.v
-	mkScope                          // m.l.Scope = curScope
-	mkOldObj                         // m.v.Life.OldObj = m.l.Obj     ← 必须排在 mkObj* 之前
-	mkObjClaim                       // m.l.Obj = claim(m.v)
-	mkObjAlias                       // m.l.unify(m.src)：抄对方对象身份
-	mkObjNil                         // m.l.Obj = nil
-	mkWroteTo                        // m.src.WroteTo += m.l.owner
-	mkFromParam                      // m.l.fromParam = m.src 的参数来源
+	// 纯判别值（每条 mark 恰好一个 flag，从不按位或）——不用 1<<iota。
+	// mkOldObj 的施加必须先于 mkObj*（claim 会覆盖 Obj），由 collectWrite
+	// 的追加顺序保证，与这里的编号无关。
+	mkInit      markFlag = iota + 1 // m.l.Init(m.v)：清空（保 alloc），owner = m.v
+	mkScope                         // m.l.Scope = curScope
+	mkOldObj                        // m.v.Life.OldObj = m.l.Obj
+	mkObjClaim                      // m.l.Obj = claim(m.v)
+	mkObjAlias                      // m.l.unify(m.src)：抄对方对象身份
+	mkObjNil                        // m.l.Obj = nil
+	mkWroteTo                       // m.src.WroteTo += m.l.owner
+	mkFromParam                     // m.l.fromParam = m.src 的参数来源
 
 	// --- 字段写站点（collectField）---
 	mkFieldBind // m.v（容器）.Life.bindField(m.name, m.src.owner)

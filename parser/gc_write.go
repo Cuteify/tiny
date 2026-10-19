@@ -61,12 +61,22 @@ func (l *Life) markAssign(v *VarBlock) {
 
 // collectWrite 变量写站点（定义点与赋值点共用）的收集器。
 //
-// 整个 Check 期只有这里在决定"这个变量现在指向谁"。两步：
-// writeFormOf（gc_pred.go）把形态算成 bitflag，这里按形态收成事实。
-// 优先序只写在 writeFormOf 里，这里不重复判条件。
+// 整个 Check 期只有这里在决定"这个变量现在指向谁"。形态判定与事实收集
+// 是同一条链（原先的 writeForm bitflag 中间层已并入）—— 优先序就是语义，
+// 自上而下只在这里写一次：
+//
+//  1. 非 owning 类型最高：与 GC 无关，连右值都不必看。顺带避开 bareRef
+//     经 LifeOf 给参数打"天然归调用方"基线的那次置位。
+//  2. isRCExpr 必须先于 freshAllocExpr：newRC 的 Call 同时带 NewType 和
+//     IsRC，先判 fresh 会把引用计数的块当普通新分配 claim 掉，调用方和
+//     rcDec 双重释放同一块。
+//  3. 全局与 newRC 在记旧对象之前就 return：记了会让就地释放去 free
+//     一个全局的 / 手工 rcDec 管的块。
+//
+// 三种覆盖型写（fresh / alias / borrow）统一在分派前记旧对象。
 func (l *Life) collectWrite(v *VarBlock) []mark {
 	// fact 本站点的事实构造器：l / v / src 恒定，只有 flag 在变 ——
-	// 由它统一填，switch 里只剩"产生哪几条事实"。
+	// 由它统一填，下面的分派里只剩"产生哪几条事实"。
 	fact := func(flag markFlag, src *Life) mark {
 		return mark{flag: flag, l: l, v: v, src: src}
 	}
@@ -76,35 +86,40 @@ func (l *Life) collectWrite(v *VarBlock) []mark {
 		// 曾因闸门提前返回导致"有 Obj 却没 Scope"，释放点塌缩回创建作用域 → 提前释放。
 		m = append(m, fact(mkScope, nil))
 	}
-	form, src := writeFormOf(v)
-	if form&wfCoverOld != 0 {
-		m = append(m, fact(mkOldObj, nil))
+	if !owningType(v.Type) {
+		return m // int / bool / float：赋值与 GC 无关
 	}
-	switch form & formKind {
-	case wfSkip: // int / bool / float：赋值与 GC 无关
-	case wfGlobal:
+	src := bareRef(v.Value) // 右值的归属；nil = 不是裸引用
+	if v.IsGlobal {
 		m = append(m, fact(mkEscape, nil)) // 全局不在任何栈帧内
 		if src != nil {
 			m = append(m, fact(mkWroteTo, src))
 		}
 		return collectExpr(m, v.Value, true)
-	case wfRC:
-		m = append(m, fact(mkObjNil, nil)) // 生命周期由调用者手工 rcDec 管
-	case wfFresh:
-		m = append(m, fact(mkObjClaim, nil))
-	case wfAlias:
-		if form&wfCopies != 0 {
-			// 容器复制：源的字段指针被带走，去向不可追
+	}
+	if isRCExpr(v.Value) {
+		return append(m, fact(mkObjNil, nil)) // 生命周期由调用者手工 rcDec 管
+	}
+	if !v.IsDefine {
+		m = append(m, fact(mkOldObj, nil)) // 覆盖点先记旧对象（全局 / newRC 已提前返回）
+	}
+	switch {
+	case freshAllocExpr(v.Value):
+		// 当场新建：本变量拥有新对象（同一变量多处 new 是不同对象）
+		return append(m, fact(mkObjClaim, nil))
+	case src != nil:
+		if copiesFields(v.Type) {
+			// 容器复制：var sh: Iface = d 会把 d 的字段指针一起带走，
+			// 而 sh 之后的逃逸无法回溯到 d 的字段 → 保守把源当逃逸。
 			return append(m, mark{flag: mkEscape, l: src})
 		}
-		m = append(m,
+		return append(m,
 			fact(mkObjAlias, src),
 			fact(mkWroteTo, src),
 			fact(mkFromParam, src))
-	default: // wfBorrow
-		m = append(m, fact(mkObjNil, nil)) // 字段读 / 索引 / 调用结果：借用
+	default:
+		return append(m, fact(mkObjNil, nil)) // 字段读 / 索引 / 调用结果 / 字面量：借用
 	}
-	return m
 }
 
 // collectField 字段写入 p.f = v 的收集器：容器记下字段关系；

@@ -361,7 +361,7 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 // ParseNew 解析 new(T[, v1, v2...])：首个参数为类型名（parseTypeAnnotation），其余为字段初值
 func (c *CallBlock) ParseNew(p *Parser) {
 	// newRC(T) 与 new(T) 同形态，区别是块带 RC 头、生命周期由用户手工 rcDec 管。
-	// 解析期就置位：逃逸分析的 isRCExpr / wfRC 分支都读这个位。
+	// 解析期就置位：逃逸分析的 isRCExpr 判据读这个位。
 	if c.Name != nil && c.Name.String() == "newRC" {
 		c.IsRC = true
 	}

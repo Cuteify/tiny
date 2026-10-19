@@ -1,6 +1,6 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 九个文件，约 1880 行。
+> 对象：`parser/gc_*.go` 九个文件，约 1825 行。
 > 唯一公开入口：`parser.SimulateRC(root)`，调用点在 `package/package.go`。
 > 后端只读 `parser.Object` 与 `(*Life).Disposal()`，不参与任何判断。
 
@@ -219,35 +219,37 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ### 4.3 写站点怎么分类
 
-`writeFormOf(v)` 把一条赋值语句的形态算成 bitflag，`collectWrite` 再按形态收成事实：
+`collectWrite`（gc_write.go）内部一条优先序链，从语句形态直接产出事实 ——
+原 `writeForm` bitflag 中间层已并入这条链：
 
-| 形态 | 判据 | 产生的事实 |
+| 优先级 | 判据 | 产生的事实 |
 |---|---|---|
-| `wfSkip` | 左值不是 owning 类型 | 无 |
-| `wfGlobal` | 写全局 | 逃逸 + 记边 + 右值里所有变量逃逸 |
-| `wfRC` | 右边是 `newRC` | `Obj = nil`（借用） |
-| `wfFresh` | 右边是当场新建 | `claim`：这个变量拥有新对象 |
-| `wfAlias` | 右边是裸变量引用 | 别名（抄身份 + 记边 + 记参数来源） |
-| `wfBorrow` | 字段读 / 索引 / 调用结果 | `Obj = nil`（借用） |
+| 1 | 左值不是 owning 类型 | 无（连右值都不看） |
+| 2 | 写全局 | 逃逸 + 记边 + 右值里所有变量逃逸 |
+| 3 | 右边是 `newRC` | `Obj = nil`（生命周期归调用者 `rcDec`） |
+| 4 | 右边是当场新建 | `claim`：这个变量拥有新对象 |
+| 5 | 右边是裸变量引用 | 别名（抄身份 + 记边 + 记参数来源） |
+| 6 | 字段读 / 索引 / 调用结果 | `Obj = nil`（借用） |
 
-**优先序本身就是语义，写在一处**：
+**优先序本身就是语义，写在一处（collectWrite 头注释）**：
 
-- `wfSkip` 最高 —— 不是 owning 类型的赋值与 GC 无关，连右值都不必看
-- `wfRC` 必须在 `wfFresh` 之前 —— `newRC` 的 `Call` 同时带 `NewType` 和 `IsRC`，先判 fresh 会把 RC 块当普通新分配 claim 掉，调用方再 `rcDec` 就是双重释放
+- 非 owning 类型最高 —— 与 GC 无关，连右值都不必看；顺带避开 `bareRef` 经 `LifeOf` 给参数打"天然归调用方"基线的副作用
+- `isRCExpr` 必须先于 `freshAllocExpr` —— `newRC` 的 `Call` 同时带 `NewType` 和 `IsRC`，先判 fresh 会把 RC 块当普通新分配 claim 掉，调用方再 `rcDec` 就是双重释放
+- 全局与 newRC 在记旧对象之前就 return —— 记了会让就地释放去 free 一个全局的 / 手工 `rcDec` 管的块（这条约束现在由控制流结构保证，不再靠注释）
 
 ### 4.9 文件分工
 
 | 文件 | 行 | 职责 |
 |---|---|---|
 | `gc_model.go` | 276 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
-| `gc_write.go` | 329 | Check 期收集器：赋值 / 字段 / 调用 / 返回 |
+| `gc_write.go` | 342 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
 | `gc_names.go` | 140 | 绑定名反转 + 作用域工具 |
-| `gc_pred.go` | 247 | 判据：类型形态、表达式形态、`writeForm` |
+| `gc_pred.go` | 173 | 判据：类型形态、表达式形态 |
 | `gc_release.go` | 134 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
 | `gc_inplace.go` | 296 | **就地释放**：槽位表模拟 |
 | `gc_summary.go` | 315 | 跨函数入参摘要 |
 | `gc_diag.go` | 63 | 诊断：`checkPremature` / `TransferReport` |
-| `gc_mark.go` | 131 | 唯一施加点：`applyMark` |
+| `gc_mark.go` | 128 | 唯一施加点：`applyMark` |
 
 同包不同文件，不建子包 —— 它们重度耦合 `VarBlock` / `Block` / `curScope` / Check 状态。
 
@@ -271,7 +273,7 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ## 6. 可以简化的部分
 
-按"收益 / 风险"排序。6.1–6.4 已实施（净 −45 行，基线不变）；6.5 未做。
+按"收益 / 风险"排序。6.1–6.5 已全部实施（净 −100 行，基线不变）。
 
 ### 6.1 `gc_summary.go` 有两份几乎相同的文件头（**已做**，−30 行）
 
@@ -314,23 +316,29 @@ fact := func(flag markFlag, src *Life) mark {
 
 **收益**：−10 行。**风险**：低（已跑基线）。
 
-### 6.5 三层塌成两层（**未做**，收益最大，风险也最大）
+### 6.5 三层塌成两层（**已做**，方向 = 并进生成侧）
 
-现在一条 `x = new(T)` 要穿过三层：
+原状：一条 `x = new(T)` 要穿过三层 —— `writeFormOf` 算形态 bitflag →
+`collectWrite` 再按形态收事实 → `applyMark` 施加。中间那层是在把 6 个形态
+**重新映射**成 6 条事实，同一组 6 选 1 分派做了两遍。
+
+塌掉的方向有两个：
+
+- **并进施加点**（原草案）：`applyMark` 直接 switch `writeForm`。**弃用** ——
+  分类和施加混进同一个函数，违背"生成 / 处理分开"的硬边界，且 `applyMark`
+  的 case 列表不再是事实全集。
+- **并进生成侧**（已实施）：`writeFormOf` + `collectWrite` 塌成一条优先序链，
+  从语句形态直接产出事实。`applyMark` 一字未动，仍是最纯的字段写表。
 
 ```
-writeFormOf   →  writeForm bitflag      分类：这是什么形态
-collectWrite  →  []mark                 再分类一次：形态 → 事实
-applyMark     →  字段写                 施加
+collectWrite  →  []mark     分类 + 收事实（一条链）
+applyMark     →  字段写     施加（不变）
 ```
 
-中间那层是在把 6 个形态**重新映射**成 6 条事实 —— 同一组 6 选 1 分派做了两遍。`writeForm` 的 6 个主形态位与 `markFlag` 的对应 flag 是同一组信息的两次编码。
-
-塌掉的方式：让 `applyMark` 直接 switch `writeForm`，`collectWrite` 整个消失，`markFlag` 收缩到只剩字段绑定 / 参数链 / 返回值那几条。
-
-**收益**：少一整层分派，`markFlag` 从 14 条降到 6 条左右。**风险**：中。`applyMark` 会变长（`wfCopies` 这类子分支落进去，表达式遍历也得回到施加点侧），而且 `wfCopies` / `wfCoverOld` 是修饰位不是主形态，要和形态位分开处理。
-
-**这一条我建议先不做** —— 它动的是算法主干，不是清理。等 6.1–6.4 做完、代码稳一阵再考虑。
+**收益**：`writeForm` 类型 + 6 主形态 + 2 修饰位 + `formKind` + `writeFormOf`
++ `coverOld` 约 72 行中间表示整个消失（净 −55 行）。更大的收益是两条优先序
+约束从"注释警告"变成"控制流结构"——全局 / newRC 在记旧对象之前就 return，
+想记也到不了。**风险**：低（已跑基线）。
 
 ---
 
