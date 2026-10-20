@@ -572,7 +572,7 @@ func (v *VarBlock) Check(p *Parser) bool {
 		}
 		// 无初始值的声明（var result: *Node）也要登记：它同样属于某个作用域，
 		// 后面被赋值时要按"绑定名里最外层的作用域"算释放点。
-		v.Life.markDefine(v)
+		v.Life.markWrite(v)
 	} else {
 		// 使用分支：x = 5（使用已定义的变量）
 		if v.Define.Value == nil {
@@ -607,7 +607,7 @@ func (v *VarBlock) Check(p *Parser) bool {
 			}
 		}
 		if l := LifeOf(v); l != nil {
-			l.markAssign(v)
+			l.markWrite(v)
 		}
 	}
 	return true

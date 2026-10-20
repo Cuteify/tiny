@@ -1,16 +1,9 @@
 // parser/gc_model.go — GC 分析的数据模型
 //
-// 两个结构体撑起全部状态：
-//
-//	Life    挂在 VarBlock / ArgBlock 上，是**变量的**视角：
-//	        我指向哪个对象、我的绑定处在哪个作用域、我被写进过哪些左值。
-//	Object 挂在每次分配上，是**堆块**的视角：
-//	        谁指向它、在哪释放、释放时读哪个槽。
-//
-// 变量是槽位，对象是内存 —— 两者分开是整个分析能自洽的前提。
-// 同一变量连续两次 new() 就是两个对象，否则"这条赋值顶掉的是哪一块"分不清。
-//
-// Disposal 是给后端的唯一入口，三态见下面的 const 块。
+// Life 是变量的视角（挂在 VarBlock / ArgBlock 上），Object 是堆块的视角
+// （挂在每次分配上）。变量是槽位、对象是内存，两者分开是分析自洽的前提：
+// 同一变量连续两次 new() 是两个对象，否则"这条赋值顶掉的是哪一块"分不清。
+// Disposal 是给后端的唯一入口。
 
 package parser
 
@@ -21,16 +14,10 @@ type FieldBinding struct {
 	Obj   *Object   // 字段值对象；字段收敛时用它核对 Val 的栈槽是否仍持有该对象
 }
 
-// Object 一次分配产生的堆块。对象身份与变量无关 —— 同一变量连续两次
-// new() 就是两个对象，这样"这条语句覆盖掉的是哪一块"才分得清。
-//
-// 一个对象至多一个释放点：身份全程唯一，"在哪释放、读哪个槽"也就唯一。
-// 所以这里是两个标量，不是 map。
-//
-// 处置只有两类（见 Disposal）：帧内可达就在 FreeScope 处 free，帧外可达退回 RC。
-// 作用域释放集的唯一来源就是 FreeScope，每个块恰好被 free 一次。
-// FieldVals 只用于**排序**（字段值先于容器自身），不决定"是否释放" ——
-// 字段值通常自己也有 FreeScope，按两者并集释放会双重释放。
+// Object 一次分配产生的堆块。一个对象至多一个释放点：身份全程唯一，
+// "在哪释放、读哪个槽"就唯一 —— 所以这里是两个标量，不是 map。
+// FieldVals 仅用于排序（字段值先于容器自身），不决定是否释放：
+// 字段值通常自己也有 FreeScope，按并集释放会双重释放。
 type Object struct {
 	ID          int            // 标号：第几次分配（调试、诊断、后端表索引用）
 	Owner       *VarBlock      // 初始持有者（创建处的栈槽；可能已被改绑）
@@ -52,11 +39,8 @@ func newObject(owner *VarBlock, scope Block) *Object {
 	return o
 }
 
-// Life 一个变量的归属与逃逸信息。
-//
-// Check 期只写**一条正向事实**：我指向哪个对象（Obj）、我这个绑定处在哪个作用域（Scope）。
-// 重绑就是覆盖这条记录，不需要撤销任何东西 —— 旧对象自然失去这个名字，
-// 因为"某对象当前被哪些名字指着"由 Finalize 反转一次算出来，不是增量维护的。
+// Life 一个变量的归属与逃逸信息。Check 期只写正向事实（Obj / Scope），
+// 重绑就是覆盖，不需要撤销 —— "谁指着它"由 collectNames 反转得出。
 type Life struct {
 	// --- 归属（Check 期写入，可被覆盖）---
 	Obj   *Object // 我指向的对象；nil = 借用/参数/字段读
@@ -64,14 +48,13 @@ type Life struct {
 	alloc *Object // 若本语句是分配点，对象在此；多轮 Check 复用同一个
 
 	// --- 该赋值语句 ---
-	ReleasesOld bool    // 写入前应先释放旧值（Finalize 判定：旧对象已无绑定名）
+	ReleasesOld bool    // 写入前先释放旧值（由就地释放模拟判定）
 	OldObj      *Object // 写入前的旧对象
 
 	// --- 使用 ---
 	Escapes bool        // 我是否跑出本帧
-	WroteTo []*VarBlock // 我作为**右值**被写进过哪些左值。释放点取这些左值作用域的最大值。
-	// WroteTo 记在右值上而不是左值上：左值一个槽只能存一个对象，后写的会
-	// 把先写的挤掉（分支里 result = n1 / n2 就是这样）；记在右值上两条边都在。
+	WroteTo []*VarBlock // 我作为右值被写进过哪些左值（记在右值上：同槽后写会挤掉
+	// 前写，分支里 result = n1 / n2 的两条边都得留下）。释放点取最大值。
 
 	// --- 参数链（跨函数摘要用，见 gc_summary.go）
 	arg       *ArgBlock    // 非 nil 表示我是某个参数
@@ -82,9 +65,7 @@ type Life struct {
 	owner *VarBlock // 宿主变量（登记时写入）；参数为 nil
 }
 
-// paramRoot 这个借用的最早来源：直接是参数（arg），或经由借用链记到的
-// 参数（fromParam）。collectArgs 记实参传出、mkFromParam 记借用来源时
-// 都要做同一件事 —— 二选一的判断只在这里写一次。
+// paramRoot 借用的最早来源参数：arg，或借用链记下的 fromParam。二选一只写一次。
 func (l *Life) paramRoot() *ArgBlock {
 	if l.arg != nil {
 		return l.arg
@@ -96,22 +77,16 @@ func (l *Life) paramRoot() *ArgBlock {
 type Disposal uint8
 
 const (
-	// DisposalBorrow 不是本帧分配的块（参数 / 字段读 / 索引 / 调用结果 / newRC）：
-	// 存储归别人，本帧什么都不做。
+	// DisposalBorrow 不是本帧分配的块（参数 / 字段读 / 索引 / 调用结果 / newRC）。
 	DisposalBorrow Disposal = iota
-	// DisposalScope 帧内可达：在 ReleaseScope() 处 free。
-	//   - 有绑定名在本作用域之外 → 那是"逃逸结束位置"（最外层绑定作用域的出口）
-	//   - 全部绑定名都在本级内   → 那是"本级尾部"（创建作用域的出口）
-	// 两种情形是同一条公式：释放点 = 最外层绑定作用域。
+	// DisposalScope 帧内可达，在 ReleaseScope() 处 free。
+	// 释放点 = 最外层绑定作用域，一条公式同时覆盖"逃逸结束位置"和"本级尾部"。
 	DisposalScope
-	// DisposalRC 帧外可达（返回 / 存到全局 / 传给摘要未知的函数）：
-	// 作用域释放管不到，退回引用计数。全局就是这一类。
+	// DisposalRC 帧外可达（返回 / 存全局 / 传给摘要未知的函数），退回引用计数。全局属此类。
 	DisposalRC
 )
 
-// Disposal 该对象如何处置。
-// 同一个对象只要有**任何一个**绑定名逃出本帧，就不能用作用域释放 —— 释放后
-// 逃出去的那个名字就是悬垂指针。这种情况不是"泄漏了事"，而是退回引用计数。
+// Disposal 有任何一个绑定名逃出本帧就不能作用域释放（悬垂），退回 RC。
 func (l *Life) Disposal() Disposal {
 	o := l.Obj
 	if o == nil {
@@ -151,7 +126,7 @@ func (l *Life) IsRep() bool {
 	return l.owner != nil && l.Obj != nil && l.Obj.Owner == l.owner
 }
 
-// ReleaseScope 释放点：Finalize 算出的最外层绑定作用域（nil = 不释放）。
+// ReleaseScope 释放点：scopeRelease 算出的最外层绑定作用域（nil = 不释放）。
 func (l *Life) ReleaseScope() Block {
 	o := l.Obj
 	if o == nil {
@@ -170,37 +145,28 @@ func (l *Life) Holder() *VarBlock {
 	return o.Holder
 }
 
-// markEscapes 标记为"跑出本帧"（只增不减）。帧外可达的处置是退回引用计数，
-// 不是泄漏 —— 见 DisposalRC。why 只用于诊断：区分"真需要 RC"与"只是缺摘要"。
+// markEscapes 只增不减。帧外可达退回 RC，不是泄漏。
 func (l *Life) markEscapes() {
 	l.Escapes = true
 	if l.Obj != nil {
 		l.Obj.Escapes = true // 对象级：一个名字跑出本帧，整个对象就得走 RC
 	}
-	if l.fromParam != nil {
-		// 我是某个参数的借用：真正的逃逸要算到那个参数头上，
-		// 否则 var q = p; g = q 这种会把参数的逃逸吃掉。
+	if l.fromParam != nil { // var q = p; g = q：逃逸要算回参数头上
 		l.fromParam.Life.Escapes = true
 	}
 }
 
-// Init 登记宿主并清空上一轮的全部记录。定义点每个 Check 轮次都会调一次。
+// Init 定义点每个 Check 轮次调一次：登记宿主，清空上一轮全部记录。
 func (l *Life) Init(owner *VarBlock) {
-	// 零值就是默认值（Escapes false、Obj/Scope/OldObj nil、ReleasesOld false），
-	// 逐字段再赋一遍是冗余 —— 一条结构体赋值清空全部。
-	//
-	// alloc 是唯一要保的：它属于"这条语句是不是分配点"这个事实，与轮次无关，
-	// 清掉会导致多轮 Check 反复建对象。
+	// alloc 是唯一要保的：它属于"这条语句是分配点"这个事实，与轮次无关，
+	// 清掉会让多轮 Check 反复建对象。
 	alloc := l.alloc
 	*l = Life{owner: owner}
 	l.alloc = alloc
 }
 
-// claim 声明"我拥有一块新分配的内存"。
-//
-// stmt 是这条分配语句。同一变量可以有多处 new，各自是独立的对象（否则
-// "这条赋值顶掉的是哪一块"分不清，ReleasesOld 就无从判定）。对象挂在 stmt 上
-// 复用，Check 跑三轮不会重复建。
+// claim 声明"我拥有一块新分配的内存"。对象挂在 stmt 上复用（Check 多轮不
+// 重复建）；同一变量多处 new 各自是独立对象，否则 ReleasesOld 无从判定。
 func (l *Life) claim(stmt *VarBlock) {
 	o := stmt.Life.alloc
 	if o == nil {
@@ -220,8 +186,8 @@ func (l *Life) unify(other *Life) {
 	}
 }
 
-// bindField 记录"容器的某个字段装着这个对象"。同一字段被重复写入时，
-// Finalize 只保留最后一次（先前的字段值不再被容器持有）。
+// bindField 记录"容器的某个字段装着这个对象"。
+// 同一字段重复写入时由 collectNames 收敛，只保留最后一次。
 func (l *Life) bindField(field string, val *VarBlock) {
 	o := l.Obj
 	if o == nil || val == nil {
@@ -244,10 +210,8 @@ func LifeOf(ref *VarBlock) *Life {
 	case *VarBlock:
 		return &d.Life
 	case *ArgBlock:
-		// 参数由调用者持有：本帧永远不自动释放。
-		// 在这里置位而不是在解析时初始化，参数就没有额外的登记入口。
-		// 注意走 Escapes 而不是 markEscapes：这是"天然归调用方"的基线，
-		// 不算"被传出"，否则每个参数都会被判成逃逸。
+		// 参数天然归调用方：走 Escapes 基线而不是 markEscapes 级联，
+		// 否则每个参数都会被判成"被传出"。
 		d.Life.Escapes = true
 		d.Life.arg = d
 		return &d.Life
@@ -255,9 +219,8 @@ func LifeOf(ref *VarBlock) *Life {
 	return nil
 }
 
-// CopyLife 把 src 的归属与逃逸信息复制到 dst。
-// 单态化深拷贝 VarBlock 时必须调用：Life 非导出，结构体字面量不会自动带上它，
-// 漏拷会让特化函数误以为"不逃逸且自有"→ 提前释放。
+// CopyLife 单态化深拷贝 VarBlock 时必须调用：Life 非导出，字面量不会带上它，
+// 漏拷会让特化副本误以为"不逃逸且自有" → 提前释放。
 func CopyLife(dst, src *VarBlock) {
 	if dst == nil || src == nil {
 		return
@@ -266,7 +229,5 @@ func CopyLife(dst, src *VarBlock) {
 	dst.Life.owner = dst // 宿主要指向拷贝自己，不能指回原节点
 }
 
-// Objects 本次编译分配出的全部对象，只读。
-// 给包外的诊断工具（tools/esccheck）用 —— objects 本身是包级私有的。
-// 属于"文件缺失逼出来的改动"：esccheck 源码丢了，重写它需要这个入口。
+// Objects 全部对象，只读。给包外诊断工具（tools/esccheck）用。
 func Objects() []*Object { return objects }

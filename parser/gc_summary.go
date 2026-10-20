@@ -1,64 +1,24 @@
 // parser/gc_summary.go — 跨函数过程摘要：入参指针是否逃逸
 //
-// ============================================================
-// 解决的问题
-// ============================================================
+// 调用点不读被调函数体，只查表：第 idx 个实参"只读不存"则调用方继续按作用域
+// 释放，可能被存到别处则退回 RC。不做它的代价：任何跨函数调用都让实参逃逸
+// （sortTest 里 8 个 slices.new 全退 RC）。
 //
-// 调用点不必读被调函数体，只查这张表：
+// 判定规则（sound 的 may 分析）—— 参数逃逸 ⟸ 存进全局 / 装箱进接口或结构体
+// 值 / 写进结构体字段 / 作为第 j 实参传出且被调第 j 号参数也逃逸 / 被调函数
+// 认不出来。不算逃逸：读取、本帧局部倒手、作为返回值传出（返回参数所有权
+// 仍在调用方，见 collectRet）。
 //
-//	ArgEscapeOf(call, idx) == false  第 idx 个实参是"只读不存"的，
-//	                                  调用方可以继续按作用域释放
-//	                             true  被调方可能把它存到别处 → 退回 RC
+// 为什么最小定点：may 分析的结论是"存在一条推导链证明逃逸"。最大定点从全
+// 逃逸收缩会把纯递归锁死（递归边自己依赖自己）；最小定点下没有地面事实的
+// 递归环推不出逃逸 —— 环里没有一条真把指针存到外面。
 //
-// 不做这个摘要的代价：任何一个跨包函数调用都让实参判逃逸，
-// sortTest 里 8 个 slices.new 的结果全退到 RC。
+// 为什么懒算：GetPackage 递归，依赖包的 Check 在外层建表之前就跑完了，预扫描
+// 的空表会被内层 Check 读走，而 Escapes 单调递增会把保守值永久留下。谁问谁算。
 //
-// ============================================================
-// 判定规则（sound 的 may 分析）
-// ============================================================
-//
-//	参数逃逸 ⟸ 存进全局
-//	参数逃逸 ⟸ 装箱进接口或结构体值
-//	参数逃逸 ⟸ 写进结构体字段
-//	参数逃逸 ⟸ 作为第 j 个实参传出，且被调函数的第 j 号参数也逃逸
-//	参数逃逸 ⟸ 被调函数认不出来（泛型未解析 / 不在合并树里）
-//
-// 不算逃逸：读取、只在本帧局部之间倒手、作为返回值传出
-// （返回参数意味着所有权仍在调用方，见 gc_write.go 的 collectRet）。
-//
-// ============================================================
-// 为什么用最小定点，不是最大定点
-// ============================================================
-//
-// may 分析的结论应当是"存在一条推导链能证明逃逸"：
-//
-//	逃逸[f][i] = 地面事实[i]  ∨  ∃j: 作为第 j 实参传给 callee 且 逃逸[callee][j]
-//
-// 最大定点（从全逃逸往回收缩）会把纯递归锁死：quickSortInts(s) 递归传自己，
-// 那条边自己依赖自己，收缩不掉 → 整个函数判逃逸 → 摘要白做。
-// 最小定点下，没有地面事实的递归环推不出逃逸，判不逃逸 —— 这是对的，
-// 环里没有一条真的把指针存到了外面。
-//
-// ============================================================
-// 为什么懒算，不全局预扫描
-// ============================================================
-//
-// GetPackage 是递归的：依赖包的 Check 在外层建表**之前**就跑完了。
-// 表是包级全局，预扫描的结果会被内层的 Check 读走（拿到空表 → 全判逃逸），
-// 而 Escapes 单调递增，这个保守值会永久留下。懒算把顺序彻底解耦：
-// 谁问谁算，只算那棵子树。
-//
-// ============================================================
-// 递归
-// ============================================================
-//
-// paramBusy 记录"正在算它自己"。f 的摘要要问 g，g 的又要问 f，不加这道
-// 守卫会无限递归爆栈 —— memo 是算完才写的，中途重入看不到标记。
-//
-// 注意 scanFuncFacts 是**按被调方 AST 的现状**收集地面事实，不读 Check 期
-// 记录的东西。这样就不依赖"被调方查完了吗"那个判断（Check 期间不可靠），
-// 代价是多一个局部别名表的不动点（scopeOf 认不出 src 来自哪个参数时，
-// 得靠别名表把 a = p; b = a; g = b 这种链条接上）。
+// 防递归：算 f 要问 g，算 g 又要问 f，memo 算完才写，没有 paramBusy 守卫会
+// 爆栈。地面事实按被调方 AST 现状收集，不依赖"被调方查完了吗"；别名链
+// （a = p; b = a; g = b）靠局部别名表接到不动点。
 package parser
 
 var (
@@ -67,20 +27,13 @@ var (
 	paramGround map[*FuncBlock][]bool   // 地面事实：存全局 / 装箱 / 写字段
 )
 
-// paramEscapeOfFunc 被调函数第 idx 号参数是否逃逸。
-//
-// 认不出来（泛型未解析 / 不在合并树 / 序号越界）一律 true —— 判逃逸 = 退回
-// RC = 安全。这个偏好在多处出现，是有意的一致：不确定时都往安全侧倒。
-//
-// paramBusy 防的是求值过程中的重入：算 f 要问 g，算 g 要问 f，
-// 此时两边的 memo 都还没写（写完才写），不加守卫会无限递归爆栈。
+// paramEscapeOfFunc 被调函数第 idx 号参数是否逃逸。认不出来（泛型未解析 /
+// 不在合并树 / 序号越界 / 递归重入）一律 true —— 不确定时都往安全侧倒。
 func paramEscapeOfFunc(fb *FuncBlock, idx int) bool {
 	if fb == nil || idx < 0 || idx >= len(fb.Args) {
 		return true // 认不出被调函数 / 序号越界 → 保守
 	}
-	// 正在算它自己（f 的摘要要问 g，g 的又要问 f）→ 递归，保守判逃逸。
-	// 不加这道守卫会无限递归爆栈：memo 是算完才写的，中途重入看不到标记。
-	if paramBusy[fb] {
+	if paramBusy[fb] { // 算 f 问 g、算 g 问 f：memo 还没写，不加守卫爆栈
 		return true
 	}
 	paramBusy[fb] = true
@@ -93,12 +46,9 @@ func paramEscapeOfFunc(fb *FuncBlock, idx int) bool {
 	return esc[idx]
 }
 
-// computeParamSummary 求以 fb 为根的调用图闭包上的最小定点。
-//
-// 做法：
-//  1. 收集闭包（fb + 它能调用到的所有函数，逐个扫 AST 收地面事实）
-//  2. 在闭包上迭代到不动点：逃逸[f][i] ∨= ∃j: 传给 callee 且 callee 的 j 也逃逸
-//  3. 结果写入 memo，重复查询直接命中
+// computeParamSummary 求 fb 调用闭包上的最小定点：
+// 逃逸[f][i] ∨= ∃j: 传给 callee 且 callee 的第 j 号参数也逃逸。
+// 结果写入 memo，重复查询直接命中。
 func computeParamSummary(fb *FuncBlock) {
 	if paramMemo == nil {
 		paramMemo = map[*FuncBlock][]bool{}
@@ -156,8 +106,7 @@ func computeParamSummary(fb *FuncBlock) {
 	}
 }
 
-// callsIn 函数体里出现的全部调用点。
-// callsIn 函数体里出现的全部调用点。闭包收集和被调参数查询都要用。
+// callsIn 函数体里出现的全部调用点（闭包收集用）。
 func callsIn(f *FuncBlock) []*CallBlock {
 	var out []*CallBlock
 	eachSubNode(BlockNode(f), func(n *Node) {
@@ -168,12 +117,9 @@ func callsIn(f *FuncBlock) []*CallBlock {
 	return out
 }
 
-// scanFuncFacts 扫一个函数体，填两样东西：
-//  1. 该函数各参数的地面事实（存全局 / 装箱 / 写字段）
-//  2. 各参数作为第 i 个实参传出过 → PassedTo / passedAt
-//
-// 局部别名表（var q: *T = p）要解到不动点：别名可能写在参数声明之前，
-// 单趟会漏掉后半段 —— 漏一条别名 = 后面"存进全局"认不出来 = 漏判逃逸。
+// scanFuncFacts 扫一个函数体：填各参数的地面事实（存全局 / 装箱 / 写字段），
+// 记各参数被当实参传出过（PassedTo / passedAt）。局部别名表解到不动点 ——
+// 别名可能链式传递（a = p; b = a; g = b），单趟顺序扫会漏。
 func scanFuncFacts(f *FuncBlock) {
 	if f == nil || len(f.Args) == 0 {
 		return
@@ -194,8 +140,7 @@ func scanFuncFacts(f *FuncBlock) {
 		return nil
 	}
 
-	// 别名边：q = p 形式。预扫描在 Check 之前，Life.owner 还没填，
-	// 所以左右两边都用 VarBlock 解析（localOf 也是拿 VarBlock 当键）。
+	// 别名边 q = p。预扫描在 Check 前，Life.owner 未填，一律用 VarBlock 当键。
 	type alias struct {
 		src *VarBlock
 		dst *VarBlock
@@ -242,8 +187,7 @@ func scanFuncFacts(f *FuncBlock) {
 		if p == nil {
 			return
 		}
-		// 与 collectArgs 记的是同一条事实（参数被当作第 idx 个实参传出），
-		// 走同一个施点亮点，别在这里直接写字段。
+		// 与 collectArgs 记的是同一条事实（参数被当第 idx 实参传出），也走 applyMark。
 		applyMark(mark{flag: mkParamOut, l: &p.Life, i: idx, cb: cb})
 	}
 
@@ -261,10 +205,7 @@ func scanFuncFacts(f *FuncBlock) {
 			case t.IsGlobal:
 				markGround(p) // 存进全局
 			case len(t.Name) > 1 && fieldTypeOwning(t.Value.Type, t.Name.Last()):
-				// b.inner = p：写结构体字段就算逃逸。基对象是本帧的还是要存的，
-				// 这里分不出来，而字段里存的指针完全可能活得比本帧久
-				// （基对象随后被存进全局或返回出去）。漏判就是提前释放，所以保守。
-				markGround(p)
+				markGround(p) // 写字段：字段里存的指针可能活得比本帧久，漏判 = 提前释放
 			case !t.IsDefine && copiesFields(t.Type):
 				markGround(p) // 装箱进接口 / 结构体值
 			}

@@ -1,23 +1,16 @@
 // parser/gc_inplace.go — 就地释放：这条赋值能不能提前 free
 //
-// 释放点回答"最终在哪释放"，这里回答"能不能提前"：
+// 释放点（gc_release.go）答"最终在哪释放"，这里答"能不能提前"：等作用域
+// 出口是对的但不及时。判定 = 写完之后旧对象还有没有任何槽位 / 字段指着
+// —— 是非题，扫一遍答完。必须连字段一起看：
 //
-//	n := new(T); use(n); n = other
+//	head = prepend(head, 4)   旧 head 的名字没了，但新节点的 .next 还指着它
 //
-// 等作用域出口是**对的但不及时**。能不能就地释放？需要知道
-// 写这条语句之后，旧对象还有没有任何人指着 —— 那是个是非题，扫一遍答完。
+// 只数变量会漏，漏了就是 use-after-free。槽位表（局部变量与各字段当前持有什么）
+// 按语句顺序走一遍树，顺序敏感 —— 模拟的是"覆盖前先释放旧值"。刻意不做引用
+// 计数：计数要多一张表、一套 inc/dec 和出口回退，换来的还是同一个答案。
 //
-// 关键是必须连**字段**一起看：
-//
-//	head = prepend(head, 4)
-//	旧 head 的变量名没了，但 prepend 里新建的节点 .next 还指着它
-//	只数变量会漏，漏了就是 use-after-free。
-//
-// 所以这里维护一张槽位表（局部变量当前持有什么、容器各字段持有什么），
-// 按语句顺序走一遍树，顺序敏感 —— 模拟的是"覆盖前先释放旧值"。
-//
-// 前提：只处理帧内对象。跑出本帧的（返回 / 全局 / 传给摘要未知的函数）
-// 由 Disposal 判为 DisposalRC，不参与本模拟 —— 帧的存亡不足以判断它们的生死。
+// 前提：只处理帧内对象；帧外可达的由 Disposal 判 RC，不参与本模拟。
 
 package parser
 
@@ -27,20 +20,14 @@ type rcScope struct {
 	vars  []*VarBlock
 }
 
-// rcSim 跟踪"此刻哪些槽位/字段还指着哪个对象"。
-//
-// 这里刻意不做引用计数：唯一需要的问题是"写这条语句之后，旧对象还有
-// 没有人指着" —— 那是个是非题，把所有槽位和字段扫一遍答就行。
-// 计数要多维护一张表、多一套 inc/dec、还要在作用域出口回退，
-// 换来的是同一个答案。
+// rcSim 跟踪"此刻哪些槽位 / 字段还指着哪个对象"。
 type rcSim struct {
 	slot   map[*VarBlock]*Object            // 局部变量当前持有哪个对象
 	fields map[*VarBlock]map[string]*Object // 容器各字段当前持有哪个对象
 	stack  []*rcScope                       // 作用域栈（出口时清掉本层槽位）
 }
 
-// walk 按语句顺序走一遍，回调每条语句由 rcSim 自己的方法处理。
-// 顺序敏感 —— 槽位表模拟的是"覆盖前先释放旧值"，与迭代次数无关。
+// walk 按语句顺序走一遍（顺序敏感，与迭代次数无关）。
 func (s *rcSim) walk(n *Node) {
 	if n == nil {
 		return
@@ -73,13 +60,8 @@ func (s *rcSim) leaveScope(sc *rcScope) {
 	}
 }
 
-// releasesOld 回答"这条语句写进槽位之前，那个旧对象能不能就地释放"。
-//
-// 能释放 = 写完之后它再没有任何栈槽或字段指着它。只数变量绑定名是不够的：
-//
-//	head = prepend(head, 4)   旧 head 的变量名没了，但新节点的 .next 还指着它
-//
-// 那是 use-after-free。字段引用必须一起看。
+// releasesOld 能就地释放 = 写完之后没有任何栈槽或字段指着它。
+// 字段引用必须一起看：head = prepend(head, 4) 漏了就是 use-after-free。
 func (s *rcSim) releasesOld(old *Object, at *VarBlock) {
 	if at == nil || old == nil || old.Escapes || s.referenced(old) {
 		return
@@ -174,10 +156,9 @@ func (s *rcSim) stmt(v *VarBlock) {
 	// 取新值
 	switch {
 	case freshAllocExpr(v.Value):
-		// 用这条分配语句自己的对象（同一变量多处 new 是不同对象）
+		// 这条分配语句自己的对象（多处 new 是不同对象）；Transferred 同 Escapes
+		// 一样不进本系统：所有权已交调用者，本帧不释放也不参与计数
 		o := v.Life.alloc
-		// Transferred 与 Escapes 一样不进本系统：所有权已经交给调用者，
-		// 本帧既不释放也不该参与计数（否则归零时会被判成就地释放）。
 		if o == nil || o.Escapes || o.Transferred {
 			return
 		}
@@ -206,11 +187,9 @@ func (s *rcSim) tracked(v *VarBlock) bool {
 	return true
 }
 
-// evalCopy 求值出一个新引用（只认裸变量），不产生新分配。
-//
-// 判据必须与 bareRef 一致：它已经把字段读（p.f）、索引、调用结果、
-// 字面量排除掉了 —— 那些表达式里 e.Var 非空但指向的是**基对象**，
-// 当成裸引用会把引用算到基对象头上（引用计数虚高 → 释放点推后 → 泄漏）。
+// evalCopy 求值出一个新引用（只认裸变量），判据必须与 bareRef 一致：
+// 字段读 / 索引 / 调用结果指向的是**基对象**，算成裸引用会把引用记到基对象
+// 头上 → 引用虚高 → 释放点推后 → 泄漏。
 func (s *rcSim) evalCopy(e *Expression) *Object {
 	l := bareRef(e)
 	if l == nil {
@@ -243,9 +222,8 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	}
 }
 
-// call 调用点暂时是空维护：实参"被被调方存下"这件事由跨函数摘要（mkEscape
-// 那条路）判，落脚点在 Check 期而不是模拟期。模拟器只跟踪本帧槽位，
-// 摘要判逃逸的对象本来就不会进槽位表（o.Escapes 过滤）。
+// call 空维护："实参被被调方存下"由摘要判逃逸（Check 期），逃逸对象本来就
+// 进不了槽位表（o.Escapes 过滤）。
 func (s *rcSim) call(cb *CallBlock) {
 	_ = cb
 }

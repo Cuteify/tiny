@@ -1,21 +1,11 @@
-// parser/gc_diag.go — 诊断：抓两类错
-//
-//	checkPremature   释放点早于某个绑定名的作用域 → use-after-free。
-//	                 这是**正确性**检查。用最终快照判，能抓"数据已对但释放点算早"，
-//	                 抓不到"某条路径上曾持有过"那类（那要路径分析）。
-//
-//	TransferReport   所有权转移出去却没人接管 → 泄漏。交出 / 接管 / 无人接管三个数。
-//
-// 这两个不是给人看的，是给改这套分析的人看的。改动后基线必须是 0。
+// parser/gc_diag.go — 诊断两查：checkPremature 抓 use-after-free（正确性），
+// TransferReport 抓没人接管的转移（泄漏）。给改这套分析的人看：改动后基线必须为 0。
 
 package parser
 
 import "fmt"
 
-// Premature 提前释放的对象（诊断）。
-//
-// 判据：对象 O 的释放点是 S，但 O 的某个绑定名 n 的作用域比 S 更外层
-// —— 也就是说 n 在 S 退出之后还活着，却在 S 就被 free 了。这是 use-after-free。
+// Premature 提前释放的对象数：释放点早于某绑定名的作用域 = use-after-free。
 var Premature int
 
 var PrematureDetail []string

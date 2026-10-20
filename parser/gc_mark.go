@@ -1,25 +1,9 @@
 // parser/gc_mark.go — 事实的施加点（全套分析唯一的处理器）
 //
-// 分工：
-//
-//	收集器（gc_write.go）  只探测。"这一句会产生哪些事实" —— 读类型、读作用域、
-//	                      查跨函数摘要，结果收成若干条 mark。**不写任何状态。**
-//	applyMark（本文件）    只施加。mark → 具体字段写。**不判任何条件。**
-//
-// 为什么拆：探测要读的东西五花八门，而且带顺序约束（isRCExpr 必须先于
-// freshAllocExpr 判，否则 newRC 的块会被当普通新分配 claim 掉 —— 约束由
-// collectWrite 的分派顺序保证）；施加只写 Life / Object /
-// ArgBlock / FuncBlock 上十几个固定字段。混在一起时，"这套分析能记哪些
-// 事实"要读遍所有收集器才拼得出来 —— 现在看 applyMark 的 case 列表就是全集，
-// 且每个 case 都标明由哪个收集器发出。
-//
-// mark 结构体胖，但**每个收集器只填其中 2~3 个**：flag 按收集器分区，
-// 不存在"字段对不上的 mark"这种构造。这是 C 里 tagged union 的常规代价。
-//
-// 为什么不能"全量收集完再统一施加"：多轮 Check。markDefine 每轮开头 Init
-// 把这个变量的 Life 整个清掉，而 Check 跑到收敛（package.go，上限 50 轮）。
-// 跨语句攒起来施加会把不同轮次的事实混成一锅。能落地的粒度就是**每个站点
-// 收集完立刻施加完**。
+// applyMark 的 case 列表就是这套分析能记的事实全集，每个 case 标明由谁发出。
+// 判据与优先序全在收集器侧（gc_write.go），这里不判任何条件。粒度必须是
+// 每站点收集完立刻施加完：Check 多轮收敛，markWrite 每轮 Init 清账，
+// 跨站攒批会把不同轮次的事实混在一起。
 
 package parser
 
@@ -30,9 +14,8 @@ type markFlag uint16
 
 const (
 	// --- 变量写站点（collectWrite，gc_write.go）---
-	// 纯判别值（每条 mark 恰好一个 flag，从不按位或）——不用 1<<iota。
-	// mkOldObj 的施加必须先于 mkObj*（claim 会覆盖 Obj），由 collectWrite
-	// 的追加顺序保证，与这里的编号无关。
+	// 纯判别值，每条 mark 恰好一个 flag。mkOldObj 施加序必须先于 mkObj*
+	// （claim 会覆盖 Obj）—— 由 collectWrite 的追加顺序保证，与编号无关。
 	mkInit      markFlag = iota + 1 // m.l.Init(m.v)：清空（保 alloc），owner = m.v
 	mkScope                         // m.l.Scope = curScope
 	mkOldObj                        // m.v.Life.OldObj = m.l.Obj
@@ -77,17 +60,14 @@ type mark struct {
 	i  int        // 第几号实参
 }
 
-// applyMark 唯一的施加点：把一条 mark 翻成具体字段写。不判任何条件 ——
-// 判据全在收集器里，且优先序也只在那里写一次。
+// applyMark 唯一施加点：把一条 mark 翻成具体字段写。
 func applyMark(m mark) {
 	switch m.flag {
 	case mkInit:
 		m.l.Init(m.v)
 	case mkScope:
 		m.l.Scope = curScope
-	case mkOldObj:
-		// 记在语句块而不是定义的 Life：同一变量多次赋值会互相覆盖。
-		// 旧对象"失去这个名字"是 Obj 被覆盖的自然结果，无需撤销。
+	case mkOldObj: // 记在语句块而不是 Life：同一变量多次赋值会互相覆盖
 		m.v.Life.OldObj = m.l.Obj
 	case mkObjClaim:
 		m.l.claim(m.v)
@@ -112,15 +92,12 @@ func applyMark(m mark) {
 		m.fb.ReturnsOwned = true
 	case mkEscape:
 		m.l.markEscapes()
-	default:
-		// 加了新 flag 却忘了写 case —— 静默什么都不做，症状是"对象凭空消失"
-		// 而不是报错。这里必须炸出来。
+	default: // 新 flag 忘写 case 的症状是"对象凭空消失" —— 必须炸出来
 		panic(fmt.Sprintf("gc_mark: 未知事实 flag=%d", m.flag))
 	}
 }
 
-// applyMarks 施加一个站点收集到的全部事实。收集器的产物总是立刻用完，
-// 所以这里是纯循环，不缓存 —— 递归收集（collectExpr）各自持有自己的切片。
+// applyMarks 施加一个站点收集到的全部事实（产物总是立刻用完，不缓存）。
 func applyMarks(ms []mark) {
 	for _, m := range ms {
 		applyMark(m)

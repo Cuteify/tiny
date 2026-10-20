@@ -1,6 +1,6 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 九个文件，约 1825 行。
+> 对象：`parser/gc_*.go` 九个文件，约 1500 行。
 > 唯一公开入口：`parser.SimulateRC(root)`，调用点在 `package/package.go`。
 > 后端只读 `parser.Object` 与 `(*Life).Disposal()`，不参与任何判断。
 
@@ -213,7 +213,7 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ### 4.2 为什么不能"全量收集完再统一施加"
 
-多轮 Check。`markDefine` 每轮开头 `Init` 把这个变量的 `Life` 整个清掉，而 Check 跑到收敛。跨语句攒起来施加会把不同轮次的事实混成一锅。
+多轮 Check。`markWrite` 每轮定义点 `Init` 把这个变量的 `Life` 整个清掉，而 Check 跑到收敛。跨语句攒起来施加会把不同轮次的事实混成一锅。
 
 **能落地的粒度就是每个站点收集完立刻施加完** —— 这是事实集成的边界。
 
@@ -241,15 +241,15 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 | 文件 | 行 | 职责 |
 |---|---|---|
-| `gc_model.go` | 276 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
-| `gc_write.go` | 342 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
-| `gc_names.go` | 140 | 绑定名反转 + 作用域工具 |
-| `gc_pred.go` | 173 | 判据：类型形态、表达式形态 |
-| `gc_release.go` | 134 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
-| `gc_inplace.go` | 296 | **就地释放**：槽位表模拟 |
-| `gc_summary.go` | 315 | 跨函数入参摘要 |
-| `gc_diag.go` | 63 | 诊断：`checkPremature` / `TransferReport` |
-| `gc_mark.go` | 128 | 唯一施加点：`applyMark` |
+| `gc_model.go` | 233 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
+| `gc_write.go` | 275 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
+| `gc_names.go` | 115 | 绑定名反转 + 作用域工具 |
+| `gc_pred.go` | 120 | 判据：类型形态、表达式形态 |
+| `gc_release.go` | 112 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
+| `gc_inplace.go` | 246 | **就地释放**：槽位表模拟 |
+| `gc_summary.go` | 248 | 跨函数入参摘要 |
+| `gc_diag.go` | 53 | 诊断：`checkPremature` / `TransferReport` |
+| `gc_mark.go` | 105 | 唯一施加点：`applyMark` |
 
 同包不同文件，不建子包 —— 它们重度耦合 `VarBlock` / `Block` / `curScope` / Check 状态。
 
