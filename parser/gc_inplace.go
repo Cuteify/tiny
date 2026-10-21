@@ -27,7 +27,8 @@ type rcSim struct {
 	stack  []*rcScope                       // 作用域栈（出口时清掉本层槽位）
 }
 
-// walk 按语句顺序走一遍（顺序敏感，与迭代次数无关）。
+// walk 按语句顺序走一遍（顺序敏感，与迭代次数无关）。调用点不处理："实参被
+// 被调方存下"由跨函数摘要判逃逸（Check 期），逃逸对象本来进不了槽位表。
 func (s *rcSim) walk(n *Node) {
 	if n == nil {
 		return
@@ -40,11 +41,8 @@ func (s *rcSim) walk(n *Node) {
 		s.leaveScope(sc) // 出作用域：本层槽位失效
 		return
 	}
-	switch v := n.Value.(type) {
-	case *VarBlock:
+	if v, ok := n.Value.(*VarBlock); ok {
 		s.stmt(v)
-	case *CallBlock:
-		s.call(v)
 	}
 	eachSubNode(n, s.walk)
 }
@@ -52,11 +50,7 @@ func (s *rcSim) walk(n *Node) {
 // leaveScope 退出作用域：本层变量逐个失效，槽位删除。
 func (s *rcSim) leaveScope(sc *rcScope) {
 	for _, v := range sc.vars {
-		o := s.slot[v]
-		if o == nil {
-			continue
-		}
-		delete(s.slot, v) // 本层变量出作用域：槽位失效
+		delete(s.slot, v) // 缺键时 delete 是 no-op
 	}
 }
 
@@ -136,7 +130,7 @@ func (s *rcSim) stmt(v *VarBlock) {
 		return
 	}
 	host := hostOf(v)
-	if host == nil || !s.tracked(v) {
+	if !s.tracked(v, host) {
 		return
 	}
 
@@ -173,15 +167,12 @@ func (s *rcSim) stmt(v *VarBlock) {
 }
 
 // tracked 这条语句涉及的对象是否参与模拟（参数与 newRC 不参与）。
-func (s *rcSim) tracked(v *VarBlock) bool {
+// host 由 stmt 算好传入，这里不重算 hostOf（它永不返回 nil）。
+func (s *rcSim) tracked(v, host *VarBlock) bool {
 	if isRCExpr(v.Value) {
 		return false
 	}
-	h := hostOf(v)
-	if h == nil {
-		return false
-	}
-	if l := LifeOf(h); l != nil && l.owner == nil {
+	if l := LifeOf(host); l != nil && l.owner == nil {
 		return false // 参数
 	}
 	return true
@@ -209,10 +200,7 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	if base == nil {
 		return
 	}
-	host := hostOf(base)
-	if host == nil {
-		return
-	}
+	host := hostOf(base) // hostOf 永不返回 nil，直接用
 	if old := s.fieldVal(host, field); old != nil {
 		s.setField(host, field, nil) // 先摘掉这个字段
 		s.releasesOld(old, v)
@@ -220,12 +208,6 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	if o := s.evalCopy(v.Value); o != nil {
 		s.setField(host, field, o)
 	}
-}
-
-// call 空维护："实参被被调方存下"由摘要判逃逸（Check 期），逃逸对象本来就
-// 进不了槽位表（o.Escapes 过滤）。
-func (s *rcSim) call(cb *CallBlock) {
-	_ = cb
 }
 
 // cur 当前作用域（作用域栈顶）。

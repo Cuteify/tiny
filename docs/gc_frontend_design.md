@@ -1,6 +1,6 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 九个文件，约 1500 行。
+> 对象：`parser/gc_*.go` 九个文件，约 1490 行。
 > 唯一公开入口：`parser.SimulateRC(root)`，调用点在 `package/package.go`。
 > 后端只读 `parser.Object` 与 `(*Life).Disposal()`，不参与任何判断。
 
@@ -243,10 +243,10 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 |---|---|---|
 | `gc_model.go` | 233 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
 | `gc_write.go` | 275 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
-| `gc_names.go` | 115 | 绑定名反转 + 作用域工具 |
+| `gc_names.go` | 124 | 绑定名反转 + 作用域工具 |
 | `gc_pred.go` | 120 | 判据：类型形态、表达式形态 |
-| `gc_release.go` | 112 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
-| `gc_inplace.go` | 246 | **就地释放**：槽位表模拟 |
+| `gc_release.go` | 99 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
+| `gc_inplace.go` | 228 | **就地释放**：槽位表模拟 |
 | `gc_summary.go` | 248 | 跨函数入参摘要 |
 | `gc_diag.go` | 53 | 诊断：`checkPremature` / `TransferReport` |
 | `gc_mark.go` | 105 | 唯一施加点：`applyMark` |

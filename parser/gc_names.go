@@ -7,6 +7,15 @@
 
 package parser
 
+// walkSubNodes 深度优先下钻整棵子树（含 else 分支，见 eachSubNode）。
+func walkSubNodes(root *Node, fn func(n *Node)) {
+	if root == nil {
+		return
+	}
+	fn(root)
+	eachSubNode(root, func(c *Node) { walkSubNodes(c, fn) })
+}
+
 // collectNames 反转"变量 → 对象"，得到 Object.Names。Check 期因此不需要
 // 撤销逻辑：重绑只是覆盖，反向表建一次不增量维护。
 func collectNames(root *Node) {

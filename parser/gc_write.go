@@ -218,8 +218,8 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 		var m []mark
 		if o := l.Obj; o != nil && !o.Escapes {
 			m = append(m,
-				mark{flag: mkTransferObj, l: l, o: o},
-				mark{flag: mkFuncOwns, l: l, fb: fb})
+				mark{flag: mkTransferObj, o: o},
+				mark{flag: mkFuncOwns, fb: fb})
 		}
 		return m
 	}
@@ -227,7 +227,7 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 		m := []mark{{flag: mkFuncOwns, fb: fb}}
 		if l := LifeOf(e.Call.ThisVar); l != nil {
 			if o := l.Obj; o != nil && !o.Escapes {
-				m = append(m, mark{flag: mkTransferObj, l: l, o: o})
+				m = append(m, mark{flag: mkTransferObj, o: o})
 			}
 		}
 		return m

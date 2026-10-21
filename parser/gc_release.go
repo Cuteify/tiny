@@ -19,27 +19,6 @@ func SimulateRC(root *Node) {
 	checkPremature()
 }
 
-// walkSubNodes 深度优先下钻整棵子树（含 else 分支，见 eachSubNode）。
-func walkSubNodes(root *Node, fn func(n *Node)) {
-	if root == nil {
-		return
-	}
-	fn(root)
-	eachSubNode(root, func(c *Node) { walkSubNodes(c, fn) })
-}
-
-// outermostBindingScope 释放点的结构下界（"最外层作用域"规则唯一的实现处）。
-func outermostBindingScope(o *Object) Block {
-	var widest Block
-	for _, n := range o.Names {
-		if n == nil || n.Life.Scope == nil {
-			continue
-		}
-		widest = outerScope(widest, n.Life.Scope)
-	}
-	return widest
-}
-
 // scopeKindOf 作用域块的可读身份。用于诊断输出（checkPremature / TransferReport）。
 func scopeKindOf(b Block) string {
 	switch b.(type) {
@@ -67,7 +46,15 @@ func scopeRelease() {
 		if o.Escapes || o.Transferred {
 			continue
 		}
-		if widest := outermostBindingScope(o); widest != nil {
+		// 释放点 = 全部绑定名里最外层的作用域。
+		var widest Block
+		for _, n := range o.Names {
+			if n == nil || n.Life.Scope == nil {
+				continue
+			}
+			widest = outerScope(widest, n.Life.Scope)
+		}
+		if widest != nil {
 			o.FreeScope = widest
 			// 读槽：创建者被改绑时换成仍持它的名字，否则 free 错块。
 			if o.Holder == nil || !containsName(o.Names, o.Holder) {
