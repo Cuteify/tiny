@@ -1,7 +1,8 @@
 // 临时调试工具：打印逃逸分析的最终判定（不属于交付物，验证完即删）
 //
 // 用法：esccheck ./test/xxx
-// 改动 parser/gc_*.go 之后基线必须是"对象=N  RC=0  泄漏=0  提前释放=0"。
+// 改动 parser/gc_*.go 之后基线必须是：对象=114  RC/泄漏释放=6  泄漏=0  提前释放=0
+//（markArgs 挂接后的口径，数字来源与分布见 docs/gc_frontend_design.md §5）。
 package main
 
 import (

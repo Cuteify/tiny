@@ -88,7 +88,7 @@ func computeParamSummary(fb *FuncBlock) {
 				if esc[i] || f.Args[i] == nil {
 					continue
 				}
-				if passedToEscaping(&f.Args[i].Life, i) {
+				if passedToEscaping(&f.Args[i].Life) {
 					esc[i] = true
 					changed = true
 				}
@@ -228,7 +228,7 @@ func scanFuncFacts(f *FuncBlock) {
 
 // passedToEscaping 这个参数是否作为实参传出，且被调函数的对应参数也逃逸。
 // 被调函数认不出来（泛型未解析 / 不在合并树里）→ 当作逃逸，这是唯一需要保守的边。
-func passedToEscaping(l *Life, idx int) bool {
+func passedToEscaping(l *Life) bool {
 	if l == nil {
 		return true
 	}
