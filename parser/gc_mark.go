@@ -2,7 +2,7 @@
 //
 // applyMark 的 case 列表就是这套分析能记的事实全集，每个 case 标明由谁发出。
 // 判据与优先序全在收集器侧（gc_write.go），这里不判任何条件。粒度必须是
-// 每站点收集完立刻施加完：Check 多轮收敛，markWrite 每轮 Init 清账，
+// 每站点收集完立刻施加完：Check 多轮收敛，markVar 每轮 Init 清账，
 // 跨站攒批会把不同轮次的事实混在一起。
 
 package parser

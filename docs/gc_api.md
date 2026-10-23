@@ -16,8 +16,8 @@
 package.GetPackage ── Check 多轮收敛（package/package.go，直到稳定）
  │
  ├─ 语句块 Check 挂接（parser 内，每条语句每次轮次都触发）
- │    var.go    定义分支  v.Life.markWrite(v)     含"无初值声明"（var p: *Node）
- │    var.go    赋值分支  LifeOf(v).markWrite(v)  l 是定义的 Life，v 是引用块
+ │    var.go    定义分支  v.Life.markVar(v)       含"无初值声明"（var p: *Node）
+ │    var.go    赋值分支  LifeOf(v).markVar(v)    l 是定义的 Life，v 是引用块
  │    call.go   调用点    markArgs(c)             挂在 Check 尾部（参数检查全部走完）
  │    return.go 返回点    markRets(fb, r.Value)
  │
@@ -31,7 +31,7 @@ package.GetPackage ── Check 多轮收敛（package/package.go，直到稳定
 
 | 挂接点 | 触发条件 | 例外（不触发） |
 |---|---|---|
-| `markWrite` | VarBlock 定义 / 赋值 `Check` 走到底 | 跨文件未解析标记 `Unresolved` 提前返回的轮次 |
+| `markVar` | VarBlock 定义 / 赋值 `Check` 走到底 | 跨文件未解析标记 `Unresolved` 提前返回的轮次 |
 | `markArgs` | 调用参数检查全部走完、`Func` 已解析 | `checkBuiltin` 提前返回的调用（print/len 等只读内建）；跨包未解析的轮次（合并重查轮补挂） |
 | `markRets` | 返回语句 `Check` | 非 owning 返回值跳过（`ret n.val` 不带堆指针） |
 
@@ -66,7 +66,7 @@ collectArgs / collectExpr 的实参位
                   ├─ callsIn 收集闭包（显式栈，fb 及其可达被调）
                   ├─ 对闭包内每个 f 跑 scanFuncFacts：
                   │    paramGround：参数写入 全局 / owning 字段 / 装箱(copiesFields)
-                  │    PassedTo 边：参数被当实参传出 → applyMark(mkParamOut)
+                  │    out 边：参数被当实参传出 → applyMark(mkParamOut)
                   ├─ 定点迭代：esc[f][i] ∨= ground[i] ∨ passedToEscaping(&f.Args[i].Life)
                   └─ 写 paramMemo[fb]，此后查询直接命中
 ```
@@ -76,8 +76,8 @@ collectArgs / collectExpr 的实参位
 - **不是两轮舞蹈**——第一次查询在当轮就算完定点再作答；多轮 Check 只是让
   早期解析不出的调用（跨包）在后续轮次重新询问。定义点每轮 `mkInit`
   清账，`Escapes` 单调只增，保证收敛。
-- 保守语义只出现在认不出的地方：`cb==nil` / 序号越界 / 递归重入 /
-  传出边指向认不出的被调 → 一律按逃逸（退 RC）。
+- 保守语义只出现在认不出的地方：`cb==nil` / 递归重入 / 传出边指向认不出的
+  被调 → 一律按逃逸（退 RC）。
 - `passedToEscaping` 读参数 Life 上的 `out`（一片 `paramOut{cb,i}`，调用点存
   指针读取时活解；两路写入经 `applyMark` 按 `(cb,i)` 判重，幂等）。
 - 摘要查询在三个消费面生效：`collectArgs` 的实参位、`collectWrite` 全局
@@ -137,11 +137,11 @@ g = ...                       // 全局分支（collectWrite）→ [mkEscape, mk
 
 | 签名 | 职责 | 挂接处 |
 |---|---|---|
-| `func (l *Life) markWrite(v *VarBlock)` | 变量写站点入口；字段写入（`p.f = y`，按 `len(v.Name)>1` 认出）单独路由 collectField | var.go 定义 / 赋值两分支 |
+| `func (l *Life) markVar(v *VarBlock)` | 变量写站点入口；字段写入（`p.f = y`，按 `len(v.Name)>1` 认出）单独路由 collectField | var.go 定义 / 赋值两分支 |
 | `func markArgs(cb *CallBlock)` | 调用点入口；整条实参列表 + 变参 + 方法接收者 | call.go `Check` 尾部 |
 | `func markRets(fb *FuncBlock, vals []*Expression)` | 返回点入口；逐返回值按 owning 型过滤 | return.go |
 
-`markWrite` 操作**定义**的 Life（赋值也改定义那一份）；`markArgs` / `markRets`
+`markVar` 操作**定义**的 Life（赋值也改定义那一份）；`markArgs` / `markRets`
 操作整条列表，所以是包级函数。三者产物一律 `applyMarks`，不缓存。
 
 ### 3.2 发布面（唯一入口）

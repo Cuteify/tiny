@@ -4,7 +4,7 @@
 // 不推断，每条语句只回答"现在指向谁"；失败方向只有一边 —— 拿不准就往
 // 多标 / 不释放偏，绝不提前释放。
 //
-// 入口三个，挂在各语句块的 Check 上：markWrite（var.go）、markArgs（call.go）、
+// 入口三个，挂在各语句块的 Check 上：markVar（var.go）、markArgs（call.go）、
 // markRets（return.go）。每条事实翻成什么字段写，见 gc_mark.go 的 applyMark。
 
 package parser
@@ -12,11 +12,11 @@ package parser
 // curScope Check 期间指向当前所在的作用域节点（由 Node.Check 设置）。
 var curScope Block
 
-// markWrite 变量写站点：var.go 的定义 / 赋值两个分支都挂它。
+// markVar 变量写站点：var.go 的定义 / 赋值两个分支都挂它。
 // l 是**定义**的 Life —— 定义与赋值改的都是定义那份账本，不是这条语句。
 // 定义与赋值的差别只剩一件事：定义点多一条 Init（清空上一轮，alloc 除外），
 // 在 collectWrite 里按 v.IsDefine 发出。
-func (l *Life) markWrite(v *VarBlock) {
+func (l *Life) markVar(v *VarBlock) {
 	if v == nil {
 		return
 	}
@@ -26,21 +26,22 @@ func (l *Life) markWrite(v *VarBlock) {
 		applyMarks(collectField(v))
 		return
 	}
-	applyMarks(l.collectWrite(v))
+	applyMarks(l.collectVar(v))
 }
 
-// collectWrite 变量写站点（定义 / 赋值共用）：形态判定与事实收集同一条链，
+// collectVar 变量写站点（定义 / 赋值共用）：形态判定与事实收集同一条链，
 // 优先序就是语义，只在这里写一次 ——
 //
 //  1. 非 owning 最高：连右值都不看（避开 bareRef 给参数打归调用方基线的副作用）
 //  2. isRCExpr 先于 fresh：newRC 的 Call 同时带 NewType 和 IsRC，先判 fresh
 //     会把 RC 块当新分配 claim，调用方再 rcDec 就是双重释放
 //  3. 全局 / newRC 在记旧对象之前 return（记了会 free 全局的 / 手工管的块）
-func (l *Life) collectWrite(v *VarBlock) []mark {
+func (l *Life) collectVar(v *VarBlock) []mark {
 	// fact 本站点恒定的 l / v / src 统一填，分派里只剩"产生哪几条事实"。
 	fact := func(flag markFlag, src *Life) mark {
 		return mark{flag: flag, l: l, v: v, src: src}
 	}
+	
 	var m []mark
 	if v.IsDefine { // Init 清空上一轮（alloc 保）再记作用域 —— 作用域不能被形态闸门挡掉，
 		// 否则"有 Obj 却没 Scope"，释放点塌回创建作用域 → 提前释放（踩过的坑）。
