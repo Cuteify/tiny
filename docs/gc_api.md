@@ -77,10 +77,9 @@ collectArgs / collectExpr 的实参位
   早期解析不出的调用（跨包）在后续轮次重新询问。定义点每轮 `mkInit`
   清账，`Escapes` 单调只增，保证收敛。
 - 保守语义只出现在认不出的地方：`cb==nil` / 序号越界 / 递归重入 /
-  PassedTo 指向认不出的被调 → 一律按逃逸（退 RC）。
-- `passedToEscaping` 读参数 Life 上的 `PassedTo / passedAt`——两条写入路径
-  （Check 期 `collectArgs`、发布前 `scanFuncFacts`）发同一条 `mkParamOut`，
-  幂等。
+  传出边指向认不出的被调 → 一律按逃逸（退 RC）。
+- `passedToEscaping` 读参数 Life 上的 `out`（一片 `paramOut{cb,i}`，调用点存
+  指针读取时活解；两路写入经 `applyMark` 按 `(cb,i)` 判重，幂等）。
 - 摘要查询在三个消费面生效：`collectArgs` 的实参位、`collectWrite` 全局
   分支与 `collectRet` 经 `collectExpr` 递归进表达式内层调用的实参位。
 
@@ -240,7 +239,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `OldObj *Object` | 导出 | mkOldObj（记在语句块 Life） | 后端（free 哪块） |
 | `Escapes bool` | 导出 | markEscapes（mkEscape 的施加）；LifeOf / ArgBlock.Check 给参数打基线；collectNames 名字级收口到对象 | Disposal → RC |
 | `WroteTo []*VarBlock` | 导出 | mkWroteTo（记在右值） | collectNames 补 Names |
-| `arg / fromParam / PassedTo / passedAt` | 私 | LifeOf 基线 / mkFromParam / mkParamOut | 摘要定点（§1.3） |
+| `arg / fromParam / out []paramOut` | 私 | LifeOf 基线 / mkFromParam / mkParamOut 判重 | 摘要定点（§1.3） |
 | `owner *VarBlock` | 私 | Init 登记 | IsRep / mkWroteTo / bindField |
 
 参数基线：参数由调用者持有 → `ArgBlock.Check` 与 `LifeOf` 都把参数的
@@ -273,7 +272,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `mkWroteTo` | collectWrite / 全局分支 | `src.WroteTo += l.owner` |
 | `mkFromParam` | collectWrite（裸引用） | `l.fromParam = src.paramRoot()` |
 | `mkFieldBind` | collectField | 容器 `bindField(name, src.owner)` |
-| `mkParamOut` | collectArgs / scanFuncFacts（同一条事实两路，幂等） | `l.PassedTo += i；l.passedAt += cb` |
+| `mkParamOut` | collectArgs / scanFuncFacts（同一条事实两路，判重幂等） | `l.out += paramOut{cb,i}` |
 | `mkTransferObj` | collectRet | `o.Transferred = true` |
 | `mkFuncOwns` | collectRet / new 分支 | `fb.ReturnsOwned = true` |
 | `mkEscape` | 多数站点（全局 / 装箱 / 实参升级 / 逃逸值全树） | `l.markEscapes()`：变量 / 对象 / 参数链三级级联 |

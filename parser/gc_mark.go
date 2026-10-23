@@ -29,7 +29,7 @@ const (
 	mkFieldBind // m.v（容器）.Life.bindField(m.name, m.src.owner)
 
 	// --- 调用点（collectArgs）---
-	mkParamOut // m.l.PassedTo += m.i；m.l.passedAt += m.cb
+	mkParamOut // m.l.out += paramOut{cb,i}；按 (cb,i) 判重
 
 	// --- 返回点（collectRet）---
 	mkTransferObj // m.o.Transferred = true：交给调用者，callee 侧不再释放
@@ -83,9 +83,13 @@ func applyMark(m mark) {
 		m.l.fromParam = m.src.paramRoot()
 	case mkFieldBind:
 		m.v.Life.bindField(m.name, m.src.owner)
-	case mkParamOut:
-		m.l.PassedTo = append(m.l.PassedTo, m.i)
-		m.l.passedAt = append(m.l.passedAt, m.cb)
+	case mkParamOut: // 参数无 define，Init 清不到账；Check 每轮重发同批边 → 查重
+		for _, e := range m.l.out {
+			if e.cb == m.cb && e.i == m.i {
+				return
+			}
+		}
+		m.l.out = append(m.l.out, paramOut{cb: m.cb, i: m.i})
 	case mkTransferObj:
 		m.o.Transferred = true
 	case mkFuncOwns:

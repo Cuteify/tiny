@@ -296,9 +296,9 @@ parser/gc_summary.go:283:13: mark (local variable) is not a type
 
 ### 6.3 同一事实两个施加点（**已做**）
 
-`collectArgs` 记 `PassedTo` 走 `mkParamOut` → `applyMark`；`scanFuncFacts` 里的 `record` 直接写 `p.Life.PassedTo`。同一个事实两条路。
+两路都经 `applyMark` 发 `mkParamOut`，同一事实同一施加点；写入按 `(cb,i)` 判重 —— 参数无 define，`Init` 清不到账，Check 每轮会重发同批边。
 
-已收敛到 `applyMark`。**注意 `PassedTo` / `passedAt` 不能删** —— `passedToEscaping`（`gc_summary.go:331`）在读它们，靠 `passedAt[k]` 找回对应的调用点。
+传出边本体不能删（`passedToEscaping` 读它）。形态已从 `PassedTo + passedAt` 两片平行数组并成 `out []paramOut` 一片（`gc_model.go`），zip 对应关系由结构保证，不再靠手工对齐与越界守卫。
 
 **收益**：事实写入点从 2 处降到 1 处。**风险**：低，已跑基线确认。
 

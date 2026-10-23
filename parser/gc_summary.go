@@ -118,7 +118,7 @@ func callsIn(f *FuncBlock) []*CallBlock {
 }
 
 // scanFuncFacts 扫一个函数体：填各参数的地面事实（存全局 / 装箱 / 写字段），
-// 记各参数被当实参传出过（PassedTo / passedAt）。局部别名表解到不动点 ——
+// 记各参数被当实参传出过（out 边）。局部别名表解到不动点 ——
 // 别名可能链式传递（a = p; b = a; g = b），单趟顺序扫会漏。
 func scanFuncFacts(f *FuncBlock) {
 	if f == nil || len(f.Args) == 0 {
@@ -232,15 +232,11 @@ func passedToEscaping(l *Life) bool {
 	if l == nil {
 		return true
 	}
-	for k, j := range l.PassedTo {
-		if k >= len(l.passedAt) {
+	for _, e := range l.out {
+		if e.cb == nil || e.cb.Func == nil {
 			return true
 		}
-		cb := l.passedAt[k]
-		if cb == nil || cb.Func == nil {
-			return true
-		}
-		if paramEscapeOfFunc(cb.Func, j) {
+		if paramEscapeOfFunc(e.cb.Func, e.i) {
 			return true
 		}
 	}

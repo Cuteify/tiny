@@ -57,12 +57,17 @@ type Life struct {
 	// 前写，分支里 result = n1 / n2 的两条边都得留下）。释放点取最大值。
 
 	// --- 参数链（跨函数摘要用，见 gc_summary.go）
-	arg       *ArgBlock    // 非 nil 表示我是某个参数
-	fromParam *ArgBlock    // 我这个借用来自哪个参数
-	PassedTo  []int        // 我作为第 i 个实参被传出过，目标函数的第几号参数
-	passedAt  []*CallBlock // 与 PassedTo 一一对应的调用点
+	arg       *ArgBlock  // 非 nil 表示我是某个参数
+	fromParam *ArgBlock  // 我这个借用来自哪个参数
+	out       []paramOut // 被当实参传出：第 i 实参传给了哪次调用
 
 	owner *VarBlock // 宿主变量（登记时写入）；参数为 nil
+}
+
+// paramOut 一条传出边。存调用点而非 cb.Func：跨包首查时未解析，读取时活解。
+type paramOut struct {
+	cb *CallBlock
+	i  int
 }
 
 // paramRoot 借用的最早来源参数：arg，或借用链记下的 fromParam。二选一只写一次。
