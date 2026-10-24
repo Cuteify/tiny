@@ -15,7 +15,7 @@ var curScope Block
 // markVar 变量写站点：var.go 的定义 / 赋值两个分支都挂它。
 // l 是**定义**的 Life —— 定义与赋值改的都是定义那份账本，不是这条语句。
 // 定义与赋值的差别只剩一件事：定义点多一条 Init（清空上一轮，alloc 除外），
-// 在 collectWrite 里按 v.IsDefine 发出。
+// 在 collectVar 里按 v.IsDefine 发出。
 func (l *Life) markVar(v *VarBlock) {
 	if v == nil {
 		return
@@ -41,7 +41,7 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 	fact := func(flag markFlag, src *Life) mark {
 		return mark{flag: flag, l: l, v: v, src: src}
 	}
-	
+
 	var m []mark
 	if v.IsDefine { // Init 清空上一轮（alloc 保）再记作用域 —— 作用域不能被形态闸门挡掉，
 		// 否则"有 Obj 却没 Scope"，释放点塌回创建作用域 → 提前释放（踩过的坑）。

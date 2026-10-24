@@ -13,9 +13,9 @@ import "fmt"
 type markFlag uint16
 
 const (
-	// --- 变量写站点（collectWrite，gc_write.go）---
+	// --- 变量写站点（collectVar，gc_write.go）---
 	// 纯判别值，每条 mark 恰好一个 flag。mkOldObj 施加序必须先于 mkObj*
-	// （claim 会覆盖 Obj）—— 由 collectWrite 的追加顺序保证，与编号无关。
+	// （claim 会覆盖 Obj）—— 由 collectVar 的追加顺序保证，与编号无关。
 	mkInit      markFlag = iota + 1 // m.l.Init(m.v)：清空（保 alloc），owner = m.v
 	mkScope                         // m.l.Scope = curScope
 	mkOldObj                        // m.v.Life.OldObj = m.l.Obj
