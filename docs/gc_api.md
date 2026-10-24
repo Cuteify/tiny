@@ -285,6 +285,51 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 |---|---|
 | `checkPremature()` | 发布期第 4 步：逐对象校验释放点不早于任一绑定名的作用域，违例 → `Premature`++（基线必须恒 0） |
 
+### 3.7 内嵌分段（闭包级辅助）与外部设施
+
+§3.1–§3.6 覆盖的是全部顶层函数。这一节补剩下两层：挂在入口函数**内部**的
+闭包分段（不单独导出，跟随所在函数进出，变量捕获自所在帧），以及 gc 借用的
+node.go 树基建。
+
+**内嵌分段 —— gc_write.go**
+
+| 分段 | 所在函数 | 作用 |
+|---|---|---|
+| `fact(flag, src)` | `collectVar` | 本站点恒定的 `l` / `v` 统一拼进 mark，各形态分支出口只选 flag 与 src |
+| `walk(n)`（自递归） | `lookupInFunc` | 遍历所在函数整棵子树找同名定义；第二个同名即置 ambiguous（选错基对象会 free 错块） |
+
+**内嵌分段 —— gc_summary.go（全在 `scanFuncFacts` 帧内）**
+
+| 分段 | 作用 |
+|---|---|
+| `resolveParam(v)`（自递归） | 变量 → 派生参数：Define 是参数直达；是普通变量查别名表 `localOf`（未解到 = nil） |
+| 别名预扫回调 | 收 `q = p` 别名边（owning / 非全局 / 单名限定），供 `localOf` 解到不动点 |
+| `markGround(p)` | 把参数 p 在本函数 Args 里的序号标为地面事实（存全局 / 写 owning 字段 / 装箱值 → 恒判逃逸） |
+| `paramOf(e)` | `resolveParam ∘ bareVar`：表达式 → 派生参数的薄包装 |
+| `record(e, idx, cb)` | Check 前预扫版的 mkParamOut：参数被当第 idx 实参传出 → applyMark（与 collectArgs 记同一事实） |
+| 语句扫描回调 | VarBlock 三类地面事实（全局 / 字段 / 装箱）+ CallBlock 逐实参 record（变参序号排在定参后） |
+| 调用点摘取回调 | `callsIn` 内：子树里摘全部 `*CallBlock`（界定摘要计算的调用闭包） |
+
+**内嵌分段 —— gc_names.go**
+
+| 分段 | 所在函数 | 作用 |
+|---|---|---|
+| 下钻递归闭包 | `walkSubNodes` | 经 eachSubNode 深度优先逐子树重入 fn（else 分支由此进遍历） |
+| 反转回调 | `collectNames` | 补 blockNode 缺口 + 顺序收 VarBlock + 对象 → 绑定名反转 |
+
+**gc 依赖的外部设施（node.go；非 gc 专有，只列 gc 用的那一面）**
+
+| 设施 | 作用 |
+|---|---|
+| `blockNode` | `map[Block]*Node`：语义块 → 树节点反查表；AddChild 登记，walkSubNodes / collectNames 顺带补建树绕过 AddChild 的缺口 |
+| `BlockNode(b)` | 反查包裹 b 的节点；不在树里（单态化深拷贝出的块）返回 nil |
+| `isScopeBlock(b)` | 块是否圈作用域（For / If / Else / Func / Switch / Case）—— curScope 更新与释放点候选的共同基准 |
+| `eachSubNode(n, fn)` | 子节点遍历通道：Children + 挂字段上的 ElseBlock（少走 else = 该分支的分配 / 赋值 / 作用域 gc 全看不见） |
+| `scopeOf(n)` | 节点最内层作用域：解析期给绕过 Check 路径建出的树补 curScope |
+
+注：`ArgEscapeOf` 本身也是 `var = func` 钩子（可整只替换），词条在 §3.5，
+不在此重列。
+
 ---
 
 ## 4. 数据模型速查
