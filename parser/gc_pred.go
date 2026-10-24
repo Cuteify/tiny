@@ -25,7 +25,7 @@ func copiesFields(t typeSys.Type) bool {
 	if _, ok := t.(*typeSys.InterfaceType); ok {
 		return true
 	}
-	st := structOf(t)
+	st := typeSys.StructOf(t)
 	if st == nil {
 		return false
 	}
@@ -37,25 +37,9 @@ func copiesFields(t typeSys.Type) bool {
 	return false
 }
 
-// structOf 取结构体类型（直接或经指针）；不是则 nil。
-func structOf(t typeSys.Type) *typeSys.StructType {
-	if t == nil {
-		return nil
-	}
-	if st, ok := t.(*typeSys.StructType); ok {
-		return st
-	}
-	if t.IsPointer() {
-		if st, ok := t.Elem().(*typeSys.StructType); ok {
-			return st
-		}
-	}
-	return nil
-}
-
 // fieldTypeOwning 结构体某字段是否带堆指针（往它写值要管引用）。
 func fieldTypeOwning(t typeSys.Type, field string) bool {
-	st := structOf(t)
+	st := typeSys.StructOf(t)
 	if st == nil || field == "" {
 		return false
 	}

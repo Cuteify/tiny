@@ -52,6 +52,7 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 	if !owningType(v.Type) {
 		return m // int / bool / float：赋值与 GC 无关
 	}
+
 	src := bareRef(v.Value) // 右值的归属；nil = 不是裸引用
 	if v.IsGlobal {
 		m = append(m, fact(mkEscape, nil)) // 全局不在任何栈帧内
@@ -60,12 +61,15 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 		}
 		return collectExpr(m, v.Value, true)
 	}
+
 	if isRCExpr(v.Value) {
 		return append(m, fact(mkObjNil, nil)) // 生命周期由调用者手工 rcDec 管
 	}
+
 	if !v.IsDefine {
 		m = append(m, fact(mkOldObj, nil)) // 覆盖点先记旧对象（全局 / newRC 已提前返回）
 	}
+
 	switch {
 	case freshAllocExpr(v.Value):
 		return append(m, fact(mkObjClaim, nil)) // 当场新建：拥有新对象（多处 new 是不同对象）
@@ -86,7 +90,17 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 // collectField 字段写入 p.f = v：容器记下字段关系；认不出容器时保守让值逃逸。
 func collectField(v *VarBlock) []mark {
 	fname := v.Name.Last()
-	base := fieldBaseOf(v)
+
+	// 解析字段写入的基对象（p.f 中的 p）
+	var base *VarBlock
+	for _, p := range v.Define.Path {
+		if vb, ok := p.(*VarBlock); ok && !vb.IsGlobal {
+			// 找不到容器实例：全局容器 / 参数容器
+			base = vb
+			break
+		}
+	}
+
 	if base == nil {
 		// 认不出基对象：值被存进未知容器，保守当作逃逸
 		if l := bareRef(v.Value); l != nil && fieldTypeOwning(v.Value.Type, fname) {
@@ -94,6 +108,7 @@ func collectField(v *VarBlock) []mark {
 		}
 		return nil
 	}
+
 	if !fieldTypeOwning(base.Type, fname) {
 		return nil
 	}
@@ -102,21 +117,6 @@ func collectField(v *VarBlock) []mark {
 		return nil
 	}
 	return []mark{{flag: mkFieldBind, v: base, name: fname, src: l}}
-}
-
-// fieldBaseOf 解析字段写入的基对象（p.f 中的 p）：容器实例在解析期 Find 时
-// 已落进 v.Define 里（Value 是 StructField 类型端，Path[0] 才是容器本体），
-// Find 最内层优先，解析完就是词法正确的那一个 —— Check 期直读，不再按名字反查。
-// 参数容器（Path[0] 是 *ArgBlock）与全局容器：FieldVals 语义未设计，
-// 一律走 collectField 的"值逃逸"保守兜底；解析失败同样 nil。
-func fieldBaseOf(v *VarBlock) *VarBlock {
-	if len(v.Define.Path) == 0 {
-		return nil
-	}
-	if vb, ok := v.Define.Path[0].(*VarBlock); ok && !vb.IsGlobal {
-		return vb
-	}
-	return nil
 }
 
 // markArgs 调用点。实参是否升级逃逸取决于被调函数的参数摘要 —— 摘要说

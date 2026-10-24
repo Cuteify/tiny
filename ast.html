@@ -76,686 +76,258 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content"><span class="tag tag-expr">root</span></span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="1">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">uuidState</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= 12345</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="2">
+  <span class="node-content collapsible" data-id="1">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
-    <span class="node-name">uuidNextRand</span>
-    <span class="node-type">→ u32</span>
-    <span class="node-detail">()</span>
+    <span class="node-name">strlen</span>
+    <span class="node-type">→ uint</span>
+    <span class="node-detail">(p: ptr)</span>
   </span>
   <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="3">
+  <span class="node-content" data-id="2">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">x</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= uuidState</span>
+    <span class="node-name">n</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= 0</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="4">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">x</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= (x ^ (x &lt;&lt; 13))</span>
+  <span class="node-content" data-id="3">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">_p1</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (p + n)</span>
   </span>
 </li>
+<li class="node">
+  <span class="node-content collapsible" data-id="4">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">; ((nil * _p1) != 0) ;</span>
+  </span>
+  <ul class="children">
 <li class="node">
   <span class="node-content" data-id="5">
     <span class="tag tag-var">var</span>
-    <span class="node-name">x</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= (x ^ (x &gt;&gt; 17))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="6">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">x</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= (x ^ (x &lt;&lt; 5))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="7">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">uuidState</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= x</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="8">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">x</span>
+    <span class="node-name">n</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= (n + 1)</span>
   </span>
 </li>
   </ul>
 </li>
 <li class="node">
-  <span class="node-content collapsible" data-id="9">
+  <span class="node-content" data-id="6">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">n</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="7">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
-    <span class="node-name">uuidHexChar</span>
-    <span class="node-type">→ u8</span>
-    <span class="node-detail">(v: u32)</span>
+    <span class="node-name">strcpy</span>
+    <span class="node-type">→ ptr</span>
+    <span class="node-detail">(dest: ptr, src: ptr)</span>
   </span>
   <ul class="children">
 <li class="node">
+  <span class="node-content" data-id="8">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">i</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= 0</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="9">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">_p2</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (src + i)</span>
+  </span>
+</li>
+<li class="node">
   <span class="node-content collapsible" data-id="10">
     <span class="toggle">▾</span>
-    <span class="tag tag-if">if</span>
-    <span class="node-detail">(v &lt; 10)</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">; ((nil * _p2) != 0) ;</span>
   </span>
   <ul class="children">
 <li class="node">
   <span class="node-content" data-id="11">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">(48 + v)</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">_p3</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (dest + i)</span>
   </span>
-</li>
-  </ul>
 </li>
 <li class="node">
   <span class="node-content" data-id="12">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">((97 + v) - 10)</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">_p4</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (src + i)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="13">
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">((nil * _p3) = unsafe.cast( = (nil * _p4)))</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="14">
+    <span class="tag tag-var">var</span>
+    <span class="node-name">i</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= (i + 1)</span>
   </span>
 </li>
   </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="13">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">new</span>
-    <span class="node-type">→ string</span>
-    <span class="node-detail">()</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="14">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">buf</span>
-    <span class="node-type">ptr</span>
-    <span class="node-detail">= memory.malloc( = 37)</span>
-  </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="15">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">i</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
+    <span class="node-name">_p5</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (dest + i)</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="16">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">bytes</span>
-    <span class="node-type">ptr</span>
-    <span class="node-detail">= memory.malloc( = 16)</span>
+    <span class="tag tag-expr">expr</span>
+    <span class="node-detail">((nil * _p5) = unsafe.cast( = 0))</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="17">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">b</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">dest</span>
   </span>
+</li>
+  </ul>
 </li>
 <li class="node">
   <span class="node-content collapsible" data-id="18">
     <span class="toggle">▾</span>
-    <span class="tag tag-for">for</span>
-    <span class="node-detail">; (b &lt; 16) ;</span>
+    <span class="tag tag-func">fn</span>
+    <span class="node-name">strcmp</span>
+    <span class="node-type">→ i32</span>
+    <span class="node-detail">(s1: ptr, s2: ptr)</span>
   </span>
   <ul class="children">
 <li class="node">
   <span class="node-content" data-id="19">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">r</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= uuidNextRand()</span>
+    <span class="node-name">i</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= 0</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="20">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p1</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + b)</span>
+  <span class="node-content collapsible" data-id="20">
+    <span class="toggle">▾</span>
+    <span class="tag tag-for">for</span>
+    <span class="node-detail">; ;</span>
   </span>
-</li>
+  <ul class="children">
 <li class="node">
   <span class="node-content" data-id="21">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p1) = unsafe.cast( = (r &amp; 255)))</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">_p6</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (s1 + i)</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="22">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">b</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= (b + 1)</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">a</span>
+    <span class="node-type">u8</span>
+    <span class="node-detail">= (nil * _p6)</span>
   </span>
-</li>
-  </ul>
 </li>
 <li class="node">
   <span class="node-content" data-id="23">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p2</span>
+    <span class="node-name">_p7</span>
     <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + 6)</span>
+    <span class="node-detail">= (s2 + i)</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="24">
     <span class="tag tag-var">var:=</span>
-    <span class="node-name">b6</span>
+    <span class="node-name">b</span>
     <span class="node-type">u8</span>
-    <span class="node-detail">= (nil * _p2)</span>
+    <span class="node-detail">= (nil * _p7)</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="25">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">b6</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= ((b6 &amp; 15) | 64)</span>
+  <span class="node-content collapsible" data-id="25">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(a != b)</span>
   </span>
-</li>
+  <ul class="children">
 <li class="node">
-  <span class="node-content" data-id="26">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p3</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + 6)</span>
+  <span class="node-content collapsible" data-id="26">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(a &lt; b)</span>
   </span>
-</li>
+  <ul class="children">
 <li class="node">
   <span class="node-content" data-id="27">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p3) = unsafe.cast( = b6))</span>
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">-1</span>
   </span>
+</li>
+  </ul>
 </li>
 <li class="node">
   <span class="node-content" data-id="28">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p4</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + 8)</span>
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">1</span>
   </span>
+</li>
+  </ul>
 </li>
 <li class="node">
-  <span class="node-content" data-id="29">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">b8</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (nil * _p4)</span>
+  <span class="node-content collapsible" data-id="29">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">(a == 0)</span>
   </span>
-</li>
+  <ul class="children">
 <li class="node">
   <span class="node-content" data-id="30">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">b8</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= ((b8 &amp; 63) | 128)</span>
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">0</span>
   </span>
+</li>
+  </ul>
 </li>
 <li class="node">
   <span class="node-content" data-id="31">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p5</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + 8)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="32">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p5) = unsafe.cast( = b8))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="33">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">pos</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="34">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">byteIdx</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="35">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">dashPositions</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="36">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">formatOrder</span>
-    <span class="node-type">ptr</span>
-    <span class="node-detail">= memory.malloc( = 16)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="37">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p6</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= formatOrder</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="38">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p6) = unsafe.cast( = 0))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="39">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p7</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 1)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="40">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p7) = unsafe.cast( = 1))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="41">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p8</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 2)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="42">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p8) = unsafe.cast( = 2))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="43">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p9</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 3)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="44">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p9) = unsafe.cast( = 3))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="45">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p10</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 4)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="46">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p10) = unsafe.cast( = 4))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="47">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p11</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 5)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="48">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p11) = unsafe.cast( = 5))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="49">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p12</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 6)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="50">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p12) = unsafe.cast( = 6))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="51">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p13</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 7)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="52">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p13) = unsafe.cast( = 7))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="53">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p14</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 8)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="54">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p14) = unsafe.cast( = 8))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="55">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p15</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 9)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="56">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p15) = unsafe.cast( = 9))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="57">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p16</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 10)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="58">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p16) = unsafe.cast( = 10))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="59">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p17</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 11)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="60">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p17) = unsafe.cast( = 11))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="61">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p18</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 12)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="62">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p18) = unsafe.cast( = 12))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="63">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p19</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 13)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="64">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p19) = unsafe.cast( = 13))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="65">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p20</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 14)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="66">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p20) = unsafe.cast( = 14))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="67">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p21</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (formatOrder + 15)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="68">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p21) = unsafe.cast( = 15))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="69">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">dashPos</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="70">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">i2</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= 0</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="71">
-    <span class="toggle">▾</span>
-    <span class="tag tag-for">for</span>
-    <span class="node-detail">; (i2 &lt; 16) ;</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="72">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p22</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (bytes + i2)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="73">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">byteVal</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (nil * _p22)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="74">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">hi</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= ((byteVal &gt;&gt; 4) &amp; 15)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="75">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">lo</span>
-    <span class="node-type">u32</span>
-    <span class="node-detail">= (byteVal &amp; 15)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="76">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p23</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (buf + pos)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="77">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p23) = unsafe.cast( = uuidHexChar(v = hi)))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="78">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p24</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= ((buf + pos) + 1)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="79">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p24) = unsafe.cast( = uuidHexChar(v = lo)))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="80">
     <span class="tag tag-var">var</span>
-    <span class="node-name">pos</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= (pos + 2)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="81">
-    <span class="toggle">▾</span>
-    <span class="tag tag-if">if</span>
-    <span class="node-detail">((((i2 == 3) || (i2 == 5)) || (i2 == 7)) || (i2 == 9))</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="82">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p25</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (buf + pos)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="83">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p25) = unsafe.cast( = 45))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="84">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">pos</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= (pos + 1)</span>
+    <span class="node-name">i</span>
+    <span class="node-type">uint</span>
+    <span class="node-detail">= (i + 1)</span>
   </span>
 </li>
   </ul>
-</li>
-<li class="node">
-  <span class="node-content" data-id="85">
-    <span class="tag tag-var">var</span>
-    <span class="node-name">i2</span>
-    <span class="node-type">int</span>
-    <span class="node-detail">= (i2 + 1)</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content" data-id="86">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">_p26</span>
-    <span class="node-type">u8</span>
-    <span class="node-detail">= (buf + pos)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="87">
-    <span class="tag tag-expr">expr</span>
-    <span class="node-detail">((nil * _p26) = unsafe.cast( = 0))</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="88">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">memory.free</span>
-    <span class="node-detail">( = bytes)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="89">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">memory.free</span>
-    <span class="node-detail">( = formatOrder)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="90">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">strings.makeString( = buf,  = pos,  = pos)</span>
-  </span>
 </li>
   </ul>
 </li>
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">91 nodes · 3 functions · 54 variables</div>
+<div class="subtitle" style="margin-top:20px">32 nodes · 3 functions · 15 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{

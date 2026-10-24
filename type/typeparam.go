@@ -7,16 +7,16 @@ type TypeParam struct {
 	Name string // 类型参数名（如 "T"、"K"、"V"）
 }
 
-func (tp *TypeParam) Type() string     { return tp.Name }
-func (tp *TypeParam) String() string   { return tp.Name }
-func (tp *TypeParam) Size() int        { return -1 } // 未实例化时无大小
-func (tp *TypeParam) Kind() string     { return "typeparam" }
+func (tp *TypeParam) Type() string         { return tp.Name }
+func (tp *TypeParam) String() string       { return tp.Name }
+func (tp *TypeParam) Size() int            { return -1 } // 未实例化时无大小
+func (tp *TypeParam) Kind() string         { return "typeparam" }
 func (tp *TypeParam) Fields() StructFileds { return nil }
-func (tp *TypeParam) Parent() Type     { return nil }
-func (tp *TypeParam) IsPointer() bool  { return false }
-func (tp *TypeParam) Alignment() int   { return 0 }
-func (tp *TypeParam) Elem() Type       { return nil }
-func (tp *TypeParam) Methods() []any   { return nil }
+func (tp *TypeParam) Parent() Type         { return nil }
+func (tp *TypeParam) IsPointer() bool      { return false }
+func (tp *TypeParam) Alignment() int       { return 0 }
+func (tp *TypeParam) Elem() Type           { return nil }
+func (tp *TypeParam) Methods() []any       { return nil }
 
 // NewTypeParam 创建类型参数
 func NewTypeParam(name string) *TypeParam {

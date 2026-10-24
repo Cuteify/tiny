@@ -196,7 +196,16 @@ func (s *rcSim) evalCopy(e *Expression) *Object {
 // fieldWrite p.f = y：字段旧值失去引用，新的接管。
 func (s *rcSim) fieldWrite(v *VarBlock) {
 	field := v.Name.Last()
-	base := fieldBaseOf(v)
+
+	// 解析字段写入的基对象（p.f 中的 p）：从解析期 Path 里取首个非全局
+	// *VarBlock；全局容器 / 参数容器认不出，模拟直接跳过（多标方向）。
+	var base *VarBlock
+	for _, p := range v.Define.Path {
+		if vb, ok := p.(*VarBlock); ok && !vb.IsGlobal {
+			base = vb
+			break
+		}
+	}
 	if base == nil {
 		return
 	}

@@ -183,3 +183,19 @@ func (s *StructType) Inherit(find func(string) *StructType) {
 
 	s.StructFields = append(inherited, rest...)
 }
+
+// StructOf 取结构体类型（直接或经指针）；不是则 nil。
+func StructOf(t Type) *StructType {
+	if t == nil {
+		return nil
+	}
+	if st, ok := t.(*StructType); ok {
+		return st
+	}
+	if t.IsPointer() {
+		if st, ok := t.Elem().(*StructType); ok {
+			return st
+		}
+	}
+	return nil
+}

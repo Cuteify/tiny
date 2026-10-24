@@ -107,3 +107,9 @@ func applyMarks(ms []mark) {
 		applyMark(m)
 	}
 }
+
+func applyFlags(m *mark, fs ...markFlag) {
+	for _, f := range fs {
+		m.flag |= f
+	}
+}
