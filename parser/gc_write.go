@@ -86,7 +86,7 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 // collectField 字段写入 p.f = v：容器记下字段关系；认不出容器时保守让值逃逸。
 func collectField(v *VarBlock) []mark {
 	fname := v.Name.Last()
-	base := fieldBaseOf(curScope, v)
+	base := fieldBaseOf(v)
 	if base == nil {
 		// 认不出基对象：值被存进未知容器，保守当作逃逸
 		if l := bareRef(v.Value); l != nil && fieldTypeOwning(v.Value.Type, fname) {
@@ -104,52 +104,19 @@ func collectField(v *VarBlock) []mark {
 	return []mark{{flag: mkFieldBind, v: base, name: fname, src: l}}
 }
 
-// fieldBaseOf 解析字段写入的基对象（p.f 中的 p）。字段语句块的 Define 指向
-// StructField，拿不到基对象，只能在当前函数里按名字反查；遮蔽导致歧义时返回 nil。
-func fieldBaseOf(scope Block, v *VarBlock) *VarBlock {
-	root := v.Name.First()
-	found, ambiguous := lookupInFunc(scope, root)
-	if ambiguous {
+// fieldBaseOf 解析字段写入的基对象（p.f 中的 p）：容器实例在解析期 Find 时
+// 已落进 v.Define 里（Value 是 StructField 类型端，Path[0] 才是容器本体），
+// Find 最内层优先，解析完就是词法正确的那一个 —— Check 期直读，不再按名字反查。
+// 参数容器（Path[0] 是 *ArgBlock）与全局容器：FieldVals 语义未设计，
+// 一律走 collectField 的"值逃逸"保守兜底；解析失败同样 nil。
+func fieldBaseOf(v *VarBlock) *VarBlock {
+	if len(v.Define.Path) == 0 {
 		return nil
 	}
-	return found
-}
-
-// lookupInFunc 在当前函数体里按名字找定义。遮蔽（多个不同定义）返回 ambiguous
-// —— 选错基对象会 free 错块，调用方要按 nil 处理。
-func lookupInFunc(scope Block, name string) (def *VarBlock, ambiguous bool) {
-	fn := scope
-	for fn != nil {
-		if _, ok := fn.(*FuncBlock); ok {
-			break
-		}
-		fn = outerParent(fn)
+	if vb, ok := v.Define.Path[0].(*VarBlock); ok && !vb.IsGlobal {
+		return vb
 	}
-	if fn == nil {
-		return nil, false
-	}
-	// 显式栈平扫（与 computeParamSummary 的闭包收集同一风格）：收集语义
-	// 与递归版等价，命中先后无谓 —— 唯一才敢用，第二个同名即歧义。
-	// 只走 Children 不走 eachSubNode：else 分支里的定义看不到，代价只有
-	// 多 refuse，方向在"宁可多标"那一侧。
-	stack := []*Node{BlockNode(fn)}
-	for len(stack) > 0 {
-		n := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if n == nil {
-			continue
-		}
-		if vb, ok := n.Value.(*VarBlock); ok && vb.IsDefine && vb.Name != nil &&
-			vb.Name.First() == name && def != vb {
-			if def == nil {
-				def = vb
-			} else {
-				ambiguous = true
-			}
-		}
-		stack = append(stack, n.Children...)
-	}
-	return def, ambiguous
+	return nil
 }
 
 // markArgs 调用点。实参是否升级逃逸取决于被调函数的参数摘要 —— 摘要说

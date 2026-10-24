@@ -352,6 +352,20 @@ applyMark     →  字段写     施加（不变）
 **结论**：两字段 + `paramRoot()` 保持原样。Life 能安全合并的只有传出边
 并片（见 6.3）。
 
+### 6.7 `fieldBaseOf` 直读 `v.Define`（**已做**，lookupInFunc 退役）
+
+字段写基对象原本靠平扫当前函数体找同名定义（lookupInFunc：唯一才敢用，
+第二个同名 refuse → 值逃逸）。实际解析期 `Find` 早已把容器实例落进
+`v.Define`（`Path[0]` = 容器本体，最内层优先即词法正确，Node/Path 结构见
+finder.go:198-206、var.go:410-497）——旧注释"Define 指向 StructField，
+拿不到基对象"只看到 `Value`（类型端字段），漏了 Path 携带实例。
+`fieldBaseOf` 改为直读：`Path[0].(*VarBlock)` 且非全局 → 用之；参数容器
+（`*ArgBlock`）与全局容器 FieldVals 语义未设计，维持"值逃逸"兜底。
+lookupInFunc（含其递归段 walk）与 rcSim.cur（其唯一调用者是 fieldBaseOf
+的 scope 参数）一并退役。语义净变化只有一处：函数体内有多个同名定义时，
+旧版一律 refuse（值逃逸），新版取解析期内层命中 —— 向精确方向收，
+行为示例见 gc_api §3.6。
+
 ---
 
 ## 7. 已知边界

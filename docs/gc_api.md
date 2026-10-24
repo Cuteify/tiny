@@ -208,8 +208,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `collectArgs(cb)` | 调用点：实参逐位按 ArgEscapeOf 升级 + 变参序号 + ThisVar 接收者逃逸 + 参数传出边（out，判重） |
 | `collectRet(fb, e)` | 返回点：本地裸对象 → mkTransferObj + mkFuncOwns；其余走 collectExpr |
 | `collectExpr(out, e, escapes)` | 表达式递归传播逃逸（装箱值 / 内嵌调用实参）；`escapes` 传 true = 恒逃逸上下文 |
-| `fieldBaseOf(scope, v)` | 字段写找容器基变量：沿当前作用域按绑定深度解析 `p` |
-| `lookupInFunc(scope, name)` | 名字 → 定义块；同名遮蔽返回 ambiguous（歧义 → nil → 保守） |
+| `fieldBaseOf(v)` | 字段写找容器基变量：直读解析期 `Find` 落进 `v.Define` 的容器实例（`Value`=StructField 类型端、`Path[0]`=容器本体，最内层即词法正确）；参数 / 全局 / 解析失败 → nil 保守兜底 |
 
 **gc_mark.go —— 施加器**
 
@@ -266,7 +265,6 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `rcSim.fieldVal / setField` | 字段表读 / 写（fields[容器][字段] → 对象） |
 | `rcSim.fieldWrite(v)` | `p.f = y`：摘旧字段判 ReleasesOld，新值入字段表（基变量认不出直接跳过） |
 | `rcSim.evalCopy(e)` | 右值求当前对象：只认裸引用（判据同 bareRef）；逃逸对象返回 nil 不入模拟 |
-| `rcSim.cur()` | 作用域栈顶 = 当前模拟作用域（fieldWrite 找基变量用） |
 | `hostOf(v)` | 语句归到定义宿主（赋值 / 字段写都记宿主那份），槽位按宿主唯一 |
 
 **gc_release.go —— 发布期第 3 步**
@@ -296,7 +294,6 @@ node.go 树基建。
 | 分段 | 所在函数 | 作用 |
 |---|---|---|
 | `fact(flag, src)` | `collectVar` | 本站点恒定的 `l` / `v` 统一拼进 mark，各形态分支出口只选 flag 与 src |
-| `walk`（显式栈） | `lookupInFunc` | 平扫所在函数找同名定义，第二个同名即置 ambiguous（选错基对象会 free 错块）；只走 Children 不走 eachSubNode —— else 里的定义看不到，代价只是多 refuse |
 
 **内嵌分段 —— gc_summary.go（全在 `scanFuncFacts` 帧内）**
 

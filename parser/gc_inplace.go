@@ -196,7 +196,7 @@ func (s *rcSim) evalCopy(e *Expression) *Object {
 // fieldWrite p.f = y：字段旧值失去引用，新的接管。
 func (s *rcSim) fieldWrite(v *VarBlock) {
 	field := v.Name.Last()
-	base := fieldBaseOf(s.cur(), v)
+	base := fieldBaseOf(v)
 	if base == nil {
 		return
 	}
@@ -210,15 +210,7 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	}
 }
 
-// cur 当前作用域（作用域栈顶）。
-func (s *rcSim) cur() Block {
-	if len(s.stack) == 0 {
-		return nil
-	}
-	return s.stack[len(s.stack)-1].block
-}
-
-// declare 登记到当前作用域层，出口时对它失效。
+// declare 把变量登记到当前作用域层，出口时对它失效。
 func (s *rcSim) declare(v *VarBlock) {
 	if len(s.stack) == 0 {
 		return
