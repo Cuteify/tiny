@@ -204,11 +204,10 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | 函数 | 作用 |
 |---|---|
 | `collectVar(v)` | 变量写站点的形态判定 + 事实产出（全局 / newRC / 覆盖 / fresh / 别名 / 借用一条优先链，§4.1） |
-| `collectField(v)` | `p.f = y` 字段写：认得出容器 → mkFieldBind；认不出 → 值保守 mkEscape |
+| `collectField(v)` | `p.f = y` 字段写：认得出容器 → mkFieldBind；认不出 → 值保守 mkEscape。基定位直读解析期 `Find` 落进 `v.Define.Path` 的容器实例（`Path[0]` = 容器本体，最内层即词法正确），全局 / 参数 / 解析失败 → nil 走兜底 |
 | `collectArgs(cb)` | 调用点：实参逐位按 ArgEscapeOf 升级 + 变参序号 + ThisVar 接收者逃逸 + 参数传出边（out，判重） |
 | `collectRet(fb, e)` | 返回点：本地裸对象 → mkTransferObj + mkFuncOwns；其余走 collectExpr |
 | `collectExpr(out, e, escapes)` | 表达式递归传播逃逸（装箱值 / 内嵌调用实参）；`escapes` 传 true = 恒逃逸上下文 |
-| `fieldBaseOf(v)` | 字段写找容器基变量：直读解析期 `Find` 落进 `v.Define` 的容器实例（`Value`=StructField 类型端、`Path[0]`=容器本体，最内层即词法正确）；参数 / 全局 / 解析失败 → nil 保守兜底 |
 
 **gc_mark.go —— 施加器**
 
@@ -403,7 +402,7 @@ node.go 树基建。
 |---|---|---|
 | `owningType(t)` | `t.IsOwning` 的 nil 安全包装（`*T` / string / list 等） | Type 未解析 → false（无堆指针，天然安全） |
 | `copiesFields(t)` | 接口 / any，或含 owning 字段的值类型 | true → 源标逃逸（副本可能活得更久） |
-| `structOf(t)` | 取 `*StructType` 视图（copiesFields / fieldTypeOwning 共用底座） | 非结构体 → nil |
+| `typeSys.StructOf(t)` | 取 `*StructType` 视图（copiesFields / fieldTypeOwning 共用底座；原 GC 侧 structOf 已收编进 type 包） | 非结构体 → nil |
 | `fieldTypeOwning(t, f)` | 结构体字段是否带堆指针 | — |
 | `freshAllocExpr(e)` | new、ReturnsOwned 的调用、字符串拼接（newRC 由 isRCExpr 先行排除） | false → 不 claim |
 | `isRCExpr(e)` | `Call.IsRC`（newRC） | true → 跳过 claim 与自动释放 |

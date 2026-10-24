@@ -366,6 +366,17 @@ lookupInFunc（含其递归段 walk）与 rcSim.cur（其唯一调用者是 fiel
 旧版一律 refuse（值逃逸），新版取解析期内层命中 —— 向精确方向收，
 行为示例见 gc_api §3.6。
 
+### 6.8 `fieldBaseOf` 消失进两处站点、`structOf` 收编 type 包（**已做**，纯内联）
+
+事后清理：不带 scope 折叠的死参数已无，`fieldBaseOf` 整个内联——基定位
+逻辑"扫 `v.Define.Path` 取首个非全局 `*VarBlock`"原地落在两个使用者
+里：`collectField` 与 `rcSim.fieldWrite`（同法抄写，两处保持逐字一致）。
+Path 中间层全是 `typeSys.Type`（finder.go 的 findPath 只 append 解引用
+层/字段类型），不存在第二个 `*VarBlock` 可命中，内联扫描 ≡ 取 `Path[0]`。
+同场：GC 侧 `structOf` 搬进 type 包（`typeSys.StructOf`，逐字同体），
+`copiesFields` / `fieldTypeOwning` 改走导出名；四个文件 gofmt 收整
+（收折叠空行、typeparam 方法对齐）。语义零变化，基线逐位不变。
+
 ---
 
 ## 7. 已知边界
