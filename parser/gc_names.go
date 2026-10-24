@@ -8,12 +8,27 @@
 package parser
 
 // walkSubNodes 深度优先下钻整棵子树（含 else 分支，见 eachSubNode）。
+// 显式栈替代递归：先压 else、再反向压 Children，出栈序与递归版完全一致
+// —— collectNames 的树序（lives / WroteTo 补边 / Names 顺序）依赖它。
 func walkSubNodes(root *Node, fn func(n *Node)) {
 	if root == nil {
 		return
 	}
-	fn(root)
-	eachSubNode(root, func(c *Node) { walkSubNodes(c, fn) })
+	stack := []*Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		fn(n)
+		// 先压 else 再反向压 Children：出栈序 = Children 顺序、else 最后
+		if ib, ok := n.Value.(*IfBlock); ok && ib.ElseBlock != nil {
+			stack = append(stack, ib.ElseBlock)
+		}
+		for i := len(n.Children) - 1; i >= 0; i-- {
+			if c := n.Children[i]; c != nil {
+				stack = append(stack, c)
+			}
+		}
+	}
 }
 
 // collectNames 反转"变量 → 对象"，得到 Object.Names。Check 期因此不需要

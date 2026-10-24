@@ -126,8 +126,8 @@ func scanFuncFacts(f *FuncBlock) {
 	}
 	localOf := map[*VarBlock]*ArgBlock{} // 局部变量 → 它派生的那个参数
 
-	var resolveParam func(v *VarBlock) *ArgBlock
-	resolveParam = func(v *VarBlock) *ArgBlock {
+	// 一跳查表，不是递归：链式别名由下方 localOf 的不动点循环摊平后才进表。
+	resolveParam := func(v *VarBlock) *ArgBlock {
 		if v == nil {
 			return nil
 		}

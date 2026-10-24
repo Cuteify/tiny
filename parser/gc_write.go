@@ -20,12 +20,14 @@ func (l *Life) markVar(v *VarBlock) {
 	if v == nil {
 		return
 	}
+
+	// 字段操作
 	if !v.IsDefine && len(v.Name) > 1 {
-		// 字段写入（p.f = y）单独一条路：字段语句块的 Type 是 unknown，
-		// 过不了 owningType 闸门，只能靠 len(Name) > 1 认出来。
 		applyMarks(collectField(v))
 		return
 	}
+
+	// 普通赋值
 	applyMarks(l.collectVar(v))
 }
 
@@ -126,10 +128,16 @@ func lookupInFunc(scope Block, name string) (def *VarBlock, ambiguous bool) {
 	if fn == nil {
 		return nil, false
 	}
-	var walk func(n *Node)
-	walk = func(n *Node) {
+	// 显式栈平扫（与 computeParamSummary 的闭包收集同一风格）：收集语义
+	// 与递归版等价，命中先后无谓 —— 唯一才敢用，第二个同名即歧义。
+	// 只走 Children 不走 eachSubNode：else 分支里的定义看不到，代价只有
+	// 多 refuse，方向在"宁可多标"那一侧。
+	stack := []*Node{BlockNode(fn)}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		if n == nil {
-			return
+			continue
 		}
 		if vb, ok := n.Value.(*VarBlock); ok && vb.IsDefine && vb.Name != nil &&
 			vb.Name.First() == name && def != vb {
@@ -139,11 +147,8 @@ func lookupInFunc(scope Block, name string) (def *VarBlock, ambiguous bool) {
 				ambiguous = true
 			}
 		}
-		for _, ch := range n.Children {
-			walk(ch)
-		}
+		stack = append(stack, n.Children...)
 	}
-	walk(BlockNode(fn))
 	return def, ambiguous
 }
 

@@ -296,13 +296,13 @@ node.go 树基建。
 | 分段 | 所在函数 | 作用 |
 |---|---|---|
 | `fact(flag, src)` | `collectVar` | 本站点恒定的 `l` / `v` 统一拼进 mark，各形态分支出口只选 flag 与 src |
-| `walk(n)`（自递归） | `lookupInFunc` | 遍历所在函数整棵子树找同名定义；第二个同名即置 ambiguous（选错基对象会 free 错块） |
+| `walk`（显式栈） | `lookupInFunc` | 平扫所在函数找同名定义，第二个同名即置 ambiguous（选错基对象会 free 错块）；只走 Children 不走 eachSubNode —— else 里的定义看不到，代价只是多 refuse |
 
 **内嵌分段 —— gc_summary.go（全在 `scanFuncFacts` 帧内）**
 
 | 分段 | 作用 |
 |---|---|
-| `resolveParam(v)`（自递归） | 变量 → 派生参数：Define 是参数直达；是普通变量查别名表 `localOf`（未解到 = nil） |
+| `resolveParam(v)` | 变量 → 派生参数（一跳查表，非递归：链式别名由 localOf 不动点摊平）：Define 是参数直达；是普通变量查别名表 `localOf`（未解到 = nil） |
 | 别名预扫回调 | 收 `q = p` 别名边（owning / 非全局 / 单名限定），供 `localOf` 解到不动点 |
 | `markGround(p)` | 把参数 p 在本函数 Args 里的序号标为地面事实（存全局 / 写 owning 字段 / 装箱值 → 恒判逃逸） |
 | `paramOf(e)` | `resolveParam ∘ bareVar`：表达式 → 派生参数的薄包装 |
@@ -314,7 +314,7 @@ node.go 树基建。
 
 | 分段 | 所在函数 | 作用 |
 |---|---|---|
-| 下钻递归闭包 | `walkSubNodes` | 经 eachSubNode 深度优先逐子树重入 fn（else 分支由此进遍历） |
+| 下钻闭包（显式栈） | `walkSubNodes` | 深度优先先序走整棵子树（含 else；先压 else 再反向压 Children，访问序与递归版一致） |
 | 反转回调 | `collectNames` | 补 blockNode 缺口 + 顺序收 VarBlock + 对象 → 绑定名反转 |
 
 **gc 依赖的外部设施（node.go；非 gc 专有，只列 gc 用的那一面）**
