@@ -9,6 +9,8 @@
 
 package parser
 
+import typeSys "cuteify/type"
+
 // curScope Check 期间指向当前所在的作用域节点（由 Node.Check 设置）。
 var curScope Block
 
@@ -23,7 +25,7 @@ func (l *Life) markVar(v *VarBlock) {
 
 	// 字段操作
 	if !v.IsDefine && len(v.Name) > 1 {
-		applyMarks(collectField(v))
+		applyMarks(l.collectField(v))
 		return
 	}
 
@@ -88,7 +90,7 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 }
 
 // collectField 字段写入 p.f = v：容器记下字段关系；认不出容器时保守让值逃逸。
-func collectField(v *VarBlock) []mark {
+func (l *Life) collectField(v *VarBlock) []mark {
 	fname := v.Name.Last()
 
 	// 解析字段写入的基对象（p.f 中的 p）
@@ -101,21 +103,18 @@ func collectField(v *VarBlock) []mark {
 		}
 	}
 
-	if base == nil {
-		// 认不出基对象：值被存进未知容器，保守当作逃逸
-		if l := bareRef(v.Value); l != nil && fieldTypeOwning(v.Value.Type, fname) {
-			return []mark{{flag: mkEscape, l: l}}
-		}
+	fieldType := typeSys.StructOf(v.Value.Type).Field(fname).Type
+
+	// 认不出基对象：值被存进未知容器，保守当作逃逸
+	if base == nil && fieldType.IsOwning() {
+		return []mark{{flag: mkEscape, l: l}}
+	}
+
+	// 字段写入的基对象不是容器，或不是容器的字段：不记录
+	if !fieldType.IsOwning() {
 		return nil
 	}
 
-	if !fieldTypeOwning(base.Type, fname) {
-		return nil
-	}
-	l := bareRef(v.Value)
-	if l == nil {
-		return nil
-	}
 	return []mark{{flag: mkFieldBind, v: base, name: fname, src: l}}
 }
 
@@ -126,36 +125,42 @@ func markArgs(cb *CallBlock) {
 	if cb == nil {
 		return
 	}
-	applyMarks(collectArgs(cb))
+	applyMarks(collectArgs(nil, cb))
 }
 
 // collectArgs 调用点收集器：实参是否升级逃逸（问被调摘要），
-// 以及参数链记一笔"我被传出过"。
-func collectArgs(cb *CallBlock) []mark {
-	var m []mark
+// 以及参数链记一笔"我被传出过"。追加式：语句调用点（markArgs）与
+// 表达式内嵌调用（collectExpr）共用一个拼装处，不复刻第二份循环。
+func collectArgs(out []mark, cb *CallBlock) []mark {
+	// 遍历所有实参
 	for i, ag := range cb.Args {
-		// 缺参补的默认值（Defind != nil）在被调方自己的帧里求值，不是调用方
-		// 传进来的东西 —— 当成实参会被调用点的参数摘要误判逃逸。
 		if ag == nil || ag.Value == nil || ag.Defind != nil {
 			continue
 		}
-		m = collectExpr(m, ag.Value, ArgEscapeOf(cb, i))
+
+		// 处理实参值
+		out = collectExpr(out, ag.Value, ArgEscapeOf(cb, i))
+
 		// 参数 / 参数借用被当作第 i 个实参传出 → 记进参数链，供摘要判定
 		if l := bareRef(ag.Value); l != nil {
 			if p := l.paramRoot(); p != nil {
-				m = append(m, mark{flag: mkParamOut, l: &p.Life, i: i, cb: cb})
+				out = append(out, mark{flag: mkParamOut, l: &p.Life, i: i, cb: cb})
 			}
 		}
 	}
+
+	// 遍历所有变参
 	for _, ag := range cb.VariadicArgs {
 		if ag != nil && ag.Value != nil {
-			m = collectExpr(m, ag.Value, ArgEscapeOf(cb, len(cb.Args)))
+			out = collectExpr(out, ag.Value, ArgEscapeOf(cb, len(cb.Args)))
 		}
 	}
+
+	// 处理 this 指针
 	if cb.ThisVar != nil {
-		m = collectExpr(m, &Expression{Var: cb.ThisVar}, true)
+		out = collectExpr(out, &Expression{Var: cb.ThisVar}, true)
 	}
-	return m
+	return out
 }
 
 // markRets 返回语句。返回本地对象 → 所有权转移给调用者；返回参数 → 不转移
@@ -184,6 +189,8 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 	if e == nil {
 		return nil
 	}
+
+	// 处理裸引用
 	if l := bareRef(e); l != nil {
 		if l.owner == nil || l.owner.IsGlobal {
 			return nil // 参数 / 全局：调用者或全局本来就有，不转移
@@ -196,6 +203,8 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 		}
 		return m
 	}
+
+	// 处理 new(T) 调用
 	if e.Call != nil && e.Call.NewType != nil {
 		m := []mark{{flag: mkFuncOwns, fb: fb}}
 		if l := LifeOf(e.Call.ThisVar); l != nil {
@@ -215,32 +224,29 @@ func collectExpr(out []mark, e *Expression, escapes bool) []mark {
 	if e == nil {
 		return out
 	}
+
+	// 处理变量引用
 	if e.Var != nil && escapes {
 		if l := LifeOf(e.Var); l != nil {
 			out = append(out, mark{flag: mkEscape, l: l})
 		}
 	}
-	if e.Call != nil {
-		cb := e.Call
-		for i, ag := range cb.Args {
-			if ag != nil {
-				out = collectExpr(out, ag.Value, ArgEscapeOf(cb, i))
-			}
-		}
-		for _, ag := range cb.VariadicArgs {
-			if ag != nil {
-				out = collectExpr(out, ag.Value, ArgEscapeOf(cb, len(cb.Args)))
-			}
-		}
-		if cb.ThisVar != nil {
-			out = collectExpr(out, &Expression{Var: cb.ThisVar}, true)
-		}
+
+	// 处理调用点
+	if cb := e.Call; cb != nil {
+		out = collectArgs(out, cb)
 	}
+
+	// 处理子表达式
 	out = collectExpr(out, e.Left, escapes)
 	out = collectExpr(out, e.Right, escapes)
+
+	// 处理索引表达式
 	for _, ix := range e.Index {
 		out = collectExpr(out, ix, escapes)
 	}
+
+	// 处理列表元素表达式
 	for _, le := range e.ListElems {
 		out = collectExpr(out, le, escapes)
 	}

@@ -377,6 +377,21 @@ Path 中间层全是 `typeSys.Type`（finder.go 的 findPath 只 append 解引�
 `copiesFields` / `fieldTypeOwning` 改走导出名；四个文件 gofmt 收整
 （收折叠空行、typeparam 方法对齐）。语义零变化，基线逐位不变。
 
+### 6.9 `collectExpr` 的 Call 分支退役，`collectArgs` 追加式统一两路（**已做**）
+
+收集点原本双份，是复制品不是分层：`CallBlock.Check` 尾部 markArgs →
+collectArgs 已对每个完成类型检查的调用块施加全语义事实（守卫 + 传出边 +
+ThisVar），collectExpr 递归碰到同一调用块又手抄一遍**简化版**——缺缺参
+默认值守卫、缺 mkParamOut。统一：`collectArgs` 改追加式
+`out []mark`（契合同 collectExpr 的"递归共用 out 不额外分配"），Call 分支
+三段循环删成一行 `out = collectArgs(out, cb)`。
+关键实据：默认值参数 Value 同设（call.go:154-159
+`ArgBlock{Value: Default, Defind: 参数声明}`）——`Value == nil` 不是区分
+器，`Defind != nil` 才是；第二遍缺此守卫时，被调方默认值表达式会被当调用
+方实参、按本调用点摘要误判逃逸，语料未触发但结构是漏。语义净变化只两条：
+第二遍补守卫（方向 = 少误判逃逸）、第二遍补传出边（第一遍已记，79d9d3b
+的跨轮查重兜住重复；escape 置位幂等）。基线逐位不变。
+
 ---
 
 ## 7. 已知边界

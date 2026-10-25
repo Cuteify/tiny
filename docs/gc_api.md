@@ -205,9 +205,9 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 |---|---|
 | `collectVar(v)` | 变量写站点的形态判定 + 事实产出（全局 / newRC / 覆盖 / fresh / 别名 / 借用一条优先链，§4.1） |
 | `collectField(v)` | `p.f = y` 字段写：认得出容器 → mkFieldBind；认不出 → 值保守 mkEscape。基定位直读解析期 `Find` 落进 `v.Define.Path` 的容器实例（`Path[0]` = 容器本体，最内层即词法正确），全局 / 参数 / 解析失败 → nil 走兜底 |
-| `collectArgs(cb)` | 调用点：实参逐位按 ArgEscapeOf 升级 + 变参序号 + ThisVar 接收者逃逸 + 参数传出边（out，判重） |
+| `collectArgs(out, cb)` | 调用点：实参逐位按 ArgEscapeOf 升级 + 变参序号 + ThisVar 接收者逃逸 + 参数传出边（out，判重）。追加式：语句调用点（markArgs 路）与内嵌调用（collectExpr 路）共用这一份拼装 |
 | `collectRet(fb, e)` | 返回点：本地裸对象 → mkTransferObj + mkFuncOwns；其余走 collectExpr |
-| `collectExpr(out, e, escapes)` | 表达式递归传播逃逸（装箱值 / 内嵌调用实参）；`escapes` 传 true = 恒逃逸上下文 |
+| `collectExpr(out, e, escapes)` | 表达式递归传播逃逸（子表达式 / 索引 / 列表元素；内嵌调用整块转手 `collectArgs`，不再自抄第二份循环）；`escapes` 传 true = 恒逃逸上下文 |
 
 **gc_mark.go —— 施加器**
 
