@@ -12,12 +12,9 @@ package parser
 // curScope Check 期间指向当前所在的作用域节点（由 Node.Check 设置）。
 var curScope Block
 
-// markVar 变量写站点：var.go 的定义 / 赋值两个分支都挂它。
-// l 是**定义**的 Life —— 定义与赋值改的都是定义那份账本，不是这条语句。
-// 字段写（!IsDefine 且 len(Name)>1）经 LifeOf 的 StructField 分支进来，
-// 接收者 l 是**容器定义**的 Life：字段的账本挂在容器上，装的却是值。
-// 定义与赋值的差别只剩一件事：定义点多一条 Init（清空上一轮，alloc 除外），
-// 在 collectVar 里按 v.IsDefine 发出。
+// markVar 变量写站点：var.go 定义 / 赋值两分支都挂，改的都是定义那份账本。
+// l 是定义的 Life；字段写（!IsDefine && len(Name)>1）经 LifeOf 进来时 l 是容器的 Life。
+// 定义点多一条 Init（清空上一轮，alloc 除外），collectVar 按 v.IsDefine 发出。
 func (l *Life) markVar(v *VarBlock) {
 	if v == nil {
 		return
@@ -90,36 +87,27 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 }
 
 // collectField 字段写入 p.f = v：容器记下字段关系；认不出容器时保守让值逃逸。
-// 接收者 l 是容器的 Life（LifeOf 的 StructField 分支路由）。账本挂容器，
-// 记录的却是字段里装的对象——逃逸与绑定的 src 一律取右值自己的 Life。
+// l 是容器的 Life；逃逸与绑定的 src 都是右值的 Life——装进格子的是值。
 func (l *Life) collectField(v *VarBlock) []mark {
 	fname := v.Name.Last()
 
-	// 解析字段写入的基对象（p.f 中的 p）
+	// 基对象：解析链首个非全局容器；全局 / 参数容器认不出 → 走逃逸兜底
 	var base *VarBlock
 	for _, p := range v.Define.Path {
 		if vb, ok := p.(*VarBlock); ok && !vb.IsGlobal {
-			// 找不到容器实例：全局容器 / 参数容器
 			base = vb
 			break
 		}
 	}
 
-	// 字段类型一次直读：checker 强制字段写语句 Type 非空（var.go:600），
-	// 它就是该字段的类型——不再 StructOf(v.Value.Type).Field(fname) 反查
-	//（反查在字段名不在值类型上时返回 nil，后面 .Type 是裸解引用 panic 链）。
-	fieldType := v.Type
+	fieldType := v.Type // 字段类型直读：checker 强制非空（var.go:600），非反查
 
-	// src 只认普通名引用：字段读（q.f2）没有自己的对象，LifeOf 第三形态
-	// 之后 bareRef 对它会返回 q 的容器 Life——绑上去是错对象。这里把
-	// 旧语义里 bareRef 自然返回 nil 的口径显式写成闸。
 	var src *Life
 	if e := v.Value; e != nil && e.Var != nil && e.Var.Name.Length() == 1 {
-		src = bareRef(e)
+		src = bareRef(e) // 仅普通名引用：字段读没有自己的对象，绑上即错
 	}
 
-	// 认不出基对象（全局容器 / 参数容器）：值被存进未知容器，保守让
-	// **值**逃逸——不是接收者 l，装进容器的是值，容器的释放替不了它。
+	// 认不出容器：值存进查不出的容器，让**值**逃逸（不是容器）
 	if base == nil {
 		if src != nil && owningType(fieldType) {
 			return []mark{{flag: mkEscape, l: src}}
@@ -127,8 +115,7 @@ func (l *Life) collectField(v *VarBlock) []mark {
 		return nil
 	}
 
-	// 字段类型不自带堆指针：字段装不了需要记关系的对象，不记录
-	if !owningType(fieldType) {
+	if !owningType(fieldType) { // 字段不自带堆指针，无需记关系
 		return nil
 	}
 	if src == nil {
