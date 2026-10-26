@@ -392,6 +392,40 @@ ThisVar），collectExpr 递归碰到同一调用块又手抄一遍**简化版**
 第二遍补守卫（方向 = 少误判逃逸）、第二遍补传出边（第一遍已记，79d9d3b
 的跨轮查重兜住重复；escape 置位幂等）。基线逐位不变。
 
+### 6.10 字段写钩子接线：LifeOf 第三形态，collectField 首次真正上岗（**已做**）
+
+死路时刻定位：字段写的 Find 终产物是 `StructField`（checker var.go:462 同款
+断言），LifeOf 只枚了变量 / 参数两种定义形态，字段写整体折进"解析不出
+return nil"——判别式探针 394/394 全数 StructField，钩子 var.go:609 逢字段写
+必短路，collectField 0 次执行，FieldVals 永久空表，"字段值先于容器自身释放"
+的排序规则从来没执行过一条，全部走"兜底到所属函数出口"。期间 collectField
+的多轮手改（含 51c6796 卷入的重写）都作用在死路上；重写的
+`StructOf(v.Value.Type).Field(fname).Type` 反查还埋着 nil 解引用 panic 链
+（字段名不在右值类型的 struct 上 → Field 得 nil → `.Type` 直炸）。
+
+接线三件：
+
+- LifeOf 补 `case *typeSys.StructField`：账本挂容器——沿 `Define.Path` 取
+  首个块，`*VarBlock` **含全局不滤**（全局容器字段写必须送进来给兜底喂粮）、
+  `*ArgBlock` 参数容器也给路（collectField 的 base 循环认不出参数 → 正好落
+  base==nil 兜底）；链上无块（跨包前向）维持 nil。
+- collectField 终形：字段类型 `v.Type` 一次直读（checker 强制字段写语句
+  Type 非空，var.go:600），反查链整条退役；base==nil → `mkEscape` 打在
+  **右值** Life（死码把这处写成了接收者——方向错误随接线一并修掉）；
+  `mkFieldBind` 的 src 同取右值 Life；两跳以上 return nil（§7）；src 限
+  普通名引用（`Name.Length()==1`）——字段读右值（`q.f2`）没有自己的对象，
+  第三形态后 bareRef 会给它容器 Life，绑上即错对象，旧语义"自然得 nil"成
+  文为闸。
+- markVar 注释补接收者口径（字段写 l = 容器 Life）；gc_write.go 的
+  typeSys import 退役。
+
+探针实况（接线后一轮，语料 107 目录，跑完即还原）：fires=374/394（剩 20 条
+解析链无容器块 = 跨包前向，维持跳过）、两跳以上 23 条入闸门、baseNil=26
+（全是参数容器）、escapeFired=**4**（参数容器字段写首次真打上"值存查不出的
+容器"逃逸）、bindFired=48（FieldVals 首次进料）。基线总数逐位不变：
+对象=114 · RC/泄漏释放=6 · 泄漏=0 · 提前释放=0 · 作用域释放=86 · 转移=22
+——FieldVals 只动排序不动归属判定，"仅用于排序"契约兑现。
+
 ---
 
 ## 7. 已知边界
@@ -404,6 +438,8 @@ ThisVar），collectExpr 递归碰到同一调用块又手抄一遍**简化版**
 | 容器复制 | `var sh: Iface = d` 会把 d 的字段指针带走，去向不可追 → 保守把 d 当逃逸。正确做法是把源的存活期延到副本作用域，未实现 |
 | `obj.f = new(T)` | 对象**压根没建**（`bareRef` 返回 nil 就 return）。循环里反复覆盖同一字段会漏 N 个块。补法是字段版 `ReleasesOld`，约十几行，不需要引用计数 |
 | 跨文件子包 | `pkg/hash:fnv` 这类 `a:b` 形式的子包路径尚未解析 |
+| 字段读引用 | `q = p.f` 逃逸语境下，LifeOf 第三形态让字段读拿到**容器** Life → collectExpr 对容器打逃逸（多标方向，安全）；字段内容对象的身份归右值变量自己的别名链管 |
+| 字段写未接线尾差 | 解析链上无容器块的字段写（跨包前向等，语料 20 条/轮）维持钩子跳过 = 少标，随"跨文件子包"边界解决 |
 | 表达式内嵌调用的传出边 | 表达式里的调用不建树节点（`exp.Call` 只挂 Expression），`scanFuncFacts` 扫描域只覆盖独立成句的调用 → 嵌套边只能在 Check 期记，而 `paramMemo` 首查即固化、永不再算：嵌套边是否进定点取决于语句顺序。缺口方向 = 升级不足（提前释放），esccheck 查不出跨帧悬垂；基线语料未触发 |
 
 ---

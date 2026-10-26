@@ -7,6 +7,8 @@
 
 package parser
 
+import typeSys "cuteify/type"
+
 // FieldBinding 结构体容器的某个字段装着哪个对象。
 type FieldBinding struct {
 	Field string    // 字段名
@@ -205,8 +207,10 @@ func (l *Life) bindField(field string, val *VarBlock) {
 // 作用域
 // ============================================================
 
-// LifeOf 解析一个**引用** VarBlock（lhs = rhs 里的 rhs 那种）指向的定义的
-// 归属信息；解析不出返回 nil。
+// LifeOf 解析一个**引用** VarBlock 指向的定义的归属信息——语义一句话：
+// "这个写站点的账本，挂在谁的 Life 上"。变量写挂定义、参数写挂参数、
+// 字段写挂容器（Define.Value 是 StructField 时沿 Define.Path 取容器块）。
+// 真解析不出（跨包前向等）返回 nil。
 func LifeOf(ref *VarBlock) *Life {
 	if ref == nil {
 		return nil
@@ -220,6 +224,22 @@ func LifeOf(ref *VarBlock) *Life {
 		d.Life.Escapes = true
 		d.Life.arg = d
 		return &d.Life
+	case *typeSys.StructField:
+		// 字段写的账本挂在容器的 Life 上：沿解析链取容器本体。
+		// 全局容器**不**滤：必须把字段写送进 collectField，让 base==nil
+		// 兜底给"值被存在查不出的容器"打逃逸——滤掉是少标方向。
+		// 参数容器同理（*ArgBlock）：collectField 的 base 循环认不出它，
+		// 落到 base==nil 逃逸兜底，正好；路不送进去，兜底就永远没粮。
+		// 多跳链 Path 首个块即容器本体。
+		for _, p := range ref.Define.Path {
+			if vb, ok := p.(*VarBlock); ok {
+				return &vb.Life
+			}
+			if ab, ok := p.(*ArgBlock); ok {
+				return &ab.Life
+			}
+		}
+		return nil
 	}
 	return nil
 }

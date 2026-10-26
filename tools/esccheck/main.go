@@ -2,7 +2,7 @@
 //
 // 用法：esccheck ./test/xxx
 // 改动 parser/gc_*.go 之后基线必须是：对象=114  RC/泄漏释放=6  泄漏=0  提前释放=0
-//（markArgs 挂接后的口径，数字来源与分布见 docs/gc_frontend_design.md §5）。
+// （markArgs 挂接后的口径，数字来源与分布见 docs/gc_frontend_design.md §5）。
 package main
 
 import (

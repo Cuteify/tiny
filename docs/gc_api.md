@@ -17,7 +17,8 @@ package.GetPackage ── Check 多轮收敛（package/package.go，直到稳定
  │
  ├─ 语句块 Check 挂接（parser 内，每条语句每次轮次都触发）
  │    var.go    定义分支  v.Life.markVar(v)       含"无初值声明"（var p: *Node）
- │    var.go    赋值分支  LifeOf(v).markVar(v)    l 是定义的 Life，v 是引用块
+ │    var.go    赋值分支  LifeOf(v).markVar(v)    l 是定义的 Life（字段写
+ │                                       经第三形态得容器 Life），v 是引用块
  │    call.go   调用点    markArgs(c)             挂在 Check 尾部（参数检查全部走完）
  │    return.go 返回点    markRets(fb, r.Value)
  │
@@ -204,7 +205,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | 函数 | 作用 |
 |---|---|
 | `collectVar(v)` | 变量写站点的形态判定 + 事实产出（全局 / newRC / 覆盖 / fresh / 别名 / 借用一条优先链，§4.1） |
-| `collectField(v)` | `p.f = y` 字段写：认得出容器 → mkFieldBind；认不出 → 值保守 mkEscape。基定位直读解析期 `Find` 落进 `v.Define.Path` 的容器实例（`Path[0]` = 容器本体，最内层即词法正确），全局 / 参数 / 解析失败 → nil 走兜底 |
+| `collectField(v)` | `p.f = y` 字段写：字段类型 `v.Type` 一次直读（checker 强制非空）；认得出容器 → `mkFieldBind`（src = 右值 Life，仅普通名引用）；认不出（全局 / 参数容器）→ `mkEscape` 打**右值** Life；两跳以上不发（§7）。接收者 l 是容器 Life，账本挂容器、记的是值 | var.go:609 经 LifeOf 第三形态 → markVar |
 | `collectArgs(out, cb)` | 调用点：实参逐位按 ArgEscapeOf 升级 + 变参序号 + ThisVar 接收者逃逸 + 参数传出边（out，判重）。追加式：语句调用点（markArgs 路）与内嵌调用（collectExpr 路）共用这一份拼装 |
 | `collectRet(fb, e)` | 返回点：本地裸对象 → mkTransferObj + mkFuncOwns；其余走 collectExpr |
 | `collectExpr(out, e, escapes)` | 表达式递归传播逃逸（子表达式 / 索引 / 列表元素；内嵌调用整块转手 `collectArgs`，不再自抄第二份循环）；`escapes` 传 true = 恒逃逸上下文 |
@@ -227,7 +228,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `claim(stmt)` | 新分配认领：对象挂 stmt 的 alloc 复用，`o.Owner/Scope` 回写本站点，`l.Obj = o` |
 | `unify(other)` | 别名抄对方对象身份（已有对象被覆盖 = 重绑） |
 | `bindField(field, val)` | 把字段绑定登记进容器对象 FieldVals（同字段重复写由 collectNames 收敛） |
-| `LifeOf(ref)` | 引用块 → 定义 Life；参数引用 → 参数 Life 并打 `Escapes` 基线；解析不出返回 nil |
+| `LifeOf(ref)` | 写站点账本归属："这个写站点的账本挂在谁的 Life 上"——变量 → 定义 Life；参数引用 → 参数 Life 并打 `Escapes` 基线；字段写（`Define.Value` 为 StructField）→ 沿 `Define.Path` 首个 `*VarBlock`（含全局）或 `*ArgBlock` 的 Life；跨包前向等真解析不出 → nil |
 
 **gc_summary.go —— 摘要懒算链**（触发链图见 §1.3）
 

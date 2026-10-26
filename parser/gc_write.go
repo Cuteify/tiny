@@ -9,13 +9,13 @@
 
 package parser
 
-import typeSys "cuteify/type"
-
 // curScope Check 期间指向当前所在的作用域节点（由 Node.Check 设置）。
 var curScope Block
 
 // markVar 变量写站点：var.go 的定义 / 赋值两个分支都挂它。
 // l 是**定义**的 Life —— 定义与赋值改的都是定义那份账本，不是这条语句。
+// 字段写（!IsDefine 且 len(Name)>1）经 LifeOf 的 StructField 分支进来，
+// 接收者 l 是**容器定义**的 Life：字段的账本挂在容器上，装的却是值。
 // 定义与赋值的差别只剩一件事：定义点多一条 Init（清空上一轮，alloc 除外），
 // 在 collectVar 里按 v.IsDefine 发出。
 func (l *Life) markVar(v *VarBlock) {
@@ -90,6 +90,8 @@ func (l *Life) collectVar(v *VarBlock) []mark {
 }
 
 // collectField 字段写入 p.f = v：容器记下字段关系；认不出容器时保守让值逃逸。
+// 接收者 l 是容器的 Life（LifeOf 的 StructField 分支路由）。账本挂容器，
+// 记录的却是字段里装的对象——逃逸与绑定的 src 一律取右值自己的 Life。
 func (l *Life) collectField(v *VarBlock) []mark {
 	fname := v.Name.Last()
 
@@ -103,19 +105,36 @@ func (l *Life) collectField(v *VarBlock) []mark {
 		}
 	}
 
-	fieldType := typeSys.StructOf(v.Value.Type).Field(fname).Type
+	// 字段类型一次直读：checker 强制字段写语句 Type 非空（var.go:600），
+	// 它就是该字段的类型——不再 StructOf(v.Value.Type).Field(fname) 反查
+	//（反查在字段名不在值类型上时返回 nil，后面 .Type 是裸解引用 panic 链）。
+	fieldType := v.Type
 
-	// 认不出基对象：值被存进未知容器，保守当作逃逸
-	if base == nil && fieldType.IsOwning() {
-		return []mark{{flag: mkEscape, l: l}}
+	// src 只认普通名引用：字段读（q.f2）没有自己的对象，LifeOf 第三形态
+	// 之后 bareRef 对它会返回 q 的容器 Life——绑上去是错对象。这里把
+	// 旧语义里 bareRef 自然返回 nil 的口径显式写成闸。
+	var src *Life
+	if e := v.Value; e != nil && e.Var != nil && e.Var.Name.Length() == 1 {
+		src = bareRef(e)
 	}
 
-	// 字段写入的基对象不是容器，或不是容器的字段：不记录
-	if !fieldType.IsOwning() {
+	// 认不出基对象（全局容器 / 参数容器）：值被存进未知容器，保守让
+	// **值**逃逸——不是接收者 l，装进容器的是值，容器的释放替不了它。
+	if base == nil {
+		if src != nil && owningType(fieldType) {
+			return []mark{{flag: mkEscape, l: src}}
+		}
 		return nil
 	}
 
-	return []mark{{flag: mkFieldBind, v: base, name: fname, src: l}}
+	// 字段类型不自带堆指针：字段装不了需要记关系的对象，不记录
+	if !owningType(fieldType) {
+		return nil
+	}
+	if src == nil {
+		return nil
+	}
+	return []mark{{flag: mkFieldBind, v: base, name: fname, src: src}}
 }
 
 // markArgs 调用点。实参是否升级逃逸取决于被调函数的参数摘要 —— 摘要说
