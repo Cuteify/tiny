@@ -1,0 +1,13 @@
+// pkg/slices/memmove_x86.cute - x86 平台 memmove 包装
+build os("linux")
+build arch("x86")
+
+fn memmove(dst ptr, src ptr, n uint) {
+    build asm {
+        push [$n]
+        push [$src]
+        push [$dst]
+        call _memmove
+        add esp, 12
+    }
+}

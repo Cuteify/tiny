@@ -7,8 +7,6 @@ const LARGE_MAX: uint = 262144
 const CHUNK_SIZE: uint = 65536
 const IS_FREE: uint = 1
 const PREV_FREE: uint = 2
-const FLAG_MASK: uint = 3
+const RC_BIT: uint = 4    // F1：RC 块标记位（与块大小位分离，杜绝与 LARGE 对齐后大小碰撞）
+const FLAG_MASK: uint = 7
 const HDR_SIZE: uint = 2
-// IS_RC_TAG 写入 mallocRC 的 flags 字段，供 free() 运行时区分 malloc vs mallocRC
-// 98304 = 0x18000，不是任何合理的 block size（block 最大 262144，但 flags 字段在 data 前）
-const IS_RC_TAG: uint = 98304

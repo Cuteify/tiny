@@ -29,24 +29,33 @@ fn memcpy(dest: ptr, src: ptr, n: uint) ptr {
 }
 
 // memset 将 s 指向的 n 字节设为值 c，返回 s
-// 先按 word 清零（对齐快路径），剩余按 byte 设置
-// 注意：当前实现 word 清零固定为 0，仅 byte 部分使用 c 值
+// c==0 走 word 清零快路径（stdlib 清零用途的主力，行为与旧版逐位一致）；
+// c!=0 退 byte 循环逐字节设置（F2 修复：旧版 word 路径恒写 0，c 只作用于 byte 尾）
 fn memset(s: ptr, c: u8, n: uint) ptr {
-    // 按 word 批量清零（假设 word 值为 0）
-    var words: uint = n / ptrSize
-    var i: uint = 0
-    for ; i < words; {
-        var p: *ptr = s + ptrSize * i
-        *p = 0
-        i = i + 1
+    // 快路径：c==0 按 word 批量清零 + byte 余量
+    if c == 0 {
+        var words: uint = n / ptrSize
+        var i: uint = 0
+        for ; i < words; {
+            var p: *ptr = s + ptrSize * i
+            *p = 0
+            i = i + 1
+        }
+        var rem: uint = n - ptrSize * words
+        var j: uint = 0
+        for ; j < rem; {
+            var bp: *u8 = s + ptrSize * words + j
+            *bp = c
+            j = j + 1
+        }
+        ret s
     }
-    // 剩余不足一个 word 的部分按 byte 设置
-    var rem: uint = n - ptrSize * words
-    var j: uint = 0
-    for ; j < rem; {
-        var bp: *u8 = s + ptrSize * words + j
-        *bp = c
-        j = j + 1
+    // F2：c!=0 逐字节设置（正确性优先，stdlib 目前无此用途）
+    var b: uint = 0
+    for ; b < n; {
+        var bp2: *u8 = s + b
+        *bp2 = c
+        b = b + 1
     }
     ret s
 }

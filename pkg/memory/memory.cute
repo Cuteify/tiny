@@ -1,10 +1,5 @@
 // ===== Cuteify Memory Manager v3 — Core Types & Globals =====
 
-var gDbgA: ptr = nil
-var gDbgB: ptr = nil
-var gDbgC: ptr = nil
-var gDbgD: ptr = nil
-
 // sizeof[T]() 返回类型 T 的字节大小（编译器内联实现）
 fn sizeof[T]() int {
     build link("__memory_sizeof")

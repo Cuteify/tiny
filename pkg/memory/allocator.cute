@@ -12,8 +12,21 @@
 //   LARGE  (≤262144B) — 直接 brk 分配，走 coalesce 合并
 //   HUGE   (>262144B) — 直接 brk 分配，不进空闲链表
 //
+// **F4（Wave M 文档化，brk 模型固有限制）**：LARGE/HUGE 块没有空闲链表，
+// 释放时只有位于堆顶（brk(0)）才回缩堆；中部 LARGE/HUGE 释放后空间滞留
+// 堆内等待相邻合并或进程回收，不会返回 OS。
+//
 // 空闲块内部布局（复用 data 区域存储链表指针）：
 //   [next: ptr] [prev: ptr] ... （在 data 区域的前 2*ptrSize 字节）
+//
+// [P8 镜像] strHdr 为 string 24B 头覆写视图（Go 序 p@0/n@8/c@16，与
+// strings.str 同形）。P7 反向禁止 memory import L2——镜像收敛记录见
+// PROGRESS.md（Wave M）。本文件内定义（跨文件 type 引用不可达）。
+type strHdr struct {
+    p: ptr
+    n: uint
+    c: uint
+}
 
 // 空闲链表头数组，每个 class 一个头指针（共 60 个 class）
 // 用原始 brk 分配的 ptr 指针 + 指针算术模拟（解析器不支持 [N]ptr 语法）
@@ -212,7 +225,6 @@ fn removeFreeList(blk: ptr) {
     if cls >= 60 {
         ret
     }
-    gDbgD = blk
     // 如果有前驱，让前驱跳过 blk；否则 blk 是头，更新 head
     if prev != 0 {
         freeSetNext(prev, next)
@@ -269,8 +281,6 @@ fn coalesce(blk: ptr) ptr {
     var raw: uint = hdrSizeRaw(blk)
     var pure: uint = raw & ~FLAG_MASK  // 清除标志位得到纯块大小
     var brkTop: ptr = syscall.brk(0)  // 当前堆顶
-
-    gDbgA = blk
 
     // === 向后合并 ===
     // 计算下一个块的地址，如果在堆范围内且空闲则合并
@@ -337,14 +347,16 @@ fn malloc(size: uint) ptr {
     }
 
     // === 路径 1: HUGE 块 — 直接 brk 分配，不进空闲链表 ===
+    // F6: req 与 LARGE 路径同式 round8，header/footer 与后继块自然对齐
     if req > LARGE_MAX {
+        var aligned: uint = (req + ptrSize - 1) & ~(ptrSize - 1)
         var old: ptr = syscall.brk(0)
-        var nb: ptr = syscall.brk(old + req)
-        if nb < old + req {
+        var nb: ptr = syscall.brk(old + aligned)
+        if nb < old + aligned {
             ret 0
         }
-        hdrSetSizeRaw(old, req)
-        hdrSetFooter(old, req)
+        hdrSetSizeRaw(old, aligned)
+        hdrSetFooter(old, aligned)
         ret old + ptrSize  // 跳过 header
     }
 
@@ -453,22 +465,20 @@ fn freeAt(blk: ptr) {
 
 // free 释放用户指针指向的内存
 // 运行时检测 flags 字段（ptr-ptrSize）：
-//   - 如果是 IS_RC_TAG，说明是 mallocRC 分配的块，走 rcDec（引用计数释放）
+//   - (flags & RC_BIT) != 0 → mallocRC 分配的块，走 rcDec（引用计数释放）
 //   - 否则走 freeAt（直接释放）
 fn free(ptr: ptr) {
-    gDbgA = ptr
     if ptr == 0 {
         ret
     }
     // 读 flags 字段（在用户指针的前一个 ptrSize 位置）
     var flags: uint = flagLoad(ptr)
-    if flags == IS_RC_TAG {
+    if (flags & RC_BIT) != 0 {
         // mallocRC 分配的块：走引用计数释放
         rcDec(ptr)
         ret
     }
     // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - ptrSize）
-    gDbgC = ptr - ptrSize
     freeAt(ptr - ptrSize)
 }
 
@@ -536,4 +546,42 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
     memcpy(np, ptr, copySize)
     free(ptr)
     ret np
+}
+
+// calloc 分配 n 字节并全部清零：malloc(n) + memset 0
+// 容器零值初始化常用入口（S0-3 后 sliceHdr 零头直接 calloc）
+fn calloc(n: uint) ptr {
+    var p: ptr = malloc(n)
+    if p == 0 {
+        ret 0
+    }
+    memset(p, 0, n)
+    ret p
+}
+
+// ptrToStringHeader 从 p 指向的 NUL 结尾字节串反向构造 string 头
+// （原 pkg/syscall/syscall_x86_64.cute getenv 中的悬空调用正名——Wave M）。
+// 布局走 P8 表：24B 头 = Go 序 p@0 / n@8 / c@16（strHdr 镜像视图见 memory.cute）；
+// len 扫 NUL 求得（C 串惯例），cap = len。
+// 返回 24B 头地址（ptr；调用方按 表 cast 完成 *string 语义）。
+fn ptrToStringHeader(p: ptr) ptr {
+    if p == 0 {
+        ret 0
+    }
+    var n: uint = 0
+    var bp: *u8 = p
+    for ; *bp != 0; {
+        bp = bp + 1
+        n = n + 1
+    }
+    var hb: uint = ptrSize * 3
+    var h: ptr = malloc(hb)
+    if h == 0 {
+        ret 0
+    }
+    var vv: *strHdr = unsafe.cast[*strHdr](h)
+    vv.p = p
+    vv.n = n
+    vv.c = n
+    ret h
 }
