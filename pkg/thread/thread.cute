@@ -36,7 +36,7 @@ fn threadCreate(fnPtr: ptr, argPtr: ptr) ptr {
         and rsp, -16
         lea rdi, [$tid]
         xor esi, esi
-        lea rdx, [std_thread_threadEntryRaw__ptr]
+        lea rdx, [std_thread_threadEntryRaw]
         mov rcx, $ctx
         call pthread_create
     }

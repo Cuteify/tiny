@@ -31,7 +31,7 @@ fn threadCreateRaw(tidPtr: ptr, ctx: ptr) i32 {
         and rsp, -16
         mov rdi, [rbp+16]
         xor esi, esi
-        lea rdx, [std_thread_threadEntryRaw__ptr]
+        lea rdx, [std_thread_threadEntryRaw]
         mov rcx, [rbp+24]
         call pthread_create
         mov [rbp-8], eax
