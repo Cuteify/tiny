@@ -64,6 +64,7 @@ go build -o cuteify2 .
 ## User Directives
 - **多用SubAgent** (use Task agents for parallel work)
 - **应编写项目文档避免SubAgent重复探索**
+- **SIG 现场测试的 coredump 纪律**：跑可能 SIGSEGV/SIGABRT 的复现/定位测试（如 rc=139 二分）时，**先临时关闭局部 coredump 再跑**：`ulimit -Sc 0`（非交互 shell 每次重建）；需要 core 文件做尸检时才临时 `ulimit -Sc unlimited`，用完立刻清 core 文件改回 0。目的：防 core 瞬间撑爆 /tmp，防回归测试被 core 写盘拖慢。
 - **模块独立提交纪律**：各模块在工作推进到一部分后就要立即独立 commit（不要攒一巨型提交），commit 信息尽量简短（一行，中文，模块名前缀：`wave-st:`、`memory:`、`sort:`、`compiler-go:`、`docs:` 等）。工作区任何堆积的多模块混合修改，先按模块拆分提交或先打 backup 快照，绝不裸奔遗留未提交状态。
 
 ## Test Harness
