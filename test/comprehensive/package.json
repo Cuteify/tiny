@@ -1,0 +1,8 @@
+{
+    "name": "comprehensive",
+    "version": "1.0.0",
+    "description": "Edge case comprehensive test",
+    "imports": {
+        "memory": "std:memory"
+    }
+}

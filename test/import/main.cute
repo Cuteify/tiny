@@ -1,0 +1,36 @@
+// Wave L: import 关键字测试（无 package.json）
+// ① 默认别名（路径末段）—— memory.mallocRC / rcInc / rcGet
+import "std:memory"
+// ② 显式别名（同一包允许多个别名）
+import mem "std:memory"
+// ③ 空导入（只为副作用；syscall 已被 memory 传递加载，验证 packages 去重）
+import _ "std:syscall"
+// ④ 分组 + 组内与 ① 同别名同路径去重
+import (
+    "std:memory"
+    "std:strings"
+)
+// ⑤ 第三方（冒号在最前，无名字无协议）→ vendor/mylib/sub
+import ":mylib/sub"
+
+fn main() int {
+    // 默认别名 memory
+    var p: ptr = memory.mallocRC(8)
+    memory.rcInc(p)
+    memory.rcInc(p)
+    memory.rcInc(p)
+    memory.rcInc(p)
+    if memory.rcGet(p) != 5 { ret 1 }
+
+    // 显式别名 mem
+    var q: ptr = mem.mallocRC(8)
+    mem.rcInc(q)
+    if mem.rcGet(q) != 2 { ret 2 }
+
+    // 第三方 vendor 包
+    if sub.answer() != 42 { ret 3 }
+
+    memory.freeRC(p)
+    memory.freeRC(q)
+    ret 0
+}

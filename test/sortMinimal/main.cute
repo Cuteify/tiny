@@ -1,6 +1,6 @@
 // test/sortMinimal/main.cute - 最小排序测试
 fn main() int {
-    var s: *[]int = slices.new[int](4)
+    var s: *[]int = slices.make[int](4)
     slices.push[int](s, 30)
     slices.push[int](s, 10)
     slices.push[int](s, 20)

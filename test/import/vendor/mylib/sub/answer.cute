@@ -1,0 +1,5 @@
+// Wave L: 第三方 import fixture（:mylib/sub → vendor/mylib/sub）
+// 无 package.json——同时验证 package.json 可选化
+fn answer() int {
+    ret 42
+}

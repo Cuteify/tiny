@@ -1,1 +1,6 @@
-{"name":"boundsCheck"}
+{
+  "name": "boundsCheck",
+  "imports": {
+    "memory": "std:memory"
+  }
+}

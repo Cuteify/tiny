@@ -8,7 +8,7 @@ fn main() int {
     // ===== 整数排序测试 =====
 
     // test 1: quickSortInts 基本排序
-    var s1: *[]int = slices.new[int](8)
+    var s1: *[]int = slices.make[int](8)
     slices.push[int](s1, 34)
     slices.push[int](s1, 7)
     slices.push[int](s1, 23)
@@ -25,7 +25,7 @@ fn main() int {
     }
 
     // test 2: timsortInts 基本排序
-    var s2: *[]int = slices.new[int](8)
+    var s2: *[]int = slices.make[int](8)
     slices.push[int](s2, 55)
     slices.push[int](s2, 12)
     slices.push[int](s2, 99)
@@ -42,7 +42,7 @@ fn main() int {
     }
 
     // test 3: insertionSortInts 基本排序
-    var s3: *[]int = slices.new[int](6)
+    var s3: *[]int = slices.make[int](6)
     slices.push[int](s3, 50)
     slices.push[int](s3, 10)
     slices.push[int](s3, 40)
@@ -57,7 +57,7 @@ fn main() int {
     }
 
     // test 4: 空/单元素切片
-    var s4a: *[]int = slices.new[int](4)
+    var s4a: *[]int = slices.make[int](4)
     sort.quickSortInts(s4a)
     if slices.len[int](s4a) != 0 {
         fail = fail + 1
@@ -65,7 +65,7 @@ fn main() int {
         pass = pass + 1
     }
 
-    var s4b: *[]int = slices.new[int](4)
+    var s4b: *[]int = slices.make[int](4)
     slices.push[int](s4b, 42)
     sort.timsortInts(s4b)
     var v42: int = 0
@@ -77,7 +77,7 @@ fn main() int {
     }
 
     // test 5: 逆序数组
-    var s5: *[]int = slices.new[int](10)
+    var s5: *[]int = slices.make[int](10)
     slices.push[int](s5, 100)
     slices.push[int](s5, 90)
     slices.push[int](s5, 80)
@@ -96,7 +96,7 @@ fn main() int {
     }
 
     // test 6: 已排序数组
-    var s6: *[]int = slices.new[int](5)
+    var s6: *[]int = slices.make[int](5)
     slices.push[int](s6, 1)
     slices.push[int](s6, 2)
     slices.push[int](s6, 3)
@@ -110,7 +110,7 @@ fn main() int {
     }
 
     // test 7: 大量数据（100+ 元素触发多个 run）
-    var s7: *[]int = slices.new[int](128)
+    var s7: *[]int = slices.make[int](128)
     var i7: int = 0
     for ; i7 < 128; {
         var seed: int = i7 * 6364136223846793005 + 1442695040888963407

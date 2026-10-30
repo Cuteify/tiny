@@ -3,9 +3,11 @@ fn main() int {
     var y: int
     build asm {
         mov EAX, EBX
-        mov [$x], 100
+        mov QWORD [$x], 100
         mov [$y], EAX
-        add [$x], [$y]
+        mov RAX, [$x]
+        add RAX, [$y]
+        mov [$x], RAX
     }
     ret 0
 }

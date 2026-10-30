@@ -1,5 +1,5 @@
 fn main() int {
-    var s: *[]int = slices.new[int](4)
+    var s: *[]int = slices.make[int](4)
     slices.set[int](s, 0, 10)
     slices.set[int](s, 1, 20)
     slices.set[int](s, 2, 30)

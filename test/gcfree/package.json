@@ -1,1 +1,7 @@
-{ "name": "gcfree", "version": "1.0.0" }
+{
+  "name": "gcfree",
+  "version": "1.0.0",
+  "imports": {
+    "memory": "std:memory"
+  }
+}

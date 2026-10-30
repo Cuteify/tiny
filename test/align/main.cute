@@ -1,0 +1,43 @@
+// Wave L: build align(N) / noalign 打包对齐测试（无 package.json）
+// 自然布局：a@0(1) + pad3 + b@4(4) = 8
+struct Nat {
+    a: u8
+    b: u32
+}
+
+build align(2)
+// a@0(1) + pad1 + b@2(b 对齐被压到 2) = 6
+struct Pack2 {
+    a: u8
+    b: u32
+}
+
+build noalign
+// a@0(1) + b@1(对齐 1，无填充) = 5
+struct Pack1 {
+    a: u8
+    b: u32
+}
+
+// 孤儿用例：align 与 struct 之间隔了 var 声明 → 不生效（自然布局 8）
+build align(4)
+var gOrphan: int = 0
+struct Orphan {
+    a: u8
+    b: u32
+}
+
+// 严格紧随：Orphan 之后的 struct 不继承孤儿 align（仍是自然布局 8）
+struct AfterOrphan {
+    a: u8
+    b: u32
+}
+
+fn main() int {
+    if sizeof[Nat]() != 8 { ret 1 }
+    if sizeof[Pack2]() != 6 { ret 2 }
+    if sizeof[Pack1]() != 5 { ret 3 }
+    if sizeof[Orphan]() != 8 { ret 4 }
+    if sizeof[AfterOrphan]() != 8 { ret 5 }
+    ret 0
+}

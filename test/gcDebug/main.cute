@@ -42,15 +42,15 @@ fn testFieldOrphan() int {
 fn main() int {
     var r1: int = testLocalAlloc()
     println("testLocalAlloc: ")
-    println(r1)
-    
+    println(strings.toString(r1, 10))
+
     var r2: int = testLoopAlloc()
     println("testLoopAlloc: ")
-    println(r2)
-    
+    println(strings.toString(r2, 10))
+
     var r3: int = testFieldOrphan()
     println("testFieldOrphan: ")
-    println(r3)
-    
+    println(strings.toString(r3, 10))
+
     ret 0
 }

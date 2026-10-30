@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "imports": {
         "slices": "std:slices",
-        "console": "std:console"
+        "console": "std:console",
+        "memory": "std:memory"
     }
 }

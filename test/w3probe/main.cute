@@ -1,0 +1,12 @@
+fn main () int {
+	x := 2
+	switch x {
+	case 1:
+		ret 10
+	case 2:
+		ret 20
+	default:
+		ret 30
+	}
+	ret 0
+}

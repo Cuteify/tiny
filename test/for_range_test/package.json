@@ -1,3 +1,6 @@
 {
-  "name": "for_range_test"
+  "name": "for_range_test",
+  "imports": {
+    "memory": "std:memory"
+  }
 }

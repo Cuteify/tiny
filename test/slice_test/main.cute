@@ -8,7 +8,7 @@ fn main() int {
     console.println(strings.itoa(*p))
 
     // Test slices.new — simplest possible call
-    var s: *[]int = slices.new[int](4)
+    var s: *[]int = slices.make[int](4)
     var val: int = 10
     slices.set[int](s, 0, val)
     console.println(strings.itoa(s[0]))

@@ -1,6 +1,6 @@
 // test/sortIntOnly/main.cute - 仅整数排序测试
 fn main() int {
-    var s: *[]int = slices.new[int](8)
+    var s: *[]int = slices.make[int](8)
     slices.push[int](s, 34)
     slices.push[int](s, 7)
     slices.push[int](s, 23)

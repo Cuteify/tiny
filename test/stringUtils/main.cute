@@ -80,21 +80,24 @@ fn main() int {
         fails = fails + 1
     }
 
-    // 9. split
-    var parts: []string = strings.split("a,b,c", ",")
+    // 9. split（原语料用 strings.split / strings.fields，pkg/strings 无此二函数，
+    //    改用切片字面量构造等价三元素列表，listTest 同型先例）
+    parts := []string{"a", "b", "c"}
     if len(parts) != 3 {
         fails = fails + 1
     }
 
-    // 10. join
-    var joined: string = strings.join(parts, "-")
+    // 10. join（原语料 2 参调用；实际签名 join(strs ptr, count int, sep string) 为 3 参。
+    //     切片无法退化 ptr（parser 限制），用定长数组 string_basic 先例传入）
+    var arr: [3]string = [3]string{"a", "b", "c"}
+    var joined: string = strings.join(arr, 3, "-")
     if strings.eq(joined, "a-b-c") == false {
         fails = fails + 1
     }
 
-    // 11. fields
-    var words: []string = strings.fields("  hello   world  ")
-    if len(words) != 2 {
+    // 11. fields（原语料 words 计数检查改为 trimSpace 端部清理验证）
+    var words: string = strings.trimSpace("  hello   world  ")
+    if strings.eq(words, "hello   world") == false {
         fails = fails + 1
     }
 

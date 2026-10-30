@@ -33,7 +33,8 @@ fn min(a int, b int) int {
     ret b
 }
 
-fn abs(x int) int {
+// NOTE(W2): 原名 abs 与 NASM 保留一元运算符撞名(标签/call 都非法)，改名语义不变
+fn absValue(x int) int {
     if x < 0 {
         ret -x
     }
@@ -61,7 +62,7 @@ fn main() int {
     var quot: int = divide(100, 4)
     var maximum: int = max(25, 30)
     var minimum: int = min(25, 30)
-    var absolute: int = abs(-42)
+    var absolute: int = absValue(-42)
     var fact: int = factorial(5)
     var fib: int = fibonacci(10)
     

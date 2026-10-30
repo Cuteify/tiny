@@ -1,7 +1,8 @@
 {
-    "name": "sortQuick",
-    "imports": {
-        "slices": "std:slices",
-        "sort": "std:sort"
-    }
+  "name": "sortQuick",
+  "imports": {
+    "slices": "std:slices",
+    "sort": "std:sort",
+    "memory": "std:memory"
+  }
 }

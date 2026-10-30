@@ -1,11 +1,11 @@
 build os("windows")
 
 fn VirtualAlloc(lpAddress: u64, dwSize: u64, flAllocationType: u64, flProtect: u64) u64 {
-    build extern("VirtualAlloc")
+    build ext("VirtualAlloc")
 }
 
 fn VirtualFree(lpAddress: u64, dwSize: u64, dwFreeType: u64) i32 {
-    build extern("VirtualFree")
+    build ext("VirtualFree")
 }
 
 fn malloc(size: u64) u64 {
