@@ -61,7 +61,7 @@ fn durationString(d u64) string {
         }
         pos = pos + hn
         var _p3: *u8 = buf + pos
-        *_p3 = unsafe.cast[u8](104 // 'h')
+        *_p3 = unsafe.cast[u8](104)
         pos = pos + 1
         v = v % HOUR
     }
@@ -80,7 +80,7 @@ fn durationString(d u64) string {
         }
         pos = pos + mn
         var _p6: *u8 = buf + pos
-        *_p6 = unsafe.cast[u8](109 // 'm')
+        *_p6 = unsafe.cast[u8](109)
         pos = pos + 1
         v = v % MINUTE
     }
@@ -99,7 +99,7 @@ fn durationString(d u64) string {
         }
         pos = pos + sn
         var _p9: *u8 = buf + pos
-        *_p9 = unsafe.cast[u8](115 // 's')
+        *_p9 = unsafe.cast[u8](115)
         pos = pos + 1
     }
     var _p10: *u8 = buf + pos
