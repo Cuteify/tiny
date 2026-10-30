@@ -1,4 +1,5 @@
 // pkg/strings/strings_common.cute - 平台无关字符串函数
+import "std:memory"
 // 补充 strings_x86/strings_x86_64 中缺失的函数
 
 // count 计算 substr 在 s 中出现的次数
@@ -64,12 +65,14 @@ fn trimLeft(s string, cutset string) string {
     }
 
     var newLen: uint = sLen - i
-    var buf: ptr = memory.malloc(newLen + 1)
+    var bufN: uint = newLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var k: uint = 0
     for ; k < newLen; {
         var _p3: *u8 = buf + k
         var _p4: *u8 = sPtr + i + k
-        *_p3 = unsafe.cast[u8](*_p4)
+        var _pc_p4: uint = *_p4
+        *_p3 = unsafe.cast[u8](_pc_p4)
         k = k + 1
     }
     var _p5: *u8 = buf + newLen
@@ -105,12 +108,14 @@ fn trimRight(s string, cutset string) string {
         end = end - 1
     }
 
-    var buf: ptr = memory.malloc(end + 1)
+    var bufN: uint = end + 1
+    var buf: ptr = memory.malloc(bufN)
     var k: uint = 0
     for ; k < end; {
         var _p8: *u8 = buf + k
         var _p9: *u8 = sPtr + k
-        *_p8 = unsafe.cast[u8](*_p9)
+        var _pc_p9: uint = *_p9
+        *_p8 = unsafe.cast[u8](_pc_p9)
         k = k + 1
     }
     var _p10: *u8 = buf + end
@@ -382,7 +387,8 @@ fn bufCopyFrom(dst ptr, dstOffset int, src ptr, count int) {
     for ; i < count; {
         var _p32: *u8 = dst + dstOffset + i
         var _p33: *u8 = src + i
-        *_p32 = unsafe.cast[u8](*_p33)
+        var _pc_p33: uint = *_p33
+        *_p32 = unsafe.cast[u8](_pc_p33)
         i = i + 1
     }
 }
@@ -516,12 +522,14 @@ fn clone(s string) string {
         ret s
     }
     var sPtr: ptr = strings.toCstring(s)
-    var buf: ptr = memory.malloc(sLen + 1)
+    var bufN: uint = sLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for ; i < sLen; {
         var _p51: *u8 = buf + i
         var _p52: *u8 = sPtr + i
-        *_p51 = unsafe.cast[u8](*_p52)
+        var _pc_p52: uint = *_p52
+        *_p51 = unsafe.cast[u8](_pc_p52)
         i = i + 1
     }
     var _p53: *u8 = buf + sLen
@@ -536,12 +544,14 @@ fn reverse(s string) string {
         ret s
     }
     var sPtr: ptr = strings.toCstring(s)
-    var buf: ptr = memory.malloc(sLen + 1)
+    var bufN: uint = sLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for ; i < sLen; {
         var _p54: *u8 = buf + i
         var _p55: *u8 = sPtr + sLen - 1 - i
-        *_p54 = unsafe.cast[u8](*_p55)
+        var _pc_p55: uint = *_p55
+        *_p54 = unsafe.cast[u8](_pc_p55)
         i = i + 1
     }
     var _p56: *u8 = buf + sLen

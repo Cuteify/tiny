@@ -1,5 +1,14 @@
 build os("linux")
+import "std:memory"
 build arch("x86_64")
+
+// strView - 本地 str 覆写视图（P8 表 str{p,n,c} 镜像；P4 规约：覆写视图必须在使用文件内定义）
+// x86_64 布局：24B 三槽 8B——p@0 / n@8 / c@16（= 编译器内建 string 容器 Go 序）
+type strView struct {
+    p: ptr
+    n: uint
+    c: uint
+}
 
 // 字符串容器槽位（x86_64 三槽各 8 字节）：ptr+0 / len+8 / cap+16
 
@@ -106,7 +115,8 @@ fn toString(n int, base uint) string {
     if neg {
         total = total + 1
     }
-    var buf: ptr = memory.malloc(total + 1)
+    var bufN: uint = total + 1
+    var buf: ptr = memory.malloc(bufN)
     var v: uint = num
     if v == 0 {
         var _p14: *u8 = buf
@@ -316,7 +326,8 @@ fn hasSuffix(s string, suffix string) bool {
 fn toUpper(s string) string {
     var sPtr: ptr = toCstring(s)
     var sLen: uint = len(s)
-    var buf: ptr = memory.malloc(sLen + 1)
+    var bufN: uint = sLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for i < sLen {
         var _p35: *u8 = sPtr + i
@@ -337,7 +348,8 @@ fn toUpper(s string) string {
 fn toLower(s string) string {
     var sPtr: ptr = toCstring(s)
     var sLen: uint = len(s)
-    var buf: ptr = memory.malloc(sLen + 1)
+    var bufN: uint = sLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for i < sLen {
         var _p38: *u8 = sPtr + i
@@ -377,12 +389,14 @@ fn trimSpace(s string) string {
         end = end - 1
     }
     var newLen: uint = end - start
-    var buf: ptr = memory.malloc(newLen + 1)
+    var bufN: uint = newLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for i < newLen {
         var _p43: *u8 = buf + i
         var _p44: *u8 = sPtr + start + i
-        *_p43 = unsafe.cast[u8](*_p44)
+        var _pc_p44: uint = *_p44
+        *_p43 = unsafe.cast[u8](_pc_p44)
         i = i + 1
     }
     var _p45: *u8 = buf + newLen
@@ -397,12 +411,14 @@ fn trimPrefix(s string, prefix string) string {
         var sLen: uint = len(s)
         var tLen: uint = len(prefix)
         var newLen: uint = sLen - tLen
-        var buf: ptr = memory.malloc(newLen + 1)
+        var bufN: uint = newLen + 1
+        var buf: ptr = memory.malloc(bufN)
         var i: uint = 0
         for i < newLen {
             var _p46: *u8 = buf + i
             var _p47: *u8 = sPtr + tLen + i
-            *_p46 = unsafe.cast[u8](*_p47)
+            var _pc_p47: uint = *_p47
+            *_p46 = unsafe.cast[u8](_pc_p47)
             i = i + 1
         }
         var _p48: *u8 = buf + newLen
@@ -419,12 +435,14 @@ fn trimSuffix(s string, suffix string) string {
         var sLen: uint = len(s)
         var tLen: uint = len(suffix)
         var newLen: uint = sLen - tLen
-        var buf: ptr = memory.malloc(newLen + 1)
+        var bufN: uint = newLen + 1
+        var buf: ptr = memory.malloc(bufN)
         var i: uint = 0
         for i < newLen {
             var _p49: *u8 = buf + i
             var _p50: *u8 = sPtr + i
-            *_p49 = unsafe.cast[u8](*_p50)
+            var _pc_p50: uint = *_p50
+            *_p49 = unsafe.cast[u8](_pc_p50)
             i = i + 1
         }
         var _p51: *u8 = buf + newLen
@@ -439,14 +457,16 @@ fn repeat(s string, count uint) string {
     var sPtr: ptr = toCstring(s)
     var sLen: uint = len(s)
     var total: uint = sLen * count
-    var buf: ptr = memory.malloc(total + 1)
+    var bufN: uint = total + 1
+    var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
     for i < count {
         var j: uint = 0
         for j < sLen {
             var _p52: *u8 = buf + i * sLen + j
             var _p53: *u8 = sPtr + j
-            *_p52 = unsafe.cast[u8](*_p53)
+            var _pc_p53: uint = *_p53
+            *_p52 = unsafe.cast[u8](_pc_p53)
             j = j + 1
         }
         i = i + 1
@@ -470,7 +490,8 @@ fn replace(s string, old string, new string, n uint) string {
     }
     var count: uint = 0
     var scanPos: uint = 0
-    for n == 0 || count < n {
+    var scanning: bool = true
+    for ; scanning; {
         var idx: uint = indexFrom(sPtr, sLen, oPtr, oLen, scanPos)
         if idx == nf {
             break
@@ -478,11 +499,17 @@ fn replace(s string, old string, new string, n uint) string {
         count = count + 1
         scanPos = idx + oLen
     }
+    if n > 0 {
+        if n < count {
+            count = n
+        }
+    }
     if count == 0 {
         ret s
     }
     var newLen: uint = sLen + count * (nLen - oLen)
-    var buf: ptr = memory.malloc(newLen + 1)
+    var bufN: uint = newLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var srcPos: uint = 0
     var dstPos: uint = 0
     var replaced: uint = 0
@@ -493,7 +520,8 @@ fn replace(s string, old string, new string, n uint) string {
         for k < segLen {
             var _p55: *u8 = buf + dstPos + k
             var _p56: *u8 = sPtr + srcPos + k
-            *_p55 = unsafe.cast[u8](*_p56)
+            var _pc_p56: uint = *_p56
+            *_p55 = unsafe.cast[u8](_pc_p56)
             k = k + 1
         }
         dstPos = dstPos + segLen
@@ -501,7 +529,8 @@ fn replace(s string, old string, new string, n uint) string {
         for k < nLen {
             var _p57: *u8 = buf + dstPos + k
             var _p58: *u8 = nPtr + k
-            *_p57 = unsafe.cast[u8](*_p58)
+            var _pc_p58: uint = *_p58
+            *_p57 = unsafe.cast[u8](_pc_p58)
             k = k + 1
         }
         dstPos = dstPos + nLen
@@ -513,7 +542,8 @@ fn replace(s string, old string, new string, n uint) string {
     for k < rest {
         var _p59: *u8 = buf + dstPos + k
         var _p60: *u8 = sPtr + srcPos + k
-        *_p59 = unsafe.cast[u8](*_p60)
+        var _pc_p60: uint = *_p60
+        *_p59 = unsafe.cast[u8](_pc_p60)
         k = k + 1
     }
     var _p61: *u8 = buf + newLen
@@ -543,7 +573,8 @@ fn join(strs ptr, count int, sep string) string {
         totalLen = totalLen + (count - 1) * sepLen
     }
 
-    var buf: ptr = memory.malloc(totalLen + 1)
+    var bufN: uint = totalLen + 1
+    var buf: ptr = memory.malloc(bufN)
     var dstPos: uint = 0
     var j: int = 0
     for ; j < count; {
@@ -555,7 +586,8 @@ fn join(strs ptr, count int, sep string) string {
         for ; k < sLen2; {
             var _p65: *u8 = buf + dstPos + k
             var _p66: *u8 = sPtr + k
-            *_p65 = unsafe.cast[u8](*_p66)
+            var _pc_p66: uint = *_p66
+            *_p65 = unsafe.cast[u8](_pc_p66)
             k = k + 1
         }
         dstPos = dstPos + sLen2
@@ -564,7 +596,8 @@ fn join(strs ptr, count int, sep string) string {
             for ; k < sepLen; {
                 var _p67: *u8 = buf + dstPos + k
                 var _p68: *u8 = sepPtr + k
-                *_p67 = unsafe.cast[u8](*_p68)
+                var _pc_p68: uint = *_p68
+                *_p67 = unsafe.cast[u8](_pc_p68)
                 k = k + 1
             }
             dstPos = dstPos + sepLen
@@ -574,4 +607,406 @@ fn join(strs ptr, count int, sep string) string {
     var _p69: *u8 = buf + totalLen
     *_p69 = unsafe.cast[u8](0)
     ret makeString(buf, totalLen, totalLen)
+}
+
+// ===== Wave St：块内 staging helper（D4 v3 防则：typed cast 只在 fn 顶层）=====
+
+// _putByte 逐字节拷贝 helper：dst[i] = src[i]（stw01 pPutByte 终态形态）
+fn _putByte(dst ptr, src ptr, i uint) {
+    var dAddr: ptr = dst + i
+    var dP: *u8 = unsafe.cast[*u8](dAddr)
+    var sAddr: ptr = src + i
+    var sP: *u8 = unsafe.cast[*u8](sAddr)
+    var v: uint = *sP
+    *dP = unsafe.cast[u8](v)
+    ret
+}
+
+// _byteAt 读 src+i 字节 helper（stw03 pByteAt 终态形态）
+fn _byteAt(src ptr, i uint) uint {
+    var bAddr: ptr = src + i
+    var bP: *u8 = unsafe.cast[*u8](bAddr)
+    var bV: uint = *bP
+    ret bV
+}
+
+// ===== Wave St：split / splitN 家族（Go 序容器 + strView 覆写视图）=====
+
+// _putPiece 在 data 第 idx 个元素槽写入一段：独立 malloc 段 buffer（segLen+1、NUL 尾）
+// + 逐字节拷贝（经 _putByte）+ 三槽写入（stw01 pPutPiece 终态形态；无返回值 fn 省略返回类型、显式 ret）
+fn _putPiece(data ptr, idx uint, src ptr, segLen uint) {
+    var bufN: uint = segLen + 1
+    var buf: ptr = memory.malloc(bufN)
+    var i: uint = 0
+    for ; i < segLen; {
+        _putByte(buf, src, i)
+        i = i + 1
+    }
+    var tailIdx: uint = segLen
+    var tailAddr: ptr = buf + tailIdx
+    var tailP: *u8 = unsafe.cast[*u8](tailAddr)
+    var zeroU: uint = 0
+    *tailP = unsafe.cast[u8](zeroU)
+    var elemSize: uint = 24
+    var dstOff: uint = idx * elemSize
+    var cellAddr: ptr = data + dstOff
+    var cell: *strView = unsafe.cast[*strView](cellAddr)
+    cell.p = buf
+    cell.n = segLen
+    cell.c = segLen
+    ret
+}
+
+// splitN 按分隔符切分 s，返回手工构造的 Go 序 [*[]string] 容器头 ptr：
+//   外头 24B：p@0=data / n@8=count / c@16=cap；元素 24B string 三槽。
+//   n<0 全部；n=0 空（p=0，Go nil 切片语义、data 不 malloc）；n>0 最多 n 段且末段吃余下全部。
+//   sep="" 为 byte 级分段（Go 为 rune 段——差异项备案）。
+//   所有权：splitFree(r) 释放外头 + data 块 + 各元素 buffer；splitGet 返回借用段。
+// （stw01 pSplitN 终态形态 + D2：sepLen==0 走 byte-walk 分支）
+fn splitN(s string, sep string, n int) ptr {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    var sepPtr: ptr = toCstring(sep)
+    var sepLen: uint = len(sep)
+
+    var nNeg: bool = n < 0
+    var nMag: uint = 0
+    if nNeg {
+        var absN: int = 0 - n
+        nMag = toU64(absN)
+    } else {
+        nMag = toU64(n)
+    }
+
+    // pieces 推导（表达式先提局部变量；malloc 实参一律简单中转变量）
+    var totalPieces: uint = 0
+    if sepLen > 0 {
+        var numSeps: int = strings.count(s, sep)
+        var withSelf: int = numSeps + 1
+        totalPieces = toU64(withSelf)
+    } else {
+        if sLen < 1 {
+            totalPieces = 1
+        } else {
+            totalPieces = sLen
+        }
+    }
+    var pieces: uint = totalPieces
+    if !nNeg {
+        if pieces > nMag {
+            pieces = nMag
+        }
+    }
+
+    // 外头容器（24B 恒分配；data 仅 pieces>0 时分配）
+    var outer: ptr = memory.malloc(24)
+    var elemSize: uint = 24
+    var dataSize: uint = 0
+    if pieces > 0 {
+        dataSize = pieces * elemSize
+    }
+    var hdr: *strView = unsafe.cast[*strView](outer)
+    var data: ptr = 0
+    if pieces > 0 {
+        data = memory.malloc(dataSize)
+    }
+    hdr.p = data
+    hdr.c = pieces
+
+    // 输出各段（walk 循环 + 尾段；break 早退时 cellCount 校正段数）
+    var cellCount: uint = 0
+    if pieces > 0 {
+        var scanPos: uint = 0
+        var pieceI: uint = 0
+        var nf: uint = notFound()
+        if sepLen > 0 {
+            var limitM1: uint = pieces - 1
+            for ; pieceI < limitM1; {
+                var sIdx: uint = indexFrom(sPtr, sLen, sepPtr, sepLen, scanPos)
+                if sIdx == nf {
+                    break
+                }
+                var segOff: uint = scanPos
+                var segSrc: ptr = sPtr + segOff
+                var segLenU: uint = sIdx - scanPos
+                _putPiece(data, pieceI, segSrc, segLenU)
+                scanPos = sIdx + sepLen
+                pieceI = pieceI + 1
+            }
+        } else {
+            // sep=="" byte 级分段：每字节独立一段（D2 补丁分支）
+            var bsLimit: uint = pieces - 1
+            for ; pieceI < bsLimit; {
+                var bOff: uint = scanPos
+                var bSrc: ptr = sPtr + bOff
+                var bLen: uint = 1
+                _putPiece(data, pieceI, bSrc, bLen)
+                scanPos = scanPos + 1
+                pieceI = pieceI + 1
+            }
+        }
+        var tailOff: uint = scanPos
+        var tailSrc: ptr = sPtr + tailOff
+        var tailLen: uint = sLen - scanPos
+        _putPiece(data, pieceI, tailSrc, tailLen)
+        pieceI = pieceI + 1
+        cellCount = pieceI
+    }
+    hdr.n = cellCount
+    ret outer
+}
+
+// split 委托 splitN(-1)（Go strings.Split 与内部 genSplit 同构）
+fn split(s string, sep string) ptr {
+    ret splitN(s, sep, 0 - 1)
+}
+
+// splitLen 读容器段数（外头 n 槽）
+fn splitLen(r ptr) uint {
+    var rAddr: ptr = unsafe.cast[ptr](r)
+    var hdr: *strView = unsafe.cast[*strView](rAddr)
+    ret hdr.n
+}
+
+// splitGet 读第 i 段 string 值（不复制、借用段 buffer：splitFree 之前有效；勿 free 其 p 槽）
+fn splitGet(r ptr, i uint) string {
+    var rAddr: ptr = unsafe.cast[ptr](r)
+    var hdr: *strView = unsafe.cast[*strView](rAddr)
+    var data: ptr = hdr.p
+    var elemSize: uint = 24
+    var off: uint = i * elemSize
+    var cellAddr: ptr = data + off
+    var cell: *strView = unsafe.cast[*strView](cellAddr)
+    ret makeString(cell.p, cell.n, cell.c)
+}
+
+// _cellP 读容器第 i 个 cell 的 p 字段 helper：typed staging 全顶层（D3/D4 v3：块内禁 cast）
+fn _cellP(r ptr, i uint) ptr {
+    var rAddrH: ptr = unsafe.cast[ptr](r)
+    var hdrH: *strView = unsafe.cast[*strView](rAddrH)
+    var dataH: ptr = hdrH.p
+    var elemH: uint = 24
+    var offH: uint = i * elemH
+    var cellAddrH: ptr = dataH + offH
+    var cellH: *strView = unsafe.cast[*strView](cellAddrH)
+    var cellPH: ptr = cellH.p
+    ret cellPH
+}
+
+// splitFree 释放 r 全家：外头 + data 块 + 各元素 buffer；重复调用/借用后调用为 UB（不测）
+fn splitFree(r ptr) {
+    var rAddr2: ptr = unsafe.cast[ptr](r)
+    var hdr2: *strView = unsafe.cast[*strView](rAddr2)
+    var count0: uint = hdr2.n
+    var data2: ptr = hdr2.p
+    if data2 != 0 {
+        var i2: uint = 0
+        for ; i2 < count0; {
+            var cellP: ptr = _cellP(r, i2)
+            if cellP != 0 {
+                memory.free(cellP)
+            }
+            i2 = i2 + 1
+        }
+        memory.free(data2)
+    }
+    memory.free(rAddr2)
+    ret
+}
+
+// ===== Wave St：fields（空白分段，跳空段）=====
+// （本波次不含 fieldsFunc：fn 形参毒面⑨a，已摘除延期——见下方备案注释）
+
+// fields 按空白字符（isSpace：32/9/10/13）切分 s，跳过空段；
+// 返回手工 Go 序容器头 ptr（与 split 同形），所有权同 split（splitFree 释放全家）。
+// （stw03 pFields 终态形态：两遍扫描 + _byteAt/_putPiece helper，块内零 typed staging）
+fn fields(s string) ptr {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+
+    // pass1：数字段数
+    var fieldCount: uint = 0
+    var scanI: uint = 0
+    for ; scanI < sLen; {
+        var ch0: uint = _byteAt(sPtr, scanI)
+        var isWs0: bool = strings.isSpace(ch0)
+        if isWs0 {
+            scanI = scanI + 1
+        } else {
+            fieldCount = fieldCount + 1
+            for ; scanI < sLen; {
+                var ch1: uint = _byteAt(sPtr, scanI)
+                var isWs1: bool = strings.isSpace(ch1)
+                if isWs1 {
+                    break
+                }
+                scanI = scanI + 1
+            }
+        }
+    }
+
+    // 外头 + data（与 split 同构）
+    var outerF: ptr = memory.malloc(24)
+    var elemSizeF: uint = 24
+    var dataF: ptr = 0
+    if fieldCount > 0 {
+        var dataSizeF: uint = fieldCount * elemSizeF
+        dataF = memory.malloc(dataSizeF)
+    }
+    var hdrF: *strView = unsafe.cast[*strView](outerF)
+    hdrF.p = dataF
+    hdrF.c = fieldCount
+
+    // pass2：输出各段（复用 _putPiece；判定逻辑与 pass1 同款保证一致）
+    var fieldI: uint = 0
+    var scanJ: uint = 0
+    for ; scanJ < sLen; {
+        var ch2: uint = _byteAt(sPtr, scanJ)
+        var isWs2: bool = strings.isSpace(ch2)
+        if isWs2 {
+            scanJ = scanJ + 1
+        } else {
+            var startI: uint = scanJ
+            for ; scanJ < sLen; {
+                var ch3: uint = _byteAt(sPtr, scanJ)
+                var isWs3: bool = strings.isSpace(ch3)
+                if isWs3 {
+                    break
+                }
+                scanJ = scanJ + 1
+            }
+            var segOffF: uint = startI
+            var segSrcF: ptr = sPtr + segOffF
+            var segLenF: uint = scanJ - startI
+            _putPiece(dataF, fieldI, segSrcF, segLenF)
+            fieldI = fieldI + 1
+        }
+    }
+    hdrF.n = fieldI
+    ret outerF
+}
+
+// fieldsFunc 延期备案（缺陷⑨a 摘除）：fn 形参形态 `pred fn(ch uint) bool` 使 parser.ParseArgs
+// 死循环挂死——探针 stw05/05a/05b 三形态挂证（parse 阶段烧 CPU 分钟级）。发布面 hang 不可接受，
+// R15 延期；fields 体间零调用不受牵连。待编译器修复 fn 类型形参后再落此函数。
+
+// ===== Wave St：Builder MVP（builderNew/Write/WriteString/Len/String/Free + _bGrow）=====
+// 控制块 24B 三槽：p@0=数据 buf / n@8=当前长度 / c@16=容量（strView 同形，字段复用）。
+// String() 不调 bufToString（其 makeString-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
+
+// builderNew 建一个容量 capacity 的字节 Builder；capacity<1 按 1 处理
+fn builderNew(capacity uint) ptr {
+    var b: ptr = memory.malloc(24)
+    var box: *strView = unsafe.cast[*strView](b)
+    var cap0: uint = capacity
+    if cap0 < 1 {
+        cap0 = 1
+    }
+    var bufN: uint = cap0
+    var buf0: ptr = memory.malloc(bufN)
+    box.p = buf0
+    var zeroN: uint = 0
+    box.n = zeroN
+    box.c = cap0
+    ret b
+}
+
+// _bGrow 私有扩容曲线：n+need 超 cap 时按 P2 曲线扩容并迁移旧数据（slice grow 同款）
+fn _bGrow(b ptr, need uint) {
+    var box: *strView = unsafe.cast[*strView](b)
+    var n0: uint = box.n
+    var c0: uint = box.c
+    var total: uint = n0 + need
+    if total > c0 {
+        var ncap: uint = c0
+        if c0 < 512 {
+            ncap = c0 * 2
+        } else {
+            var q: uint = c0 / 4
+            ncap = c0 + q
+        }
+        if ncap < total {
+            ncap = total
+        }
+        var oldData: ptr = box.p
+        var nbuf: ptr = memory.malloc(ncap)
+        var moveN: uint = n0
+        memory.memmove(nbuf, oldData, moveN)
+        memory.free(oldData)
+        box.p = nbuf
+        box.c = ncap
+    }
+    ret
+}
+
+// builderWrite 追加单字节（ch 取 0–255；typed staging 全顶层 D4 v3）
+fn builderWrite(b ptr, ch int) {
+    _bGrow(b, 1)
+    var box: *strView = unsafe.cast[*strView](b)
+    var data: ptr = box.p
+    var n0: uint = box.n
+    var chU: uint = toU64(ch)
+    var wAddr: ptr = data + n0
+    var wP: *u8 = unsafe.cast[*u8](wAddr)
+    *wP = unsafe.cast[u8](chU)
+    var nNow: uint = box.n
+    var nNext: uint = nNow + 1
+    box.n = nNext
+    ret
+}
+
+// builderWriteString 追加字符串 s 的全部字节（s 为只读借用，R10）
+fn builderWriteString(b ptr, s string) {
+    var sPtr: ptr = toCstring(s)
+    var sLen: uint = len(s)
+    _bGrow(b, sLen)
+    var box: *strView = unsafe.cast[*strView](b)
+    var data: ptr = box.p
+    var nN: uint = box.n
+    var dstBase: ptr = data + nN
+    var i: uint = 0
+    for ; i < sLen; {
+        _putByte(dstBase, sPtr, i)
+        i = i + 1
+    }
+    var nAfter: uint = nN + sLen
+    box.n = nAfter
+    ret
+}
+
+// builderLen 读当前长度
+fn builderLen(b ptr) uint {
+    var box: *strView = unsafe.cast[*strView](b)
+    ret box.n
+}
+
+// builderString 收编为新 string（malloc 新 buffer + 拷贝 + NUL；不消耗 builder、可重复调用）
+fn builderString(b ptr) string {
+    var box: *strView = unsafe.cast[*strView](b)
+    var n0: uint = box.n
+    var data: ptr = box.p
+    var sizeN: uint = n0 + 1
+    var out: ptr = memory.malloc(sizeN)
+    var i: uint = 0
+    for ; i < n0; {
+        _putByte(out, data, i)
+        i = i + 1
+    }
+    var tailIdx: uint = n0
+    var tailAddr: ptr = out + tailIdx
+    var tailP: *u8 = unsafe.cast[*u8](tailAddr)
+    var zeroU: uint = 0
+    *tailP = unsafe.cast[u8](zeroU)
+    ret makeString(out, n0, n0)
+}
+
+// builderFree 释放 builder 全家（数据 buf + 控制块）；其后使用为 UB
+fn builderFree(b ptr) {
+    var box: *strView = unsafe.cast[*strView](b)
+    var data: ptr = box.p
+    if data != 0 {
+        memory.free(data)
+    }
+    memory.free(b)
+    ret
 }

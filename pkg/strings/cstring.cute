@@ -18,7 +18,8 @@ fn strcpy(dest: ptr, src: ptr) ptr {
     for ; *_p2 != 0; {
         var _p3: *u8 = dest + i
         var _p4: *u8 = src + i
-        *_p3 = unsafe.cast[u8](*_p4)
+        var _pc_p4: uint = *_p4
+        *_p3 = unsafe.cast[u8](_pc_p4)
         i = i + 1
     }
     var _p5: *u8 = dest + i
