@@ -4,6 +4,16 @@ build arch("x86_64")
 // 底层内联系统调用：唯一必须 build asm 的地方（syscall 指令 + 参数寄存器装载），
 // 其余便捷封装均为纯 Cuteify 转发
 
+// strView 为 string 24B 头的覆写视图（P8 表镜像：Go 序 p@0/n@8/c@16，与
+// strings.str / memory.strHdr 同形）。Wave M getenv 正名专用：P7 反向约束下
+// syscall（L0 平台层）不得 import L2 strings，数据指针经 P11 stdlib 通道
+// （unsafe.cast 覆写结构体）读取。
+type strView struct {
+    p: ptr
+    n: uint
+    c: uint
+}
+
 fn syscall(trap: u64, a1: u64, a2: u64, a3: u64) u64 {
     build asm {
         mov RAX, $trap
@@ -120,8 +130,13 @@ fn getenvName_eq(a ptr, b ptr, len u64) u64 {
 // 返回值: 找到返回指向值的指针, 未找到返回 0
 fn getenv(name ptr, namelen u64) ptr {
     var path: string = "/proc/self/environ"
-    var _p3: *ptr = memory.ptrToStringHeader(path) + 16
-    var fd: i32 = open(*_p3, 0, 0)
+    // Wave M 正名：旧实现 `memory.ptrToStringHeader(path) + 16` 是悬空调用
+    // （编译器对未解析函数静默折叠——S0-3 实锤机制）+ A6 旧序 data@16 残迹，
+    // 从未真正运转。现 P11 stdlib 通道读 path 数据指针（Go 序 p@0）。
+    var sp0: *string = &path
+    var sp: ptr = unsafe.cast[ptr](sp0)
+    var sv: *strView = unsafe.cast[*strView](sp)
+    var fd: i32 = open(sv.p, 0, 0)
     if fd < 0 {
         ret 0
     }
