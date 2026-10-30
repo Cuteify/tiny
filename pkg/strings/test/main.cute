@@ -542,7 +542,9 @@ fn main() int {
         err = 81
     }
     var p1a: string = strings.splitGet(r6, 0)
-    if strings.compare(p1a, abc) != 0 {
+    // 断形修正：splitN(s,sep,1) → 1 段 = 全串 "a,b,c"（原误比对 L27 abc="abc"，属测试编写错）
+    var expWhole: string = "a,b,c"
+    if strings.compare(p1a, expWhole) != 0 {
         err = 82
     }
     strings.splitFree(r6)
@@ -587,7 +589,16 @@ fn main() int {
         err = 90
     }
     strings.splitFree(rB)
-    var rD: ptr = strings.fields("a	b  cd	 e")
+    // f3 段入参改 Builder 运行期构造（缺陷⑩绕行：真实 tab 字节字面量会被 data 段转义成反斜杠对 + len 错位）
+    var fld0: ptr = strings.builderNew(16)
+    strings.builderWriteString(fld0, "a")
+    strings.builderWrite(fld0, 9)
+    strings.builderWriteString(fld0, "b  cd")
+    strings.builderWrite(fld0, 9)
+    strings.builderWriteString(fld0, " e")
+    var fldS: string = strings.builderString(fld0)
+    strings.builderFree(fld0)
+    var rD: ptr = strings.fields(fldS)
     if strings.splitLen(rD) != 4 {
         err = 91
     }
