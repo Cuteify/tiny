@@ -54,6 +54,8 @@ func (t *TypeBlock) Parse(p *Parser) {
 		p.CurStructName = savedName
 		p.CurStructType = savedType
 		t.EndCursor = t.Struct.EndCursor
+		// build align(N)/noalign 紧随其后才生效（严格紧随：隔了其他声明即孤儿）
+		p.attachPendingAlign(&t.Struct.Type)
 	case "interface":
 		t.Kind = TypeInterface
 		t.Interface = &InterfaceDef{}

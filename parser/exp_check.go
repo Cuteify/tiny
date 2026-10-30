@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"fmt"
+	"os"
 	typeSys "cuteify/type"
 
 	"strings"
@@ -95,6 +97,17 @@ func (exp *Expression) checkCall(p *Parser) bool {
 
 // checkOp 运算符类型检查 + 常量折叠分发器。
 func (exp *Expression) checkOp(p *Parser) bool {
+	if envChk := os.Getenv("CUTE_DEBUG_CHK"); envChk != "" {
+		rInfo := ""
+		if exp.Right != nil {
+			rInfo = " rsep=" + exp.Right.Separator + " rcall=" + fmt.Sprint(exp.Right.Call != nil)
+			if exp.Right.Call != nil {
+				rInfo += " rname=" + exp.Right.Call.Name.String()
+			}
+		}
+		fmt.Fprintf(os.Stderr, "CHKOP sep=%s stmt=%v l=%v r=%v%s\n", exp.Separator, exp.stmt, exp.Left != nil, exp.Right != nil, rInfo)
+	}
+
 	// 空运算符，直接通过
 	if exp.Separator == "" {
 		return true
@@ -118,11 +131,17 @@ func (exp *Expression) checkOp(p *Parser) bool {
 	// 递归检查子节点
 	if exp.Left != nil {
 		if !exp.Left.Check(p) {
+			if os.Getenv("CUTE_DEBUG_CHK") != "" {
+				fmt.Fprintf(os.Stderr, "CHKOP RET-L sep=%s\n", exp.Separator)
+			}
 			return false
 		}
 	}
 	if exp.Right != nil {
 		if !exp.Right.Check(p) {
+			if os.Getenv("CUTE_DEBUG_CHK") != "" {
+				fmt.Fprintf(os.Stderr, "CHKOP RET-R sep=%s\n", exp.Separator)
+			}
 			return false
 		}
 	}
@@ -177,6 +196,9 @@ func (exp *Expression) checkLogic(p *Parser) bool {
 // checkAssign 检查赋值运算符类型兼容性。若左子为索引表达式则转换为 []=，
 // 若左子为解引用表达式则转换为 deref=。
 func (exp *Expression) checkAssign(p *Parser) bool {
+	if os.Getenv("CUTE_DEBUG_CHK") != "" {
+		fmt.Fprintf(os.Stderr, "CHKASSIGN sep=%s l.sep=%s l.L=%v l.R.var=%v\n", exp.Separator, exp.Left.Separator, exp.Left.Left != nil, exp.Left.Right.Var != nil)
+	}
 	// 索引赋值转换：arr[i] = val → arr[]=[i, val]
 	if exp.Left != nil && exp.Left.Separator == "[]" {
 		exp.Separator = "[]="
@@ -185,6 +207,9 @@ func (exp *Expression) checkAssign(p *Parser) bool {
 
 	// 解引用赋值转换：*p = val → deref=(val, p)
 	if exp.Left != nil && exp.Left.Separator == "*" && exp.Left.Left == nil {
+		if os.Getenv("CUTE_DEBUG_CHK") != "" {
+			fmt.Fprintf(os.Stderr, "CHKDEREFCONV fired\n")
+		}
 		ptr := exp.Left.Right
 		exp.Separator = "deref="
 		exp.Left = exp.Right

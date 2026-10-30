@@ -211,7 +211,15 @@ func (f *FuncBlock) Parse(p *Parser) {
 		// 否则这些 Build 只是根节点下的孤儿，编译期等于没有平台过滤。
 		for i := len(p.ThisBlock.Children) - 1; i >= 0; i-- {
 			b, ok := p.ThisBlock.Children[i].Value.(*Build)
-			if !ok || (b.Type != "os" && b.Type != "arch") {
+			if !ok {
+				break
+			}
+			if b.Type == "align" {
+				// build align 对函数透明：跳过继续回溯，不挂在函数上，
+				// 留待紧随其后的 struct 消费（attachPendingAlign）。
+				continue
+			}
+			if b.Type != "os" && b.Type != "arch" {
 				break
 			}
 			f.BuildFlags = append(f.BuildFlags, b)

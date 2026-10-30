@@ -36,6 +36,117 @@ func New(ctx *context.Context) *ECompiler {
 	}
 }
 
+// danglingBuiltinNames 内建/合成调用名单：这些名字由 builtinCall 或 parser 的
+// checkBuiltin 分派（Func 是合成 FuncBlock），绝不能按函数名绑定真实 FuncBlock，
+// 否则会把内建语义误绑到同名包函数（如 strings.len）。
+var danglingBuiltinNames = map[string]bool{
+	"len": true, "cap": true, "append": true, "copy": true,
+	"make": true, "realloc": true, "new": true, "newRC": true,
+	"sizeof": true, "unsafe.cast": true,
+	"memory.new": true, "memory.sizeof": true,
+}
+
+// BindDanglingCall 惰性绑定悬空调用（第四根因修复）。
+//
+// 根因："*p = unsafe.cast[ptr](memory.malloc(16))" 一类语句里，外层 cast 调用名
+// 不是真函数 → parser Check 在 checkOp 因右子（内建调用）未解析而提前 return，
+// cast 的参数子树从未被 Check → 嵌套调用的 CallBlock.Func 恒为 nil，且步骤 5
+// 的伪接收者 ThisVar（VarBlock{Name:"memory"}）残留。发射端 arch.Call 对
+// Func==nil 首行返回空串 → call 指令整体消失，寄存器复用陈旧值，运行期空指针写。
+//
+// 修复语义逐条复刻 parser.CallBlock.Check 的成功绑定路径：
+//   - 候选匹配优先全名 Eq；否则唯一 Last() 相等（corpus 无同名重载，
+//     docs/fixplan/W3_NOTES.md；多候选/零候选保守不绑，宁可漏发不乱绑）
+//   - BuildFlags.Ignore 的候选跳过（build 别名壳）
+//   - fb.Useful = true；绑定后若 fb.Class == nil 清除伪 ThisVar
+//     （"包名被方法分支误判为接收者时，清除伪 ThisVar"）
+//   - Class != nil（方法）不在此路径绑定：方法分派有自己的接收者链路
+//
+// 命中返回 true。调用点：leaf() 与 compileCallBlock() 的 Func==nil 分支。
+func BindDanglingCall(ctx *context.Context, call *parser.CallBlock) bool {
+	if ctx == nil || call == nil || call.Func != nil || call.Name.IsEmpty() {
+		return false
+	}
+	full := call.Name.String()
+	if danglingBuiltinNames[full] {
+		return false
+	}
+	if !ctx.FuncBlockCacheOK {
+		root := ctx.Now
+		for root != nil && root.Father != nil {
+			root = root.Father
+		}
+		var acc []*parser.FuncBlock
+		var w func(n *parser.Node)
+		w = func(n *parser.Node) {
+			if n == nil {
+				return
+			}
+			// 后序遍历，同名时最后注册者优先（贴近 parser FindFunc 的反序优先）
+			for _, ch := range n.Children {
+				w(ch)
+			}
+			if fb, ok := n.Value.(*parser.FuncBlock); ok && fb.Name != nil && fb.Name.Length() >= 1 {
+				acc = append(acc, fb)
+			}
+		}
+		w(root)
+		ctx.FuncBlockCache = acc
+		ctx.FuncBlockCacheOK = true
+	}
+	var eqs []int
+	var lasts []int
+	for i := len(ctx.FuncBlockCache) - 1; i >= 0; i-- { // 反序 = 最先注册者优先贴近 FindFunc
+		fb := ctx.FuncBlockCache[i]
+		if fb.Name.Eq(call.Name) {
+			eqs = append(eqs, i)
+		} else if fb.Name.Last() == call.Name.Last() {
+			lasts = append(lasts, i)
+		}
+	}
+	idxs := eqs
+	if len(idxs) == 0 {
+		idxs = lasts
+	}
+	if len(idxs) == 0 {
+		return false
+	}
+	// BuildFlags.Ignore 的候选是 build 别名壳，跳过；全被跳过视为未找到
+	chosen := -1
+	for _, i := range idxs {
+		fb := ctx.FuncBlockCache[i]
+		ignored := false
+		for _, bf := range fb.BuildFlags {
+			if bf.Ignore {
+				ignored = true
+				break
+			}
+		}
+		if ignored {
+			continue
+		}
+		if chosen == -1 {
+			chosen = i
+		}
+	}
+	if chosen == -1 {
+		return false
+	}
+	// 多候选（含重载）保守不绑——宁可沿用旧行为（漏发）也不绑错目标
+	if len(idxs) > 1 && chosen != -1 {
+		// eqs 唯一时 idxs 只有一个元素；multi-candidate只允许来自 lasts 唯一相同的场景
+		return false
+	}
+	fb := ctx.FuncBlockCache[chosen]
+	fb.Useful = true
+	call.Func = fb
+	// 包名被方法分支误判为接收者时，清除伪 ThisVar（与 parser 绑定成功路径一致）
+	if fb.Class == nil {
+		call.ThisVar = nil
+	}
+	return true
+}
+
 // Compile 编译表达式（两趟流程）
 func (c *ECompiler) Compile(exp *parser.Expression, result, desc string) string {
 	if exp == nil {
@@ -114,10 +225,10 @@ func (c *ECompiler) thisMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
 	reg := c.allocTmpReg()
 	size := c.arch.PointerSize()
 	frame := "rbp"
-	thisOffset := 16
+	// this 的家统一取 ctx（Cluster A 单一事实源：sysv=-48 / win64=+16 / 32位 cdecl=+8）
+	thisOffset := c.ctx.ThisHomeOffset()
 	if size == 4 {
 		frame = "ebp"
-		thisOffset = 8
 	}
 	pre := utils.Format("mov " + reg.Name + ", " + c.arch.LengthName(size) + "[" + frame + "+" + strconv.Itoa(thisOffset) + "]")
 	off := fieldOffsetOf(v)
@@ -339,6 +450,20 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 		return c.leaf(exp, result)
 	}
 
+	// 赋值形状兜底：parser 的 checkAssign 会在 Check 期把 "*p = val" 转成
+	// deref=(val, 指针)，但 RHS 为跨包/编译器内建调用（如 unsafe.cast[T]）时
+	// checkOp 先因右子未解析提前 return，转换被跳过且后续重试同样过不来。
+	// 未转换的 "=" 会以二元路径进入本函数，把解引用按"读值"编进左子——
+	// 空寄存器操作数问题的直接来源。此处按 parser checkAssign 同规则
+	// 原地重排后再走 derefSet（重排幂等：转换后 Separator 已变为 deref=）。
+	if exp.Separator == "=" && exp.Left != nil &&
+		exp.Left.Separator == "*" && exp.Left.Left == nil && exp.Right != nil {
+		ptr := exp.Left.Right
+		exp.Separator = "deref="
+		exp.Left = exp.Right
+		exp.Right = ptr
+	}
+
 	// 解引用赋值：deref=(值, 指针)
 	if exp.Separator == "deref=" {
 		return c.derefSet(exp)
@@ -400,6 +525,11 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 	}
 	// 特殊处理函数调用：需要先生成 call 指令
 	if exp.Call != nil {
+		// 悬空调用惰性绑定（第四根因修复）：parser Check 提前返回导致 Func 未绑定时，
+		// 在发射前按名字解析补绑；绑定成功后泛型调用还能接上 Monomorphize 链路。
+		if exp.Call.Func == nil {
+			BindDanglingCall(c.ctx, exp.Call)
+		}
 		// Monomorphize generic function calls
 		if c.ctx.MonomorphizeCall != nil && exp.Call.Func != nil && len(exp.Call.Func.TypeParams) > 0 {
 			if label := c.ctx.MonomorphizeCall(exp.Call); label != "" {
@@ -904,7 +1034,7 @@ func stripMemPrefix(addr string) string {
 
 // stripOuterBrackets 去掉内存操作数的外层括号：QWORD[rbp-96] → rbp-96
 func stripOuterBrackets(addr string) string {
-	addr = stripMemPrefix(strings.TrimSpace(addr))
+	addr = strings.TrimSpace(stripMemPrefix(strings.TrimSpace(addr)))
 	if len(addr) >= 2 && addr[0] == '[' && addr[len(addr)-1] == ']' {
 		return addr[1 : len(addr)-1]
 	}
@@ -936,6 +1066,9 @@ func (c *ECompiler) genAddrOf(v *parser.VarBlock) string {
 
 // derefLoad 生成内存读指令：[src] → dst。
 func (c *ECompiler) derefLoad(prefix, dst, src string) string {
+	if dst == "" || src == "" {
+		panic("derefLoad 空操作数: prefix=" + prefix + " dst=" + dst + " src=" + src)
+	}
 	load := func(dst, src string) string {
 		switch prefix {
 		case "BYTE", "WORD":
@@ -1514,9 +1647,11 @@ func (c *ECompiler) stringConcatExp(exp *parser.Expression, result string, ei *E
 			code += utils.Format("push " + tmp1)  // len
 			code += utils.Format("push " + ret)   // ptr
 		} else if strings.Contains(result, "[") {
+			// S0-2（P11）：三字段写查表化（data@0/len/cap 经 listFields）
+			_, lenOff, capOff := c.listFields()
 			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "], " + ret)
-			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(ps) + "], " + tmp1)
-			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(2*ps) + "], " + rLen)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(lenOff) + "], " + tmp1)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(capOff) + "], " + rLen)
 		} else {
 			code += utils.Format("mov " + result + ", " + ret)
 		}
@@ -1526,9 +1661,11 @@ func (c *ECompiler) stringConcatExp(exp *parser.Expression, result string, ei *E
 			code += utils.Format("push " + lLen)  // len
 			code += utils.Format("push " + ret)   // ptr
 		} else if strings.Contains(result, "[") {
+			// S0-2（P11）：三字段写查表化
+			_, lenOff, capOff := c.listFields()
 			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "], " + ret)
-			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(ps) + "], " + lLen)
-			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(2*ps) + "], " + rLen)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(lenOff) + "], " + lLen)
+			code += utils.Format("mov " + ln + " [" + stripOuterBrackets(result) + "+" + strconv.Itoa(capOff) + "], " + rLen)
 		} else {
 			code += utils.Format("mov " + result + ", " + ret)
 		}
@@ -1653,10 +1790,88 @@ func (c *ECompiler) loadContainer(exp *parser.Expression, result string) string 
 	return ""
 }
 
-// listFields 返回三字段偏移（x64: 0/8/16；x86: 0/4/8）
+// listHeaderShape（S0-2，P11 编译器通道）：内建容器三字段偏移的**唯一查询源**。
+// 全编译器所有 24B 头布局知识收敛到 typeSys ListType.Shape()——
+// 布局由 StructType.Layout 自然计算（x64=0/8/16 Go 序；x86=0/4/8），
+// exp.go 内不再存在任何 +ps/+2*ps 式字面算术。进程内单值缓存（TargetPointerSize 恒定）。
+func (c *ECompiler) listHeaderShape() *typeSys.StructType {
+	sh := typeSys.NewList(typeSys.GetSystemType("int")).Shape()
+	return sh
+}
+
+func (c *ECompiler) listShapeField(sh *typeSys.StructType, name string) int {
+	sh.Layout()
+	return sh.Field(name).Offset
+}
+
+// listFields 返回三字段偏移（x64: 0/8/16；x86: 0/4/8）——S0-2 查表化（P11）
 func (c *ECompiler) listFields() (ptr, length, cap int) {
-	ps := c.arch.PointerSize()
-	return 0, ps, 2 * ps
+	sh := c.listHeaderShape()
+	return c.listShapeField(sh, "data"), c.listShapeField(sh, "len"), c.listShapeField(sh, "cap")
+}
+
+// takeFreeReg 挑一个默认类别的空闲寄存器（masked 掉 avoid 名单）。
+// 绕开 AllocPref 的 Record[exp] 复用语义（同一 exp 二次分配会命中同寄
+// 存器），不绑 exp：调用方用完手动置 reg.Free = true。
+func (c *ECompiler) takeFreeReg(avoidNames ...string) *regmgr.Reg {
+	mask := c.ctx.Arch.DefaultRegMask()
+	for _, r := range c.ctx.Reg.Regs {
+		if r.ClassMask&mask == 0 || !r.Free {
+			continue
+		}
+		skip := false
+		for _, n := range avoidNames {
+			if r.Name == n {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			return r
+		}
+	}
+	return nil
+}
+
+// listBaseResolve（S0-1/S0-2，P11 底座）：bounds 与元素寻址共用的成员链基址解析。
+//
+// 返回 (pre 代码, addr 文本, 持有的寄存器)。addr 即后续比较/寻址所用的
+// 基址文本（最终字段链地址）：
+//   - 值语义（裸局部变量、局部 struct 值的字段链）：passthrough——返回
+//     baseText 原样、reg 为 nil，调用方 `[addr+off]` 栈槽直拼（逐位不变）；
+//   - self/this 成员链（isThisField）：委托 thisMem（解引 thisHome 槽 +
+//     fieldOffsetOf 偏移捆绑，A5 病灶修复：bounds 原直拼 [rbp-48+8] 读
+//     相邻栈槽垃圾）；
+//   - 多指针装载链（needPtrMem：p.x / g.head.next 等）：委托 ptrMem
+//     （S0-2 全量合流：中间层逐层装载 + 全局基址 [rel __global_x]）。
+//
+// 合流纪律：基址语义只有本 helper 一处判定——新链型必须在此加路由，
+// 禁止 bounds/元素寻址两侧各自直拼分叉（M2a/M3 两轨分叉的历史教训）。
+// 持有寄存器用完由调用方 freeTmpReg 释放（与 thisMem/ptrMem 既有调用方
+// 一致）。保守边界：allocTmpReg 枯竭 fallback 返回伪 ReturnReg 对象，
+// 真实 RAX 未持有且可能被调用方后续 alloc 复用互踩——退回 passthrough。
+func (c *ECompiler) listBaseResolve(v *parser.VarBlock, avoidReg, baseText string) (string, string, *regmgr.Reg) {
+	if v == nil || len(v.Name) <= 1 {
+		// 值语义：裸局部变量直拼
+		return "", baseText, nil
+	}
+	if !isThisField(v) && !needPtrMem(v) {
+		// 局部 struct 值的字段链等：栈槽直拼已经正确
+		return "", baseText, nil
+	}
+	var pre, addr string
+	var reg *regmgr.Reg
+	if isThisField(v) {
+		pre, addr, reg = c.thisMem(v)
+	} else {
+		pre, addr, reg = c.ptrMem(v)
+	}
+	if reg != nil && reg.Name == c.arch.ReturnReg() {
+		// allocTmpReg 枯竭 fallback 返回伪 ReturnReg 对象：极端枯竭保守
+		// 退回 passthrough（与旧行为等价，不引入新缺陷）。
+		return "", baseText, nil
+	}
+	return pre, addr, reg
 }
 
 // align8 向上取整到 8 字节
@@ -1827,7 +2042,7 @@ func (c *ECompiler) storeVal(dst, ln, val string) string {
 	return utils.Format("mov " + ln + " " + dst + ", " + val)
 }
 
-// emitZero3 将三字段容器槽清零（内存/寄存器/push）
+// emitZero3 将三字段容器槽清零（内存/寄存器/push）——S0-2：偏移经形状查表
 func (c *ECompiler) emitZero3(result string) string {
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
@@ -1835,10 +2050,13 @@ func (c *ECompiler) emitZero3(result string) string {
 		return utils.Format("push 0") + utils.Format("push 0") + utils.Format("push 0; 空容器")
 	}
 	if strings.Contains(result, "[") {
+		sh := c.listHeaderShape()
+		lenOff := c.listShapeField(sh, "len")
+		capOff := c.listShapeField(sh, "cap")
 		base := stripOuterBrackets(result)
 		code := utils.Format("mov " + ln + " " + result + ", 0")
-		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(ps) + "], 0")
-		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(2*ps) + "], 0; 空容器")
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], 0")
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "], 0; 空容器")
 		return code
 	}
 	return utils.Format("xor " + result + ", " + result)
@@ -1846,6 +2064,7 @@ func (c *ECompiler) emitZero3(result string) string {
 
 // emit3 将 {ptr, len, cap} 三字段装载到 result（内存/寄存器/push）
 // push 顺序：cap/len/ptr（ptr 最后入栈落在低地址，与 callee 参数槽序一致）
+// S0-2：偏移经形状查表（P11——布局知识唯一来源 typeSys.ListType.Shape()）
 func (c *ECompiler) emit3(result, ptrReg string, length, cap int) string {
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
@@ -1856,10 +2075,13 @@ func (c *ECompiler) emit3(result, ptrReg string, length, cap int) string {
 		return code
 	}
 	if strings.Contains(result, "[") {
+		sh := c.listHeaderShape()
+		lenOff := c.listShapeField(sh, "len")
+		capOff := c.listShapeField(sh, "cap")
 		base := stripOuterBrackets(result)
 		code := utils.Format("mov " + ln + " " + result + ", " + matchMemWidth(result, ptrReg))
-		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(ps) + "], " + strconv.Itoa(length))
-		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(2*ps) + "], " + strconv.Itoa(cap))
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + strconv.Itoa(length))
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "], " + strconv.Itoa(cap))
 		return code
 	}
 	return utils.Format("mov " + result + ", " + ptrReg)
@@ -2084,29 +2306,43 @@ func (c *ECompiler) indexAccessGeneric(exp *parser.Expression, result string, el
 			}
 		} else if isList && exp.Right.Var != nil {
 			// 列表变量：运行时从列表头读 len 比较
+			// S0-1（P11 基址解析合流）：bounds 与元素寻址共用 listBaseResolve——
+			// 值语义（局部变量/局部 struct 字段链）直拼原样（逐位不变）；
+			// self/this 指针链 pre=解引 thisHome 槽 + fieldOffsetOf 捆绑。
+			// A5 病灶：此前 bounds 用 VarAddr 文本直拼 [rbp-48+8]（读相邻栈槽
+			// 垃圾），元素加载走 generate 解引，两轨分叉 → M2a panic 实锤。
 			_, lenOff, _ := c.listFields()
 			ln := c.arch.LengthName(c.arch.PointerSize())
-			base := stripOuterBrackets(c.arch.VarAddr(exp.Right.Var))
+			pre, addrBase, heldBase := c.listBaseResolve(exp.Right.Var, "", stripOuterBrackets(c.arch.VarAddr(exp.Right.Var)))
 			lbl := "oob_" + expUID
 			if idxExpr.IsConst() {
 				idx := int(idxExpr.Num)
-				code += utils.Format("cmp " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + strconv.Itoa(idx))
+				code += pre
+				code += utils.Format("cmp " + ln + " [" + addrBase + "+" + strconv.Itoa(lenOff) + "], " + strconv.Itoa(idx))
 				code += utils.Format("jg " + lbl)
 				code += utils.Format("push " + strconv.Itoa(idx))
 				code += utils.Format("call _panic_index_oob")
 				code += utils.Format(lbl + ":")
 			} else {
-				lenReg := c.allocRegAvoid(idxExpr, "")
+				avoidBase := ""
+				if heldBase != nil {
+					avoidBase = heldBase.Name
+				}
+				lenReg := c.allocRegAvoid(idxExpr, avoidBase)
 				if lenReg == nil {
 					lenReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
 				}
+				code += pre
 				code += c.generate(idxExpr, lenReg.Name)
-				code += utils.Format("cmp " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + lenReg.Name)
+				code += utils.Format("cmp " + ln + " [" + addrBase + "+" + strconv.Itoa(lenOff) + "], " + lenReg.Name)
 				code += utils.Format("jg " + lbl)
 				code += utils.Format("push " + lenReg.Name)
 				code += utils.Format("call _panic_index_oob")
 				code += utils.Format(lbl + ":")
 				c.ctx.Reg.Free(idxExpr)
+			}
+			if heldBase != nil {
+				c.freeTmpReg(heldBase)
 			}
 		}
 		// isList && Var==nil: 复杂表达式，跳过边界检查
@@ -2239,6 +2475,12 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 	}
 
 	// 边界检查（indexSet）
+	// S0-1 发现：下方各分支生成的检查代码历史上写进局部 code（遮蔽），
+	// 从未并入返回值 = 死代码，写路径越界零保护（数组分支同缺陷，本波不动）。
+	// 改造契约：值语义保持逐位不变（检查仍不生成）；仅 self/this 指针链基址
+	//（listBaseResolve 判定 heldBase != nil）补发解引 bounds，经 boundsPrepend
+	// 并入下方两处返回点（P11 基址解析合流条款）。
+	boundsPrepend := ""
 	if indexExpr.Right != nil && indexExpr.Right.Type != nil && len(indexExpr.Index) > 0 && indexExpr.Index[0] != nil {
 		idxExpr := indexExpr.Index[0]
 		isArr := indexExpr.Right.Type.Kind() == "array"
@@ -2264,29 +2506,38 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 				c.ctx.Reg.Free(idxExpr)
 			}
 		} else if isList && indexExpr.Right.Var != nil {
-			_, lenOff, _ := c.listFields()
-			ln := c.arch.LengthName(c.arch.PointerSize())
-			base := stripOuterBrackets(c.arch.VarAddr(indexExpr.Right.Var))
-			lbl := "oob_" + expUID
-			if idxExpr.IsConst() {
-				idx := int(idxExpr.Num)
-				code := utils.Format("cmp " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + strconv.Itoa(idx))
-				code += utils.Format("jg " + lbl)
-				code += utils.Format("push " + strconv.Itoa(idx))
-				code += utils.Format("call _panic_index_oob")
-				code += utils.Format(lbl + ":")
-			} else {
-				lenReg := c.allocRegAvoid(idxExpr, "")
-				if lenReg == nil {
-					lenReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+			pre, addrBase, heldBase := c.listBaseResolve(indexExpr.Right.Var, "", stripOuterBrackets(c.arch.VarAddr(indexExpr.Right.Var)))
+			if heldBase != nil {
+				// 指针链（self/this）写路径 bounds 补发：该类基址此前完全无边界
+				// 保护（死代码发现前）；值语义不进此分支、行为逐位不变。
+				_, lenOff, _ := c.listFields()
+				ln := c.arch.LengthName(c.arch.PointerSize())
+				lbl := "oob_" + expUID
+				var bc string
+				if idxExpr.IsConst() {
+					idx := int(idxExpr.Num)
+					bc = pre
+					bc += utils.Format("cmp " + ln + " [" + addrBase + "+" + strconv.Itoa(lenOff) + "], " + strconv.Itoa(idx))
+					bc += utils.Format("jg " + lbl)
+					bc += utils.Format("push " + strconv.Itoa(idx))
+					bc += utils.Format("call _panic_index_oob")
+					bc += utils.Format(lbl + ":")
+				} else {
+					lenReg := c.allocRegAvoid(idxExpr, heldBase.Name)
+					if lenReg == nil {
+						lenReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+					}
+					bc = pre
+					bc += c.generate(idxExpr, lenReg.Name)
+					bc += utils.Format("cmp " + ln + " [" + addrBase + "+" + strconv.Itoa(lenOff) + "], " + lenReg.Name)
+					bc += utils.Format("jg " + lbl)
+					bc += utils.Format("push " + lenReg.Name)
+					bc += utils.Format("call _panic_index_oob")
+					bc += utils.Format(lbl + ":")
+					c.ctx.Reg.Free(idxExpr)
 				}
-				code := c.generate(idxExpr, lenReg.Name)
-				code += utils.Format("cmp " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + lenReg.Name)
-				code += utils.Format("jg " + lbl)
-				code += utils.Format("push " + lenReg.Name)
-				code += utils.Format("call _panic_index_oob")
-				code += utils.Format(lbl + ":")
-				c.ctx.Reg.Free(idxExpr)
+				boundsPrepend = bc
+				c.freeTmpReg(heldBase)
 			}
 		}
 	}
@@ -2353,7 +2604,7 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 		code += utils.Format("add esp, " + strconv.Itoa(ps*3))
 		c.ctx.Reg.Free(exp.Right)
 		c.ctx.Reg.Free(indexExpr.Right)
-		return code
+		return boundsPrepend + code
 	}
 
 	// 1. 列表指针 → aReg
@@ -2403,7 +2654,7 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 	code += c.derefStore(c.arch.LengthName(elemSize), aReg.Name, vReg.Name)
 	c.ctx.Reg.Free(exp.Right)
 	c.ctx.Reg.Free(indexExpr.Right)
-	return code
+	return boundsPrepend + code
 }
 
 // sliceExp 切片 a[lo:hi]（三字段装载：ptr+lo*es、len=hi-lo、cap=原cap-lo）
@@ -2612,14 +2863,16 @@ func (c *ECompiler) builtinStringSlotCall(arg *parser.Expression, sym string, re
 	// 与普通容器实参一致的三槽传递（RDI/RSI/RDX = ptr/len/cap，
 	// 或 32 位栈上 cap/len/ptr 右到左压栈），被调方按标准约定溢出/读取
 	base := stripOuterBrackets(c.arch.VarAddr(arg.Var))
+	// S0-2（P11）：三字段布局消费查表化（data/len/cap 经 listFields）
 	// 直接以内存操作数装载三槽（无需地址寄存器，避免与目标寄存器同名冲突）
+	_, lenOff, capOff := c.listFields()
 	if ps == 8 {
 		code += utils.Format("mov RDI, " + ln + " [" + base + "]")
-		code += utils.Format("mov RSI, " + ln + " [" + base + "+" + strconv.Itoa(ps) + "]")
-		code += utils.Format("mov RDX, " + ln + " [" + base + "+" + strconv.Itoa(2*ps) + "]")
+		code += utils.Format("mov RSI, " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "]")
+		code += utils.Format("mov RDX, " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "]")
 	} else {
-		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(2*ps) + "]")
-		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(ps) + "]")
+		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "]")
+		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "]")
 		code += utils.Format("push " + ln + " [" + base + "]")
 	}
 	code += utils.Format("call " + sym)
@@ -3106,17 +3359,20 @@ func (c *ECompiler) builtinNewViaLink(lt *typeSys.ListType, target *parser.FuncB
 	tmpPtr := c.allocTmpReg()
 	code += utils.Format("mov " + tmpPtr.Name + ", " + c.arch.ReturnReg())
 	if result == "push" {
+		// S0-2（P11）：push 序查表化（cap→len→data 入栈序不变）
+		_, lenOff, capOff := c.listFields()
 		code += utils.Format("push " + ln + " [" + tmpPtr.Name + "]")
-		code += utils.Format("push " + ln + " [" + tmpPtr.Name + "+" + strconv.Itoa(ps) + "]")
-		code += utils.Format("push " + ln + " [" + tmpPtr.Name + "+" + strconv.Itoa(2*ps) + "]")
+		code += utils.Format("push " + ln + " [" + tmpPtr.Name + "+" + strconv.Itoa(lenOff) + "]")
+		code += utils.Format("push " + ln + " [" + tmpPtr.Name + "+" + strconv.Itoa(capOff) + "]")
 	} else if strings.Contains(result, "[") {
 		dst := stripOuterBrackets(result)
 		// x86 不支持 mem-to-mem mov，用临时寄存器中转每个槽
+		// S0-2（P11）：三槽偏移查表化（data/len/cap 经 listFields）
+		dataOff, lenOff, capOff := c.listFields()
 		tmpVal := c.allocTmpReg()
-		for i := 0; i < 3; i++ {
-			off := strconv.Itoa(i * ps)
-			code += utils.Format("mov " + tmpVal.Name + ", " + ln + " [" + tmpPtr.Name + "+" + off + "]")
-			code += utils.Format("mov " + ln + " [" + dst + "+" + off + "], " + tmpVal.Name)
+		for _, off := range []int{dataOff, lenOff, capOff} {
+			code += utils.Format("mov " + tmpVal.Name + ", " + ln + " [" + tmpPtr.Name + "+" + strconv.Itoa(off) + "]")
+			code += utils.Format("mov " + ln + " [" + dst + "+" + strconv.Itoa(off) + "], " + tmpVal.Name)
 		}
 		c.freeTmpReg(tmpVal)
 	} else {
@@ -3215,15 +3471,17 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 	}
 
 	// 装载结果三字段（len 装载：常量 lenVal 或寄存器）
+	// S0-2（P11）：三字段写查表化
 	if strings.Contains(result, "[") {
 		base := stripOuterBrackets(result)
+		_, lenOff, capOff := c.listFields()
 		code += utils.Format("mov " + ln + " " + result + ", " + matchMemWidth(result, callee))
 		if lenExp.IsConst() {
-			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(ps) + "], " + lenVal)
+			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + lenVal)
 		} else {
-			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(ps) + "], " + matchMemWidth(ln+"[", lenVal))
+			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + matchMemWidth(ln+"[", lenVal))
 		}
-		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(2*ps) + "], " + capVal)
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "], " + capVal)
 		return code
 	}
 	if result == "push" {
@@ -3241,17 +3499,50 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 
 // ZeroVar 无初值容器的三槽清零（供 varDecl 调用）
 func (c *ECompiler) ZeroVar(v *parser.VarBlock) string {
-	if v == nil || !isListLike(v.Type) {
+	if v == nil || v.Type == nil {
 		return ""
 	}
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
 	addr := stripOuterBrackets(c.arch.VarAddr(v))
-	_, lenOff, capOff := c.listFields()
-	code := utils.Format("mov " + ln + " [" + addr + "], 0")
-	code += utils.Format("mov " + ln + " [" + addr + "+" + strconv.Itoa(lenOff) + "], 0")
-	code += utils.Format("mov " + ln + " [" + addr + "+" + strconv.Itoa(capOff) + "], 0")
-	return code + utils.Format("; 零值容器 " + v.Name.String())
+	// winner 容器（string/list）：零值三槽 {ptr=0, len=0, cap=0}
+	if isListLike(v.Type) {
+		_, lenOff, capOff := c.listFields()
+		code := utils.Format("mov " + ln + " [" + addr + "], 0")
+		code += utils.Format("mov " + ln + " [" + addr + "+" + strconv.Itoa(lenOff) + "], 0")
+		code += utils.Format("mov " + ln + " [" + addr + "+" + strconv.Itoa(capOff) + "], 0")
+		return code + utils.Format("; 零值容器 " + v.Name.String())
+	}
+	// 结构体 / 指针 / 接口零值：整槽清零（fixplan 铁律方向=多初始化）。
+	// 无初值 var 若不清零，方法体 via this 读到陈旧栈字节（struct 语料 zeroDist=68 实证）。
+	_, isStruct := v.Type.(*typeSys.StructType)
+	_, isIface := v.Type.(*typeSys.InterfaceType)
+	if isStruct || isIface || v.Type.IsPointer() {
+		code := ""
+		size := v.Type.Size()
+		if size <= 0 {
+			size = ps
+		}
+		for off := 0; off < size; {
+			remain := size - off
+			switch {
+			case remain >= ps:
+				code += utils.Format("mov " + ln + " [" + addr + "+" + strconv.Itoa(off) + "], 0")
+				off += ps
+			case remain >= 4:
+				code += utils.Format("mov DWORD [" + addr + "+" + strconv.Itoa(off) + "], 0")
+				off += 4
+			case remain >= 2:
+				code += utils.Format("mov WORD [" + addr + "+" + strconv.Itoa(off) + "], 0")
+				off += 2
+			default:
+				code += utils.Format("mov BYTE [" + addr + "+" + strconv.Itoa(off) + "], 0")
+				off++
+			}
+		}
+		return code + utils.Format("; 零值结构体 " + v.Name.String())
+	}
+	return ""
 }
 
 // BoxInterface generates code to box a concrete value into an interface value.

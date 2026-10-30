@@ -2,6 +2,7 @@ package compile
 
 import (
 	"cuteify/compile/context"
+	cuteExp "cuteify/compile/exp"
 	"cuteify/compile/gc"
 	"cuteify/parser"
 	typeSys "cuteify/type"
@@ -171,7 +172,9 @@ func (c *Compiler) markLinkProviders(node *parser.Node) {
 // These are called from GC emit codegen but never appear in user source,
 // so they aren't marked Useful during Check.
 func (c *Compiler) markRCFuncs(node *parser.Node) {
-	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true}
+	// malloc/free/realloc 由 emitMalloc/emitFree/emitRealloc 合成调用（字符串拼接、
+	// 列表分配等路径），同样不出现在用户源码里，必须预标记 Useful
+	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true, "malloc": true, "realloc": true, "free": true}
 	var walk func(n *parser.Node)
 	walk = func(n *parser.Node) {
 		if n == nil {
@@ -238,6 +241,14 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 		}
 		name := "__global_" + utils.ToNASMName(vb.Name.String())
 		size := vb.Type.Size()
+		if os.Getenv("CUTE_DEBUG_GLOB") != "" {
+			valDesc := "<nil>"
+			if vb.Value != nil {
+				valDesc = fmt.Sprintf("Num=%v IsConstExp=%v", vb.Value.Num, vb.Value.IsConst())
+			}
+			fmt.Fprintf(os.Stderr, "[GLOB] %s size=%d IsConst=%v IsDefine=%v IsGlobal=%v Value=%s\n",
+				vb.Name.String(), size, vb.IsConst, vb.IsDefine, vb.IsGlobal, valDesc)
+		}
 		// 字符串（ptr+len+cap=24 字节）延后到 generateDataSection 生成（需字符串字面量）
 		if typeSys.CheckKind(vb.Type, "string") {
 			c.Ctx.GlobalStrings = append(c.Ctx.GlobalStrings, vb)
@@ -249,8 +260,10 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 			bssCode += "    " + name + " resb " + strconv.Itoa(size) + "\n"
 			continue
 		}
-		// 常量初始化值放入 .data，其余放 .bss
-		if vb.IsConst && vb.Value != nil {
+		// 可折叠字面量初始化值放入 .data（const 或带字面量初值的全局都应从初值开始），
+		// 其余放 .bss；注意不能只看 vb.IsConst：包内 const 的 VarBlock 标志可能缺失，
+		// 而有确实可折叠初值的非 const 全局放进 .bss(零值) 同样是错的
+		if vb.Value != nil && vb.Value.IsConst() {
 			val := int64(vb.Value.Num)
 			if size == 8 {
 				dataCode += "    " + name + " dq " + strconv.FormatInt(val, 10) + "\n"
@@ -629,6 +642,11 @@ func (c *Compiler) compileVarBlock(n *parser.Node) string {
 
 func (c *Compiler) compileCallBlock(n *parser.Node) string {
 	callBlock := n.Value.(*parser.CallBlock)
+
+	// 悬空调用惰性绑定（第四根因修复，与 exp.go leaf 同机制）
+	if callBlock.Func == nil {
+		cuteExp.BindDanglingCall(c.Ctx, callBlock)
+	}
 
 	// 检查是否为泛型函数调用
 	if IsGenericFunction(callBlock.Func) {

@@ -25,13 +25,14 @@ func GenVarAddr(ctx *context.Context, v *parser.VarBlock) string {
 	// 处理 this 或 self 指针
 	firstName := v.Name.First()
 	if firstName == "this" || firstName == "self" {
-		// this/self 指针本身在 [rbp+16]
+		// this 的家 = ctx 单一事实源（sysv=-48 / win64=+16，fixplan Cluster A）
+		thisHome := ctx.ThisHomeOffset()
 		if len(v.Name) == 1 {
-			return "QWORD[rbp+16]"
+			return "QWORD" + MakeRbpAddr(thisHome)
 		}
-		// 访问 this/self 的字段
+		// 访问 this/self 的字段：基地址同样取 ctx
 		fieldOffset := calcThisFieldOffset(ctx, v)
-		totalOffset := 16 + fieldOffset
+		totalOffset := thisHome + fieldOffset
 		sizePrefix := GetLenName(v.Type.Size())
 		return sizePrefix + MakeRbpAddr(totalOffset)
 	}

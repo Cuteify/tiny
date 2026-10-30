@@ -82,6 +82,12 @@ type Context struct {
 	PointerSize int
 	Is64Bit     bool
 
+	// this 指针在 callee 栈帧中的「家」（rbp 相对偏移）——fixplan Cluster A 单一事实源。
+	// 由 arch 构造函数设定：SysV=-48（callee 局部变量区）、Win64=+16（shadow space）、
+	// 32 位 cdecl/stdcall=+8（调用者压栈原位）。0 = 未设（发射前必经 arch 初始化，
+	// 访问器按旧约定兜底，保证未知路径与修复前行为一致）。
+	ThisHomeRbp int
+
 	// Vtable registry for interface dispatch
 	VtableEntries []VtableEntry // registered vtables
 	VtableSeen    map[string]bool
@@ -94,6 +100,13 @@ type Context struct {
 
 	// Monomorphize callback: set by Compiler, called by expression compiler for generic calls.
 	MonomorphizeCall func(call *parser.CallBlock) string
+
+	// 悬空调用惰性绑定（第四根因修复，见 docs/fixplan/PROBLEMS.md）：
+	// parser Check 因内建/未解析提前返回时，嵌套调用的 Func 未绑定（配合伪 ThisVar
+	// 残留），arch.Call 对 Func==nil 静默返回空——call 指令整个消失。
+	// FuncBlockCache 在首次绑定前构建一次（根树 DFS 全量 FuncBlock 名单）。
+	FuncBlockCache   []*parser.FuncBlock
+	FuncBlockCacheOK bool
 }
 
 // NewContext 创建新的编译器上下文
@@ -117,6 +130,7 @@ func NewContext() *Context {
 		StrCount:       0,
 		PointerSize:    4,
 		Is64Bit:        false,
+		ThisHomeRbp:    0,
 		VtableSeen:     make(map[string]bool),
 	}
 }
@@ -133,6 +147,7 @@ func (ctx *Context) Reset() {
 	ctx.ExpType = 0
 	ctx.VarStackSize = 0
 	// Note: Is64Bit and PointerSize are NOT reset - they are arch-level settings
+	// Note: ThisHomeRbp is NOT reset - it is an arch-level setting (set by arch constructor)
 	// Note: VtableEntries and VtableSeen are NOT reset here - they persist across functions
 }
 
@@ -157,6 +172,7 @@ func (ctx *Context) Clone() *Context {
 		ForCount:       ctx.ForCount,
 		PointerSize:    ctx.PointerSize,
 		Is64Bit:        ctx.Is64Bit,
+		ThisHomeRbp:    ctx.ThisHomeRbp,
 		VtableEntries:  ctx.VtableEntries, // shared slice (append-only, safe)
 		VtableSeen:     ctx.VtableSeen,    // shared map (safe for reads)
 	}
@@ -234,6 +250,19 @@ func (ctx *Context) LookupVtable(concrete typeSys.Type, iface *typeSys.Interface
 		}
 	}
 	return ""
+}
+
+// ThisHomeOffset 返回 this 指针在 callee 栈帧中的家（rbp 相对偏移）——Cluster A 单一事实源。
+// 由 arch 构造函数设定的 ThisHomeRbp 直读；未设（0）时按旧约定兜底（64 位 +16、32 位 +8），
+// 任何未初始化路径的行为与修复前保持一致。
+func (ctx *Context) ThisHomeOffset() int {
+	if ctx.ThisHomeRbp != 0 {
+		return ctx.ThisHomeRbp
+	}
+	if ctx.Is64Bit {
+		return 16
+	}
+	return 8
 }
 
 // GetVtableMethodOffset returns the byte offset of a method in the vtable.

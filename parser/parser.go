@@ -22,6 +22,7 @@ type Parser struct {
 	CurStructName     string                  // 当前正在解析的结构体名（支持自引用字段 *T）
 	CurStructType     typeSys.Type            // 当前正在解析的结构体类型实例（与注册后同一实例）
 	CurTypeParams     map[string]typeSys.Type // 当前泛型函数的类型参数（fn f[T]{} 体内 T 解析为 TypeParam）
+	FileImports       []ImportItem            // 文件级 import 声明（Wave L，仅记录，别名注册在 package 层）
 }
 
 // ParsePhase 为 true 表示各包/各文件尚未合并成同一棵树。
@@ -68,6 +69,8 @@ func (p *Parser) Next() (finish bool) {
 		p.processTypeToken(code)
 	case lexer.BUILD:
 		p.processBuildToken(code)
+	case lexer.IMPORT:
+		p.processImportToken(code)
 	default:
 		// *p = v / *p 解引用语句（以 * 开头的语句）
 		if code.Type == lexer.SEPARATOR && code.Value == "*" {
@@ -530,6 +533,8 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 		if p.Package != nil && p.Package.Path != "" {
 			packageFmt.RegisterType(p.Package.Path, block.Name.String(), block.Type())
 		}
+		// build align(N)/noalign 紧随其后才生效（严格紧随：隔了其他声明即孤儿）
+		p.attachPendingAlign(&block.Struct.Type)
 		p.AddChild(&Node{Value: block})
 	case "interface":
 		block := &InterfaceDef{}
@@ -543,6 +548,18 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 func (p *Parser) processBuildToken(token lexer.Token) {
 	block := &Build{}
 	block.Parse(p)
+}
+
+// processImportToken 解析文件级 import 声明（Wave L）。
+// 语法校验在 ImportBlock.Parse；别名注册由 package 层的
+// registerFileImports 在解析开始前完成（别名可见性 = 包级，与 json 一致）。
+// 这里只把条目记进 FileImports，不向语法树挂节点。
+func (p *Parser) processImportToken(code lexer.Token) {
+	block := &ImportBlock{}
+	block.Parse(p)
+	for _, item := range block.Items {
+		p.FileImports = appendImportItem(p, p.FileImports, item)
+	}
 }
 
 // processDerefStmt 解析以 * 开头的解引用赋值/表达式语句

@@ -36,6 +36,8 @@ func NewSysV(ctx *context.Context) *SysV {
 	ctx.PointerSize = 8
 	ctx.Is64Bit = true
 	ctx.StackAlignment = 16
+	// this 的家 = callee 局部变量区顶部 [rbp-48]（Cluster A 单一事实源，见 context.ThisHomeOffset）
+	ctx.ThisHomeRbp = -48
 	return a
 }
 
@@ -110,16 +112,18 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	// 将寄存器参数保存到栈上（SysV ABI: RDI, RSI, RDX, RCX, R8, R9）
 	// 保存到 callee 自己的局部变量区（如 C/Rust），不写入调用者栈帧
 	argRegIdx := 0
+	// 新 ABI：this 经寄存器传入（RDI），调用者不再压 this 栈槽，
+	// 第 7+ 个参数从调用者栈参数区 [rbp+16] 起排（CtxThisHome 只影响 callee 自己的局部区）
 	stackArgBase := 16
 	if fn.Class != nil {
-		// this 指针保存到 [rbp-48]（callee 局部变量区顶部）
-		code += utils.Format("mov QWORD " + rbpOffset(-48) + ", " + sysvArgRegs[0] + "; this pointer")
+		// this 指针保存到 ctx.ThisHomeOffset()（[rbp-48]，callee 局部变量区顶部）
+		code += utils.Format("mov QWORD " + rbpOffset(a.ctx.ThisHomeOffset()) + ", " + sysvArgRegs[0] + "; this pointer")
 		argRegIdx = 1
-		stackArgBase = 24
 	}
 
-	// 先搬移栈参数（SysV 第 7+ 个）：其原始位置在 [rbp+16]（含 this 时 [rbp+24]）起的
-	// 调用者栈参数区，搬到 callee 局部变量区的编译器参数槽（arg.Offset）。
+	// 先搬移栈参数（SysV 第 7+ 个）：其原始位置一律从 [rbp+16] 起（新 ABI 下 this 占
+	// 寄存器槽不占栈槽，调用者栈参数区不受 this 存在与否影响），搬到 callee 局部变量区的
+	// 编译器参数槽（arg.Offset）。
 	{
 		stackSlot := 0
 		regIdx := argRegIdx
@@ -493,7 +497,19 @@ normalCall:
 }
 
 // stripOuterBrackets 去掉外层方括号
+// stripMemPrefix 去掉内存操作数的宽度前缀（BYTE/WORD/DWORD/QWORD）
+func stripMemPrefix(addr string) string {
+	for _, p := range []string{"BYTE", "WORD", "DWORD", "QWORD"} {
+		if strings.HasPrefix(addr, p) {
+			return addr[len(p):]
+		}
+	}
+	return addr
+}
+
+// stripOuterBrackets 去掉外层方括号（及 QWORD/DWORD 前缀）：QWORD[rbp-96] → rbp-96
 func stripOuterBrackets(addr string) string {
+	addr = strings.TrimSpace(stripMemPrefix(strings.TrimSpace(addr)))
 	if len(addr) >= 2 && strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
 		return addr[1 : len(addr)-1]
 	}

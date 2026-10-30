@@ -187,8 +187,58 @@ func lo8(name string) string {
 	}
 }
 
+// shiftRspOperand 对操作数文本中的 rsp 相对寻址补偿 delta 字节（第六根因修复）。
+// InstBinary 的 push 惯用法（保护 RAX / 暂存乘除数 / 暂存移位计数）会平移 rsp，
+// 而调用参数 buffer 槽 "[rsp+N]" 是 rsp 相对地址 —— push 窗口内按原文本读写会
+// 错位到相邻槽（实证：power(2,10) even 路径的 idiv 商写进 buf[0] 把 base 覆成 0，
+// (rdi=0, rsi=10) 无限递归 8MB 栈耗尽 SIGSEGV，见 docs/fixplan/PROBLEMS.md）。
+// 仅当寻址形式为 [rsp] / [rsp+N] / [rsp-N]（可带 QWORD/DWORD 宽度前缀）时改写偏移；
+// 寄存器与 rbp 相对寻址原样返回。delta = 该次发射时已 outstanding 的 push 字节数
+// （只统计本窗口自己的 push；不用 R10/R11 作暂存 —— 它们在 regmgr 分配池内且
+// vtable 调度占用 R11，裸用会踩活寄存器）。
+func shiftRspOperand(operand string, delta int) string {
+	if delta == 0 {
+		return operand
+	}
+	lo := strings.Index(operand, "[rsp")
+	if lo < 0 {
+		return operand
+	}
+	rel := operand[lo+1:]
+	end := strings.Index(rel, "]")
+	if end < 0 {
+		return operand
+	}
+	inner := rel[:end] // "rsp+8" / "rsp-8" / "rsp"
+	if !strings.HasPrefix(inner, "rsp") {
+		return operand
+	}
+	rest := rel[end+1:]
+	tail := inner[3:]
+	off := 0
+	if tail != "" {
+		v, err := strconv.ParseInt(tail, 10, 64) // 十进制（"[rsp+8]" 由 strconv.Itoa 生成）
+		if err != nil {
+			return operand
+		}
+		off = int(v)
+	}
+	off += delta
+	var body string
+	switch {
+	case off > 0:
+		body = "rsp+" + strconv.Itoa(off)
+	case off < 0:
+		body = "rsp" + strconv.Itoa(off)
+	default:
+		body = "rsp"
+	}
+	return operand[:lo+1] + body + "]" + rest
+}
+
 // InstBinary 生成二元运算指令。
 // 除法/取模通过 push 除数到栈上避免寄存器冲突（RAX/RDX 被 cqo 占用）。
+// push 窗口内的 rsp 相对寻址一律经 shiftRspOperand 补偿（第六根因修复）。
 func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	switch op {
 	case "+":
@@ -200,26 +250,28 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 			// nasm 不支持 imul 内存目标，经栈中转（保护 RAX：左子中间结果可能在其中）
 			code := ""
 			code += utils.Format("push RAX; 保护RAX(左子结果)")
+			delta := 8 // protect push 已 outstanding
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov RAX, " + src)
+				code += utils.Format("mov RAX, " + shiftRspOperand(src, delta))
 				src = "RAX"
 			}
 			// x86_64 push 只接受 r64/m64，32-bit 寄存器需转换
 			pushSrc := to64Reg(src)
-			code += utils.Format("push " + pushSrc + "; 暂存乘数")
+			code += utils.Format("push " + shiftRspOperand(pushSrc, delta) + "; 暂存乘数")
+			delta = 16 // protect + 乘数 两个 push 都 outstanding
 			// 从内存加载 dst 到 RAX，DWORD 用 eax 避免大小不匹配
 			loadReg := "RAX"
 			if strings.HasPrefix(dst, "DWORD") {
 				loadReg = "eax"
 			}
-			code += utils.Format("mov " + loadReg + ", " + dst)
+			code += utils.Format("mov " + loadReg + ", " + shiftRspOperand(dst, delta))
 			code += utils.Format("imul RAX, qword [rsp]")
 			// 根据 dst 大小选择正确的寄存器（DWORD→EAX, QWORD→RAX）
 			storeReg := "RAX"
 			if strings.HasPrefix(dst, "DWORD") {
 				storeReg = "EAX"
 			}
-			code += utils.Format("mov " + dst + ", " + storeReg)
+			code += utils.Format("mov " + shiftRspOperand(dst, delta) + ", " + storeReg)
 			code += utils.Format("add rsp, 8; 清理乘数")
 			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
 			return code
@@ -228,52 +280,60 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	case "/":
 		// 除法必须经 RAX 中转（cqo/idiv），保护 RAX：左子中间结果可能在其中（dst==RAX 时无需保护）
 		code := ""
+		delta := 0
 		if strings.ToUpper(dst) != "RAX" {
 			code += utils.Format("push RAX; 保护RAX(左子结果)")
+			delta = 8
 		}
 		// x86_64 push 只接受 r64/m64
 		pushSrc := to64Reg(src)
-		code += utils.Format("push " + pushSrc + "; 保存除数")
+		code += utils.Format("push " + shiftRspOperand(pushSrc, delta) + "; 保存除数")
+		delta += 8
 		// 从内存加载 dst 到 rax
 		loadReg := "rax"
 		if strings.HasPrefix(dst, "DWORD") {
 			loadReg = "eax"
 		}
-		code += utils.Format("mov " + loadReg + ", " + dst)
+		code += utils.Format("mov " + loadReg + ", " + shiftRspOperand(dst, delta))
 		code += utils.Format("cqo")
 		code += utils.Format("idiv qword [rsp]")
 		code += utils.Format("add rsp, 8; 清理除数")
+		delta -= 8
 		// 根据 dst 大小选择正确的寄存器（DWORD→eax, QWORD→rax）
 		storeReg := "rax"
 		if strings.HasPrefix(dst, "DWORD") {
 			storeReg = "eax"
 		}
-		code += utils.Format("mov " + dst + ", " + storeReg)
+		code += utils.Format("mov " + shiftRspOperand(dst, delta) + ", " + storeReg)
 		if strings.ToUpper(dst) != "RAX" {
 			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
 		}
 		return code
 	case "%":
 		code := ""
+		delta := 0
 		if strings.ToUpper(dst) != "RAX" {
 			code += utils.Format("push RAX; 保护RAX(左子结果)")
+			delta = 8
 		}
 		pushSrc := to64Reg(src)
-		code += utils.Format("push " + pushSrc + "; 保存除数")
+		code += utils.Format("push " + shiftRspOperand(pushSrc, delta) + "; 保存除数")
+		delta += 8
 		loadReg := "rax"
 		if strings.HasPrefix(dst, "DWORD") {
 			loadReg = "eax"
 		}
-		code += utils.Format("mov " + loadReg + ", " + dst)
+		code += utils.Format("mov " + loadReg + ", " + shiftRspOperand(dst, delta))
 		code += utils.Format("cqo")
 		code += utils.Format("idiv qword [rsp]")
 		code += utils.Format("add rsp, 8; 清理除数")
+		delta -= 8
 		// 取余结果在 RDX，根据 dst 大小选择正确的寄存器
 		storeReg := "rdx"
 		if strings.HasPrefix(dst, "DWORD") {
 			storeReg = "edx"
 		}
-		code += utils.Format("mov " + dst + ", " + storeReg)
+		code += utils.Format("mov " + shiftRspOperand(dst, delta) + ", " + storeReg)
 		if strings.ToUpper(dst) != "RAX" {
 			code += utils.Format("pop RAX; 恢复RAX(左子结果)")
 		}
@@ -287,19 +347,23 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	case "<<":
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
 			// shift count 只能是 CL 或立即数，经栈中转低字节到 CL（保护 RAX：左子中间结果可能在其中，dst==RAX 时无需保护）
+			// 第六根因修复：与 / % 同型 —— push 窗口内 shl 的 rsp 相对 dst 需补偿
 			code := ""
+			delta := 0
 			if strings.ToUpper(dst) != "RAX" {
 				code += utils.Format("push RAX; 保护RAX(左子结果)")
+				delta = 8
 			}
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov RAX, " + src)
+				code += utils.Format("mov RAX, " + shiftRspOperand(src, delta))
 				src = "RAX"
 			}
 			// x86_64: push 只接受 r64/m64，32 位寄存器需先扩展到64位
 			pushSrc := to64Reg(src)
-			code += utils.Format("push " + pushSrc + "; 暂存移位计数")
+			code += utils.Format("push " + shiftRspOperand(pushSrc, delta) + "; 暂存移位计数")
+			delta += 8
 			code += utils.Format("mov cl, byte [rsp]")
-			code += utils.Format("shl " + dst + ", cl")
+			code += utils.Format("shl " + shiftRspOperand(dst, delta) + ", cl")
 			code += utils.Format("add rsp, 8; 清理移位计数")
 			if strings.ToUpper(dst) != "RAX" {
 				code += utils.Format("pop RAX; 恢复RAX(左子结果)")
@@ -310,17 +374,20 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 	case ">>":
 		if !utils.IsNumber(src) && strings.ToUpper(src) != "CL" && src != "cl" {
 			code := ""
+			delta := 0
 			if strings.ToUpper(dst) != "RAX" {
 				code += utils.Format("push RAX; 保护RAX(左子结果)")
+				delta = 8
 			}
 			if strings.Contains(src, "[") {
-				code += utils.Format("mov RAX, " + src)
+				code += utils.Format("mov RAX, " + shiftRspOperand(src, delta))
 				src = "RAX"
 			}
 			pushSrc := to64Reg(src)
-			code += utils.Format("push " + pushSrc + "; 暂存移位计数")
+			code += utils.Format("push " + shiftRspOperand(pushSrc, delta) + "; 暂存移位计数")
+			delta += 8
 			code += utils.Format("mov cl, byte [rsp]")
-			code += utils.Format("sar " + dst + ", cl")
+			code += utils.Format("sar " + shiftRspOperand(dst, delta) + ", cl")
 			code += utils.Format("add rsp, 8; 清理移位计数")
 			if strings.ToUpper(dst) != "RAX" {
 				code += utils.Format("pop RAX; 恢复RAX(左子结果)")
@@ -344,6 +411,25 @@ func (a *x86_64Ops) InstBinary(dst, op, src string) string {
 			code += utils.Format("setle " + lo8(dst))
 		case ">=":
 			code += utils.Format("setge " + lo8(dst))
+		}
+		if strings.Contains(dst, "[") {
+			// movzx 目的操作数只能是寄存器：内存目标经零扩展后以同宽度写回
+			// （lo8(dst) 对内存目标回落为 al，故 setXX 落在 RAX 低字节）
+			switch {
+			case strings.HasPrefix(dst, "BYTE"):
+				// sete 后 al 即 0/1 值低字节，直接同宽存回
+				code += utils.Format("mov " + dst + ", al")
+			case strings.HasPrefix(dst, "WORD"):
+				code += utils.Format("movzx RAX, al")
+				code += utils.Format("mov " + dst + ", ax")
+			case strings.HasPrefix(dst, "DWORD"):
+				code += utils.Format("movzx EAX, al")
+				code += utils.Format("mov " + dst + ", EAX")
+			default:
+				code += utils.Format("movzx RAX, al")
+				code += utils.Format("mov " + dst + ", RAX")
+			}
+			return code
 		}
 		code += utils.Format("movzx " + dst + ", " + lo8(dst))
 		return code
@@ -517,6 +603,15 @@ func (a *x86_64Ops) exp(e *parser.Expression, result, desc string) string {
 }
 
 // setArgsOffset 设置参数偏移（callee 栈帧内，rbp-48 起；如 C/Rust 保存到 callee 自己的局部变量区）
+//
+// 槽位约定（第五根因修复，见 docs/fixplan/PROBLEMS.md）：
+// 偏移一律"从高向低"预留；参数槽向下生长（param0 最高，paramN 最低）。
+// 容器参数（string/大结构体，Size>8）占用 size 字节的完整条带，字段在条带内
+// 向上展开：arg.Offset = 条带最低槽，j 号字段地址 = Offset+j*8。
+// 旧实现直接把条带顶当作 Offset，容器字段向上翻越，覆写前序参数槽
+// （string 当参数时 len/cap 两个字段踩进前两个参数槽，甚至踩入 callee-save 区
+// [rbp-40/-32]）——string 转值参数的函数系统性读写错位（console.println 的
+// len 错误即源于此）。
 func setArgsOffset(fn *parser.FuncBlock) {
 	// callee-saved regs 占 [rbp-8]..[rbp-40]，参数从 [rbp-48] 开始往下排
 	argOffset := -48
@@ -526,8 +621,18 @@ func setArgsOffset(fn *parser.FuncBlock) {
 	}
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
-		arg.Offset = argOffset
-		argOffset -= arg.Type.Size()
+		size := arg.Type.Size()
+		slots := (size + 7) / 8
+		if slots > 1 {
+			// 容器参数：Offset=条带最低槽，字段向上展开（与 Prologue 存参环、
+			// 栈参数搬移、Call 端 buffer 路径的 j 号字段序一致）
+			arg.Offset = argOffset - (slots*8 - 8)
+			argOffset -= slots * 8
+		} else {
+			// 标量/窄类型：Offset 即其唯一槽
+			arg.Offset = argOffset
+			argOffset -= size
+		}
 	}
 }
 

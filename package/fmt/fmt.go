@@ -6,6 +6,7 @@ import (
 )
 
 type Info struct {
+	Name    string            `json:"name,omitempty"`
 	Version string            `json:"version"`
 	Imports map[string]string `json:"imports"`
 	Action  map[string]string `json:"action"`
@@ -89,4 +90,13 @@ func RegisterAutoImport(shortName, fullPath string) {
 // LookupAutoImport 通过短包名查找完整路径，找不到返回空串
 func LookupAutoImport(shortName string) string {
 	return autoImport[FixPathName(shortName)]
+}
+
+// DefaultImportAlias 取导入路径的默认别名（Go 语义：最后一个路径段）。
+// "std:memory" -> "memory"；":github.com/x/y" -> "y"；"./sub/dir" -> "dir"。
+func DefaultImportAlias(importPath string) string {
+	if i := strings.LastIndexAny(importPath, ":/"); i >= 0 {
+		return importPath[i+1:]
+	}
+	return importPath
 }

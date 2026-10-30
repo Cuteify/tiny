@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"cuteify/compile/arch"
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"fmt"
@@ -108,7 +109,7 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 
 	// 找到原始函数所在的 AST 节点，复制其子节点（函数体）给特化函数
 	origNode := c.findFuncNode(fn)
-	c.addSpecializedFunc(specialized, origNode, substMap)
+	c.addSpecializedFunc(specialized, fn, origNode, substMap)
 
 	return label
 }
@@ -580,7 +581,7 @@ func deepCopyNames(names []parser.Name) []parser.Name {
 // addSpecializedFunc 将特化函数节点添加到 AST 根节点的 Children 列表末尾，
 // 同时深拷贝原始函数节点的子节点（函数体）给特化函数节点，
 // 以便在后续编译循环中被编译。
-func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, origNode *parser.Node, substMap map[string]typeSys.Type) {
+func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlock, origNode *parser.Node, substMap map[string]typeSys.Type) {
 	// 找到 AST 根节点
 	root := c.Ctx.Now
 	if root == nil {
@@ -592,6 +593,36 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, origNode *parser.Nod
 	// 创建新的节点包装特化函数
 	node := &parser.Node{Value: fn}
 	node.Father = root
+
+	// [S0-3 根因修复] 单态化克隆体内的共享引用指向原泛型树：
+	//   · FIELD 基址（v.Define.Type=FindTypeField）取 Define.Path[0]——原树 define；
+	//   · remap 未触达的读端 Define.Value 同样指向原树 define。
+	// 原体被 Useful=false 抑制后永远轮不到 Prologue 的 SetupVarOffsets，
+	// 其 define Offset 恒 0 → 生成 [RBP]/[rbp]（读 saved-rbp，SIGSEGV）。
+	// 深拷贝前给原树补齐真实偏移：
+	//   ① 原树局部类型补 subst（只改身体类型，orig.Args 的 TypeParam 保全，
+	//      inferTypeParams 跨 [T] 重复单态化仍可推断）；
+	//   ② 原参数块 Offset 与特化体对齐（漏绑的 Arg 读也落真位）；
+	//   ③ 局部 define 按 Prologue 同一公式刷偏移（argSave 取特化体实型 size；
+	//      克隆体自身 Prologue 随后同式重算，值幂等一致）。
+	if origNode != nil && orig != nil {
+		substituteBodyTypes(origNode, substMap)
+		for i, arg := range orig.Args {
+			if i < len(fn.Args) {
+				arg.Offset = fn.Args[i].Offset
+			}
+		}
+		argSave := 0
+		if fn.Class != nil {
+			argSave += 8
+		}
+		for i := range fn.Args {
+			argSave += fn.Args[i].Type.Size()
+		}
+		base := -(8 * len(c.Ctx.Arch.CalleeSaveRegs())) - argSave
+		arch.SetupVarOffsets(origNode, c.Ctx.StackAlignment, base)
+	}
+
 	// 深拷贝原始函数的子节点（函数体语句），使特化函数拥有独立的 AST 副本，
 	// 避免 substituteBodyTypes 修改共享节点导致原始泛型函数的 AST 被污染。
 	if origNode != nil {
@@ -629,16 +660,46 @@ func remapFuncBodyRefs(node *parser.Node, fn *parser.FuncBlock) {
 	for _, arg := range fn.Args {
 		argMap[arg.Name.String()] = arg
 	}
-	remapNodeRefs(node, argMap)
+	// 单态化克隆体里的引用型局部变量（Define.Type=FindTypeVar）同样指向泛型原树的
+	// Define 节点，而泛型原树永远不会被 SetupVarOffsets（只 Setup 发射用的克隆体），
+	// 其 Offset 恒为 0 → 生成的加载全部读 QWORD[rbp+0]（调用者 saved rbp）。
+	// 收集克隆体内的 define VarBlock，把本地引用也重绑到克隆体。
+	localDefs, localDefCounts := collectDefineVarBlocks(node)
+	remapNodeRefs(node, argMap, localDefs, localDefCounts)
 }
 
-func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock) {
+// collectDefineVarBlocks 收集克隆函数体内的变量定义节点（IsDefine 且非多返回值解构）。
+// 返回 名字→define 映射 与 名字→定义次数（次数>1 表示存在作用域屏蔽歧义，引用保守不动）。
+func collectDefineVarBlocks(node *parser.Node) (map[string]*parser.VarBlock, map[string]int) {
+	names := map[string]*parser.VarBlock{}
+	counts := map[string]int{}
+	collectDefineVarBlocksWalk(node, names, counts)
+	return names, counts
+}
+
+func collectDefineVarBlocksWalk(node *parser.Node, names map[string]*parser.VarBlock, counts map[string]int) {
+	if node == nil {
+		return
+	}
+	if vb, ok := node.Value.(*parser.VarBlock); ok && vb.IsDefine && len(vb.MultiNames) == 0 && vb.Name != nil {
+		name := vb.Name.String()
+		counts[name]++
+		if _, exists := names[name]; !exists {
+			names[name] = vb
+		}
+	}
+	for _, child := range node.Children {
+		collectDefineVarBlocksWalk(child, names, counts)
+	}
+}
+
+func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock, varMap map[string]*parser.VarBlock, varCounts map[string]int) {
 	if node == nil {
 		return
 	}
 	// First: recurse into all children (handles nested scopes, if/else bodies, for bodies, etc.)
 	for _, child := range node.Children {
-		remapNodeRefs(child, argMap)
+		remapNodeRefs(child, argMap, varMap, varCounts)
 	}
 
 	switch v := node.Value.(type) {
@@ -655,9 +716,26 @@ func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock) {
 				}
 			}
 		}
+		// Remap local-variable references to the cloned body's own define VarBlock
+		// 语义与参数重绑相同：克隆体的发射只 Setup 克隆体 define 的 Offset，
+		// 原泛型树 define 的 Offset 恒为 0，必须把引用的 Define.Value 重绑过去。
+		if v.Define.Node != nil && v.Define.Type == parser.FindTypeVar {
+			if vb, ok := v.Define.Value.(*parser.VarBlock); ok && vb != nil && vb.Name != nil && vb != v {
+				if newVB, found := uniqueLocalDefine(varMap, varCounts, vb.Name.String()); found {
+					v.Define.Value = newVB
+					v.Offset = newVB.Offset
+					if len(vb.MultiNames) == 0 && len(v.MultiNames) == 0 && newVB.Type != nil {
+						// 类型与泛型解耦后兜底对齐（Clone 阶段已 subst，此处防御性）
+						if v.Type == nil {
+							v.Type = newVB.Type
+						}
+					}
+				}
+			}
+		}
 		// Remap VarBlock.Value expression (e.g., var s = memory.malloc(24))
 		if v.Value != nil {
-			remapExpRefs(v.Value, argMap)
+			remapExpRefs(v.Value, argMap, varMap, varCounts)
 		}
 
 	case *parser.ReturnBlock:
@@ -665,7 +743,7 @@ func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock) {
 			return
 		}
 		for _, exp := range v.Value {
-			remapExpRefs(exp, argMap)
+			remapExpRefs(exp, argMap, varMap, varCounts)
 		}
 
 	case *parser.CallBlock:
@@ -674,7 +752,7 @@ func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock) {
 		}
 		for _, arg := range v.Args {
 			if arg.Value != nil {
-				remapExpRefs(arg.Value, argMap)
+				remapExpRefs(arg.Value, argMap, varMap, varCounts)
 			}
 		}
 
@@ -682,40 +760,50 @@ func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock) {
 		if v == nil {
 			return
 		}
-		remapExpRefs(v.Condition, argMap)
+		remapExpRefs(v.Condition, argMap, varMap, varCounts)
 
 	case *parser.ElseBlock:
 		if v == nil {
 			return
 		}
-		remapExpRefs(v.IfCondition, argMap)
+		remapExpRefs(v.IfCondition, argMap, varMap, varCounts)
 
 	case *parser.ForBlock:
 		if v == nil {
 			return
 		}
-		remapExpRefs(v.Init, argMap)
-		remapExpRefs(v.Condition, argMap)
-		remapExpRefs(v.Increment, argMap)
-		remapExpRefs(v.Range, argMap)
+		remapExpRefs(v.Init, argMap, varMap, varCounts)
+		remapExpRefs(v.Condition, argMap, varMap, varCounts)
+		remapExpRefs(v.Increment, argMap, varMap, varCounts)
+		remapExpRefs(v.Range, argMap, varMap, varCounts)
 
 	case *parser.SwitchBlock:
 		if v == nil {
 			return
 		}
-		remapExpRefs(v.Target, argMap)
+		remapExpRefs(v.Target, argMap, varMap, varCounts)
 		for i := range v.Cases {
 			for _, val := range v.Cases[i].Values {
-				remapExpRefs(val, argMap)
+				remapExpRefs(val, argMap, varMap, varCounts)
 			}
 		}
 
 	case *parser.Expression:
-		remapExpRefs(v, argMap)
+		remapExpRefs(v, argMap, varMap, varCounts)
 	}
 }
 
-func remapExpRefs(exp *parser.Expression, argMap map[string]*parser.ArgBlock) {
+// uniqueLocalDefine 仅在名字在整个克隆体内只有一处定义（无屏蔽歧义）时返回该 define。
+// 返回 false 表示名字重复或不存在，引用保持原状（保守不猜）。
+func uniqueLocalDefine(varMap map[string]*parser.VarBlock, varCounts map[string]int, name string) (*parser.VarBlock, bool) {
+	if varCounts[name] != 1 {
+		return nil, false
+	}
+	vb, ok := varMap[name]
+	return vb, ok
+}
+
+func remapExpRefs(exp *parser.Expression, argMap map[string]*parser.ArgBlock, varMap map[string]*parser.VarBlock, varCounts map[string]int) {
 	if exp == nil {
 		return
 	}
@@ -729,23 +817,32 @@ func remapExpRefs(exp *parser.Expression, argMap map[string]*parser.ArgBlock) {
 				}
 			}
 		}
+		// 本地变量引用同样重绑到克隆体（泛型原树 define 的 Offset 恒为 0）
+		if exp.Var.Define.Node != nil && exp.Var.Define.Type == parser.FindTypeVar {
+			if vb, ok := exp.Var.Define.Value.(*parser.VarBlock); ok && vb != nil && vb.Name != nil {
+				if newVB, found := uniqueLocalDefine(varMap, varCounts, vb.Name.String()); found {
+					exp.Var.Define.Value = newVB
+					exp.Var.Offset = newVB.Offset
+				}
+			}
+		}
 	}
 	// Recurse into left/right operands (binary/unary expressions)
-	remapExpRefs(exp.Left, argMap)
-	remapExpRefs(exp.Right, argMap)
+	remapExpRefs(exp.Left, argMap, varMap, varCounts)
+	remapExpRefs(exp.Right, argMap, varMap, varCounts)
 	// Recurse into index expressions (arr[i])
 	for i := 0; i < 3; i++ {
-		remapExpRefs(exp.Index[i], argMap)
+		remapExpRefs(exp.Index[i], argMap, varMap, varCounts)
 	}
 	// Recurse into list literal elements
 	for _, elem := range exp.ListElems {
-		remapExpRefs(elem, argMap)
+		remapExpRefs(elem, argMap, varMap, varCounts)
 	}
 	// Recurse into function call args (including nested calls)
 	if exp.Call != nil {
 		for _, arg := range exp.Call.Args {
 			if arg.Value != nil {
-				remapExpRefs(arg.Value, argMap)
+				remapExpRefs(arg.Value, argMap, varMap, varCounts)
 			}
 		}
 	}

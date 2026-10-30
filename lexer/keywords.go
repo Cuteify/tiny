@@ -87,6 +87,7 @@ var (
 		"var":       VAR,
 		"let":       VAR,
 		"build":     BUILD,
+		"import":    IMPORT,
 	}
 
 	// LexToken类型
@@ -103,6 +104,7 @@ var (
 		"RAW":            RAW,
 		"BOOL":           BOOL,
 		"BUILD":          BUILD,
+		"IMPORT":         IMPORT,
 	}
 )
 
@@ -120,6 +122,7 @@ const (
 	RAW
 	BOOL
 	BUILD
+	IMPORT
 )
 
 var SepListLength = 32
@@ -129,3 +132,4 @@ var ProcessControlListLength = 16
 var TypeListLength = 2
 var BoolListLength = 2
 var BuildListLength = 1
+var ImportListLength = 1

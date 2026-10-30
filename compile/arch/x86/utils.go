@@ -28,20 +28,22 @@ func globalVarName(v *parser.VarBlock) string {
 	return v.Name.String()
 }
 
-func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {	if v.Name.First() == "this" {
+func genVarAddr(ctx *context.Context, v *parser.VarBlock) string {
+	if v.Name.First() == "this" {
+		// this 的家 = ctx 单一事实源（32 位栈 ABI = [ebp+8]，fixplan Cluster A）
+		thisHome := ctx.ThisHomeOffset()
 		if len(v.Name) > 1 {
-			thisAddr := "[ebp+8]"
 			fieldOffset := calculateThisFieldOffset(ctx, v)
 			var addr string
 			if fieldOffset > 0 {
-				addr = "[ebp+8+" + strconv.FormatInt(int64(fieldOffset), 10) + "]"
+				addr = "[ebp" + strconv.FormatInt(int64(thisHome), 10) + "+" + strconv.FormatInt(int64(fieldOffset), 10) + "]"
 			} else {
-				addr = thisAddr
+				addr = "[ebp" + strconv.FormatInt(int64(thisHome), 10) + "]"
 			}
 			sizePrefix := GetLengthName(v.Type.Size())
 			return sizePrefix + addr
 		}
-		return "DWORD[ebp+8]"
+		return "DWORD[ebp" + strconv.Itoa(thisHome) + "]"
 	}
 
 	if v.IsGlobal {

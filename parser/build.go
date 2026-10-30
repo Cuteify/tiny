@@ -4,7 +4,9 @@ import (
 	"cuteify/lexer"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
+	typeSys "cuteify/type"
 )
 
 type Build struct {
@@ -18,7 +20,10 @@ type Build struct {
 	Archs        []string
 	Ignore       bool
 	Link         string
-	VarMap       map[string]*VarBlock // 变量名 -> 临时VarBlock（已填充Offset）
+	// Align 打包对齐上限（Wave L）：build align(N)，noalign = 1。
+	// 仅对紧随其后的 struct 生效（严格紧随语义），对函数透明。
+	Align  int
+	VarMap map[string]*VarBlock // 变量名 -> 临时VarBlock（已填充Offset）
 }
 
 func (b *Build) Parse(p *Parser) {
@@ -136,10 +141,52 @@ func (b *Build) Parse(p *Parser) {
 		default:
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "link only in func")
 		}
+	case "align":
+		// build align(N)：设置打包对齐上限，作用于紧随其后的 struct
+		b.Type = "align"
+		open := p.Lexer.Next()
+		if open.Type != lexer.SEPARATOR || open.Value != "(" {
+			p.Error.MissError("Syntax Error", open.Cursor, "build align needs (N)")
+		}
+		num := p.Lexer.Next()
+		if num.Type != lexer.NUMBER {
+			p.Error.MissError("Syntax Error", num.Cursor, "build align needs a positive number")
+		}
+		n, atoiErr := strconv.Atoi(num.Value)
+		if atoiErr != nil || n < 1 {
+			p.Error.MissError("Syntax Error", num.Cursor, "build align needs a positive number")
+		}
+		closeToken := p.Lexer.Next()
+		if closeToken.Type != lexer.SEPARATOR || closeToken.Value != ")" {
+			p.Error.MissError("Syntax Error", closeToken.Cursor, "build align needs )")
+		}
+		b.Align = n
+	case "noalign":
+		// build noalign：等价于 align(1)，字段紧密排列无填充
+		b.Type = "align"
+		b.Align = 1
 	default:
 		return
 	}
 	p.ThisBlock.AddChild(&Node{Value: b})
+}
+
+// attachPendingAlign 检查当前作用域最后一个子节点是否为 align Build
+// （build align(N)/noalign）。是则把对齐上限应用到结构体，并把该 Build
+// 从树中移除（已消费）。严格紧随语义：align 与 struct 之间隔了任何
+// 其它声明（最后一个子节点不是 align）即孤儿，不生效。
+func (p *Parser) attachPendingAlign(st *typeSys.StructType) {
+	children := p.ThisBlock.Children
+	if len(children) == 0 {
+		return
+	}
+	last := children[len(children)-1]
+	b, ok := last.Value.(*Build)
+	if !ok || b.Type != "align" {
+		return
+	}
+	st.Align = b.Align
+	p.ThisBlock.Children = children[:len(children)-1]
 }
 
 func (b *Build) checkOSMatch() {

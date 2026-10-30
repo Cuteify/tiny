@@ -31,6 +31,8 @@ func NewWin64(ctx *context.Context) *Win64 {
 	ctx.PointerSize = 8
 	ctx.Is64Bit = true
 	ctx.StackAlignment = 16
+	// this 的家 = 调用者 shadow space 首槽 [rbp+16]（Cluster A 单一事实源）
+	ctx.ThisHomeRbp = 16
 	return a
 }
 
@@ -78,8 +80,8 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 	// 将寄存器参数保存到栈上(Win64 ABI: RCX, RDX, R8, R9)
 	argRegIdx := 0
 	if fn.Class != nil {
-		// 如果有this指针,第一个寄存器是this，保存到 [rbp+16]
-		code += utils.Format("mov QWORD [rbp+16], " + win64ArgRegs[0] + "; this pointer")
+		// 如果有this指针,第一个寄存器是this，保存到 ctx.ThisHomeOffset()（[rbp+16] shadow space）
+		code += utils.Format("mov QWORD " + rbpOffset(a.ctx.ThisHomeOffset()) + ", " + win64ArgRegs[0] + "; this pointer")
 		argRegIdx = 1
 	}
 

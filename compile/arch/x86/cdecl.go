@@ -23,6 +23,8 @@ func NewCdecl(ctx *context.Context) *Cdecl {
 		x86Ops: newOps(ctx),
 	}
 	ctx.Reg = regmgr.NewRegMgr(regs)
+	// this 由调用者压栈，callee 原位读取 [ebp+8]（Cluster A 单一事实源）
+	ctx.ThisHomeRbp = 8
 	return a
 }
 
@@ -327,7 +329,18 @@ func (a *Cdecl) interfaceDispatch(call *parser.CallBlock, ifaceType *typeSys.Int
 }
 
 // stripOuterBrackets 去掉外层方括号
+// stripMemPrefix 去掉内存操作数的宽度前缀（BYTE/WORD/DWORD/QWORD）
+func stripMemPrefix(addr string) string {
+	for _, p := range []string{"BYTE", "WORD", "DWORD", "QWORD"} {
+		if strings.HasPrefix(addr, p) {
+			return addr[len(p):]
+		}
+	}
+	return addr
+}
+
 func stripOuterBrackets(addr string) string {
+	addr = strings.TrimSpace(stripMemPrefix(strings.TrimSpace(addr)))
 	if len(addr) >= 2 && strings.HasPrefix(addr, "[") && strings.HasSuffix(addr, "]") {
 		return addr[1 : len(addr)-1]
 	}

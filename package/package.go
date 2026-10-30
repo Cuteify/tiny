@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -180,23 +181,31 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		return nil, err // 返回错误
 	}
 
-	// 打开package.json文件
-	packFile, err := os.OpenFile(path.Join(packagePath, "package.json"), os.O_RDONLY, 0666)
-	if err != nil {
-		return nil, err // 返回错误
-	}
-	defer packFile.Close()
-
-	// 解码package.json内容
-	jsonDe := json.NewDecoder(packFile)
+	// 打开package.json文件（Wave L：package.json 可选——缺失时合成默认信息，name = 目录名）
 	packageInfo := &packageFmt.Info{}
-	if err := jsonDe.Decode(packageInfo); err != nil {
-		return nil, err // 返回错误
+	packFile, err := os.OpenFile(path.Join(packagePath, "package.json"), os.O_RDONLY, 0666)
+	if err == nil {
+		// 解码package.json内容
+		jsonDe := json.NewDecoder(packFile)
+		if err := jsonDe.Decode(packageInfo); err != nil {
+			packFile.Close()
+			return nil, err // 返回错误
+		}
+		packFile.Close()
+	} else if os.IsNotExist(err) {
+		packageInfo.Name = path.Base(packagePath)
+	} else {
+		return nil, err // 打开失败（非不存在）仍报错
 	}
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
 	if isRoot {
+		// Wave L：记录项目根（绝对路径）与项目名，供 name:rel 与 :vendor 解析
+		if abs, err := filepath.Abs(packagePath); err == nil {
+			projectRoot = abs
+		}
+		projectName = packageInfo.Name
 		// 根包自动导入内置包：顶层函数可无命名空间直接调用
 		if _, ok := packageInfo.Imports["builtin"]; !ok {
 			if packageInfo.Imports == nil {
@@ -208,12 +217,12 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	for k, ppath := range packageInfo.Imports {
 		if _, ok := packages[ppath]; !ok {
 			resolvedPath := ppath
-			if ppath[:4] == "std:" {
-				stdPath, err := os.Getwd()
+			if strings.HasPrefix(ppath, "std:") {
+				stdDir, err := stdPackageDir(ppath[4:])
 				if err != nil {
 					return nil, err
 				}
-				resolvedPath = path.Join(stdPath, "pkg", ppath[4:])
+				resolvedPath = stdDir
 				// 注册短包名到完整路径的自动导入映射（供无 import 的跨包调用使用）
 				packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
 			} else {
@@ -222,7 +231,7 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			// 检查是否已加载（用解析后的路径检查）
 			if _, ok2 := packages[resolvedPath]; ok2 {
 				packageInfo.Imports[k] = resolvedPath
-				if ppath[:4] == "std:" {
+				if strings.HasPrefix(ppath, "std:") {
 					packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
 				}
 				continue
@@ -244,17 +253,23 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			continue
 		}
 		if path.Ext(file.Name()) == ".cute" {
+			cuteFile := path.Join(packagePath, file.Name())
 			// 解析前预检文件级 build arch/os 指令，不匹配当前目标则跳过文件。
 			// 避免不匹配架构的文件参与解析（其引用的跨文件类型/函数可能在
 			// 本包其他文件解析后才有定义，导致 "type not found"）。
-			keep, err := preFilterBuild(path.Join(packagePath, file.Name()))
+			keep, err := preFilterBuild(cuteFile)
 			if err != nil {
 				return nil, err
 			}
 			if !keep {
 				continue
 			}
-			lex := lexer.NewLexer(path.Join(packagePath, file.Name()))
+			// Wave L：注册文件级 import（别名进包导入表 + 加载被导入包），
+			// 须在解析前完成——解析期的别名查找依赖包导入表。
+			if err := registerFileImports(packageInfo, cuteFile); err != nil {
+				return nil, err
+			}
+			lex := lexer.NewLexer(cuteFile)
 			p := parser.NewParser(lex)
 			p.Block.Parser = p
 			p.Package = packageInfo

@@ -88,6 +88,10 @@ func (f *StructField) ParseTags(tags string) {
 type StructType struct {
 	RType
 	StructFields StructFileds
+	// Align 打包对齐上限（Wave L）：>0 时字段对齐 = min(自然对齐, Align)。
+	// 0 = 未指定（自然对齐，行为与引入前逐位一致）；noalign = 1。
+	// 由 parser 的 build align(N)/noalign 指令在紧随的 struct 上设置。
+	Align int
 }
 
 func (s *StructType) Size() int {
@@ -103,6 +107,9 @@ func (s *StructType) Fields() StructFileds {
 func (s *StructType) Layout() {
 	offset := 0
 	maxAlignment := 1
+	// build align(N) 打包上限：pack(N) = min(自然对齐, N)。
+	// Align==0（未指定）时不封顶，与既有自然对齐行为逐位一致。
+	pack := s.Align
 
 	for _, field := range s.StructFields {
 		alignment := 1
@@ -111,6 +118,9 @@ func (s *StructType) Layout() {
 			if size > 0 {
 				alignment = size
 			}
+		}
+		if pack > 0 && alignment > pack {
+			alignment = pack
 		}
 		field.Alignment = alignment
 		if alignment > maxAlignment {
@@ -134,6 +144,9 @@ func (s *StructType) Layout() {
 }
 
 func (s *StructType) Field(name string) *StructField {
+	if s == nil || name == "" {
+		return nil
+	}
 	for _, field := range s.StructFields {
 		if field.Name == name {
 			return field
@@ -183,6 +196,8 @@ func (s *StructType) Inherit(find func(string) *StructType) {
 
 	s.StructFields = append(inherited, rest...)
 }
+
+
 
 // StructOf 取结构体类型（直接或经指针）；不是则 nil。
 func StructOf(t Type) *StructType {

@@ -20,6 +20,8 @@ func NewStdcall(ctx *context.Context) *Stdcall {
 		x86Ops: newOps(ctx),
 	}
 	ctx.Reg = regmgr.NewRegMgr(regs)
+	// this 由调用者压栈，callee 原位读取 [ebp+8]（Cluster A 单一事实源）
+	ctx.ThisHomeRbp = 8
 	return a
 }
 
