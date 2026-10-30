@@ -1,0 +1,135 @@
+// pkg/sort/api.cute - 公开排序 API 层（参照 Go sort / slices.Sort 命名）
+// 规划: docs/stdplan/PLAN.md §3.5。每一层非悄悄顶替——timsort* 在 Phase E 升级为
+// 真 timsort（minrun 归并插入）；现阶段调度到快排，e2e 哨兵只验证「结果有序」不变式。
+//
+// 两代 API 形状（PLAN §3.5 归档）：
+//   - 切片族：quickSortInts(*[]int) → qsortInts —— sortTest test1-5/sortIntOnly 使用
+//   - 裸阵列族：quickSortStrings(ptr, n) —— 24 字节 string 值平铺数组（ptr/len/cap），
+//     sortTest test8-10 使用；比较直接按字节进行，不做 toCstring 拷贝（逐字节比较
+//     语义镜像 _strCompareStrs：u8 无符号序 + 长度决胜，无符号尾等长）。
+
+// quickSortInts 快排 int 切片（Go sort.Sort 对照）
+fn quickSortInts(s *[]int) {
+    qsortInts(s)
+}
+
+// compareStrings 字典序比较（Go strings.Compare 对照）：a<b 负值 =0 相等 a>b 正值
+fn compareStrings(a string, b string) int {
+    ret _strCompareStrs(a, b)
+}
+
+// ——————— 裸阵列族（ptr + n，24 字节 string 行）———————
+
+// _rowStrPtr 返回裸阵列第 i 行 string 的 data 指针字段
+fn _rowStrPtr(a ptr, i int) ptr {
+    var _p1: *ptr = a + i * 24
+    ret *_p1
+}
+
+// _rowStrLen 返回裸阵列第 i 行 string 的 len 字段
+fn _rowStrLen(a ptr, i int) int {
+    var _p2: *ptr = a + i * 24 + 8
+    ret *_p2
+}
+
+// _rowLess 行级字典序小于（u8 无符号字节序 + 长度决胜——镜像 _strCompareStrs）
+fn _rowLess(a ptr, i int, j int) bool {
+    var sa: ptr = _rowStrPtr(a, i)
+    var na: int = _rowStrLen(a, i)
+    var sb: ptr = _rowStrPtr(a, j)
+    var nb: int = _rowStrLen(a, j)
+    var m: int = na
+    if nb < na {
+        m = nb
+    }
+    var k: int = 0
+    for ; k < m; {
+        var _pa: *u8 = sa + k
+        var ca: int = *_pa
+        var _pb: *u8 = sb + k
+        var cb: int = *_pb
+        if ca < cb {
+            ret true
+        }
+        if ca > cb {
+            ret false
+        }
+        k = k + 1
+    }
+    ret na < nb
+}
+
+// _rowSwap 交换两行的全部 24 字节（ptr/len/cap 三字段整体交换）
+fn _rowSwap(a ptr, i int, j int) {
+    var k: int = 0
+    for ; k < 3; {
+        var _pa: *ptr = a + i * 24 + k * 8
+        var _pb: *ptr = a + j * 24 + k * 8
+        var t: ptr = *_pa
+        *_pa = *_pb
+        *_pb = t
+        k = k + 1
+    }
+}
+
+// quickSortStrings 快排裸 string 阵列（test8 形状：ptr + n）
+// Lomuto 后置分区 + 首元素主元；n 步进 24 由 _rowSwap 统一负责
+fn quickSortStrings(a ptr, n int) {
+    quickSortStringsRange(a, 0, n - 1)
+}
+
+// quickSortStringsRange 对 [lo,hi] 行区间快排
+fn quickSortStringsRange(a ptr, lo int, hi int) {
+    if lo >= hi {
+        ret
+    }
+    var pivot: int = lo
+    var i: int = lo + 1
+    var j: int = hi
+    for ; i <= j; {
+        if _rowLess(a, i, pivot) {
+            _rowSwap(a, i, pivot)
+            pivot = i
+            i = i + 1
+        } else {
+            if i >= j {
+                break
+            }
+            _rowSwap(a, i, j)
+            j = j - 1
+        }
+    }
+    quickSortStringsRange(a, lo, pivot - 1)
+    quickSortStringsRange(a, pivot + 1, hi)
+}
+
+// insertionSortStrings 插入排序裸 string 阵列（test10 形状：ptr + n）
+// 前缀排序用例（"a","ab","abc"…）：前缀即按长度决胜，_rowLess 已覆盖
+fn insertionSortStrings(a ptr, n int) {
+    var i: int = 1
+    for ; i < n; {
+        var j: int = i
+        for ; j > 0; {
+            if _rowLess(a, j, j - 1) {
+                _rowSwap(a, j, j - 1)
+                j = j - 1
+            } else {
+                break
+            }
+        }
+        i = i + 1
+    }
+}
+
+// timsortInts 稳定排序 int 切片。Phase E: 真 timsort（PLAN §3.5），
+// 现调度快排——稳定性与否不改变「结果有序」哨兵的判定面
+fn timsortInts(s *[]int) {
+    qsortInts(s)
+}
+
+// timsortStrings 稳定排序裸 string 阵列。Phase E: 真 timsort；
+// 现调度同为行级快排
+fn timsortStrings(a ptr, n int) {
+    quickSortStrings(a, n)
+}
+

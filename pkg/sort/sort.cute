@@ -10,24 +10,25 @@
 fn insertionSortInts(s *[]int) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     // 读取 len
-    var lenP: *ptr = sAddr
+    var lenP: *ptr = sAddr + 8
     var n: int = *lenP
     // 读取 data 指针
-    var dataP: *ptr = sAddr + 16
+    var dataP: *ptr = sAddr
     var data: ptr = *dataP
     var esz: int = sizeof[int]()
     var i: int = 1
     for ; i < n; {
-        // key = s[i]
+        // key = s[i] —— 整型快照：旧实现经 keyPtr 每轮重读原槽数据，
+        // 首轮移位 s[j+1]=s[j] 时 dst==keyPtr 自毁 key（算法缺陷，非发射器问题）
         var keyPtr: ptr = data + i * esz
+        var keyP: *int = keyPtr
+        var key: int = *keyP
         var j: int = i - 1
         for ; j >= 0; {
             var curPtr: ptr = data + j * esz
             // 直接读 int 比较
             var curP: *int = curPtr
             var cur: int = *curP
-            var keyP: *int = keyPtr
-            var key: int = *keyP
             if cur <= key {
                 break
             }
@@ -45,17 +46,10 @@ fn insertionSortInts(s *[]int) {
             }
             j = j - 1
         }
-        // s[j+1] = key
+        // s[j+1] = key（写回快照值，不再引用 keyPtr）
         var dst2: ptr = data + (j + 1) * esz
-        var _d2: *u8 = dst2
-        var _s2: *u8 = keyPtr
-        var m: int = 0
-        for ; m < esz; {
-            *_d2 = unsafe.cast[u8](*_s2)
-            _d2 = _d2 + 1
-            _s2 = _s2 + 1
-            m = m + 1
-        }
+        var _k2: *int = dst2
+        *_k2 = key
         i = i + 1
     }
 }
@@ -109,12 +103,12 @@ fn _setIntVal(data: ptr, idx: int, val: int, esz: int) {
 // qsortInts 对 *[]int 进行快速排序
 fn qsortInts(s *[]int) {
     var sAddr: ptr = unsafe.cast[ptr](s)
-    var lenP: *ptr = sAddr
+    var lenP: *ptr = sAddr + 8
     var n: int = *lenP
     if n <= 1 {
         ret
     }
-    var dataP: *ptr = sAddr + 16
+    var dataP: *ptr = sAddr
     var data: ptr = *dataP
     var esz: int = sizeof[int]()
     _qsortIntsRecurse(data, 0, n - 1, esz)
@@ -320,10 +314,10 @@ fn _storeStringToBuf(data: ptr, idx: int, buf: ptr) {
 fn insertionSortStrs(s *[]string) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     // 读取 len
-    var lenP: *ptr = sAddr
+    var lenP: *ptr = sAddr + 8
     var n: int = *lenP
     // 读取 data 指针
-    var dataP: *ptr = sAddr + 16
+    var dataP: *ptr = sAddr
     var data: ptr = *dataP
     var i: int = 1
     for ; i < n; {
@@ -357,12 +351,12 @@ fn insertionSortStrs(s *[]string) {
 // qsortStrs 对 *[]string 进行快速排序
 fn qsortStrs(s *[]string) {
     var sAddr: ptr = unsafe.cast[ptr](s)
-    var lenP: *ptr = sAddr
+    var lenP: *ptr = sAddr + 8
     var n: int = *lenP
     if n <= 1 {
         ret
     }
-    var dataP: *ptr = sAddr + 16
+    var dataP: *ptr = sAddr
     var data: ptr = *dataP
     _qsortStrsRecurse(data, 0, n - 1)
 }
