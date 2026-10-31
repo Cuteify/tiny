@@ -268,7 +268,7 @@ ok 形态不 panic；P6 exit-code 哨兵、R1 修好前禁 stdout 断言）。v2
 
 **契约升级（Wave S 拍板）**：`remove[T](s,index) T`（void→返回被删元素；越界 UB 与 set/getPtr 同口径）；新增 `pop[T](s) T`（非空 UB）。**边界**：`append/len/cap/make` 仍是编译器内建（禁改红线），包级 API 只补运算。
 
-### 4.3 strings（Wave St）
+### 4.3 strings（Wave St）✅ 2026-10-31
 
 78 fn 已覆盖大半。补齐（按 Go 名）：
 `compare / eqFold / count / lastIndex / indexAny / trimSet / trimLeftSet / trimRightSet /
@@ -277,6 +277,14 @@ splitN / split / fields / fieldsFunc / replaceN / repeatN` + **Builder 结构体
 + `str{p,n,c}` 覆写结构体（P8，unsafe 类型视图首批用户）。
 
 `toCstring` 文档化 WARNING：返回 C 串所有权（free 责任），第四根因悬空陷阱高发点。
+
+**收口实录（2026-10-31）**：全 78 fn 分 common + 双 arch 切片（P8 屏障），双战线全绿——
+x86_64 pkg/strings/test rc=42 全绿；**x86 战线 rc=42 全绿（x86 首个收口 pkg）**。伴随四件 x86
+绕行收口：缺陷⑫ NASM 13 错面清零（memmove dword push / flagRC / cntV / zeroU staging 化）；
+bool 写回 if-dispatch 规约；strings 四桥 asm 改纯 .cute；**缺陷⑯**（x86 u64 返回签名双 dword
+接收装配踩邻槽——栈只 4B、hi 半字写进相邻变量槽；scan64.py 扫描器复案）全链去 u64 绕行
+（toU64 uint 返回 / fromI64 uint 形参 / u64Box 删除 / 6 接收点单槽化），x86_64 版 u64 原生不动。
+fieldsFunc 按 R15 摘除（parser 死循环挂死，双 arch 留延期备案注释）。
 
 ### 4.4 maps（Wave Mp；v2 定案：**删包**）
 
@@ -357,3 +365,4 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 | R8 | import 一期落地范围 | 含：五形态判别 + std: 路由 + 文件级导入表 + json 兼容轨 + CUTE_ROOT + vendor 查找；ext:/api: 物理目录一期占位（逻辑源保留，映射 git 仓库待定）；第三方远程拉取二期 |
 | R9 | ext:/api: → 指定 git 仓库的映射规则未定 | 一期本地目录占位 + 前缀路由接口化；映射规则待用户提供后接入 resolver |
 | R10 | Go `.` 点导入 | defer：无前缀名并入当前命名空间与「必须有前缀」纪律及 P7 审计冲突；需要时另期立项 |
+| R11 | x86 泛型单态化槽表错位（缺陷⑰病理定谳 2026-10-31）：monomorphize.go L597-624 S0-3 预刷公式按 x64 尺度烙印（CalleeSaveRegs 每寄存器记 8B，x86 `push EBX` 只 4B），x86 下原树 Offset 表与克隆体 4B body 分配整体错 8B——泛型 fn 内 field base 表/Deref/call arg 恒拿逻辑级错位槽 | .cute 侧三路径绕行已实证封死（播槽=逻辑级错位；泛型调用面×非泛型 def / 泛型+deref = typer 死循环挂死）；x86 slices 三 farm 留 139 记账等 Go 修复窗口（S0-3 公式按 arch push 粒度分区）；病理档案见动态台账 wave_st_progress.md 缺陷⑰段 |

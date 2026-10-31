@@ -103,6 +103,43 @@
   **用户指示暂不提交**，改动保留在工作区。
 - **Wave L 蓝图定稿**（PLAN §5 L 行 + P9 + P10 + R6 破冻范围 + R8/R9/R10 风险），待开工实施。
 
+## 2026-10-31（Wave St 双战线收口 + Wave S x86 分片追凶）
+
+- [x] **Wave St strings ✅ 2026-10-31**（§4.3 全 78 fn；main_s02 增量；x86 首个收口 pkg）：
+  1. **结构与战线**：全 78 fn 分 common + 双 arch 文件（P8 切片屏障，先例=slices 分片）；
+     x86_64 pkg/strings/test rc=42 全绿；**x86 strings_x86.cute 战线 rc=42 全绿**——x86 侧首个全线收口 stdlib pkg。
+  2. **缺陷⑫ NASM 13 错面清零**：memmove_x86 块 push 补 `dword` / rc.cute mallocRC flagStore(RC_BIT)
+     实参 staging var 化（flagRC）/ tracker.cute leakStore+resetLeakTracker 全局写 staging（cntV/zeroU）；
+     bool 写回 if-dispatch 规约；strings_x86 四桥 asm 块改纯 .cute（照 x86_64 载荷）。当前 nasm rc=0。
+  3. **缺陷⑯定谳+绕行结案**：x86 对 u64 返回走双 dword 接收装配但栈只分配 4B——hi 半字写进相邻变量槽；
+     绕行=全链去 u64（`toU64` uint 返回 / `fromI64` uint 形参 / u64Box 删除 / 6 接收点单槽化），
+     scan64.py 扫描器复扫接收点=0、撞车=0；x86_64 版 u64 原生不动。
+  4. **缺陷⑪（包加载器间接连带不对等，新钉子未结案）**：未显式 import `std:strings` 的构建把 arch 文件
+     全量函数拉进二进制但 common fns 整体缺席 → `symbol std_strings_count not defined`；
+     绕行=五 farm 测试 package.json 全部显式 import（五项 rc 逐项命中即绿）；待 Go 补齐间接连带加载。
+  5. **fieldsFunc 按 R15 摘除**（缺陷⑨a：fn 类型形参三形态 → parser.ParseArgs 死循环，双 arch 留延期备案注释）；
+     arch→common 反向调用洗白正式结案（count/isSpace 反向、双 string 实参、uint 跨边全全绿）。
+- [x] **Wave S x86 分片追凶 + 缺陷⑰病理定谳 ✅ 2026-10-31**（main_s02 增量）：
+  1. **arch 分片**：25 fn 全迁 slice_x86.cute / slice_x86_64.cute，slice.cute 退守 doc 头+import；
+     x64 六 farm 复验分片零影响全绿（sprobe01=0 / complexTest=17 / rctest=60 / sliceTest=0 / pkg-slices=230 / strings=42）。
+  2. **缺陷⑰三现场**（x86 泛型单态化下一切 field/deref/call 模板皆雷）：make field base 读错槽 →
+     push curLen 槽错拿 c → _elemPtr 同源；播槽暂胜版（make padv2 + push padPad3 + _elemPtr 原版）base 通到
+     `sAddr@-24` 但**逻辑级错位**：curLen 错拿 c / field-assign RHS 错读 valPtr 槽 / call arg 错读 padP3 槽——
+     不崩也 rc≠0，21+ fn 逻辑不可达。
+  3. **病理定谳（Go 源只读，冻结红线未碰）**：`compile/monomorphize.go` L597-624 S0-3 原树预刷公式
+     `base := -(8 * len(CalleeSaveRegs())) - argSave` 按 **x64 尺度烙印**（每寄存器记 8B；x86 `push EBX`
+     只 4B）→ x86 下原树 Offset 表与克隆体 4B body 分配**整体错 8B**：field base 表槽恒读 -24
+     （=克隆体第 5 个 4B 槽；x64 正确态 base=hdr 槽 -72=8B 第 3 decl）；remapFuncBodyRefs 只重绑
+     FindTypeArg/FindTypeVar，FIELD 基址 Path[0] 走原树 define 同源，天然无我。
+  4. **绕行三路径实证封锁**：A 播槽=逻辑级错位（见上）；B₁ 非泛型化 def（farm 120 处 `[int]` 全 int）→
+     typer 对「泛型调用面×非泛型 def」**死循环挂死**（60s×2 实证）；B₄ 函数内去 field 化 deref 化 →
+     同样挂死（60s 实证）——Common 新钉子「x86 泛型+deref 组合死循环」。
+  5. **处置**：x86 slices 三 farm（sprobe01/sliceTest/pkg-slices-test）留 139 记账等 Go 修复窗口——
+     S0-3 公式需按 arch push 粒度分区（CalleeSaveReg 尺寸平台常数化 + 参数 save 区按 arch 判定计入/剔除）；
+     播槽暂胜版随 commit 落库。病理档案≈动态台账 wave_st_progress.md 缺陷⑰段；PLAN §7 R11。
+  6. **commit×2 已落库**：`1741806`（strings+memory x86 收口=缺陷⑯结案+⑫残余）/ `2b323f2`
+     （slices arch 分片+缺陷⑰播槽暂胜版+病理）。
+
 ## 待办池（v2 · Wave 0 基线）
 
 - [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
@@ -160,7 +197,7 @@
 
 - [x] Wave M：memory 公开面（ptrToStringHeader/calloc/memmove 提级）+ F1 RC_BIT 修复 + F2 memset 修复 + F3 gDbg 清理 + F4/F5/F6 文档；M 尾删 RCMARK（**✅ 2026-10-30**，narrative 见上「Wave M memory」条目）
 - [x] Wave S：slices grow/clone/copy/contains/… + sliceHdr 覆写 + push 走 grow；S 尾删 leaf PROBE-CAST（**✅ 2026-10-30**，narrative 见上「Wave S slices 全套」条目；join 三参变体落地、真形延期）
-- [ ] Wave St：strings split 族/Builder/compare/… + str 覆写
+- [x] Wave St：strings split 族/Builder/compare/… + str 覆写（**✅ 2026-10-31**，双 arch rc=42 全绿、x86 首个收口 pkg；narrative 见上「2026-10-31（Wave St 双战线收口 + Wave S x86 分片追凶）」段）
 - [ ] Wave N：build align(N)/noalign（parser/build.go 新 case + StructBlock 携带 + type/struct.go 有限分支，见 R6）+ stdlib 用例 + test/align
 - [ ] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps
 - [ ] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq
