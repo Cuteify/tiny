@@ -1,0 +1,476 @@
+build os("linux")
+import "std:memory"
+build arch("x86")
+
+type sliceHdr struct {
+    p: ptr
+    n: int
+    c: int
+}
+
+
+fn len[T](s *[]T) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    ret hdr.n
+}
+
+fn cap[T](s *[]T) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    ret hdr.c
+}
+
+fn make[T](initialCap int) ptr {
+    // Go 序头：p@0 / n@w / c@2w（w = arch 字宽，x86 = 4/8）
+    // 形态纪律（S0-3 寄存器复用冲突绕行，实锤于 probe_gen5/6）：sizeof[T]()
+    // 不直接出现在乘法内——先提 elemSize 局部变量，乘法降为纯 var×var。
+    //
+    // 缺陷⑰ x86 绕行（sprobe01 实锤、槽表全景）：泛型单态化下 x86 的
+    // field-assign base 加载与 var 实参 push 各读模板槽 -0x18/-0x1c，
+    // 而函数体 4B 分配序 elemSize/s/hdr/bufSize 四变量排到 -0x8..-0x14 为止，
+    // 模板槽正好对应后续 decl 的 body 槽。绕行 = 播两个影子变量让
+    // body 槽落在表位上：padA:ptr = s（base 表槽 -0x18 → base 加载读到真头
+    // 地址）、padB:int = bufSize（push 表槽 -0x1c → push [ebp-28] 读到真 size）。
+    var elemSize: int = sizeof[T]()
+    var s: ptr = memory.malloc(24)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](s)
+    var bufSize: int = initialCap * elemSize
+    var padA: ptr = s
+    var padB: int = bufSize
+    var dataB: ptr = memory.malloc(bufSize)
+    var padC: int = 0
+    var padD: ptr = dataB
+    hdr.p = dataB
+    hdr.n = 0
+    hdr.c = initialCap
+    ret s
+}
+
+fn _elemPtr[T](s ptr, index int) ptr {
+    // 形态纪律：sizeof 提 elemSize 局部变量；hdr.p 经 data 局部变量中转
+    // 后再与 index*elemSize 相加。两者都为绕过编译器寄存器复用冲突
+    // （`index * sizeof[T]()` 直乘与 `hdr.p + ...` 单表达式混合形态 артиcuated，
+    //  分别实锤于 probe_gen5/probe_gen1 序列，S0-3 实验归档）
+    var elemSize: int = sizeof[T]()
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](s)
+    var data: ptr = hdr.p
+    ret data + index * elemSize
+}
+
+fn push[T](s *[]T, val T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    // 缺陷⑰ x86 绕行（实证 cont.）：field 读/写的 base 表槽 = decl 序第 5 个 body 槽（-24），
+    // 同 make 的 padA 位置（实证 make base 读 [ebp-24]，padA 恰为第 5 decl）。
+    // padP1/padP2 前排占位，padP3 = sAddr 落第 5 位 → hdr.* 读/写 base 恒读 sAddr。
+    var padP1: ptr = sAddr
+    var padP2: ptr = sAddr
+    var padP3: ptr = sAddr
+    var curLen: int = hdr.n
+    var curCap: int = hdr.c
+
+    if curLen >= curCap {
+        // Wave S 收敛：扩容原语统一走 grow（P2 曲线 <512→2× / ≥512→1.25×）
+        grow[T](s, 1)
+    }
+
+    // 写入元素
+    var elemAddr: ptr = _elemPtr[T](sAddr, curLen)
+    var valPtr: *T = unsafe.cast[*T](elemAddr)
+    *valPtr = val
+
+    // len++
+    hdr.n = curLen + 1
+}
+
+fn free[T](s *[]T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    if hdr.p != 0 {
+        memory.free(hdr.p)
+    }
+    memory.free(sAddr)
+}
+
+fn copyOut[T](s *[]T, index int, out *T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var elemAddr: ptr = _elemPtr[T](sAddr, index)
+    var elemPtr: *T = unsafe.cast[*T](elemAddr)
+    *out = *elemPtr
+}
+
+// set 将 v 写入 s[index]（S0-3 契约修正，门禁③ 收口：第三形参按值——
+// 旧签名 `src ptr` 被调用方传 int 值时以值当指针、从野地址读字节 SIGSEGV）
+fn set[T](s *[]T, index int, v T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var elemAddr: ptr = _elemPtr[T](sAddr, index)
+    var valPtr: *T = unsafe.cast[*T](elemAddr)
+    *valPtr = v
+}
+
+// getPtr 返回 s[index] 的原始指针（用于 loadInt/storeInt 等低级操作）
+fn getPtr[T](s *[]T, index int) ptr {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    ret _elemPtr[T](sAddr, index)
+}
+
+// remove 删除 s[index] 并返回被删元素（尾部左移、len--；Wave S 契约升级：
+// 旧版 void 无返回值，pkg/slices/test 需要取回被删元素）。
+// 调用方保证 index 合法——越界为 UB，与 set/getPtr 同口径（stdlib 原语无内置 bounds）。
+fn remove[T](s *[]T, index int) T {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var curLen: int = hdr.n
+    var elemSize: int = sizeof[T]()
+    var dst: ptr = _elemPtr[T](sAddr, index)
+    var src: ptr = dst + elemSize
+    var outPtr: *T = unsafe.cast[*T](dst)
+    var out: T = *outPtr
+    var moveSize: int = (curLen - index - 1) * elemSize
+    if moveSize > 0 {
+        memory.memmove(dst, src, unsafe.cast[uint](moveSize))
+    }
+    hdr.n = curLen - 1
+    ret out
+}
+
+// ===== Wave S 新面（§4.2 全套）=====
+
+// grow 成长原语（§4.2：push 收敛走此；Go slices.Grow 同诉求）。
+// P2 曲线（v2.2 拍板）：estimate = cap<512 → 2×；cap≥512 → +25%；
+// curve 与目标 cap=len+want 取大者。返回成长后的容量（零动作也返回现容量）。
+fn grow[T](s *[]T, want int) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var has: int = hdr.c - hdr.n
+    if want <= has {
+        ret hdr.c
+    }
+    var oldLen: int = hdr.n
+    var target: int = oldLen + want
+    var newCap: int = hdr.c
+    if newCap < 512 {
+        newCap = newCap * 2
+    } else {
+        var q: int = newCap / 4
+        newCap = newCap + q
+    }
+    if newCap < target {
+        newCap = target
+    }
+    var elemSize: int = sizeof[T]()
+    var oldData: ptr = hdr.p
+    var newBufSize: int = newCap * elemSize
+    var newData: ptr = memory.malloc(newBufSize)
+    var copyBytes: int = oldLen * elemSize
+    memory.memmove(newData, oldData, unsafe.cast[uint](copyBytes))
+    memory.free(oldData)
+    hdr.p = newData
+    hdr.c = newCap
+    ret newCap
+}
+
+// pop 弹出尾元素并 len--（返回被删值；pkg/slices/test 契约）。
+// 调用方保证非空——空容器为 UB（stdlib 原语无内置 bounds）。
+fn pop[T](s *[]T) T {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    var ptr0: ptr = _elemPtr[T](sAddr, n - 1)
+    var outPtr: *T = unsafe.cast[*T](ptr0)
+    var out: T = *outPtr
+    hdr.n = n - 1
+    ret out
+}
+
+// find 首个 ==v 的下标，未中返回 -1（cmp=`==`，整型/ptr 语义）
+fn find[T](s *[]T, v T) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    var i: int = 0
+    for ; i < n; {
+        var p: *T = unsafe.cast[*T](data + i * elemSize)
+        if *p == v {
+            ret i
+        }
+        i = i + 1
+    }
+    ret 0 - 1
+}
+
+// index 同 find（Go slices.Index 同名对照；全区一体防 monomorphize 缓存冲突）。
+// 体内独立实现非代理调用——泛型↔泛型代理名冲突面（R3）规避。
+fn index[T](s *[]T, v T) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    var i: int = 0
+    for ; i < n; {
+        var p: *T = unsafe.cast[*T](data + i * elemSize)
+        if *p == v {
+            ret i
+        }
+        i = i + 1
+    }
+    ret 0 - 1
+}
+
+// contains 是否含 v：命中 1 / 未中 0
+fn contains[T](s *[]T, v T) int {
+    var idx: int = find[T](s, v)
+    if idx >= 0 {
+        ret 1
+    }
+    ret 0
+}
+
+// equal 两容器等长且逐元素 ==（整型/ptr 语义）
+fn equal[T](a *[]T, b *[]T) int {
+    var aAddr: ptr = unsafe.cast[ptr](a)
+    var aHdr: *sliceHdr = unsafe.cast[*sliceHdr](aAddr)
+    var bAddr: ptr = unsafe.cast[ptr](b)
+    var bHdr: *sliceHdr = unsafe.cast[*sliceHdr](bAddr)
+    var nA: int = aHdr.n
+    if nA != bHdr.n {
+        ret 0
+    }
+    var elemSize: int = sizeof[T]()
+    var aData: ptr = aHdr.p
+    var bData: ptr = bHdr.p
+    var i: int = 0
+    for ; i < nA; {
+        var p: *T = unsafe.cast[*T](aData + i * elemSize)
+        var q: *T = unsafe.cast[*T](bData + i * elemSize)
+        if *p != *q {
+            ret 0
+        }
+        i = i + 1
+    }
+    ret 1
+}
+
+// clone 深拷贝：新头 + 新 buf + 元素逐个值拷贝（Go slices.Clone）。
+// n=0 时 cap=1（make 最小块），len=0 保真。
+fn clone[T](s *[]T) ptr {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    var cap0: int = n
+    if cap0 < 1 {
+        cap0 = 1
+    }
+    var dstS: ptr = make[T](cap0)
+    var dstHdr: *sliceHdr = unsafe.cast[*sliceHdr](dstS)
+    var elemSize: int = sizeof[T]()
+    var srcData: ptr = hdr.p
+    var dstData: ptr = dstHdr.p
+    var i: int = 0
+    for ; i < n; {
+        var sp: *T = unsafe.cast[*T](srcData + i * elemSize)
+        var dp: *T = unsafe.cast[*T](dstData + i * elemSize)
+        *dp = *sp
+        i = i + 1
+    }
+    dstHdr.n = n
+    ret dstS
+}
+
+// copy 把 src 元素拷到 dst 前部（Go copy）：拷 min(len) 个，返回拷贝数
+fn copy[T](dst *[]T, src *[]T) int {
+    var dAddr: ptr = unsafe.cast[ptr](dst)
+    var dHdr: *sliceHdr = unsafe.cast[*sliceHdr](dAddr)
+    var sAddr: ptr = unsafe.cast[ptr](src)
+    var sHdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var m: int = dHdr.n
+    if sHdr.n < m {
+        m = sHdr.n
+    }
+    if m <= 0 {
+        ret 0
+    }
+    var elemSize: int = sizeof[T]()
+    var bytes: int = m * elemSize
+    memory.memmove(dHdr.p, sHdr.p, unsafe.cast[uint](bytes))
+    ret m
+}
+
+// compact 去除相邻重复（Go slices.Compact 同语义），len 收缩，返回新长度
+fn compact[T](s *[]T) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    if n < 2 {
+        ret n
+    }
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    var lastP: *T = unsafe.cast[*T](data)
+    var w: int = 1
+    var i: int = 1
+    for ; i < n; {
+        var pi: *T = unsafe.cast[*T](data + i * elemSize)
+        if *pi != *lastP {
+            var pw: *T = unsafe.cast[*T](data + w * elemSize)
+            *pw = *pi
+            lastP = pw
+            w = w + 1
+        }
+        i = i + 1
+    }
+    hdr.n = w
+    ret w
+}
+
+// reverse 原位反转（两端向中swap，临时值中转）
+fn reverse[T](s *[]T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var i: int = 0
+    var j: int = hdr.n - 1
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    for ; i < j; {
+        var a: *T = unsafe.cast[*T](data + i * elemSize)
+        var b: *T = unsafe.cast[*T](data + j * elemSize)
+        var t: T = *a
+        *a = *b
+        *b = t
+        i = i + 1
+        j = j - 1
+    }
+}
+
+// insert 在 index 处插入 v，尾部右移（调用方保证 0<=index<=len；index==len 即追加）。
+// 容量不足走 grow（收口 P11：尾部移动用 memmove 点调用）。
+fn insert[T](s *[]T, index int, v T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    if n >= hdr.c {
+        grow[T](s, 1)
+    }
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    var src: ptr = data + index * elemSize
+    var dst: ptr = src + elemSize
+    var take: int = n - index
+    var bytes: int = take * elemSize
+    if bytes > 0 {
+        memory.memmove(dst, src, unsafe.cast[uint](bytes))
+    }
+    var vp: *T = unsafe.cast[*T](src)
+    *vp = v
+    hdr.n = n + 1
+}
+
+// deleteRange 删除 [start,end) 区段（尾部前移、len 调整；end<=start 零动作）。
+// 调用方保证 end<=len。返回新长度。
+fn deleteRange[T](s *[]T, start int, end int) int {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    var k: int = end - start
+    if k <= 0 {
+        ret n
+    }
+    var elemSize: int = sizeof[T]()
+    var data: ptr = hdr.p
+    var src: ptr = data + end * elemSize
+    var dst: ptr = data + start * elemSize
+    var keep: int = n - end
+    if keep > 0 {
+        var bytes: int = keep * elemSize
+        memory.memmove(dst, src, unsafe.cast[uint](bytes))
+    }
+    var newLen: int = n - k
+    hdr.n = newLen
+    ret newLen
+}
+
+// clear 清空：零化数据防旧值悬挂 + len=0（Go Clear 同口径）
+fn clear[T](s *[]T) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var n: int = hdr.n
+    if n > 0 {
+        var elemSize: int = sizeof[T]()
+        var bytes: int = n * elemSize
+        memory.memset(hdr.p, 0, unsafe.cast[uint](bytes))
+    }
+    hdr.n = 0
+}
+
+// cat 两容器拼接为新容器（Go slices.Concat 二段形态；所有权独立）。
+fn cat[T](a *[]T, b *[]T) ptr {
+    var aAddr: ptr = unsafe.cast[ptr](a)
+    var aHdr: *sliceHdr = unsafe.cast[*sliceHdr](aAddr)
+    var bAddr: ptr = unsafe.cast[ptr](b)
+    var bHdr: *sliceHdr = unsafe.cast[*sliceHdr](bAddr)
+    var nA: int = aHdr.n
+    var nB: int = bHdr.n
+    var cap0: int = nA + nB
+    if cap0 < 1 {
+        cap0 = 1
+    }
+    var dstS: ptr = make[T](cap0)
+    var dstHdr: *sliceHdr = unsafe.cast[*sliceHdr](dstS)
+    var elemSize: int = sizeof[T]()
+    if nA > 0 {
+        var aBytes: int = nA * elemSize
+        memory.memmove(dstHdr.p, aHdr.p, unsafe.cast[uint](aBytes))
+    }
+    if nB > 0 {
+        var off: int = nA * elemSize
+        var dstB: ptr = dstHdr.p + off
+        var bBytes: int = nB * elemSize
+        memory.memmove(dstB, bHdr.p, unsafe.cast[uint](bBytes))
+    }
+    dstHdr.n = nA + nB
+    ret dstS
+}
+
+// join 两段以 sep 相接（Go Join 二段形态；P4 fallback 实证：spb10 判定
+// 嵌套字面量 [ [], ... ] parser 不支持 → 真形 Join(colls *[][]T, sep) 无
+// 调用侧构造器，延期记录；三参变体全用已验证原语）。
+fn join[T](a *[]T, sep *[]T, b *[]T) ptr {
+    var aAddr: ptr = unsafe.cast[ptr](a)
+    var aHdr: *sliceHdr = unsafe.cast[*sliceHdr](aAddr)
+    var sAddr: ptr = unsafe.cast[ptr](sep)
+    var sHdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
+    var bAddr: ptr = unsafe.cast[ptr](b)
+    var bHdr: *sliceHdr = unsafe.cast[*sliceHdr](bAddr)
+    var nA: int = aHdr.n
+    var nS: int = sHdr.n
+    var nB: int = bHdr.n
+    var cap0: int = nA + nS + nB
+    if cap0 < 1 {
+        cap0 = 1
+    }
+    var dstS: ptr = make[T](cap0)
+    var dstHdr: *sliceHdr = unsafe.cast[*sliceHdr](dstS)
+    var elemSize: int = sizeof[T]()
+    if nA > 0 {
+        var aBytes: int = nA * elemSize
+        memory.memmove(dstHdr.p, aHdr.p, unsafe.cast[uint](aBytes))
+    }
+    if nS > 0 {
+        var sOff: int = nA * elemSize
+        var dstS2: ptr = dstHdr.p + sOff
+        var sBytes: int = nS * elemSize
+        memory.memmove(dstS2, sHdr.p, unsafe.cast[uint](sBytes))
+    }
+    if nB > 0 {
+        var bOff: int = (nA + nS) * elemSize
+        var dstB: ptr = dstHdr.p + bOff
+        var bBytes: int = nB * elemSize
+        memory.memmove(dstB, bHdr.p, unsafe.cast[uint](bBytes))
+    }
+    dstHdr.n = nA + nS + nB
+    ret dstS
+}
