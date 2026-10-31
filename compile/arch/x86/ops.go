@@ -596,6 +596,17 @@ func (a *x86Ops) varDecl64(varBlock *parser.VarBlock) string {
 }
 
 // setArgsOffset 设置参数偏移（ebp+8 起，this 指针额外 +4；容器返回函数 [ebp+8] 为隐藏返回槽地址参数）
+//
+// [缺陷⑰②修复 2026-10-31] 参数表步长必须按「调用端 push 粒度」取整：
+// x86 调用端对每个参数一律 push 4B dword（见 std_slices_clear__T__int 调
+// memset(s,c,n) 的 push 序），callee 侧旧表却按 Type.Size() 逐字节游标——
+// c:u8 参数 Size()=1，n:uint 槽表记 [ebp+13] 而调用端实参在 [ebp+16]，
+// 3B 错读使 len=0x08000000，word 清零循环步进 33.5M×4B 走飞 SEGV（sprobe01
+// 139 现场）。亚 4B 例型（i8/u8/bool/byte=1、i16/u16=2）一律按 4B 槽记账，
+// u8 值落 dword 槽低字节、BYTE 读取不变；Size>4 容器按 ceil(size/4) 槽位数
+// 走（u64=2 槽、string=12=3 槽，与调用端逐 dword 推序一致）。
+// x64 无此错配：参数走寄存器传递、callee 自己按本表搬槽入栈，
+// 调用端栈布局与参数表不耦合（见 arch/x86_64/ops.go setArgsOffset 槽位约定注释）。
 func setArgsOffset(fn *parser.FuncBlock) {
 	argOffset := 8
 	if fn.Class != nil {
@@ -607,7 +618,15 @@ func setArgsOffset(fn *parser.FuncBlock) {
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
 		arg.Offset = argOffset
-		argOffset += arg.Type.Size()
+		size := arg.Type.Size()
+		if size > 4 {
+			// 容器/多槽参数：按 4B 槽粒度对齐（与调用端逐 dword 推序一致）
+			size = ((size + 3) / 4) * 4
+		} else {
+			// 亚 4B 标量：占满一个 push 槽（值在 dword 低字节）
+			size = 4
+		}
+		argOffset += size
 	}
 }
 

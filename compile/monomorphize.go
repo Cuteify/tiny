@@ -605,6 +605,15 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 	//   ② 原参数块 Offset 与特化体对齐（漏绑的 Arg 读也落真位）；
 	//   ③ 局部 define 按 Prologue 同一公式刷偏移（argSave 取特化体实型 size；
 	//      克隆体自身 Prologue 随后同式重算，值幂等一致）。
+	//
+	// [缺陷⑰修复 2026-10-31] base 公式必须与该 arch Prologue 的 SetupVarOffsets 同式，
+	// 否则原树 Offset 表与克隆体 4B/8B body 分配错位（x86 曾整体错 8B：field base
+	// 表槽恒读克隆体第 5 个 4B 槽 -24）：
+	//   · x86_64 linux_sysv.go：base = -8*len(csRegs) - argSaveBytes（this 指针 8B
+	//     + ΣArgs.Size，参数保存区纳入局部变量区 callee-save 之下）；
+	//   · x86 ops.go prologue：base = -4*len(csRegs)，无 argSave 预扣
+	//     （参数在 ebp+8 起正侧区，不进 base）；
+	// 分支按 arch.PushSize()（4/8）判别，与 Prologue 唯一同源。
 	if origNode != nil && orig != nil {
 		substituteBodyTypes(origNode, substMap)
 		for i, arg := range orig.Args {
@@ -619,7 +628,12 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 		for i := range fn.Args {
 			argSave += fn.Args[i].Type.Size()
 		}
-		base := -(8 * len(c.Ctx.Arch.CalleeSaveRegs())) - argSave
+		var base int
+		if c.Ctx.Arch.PushSize() == 4 {
+			base = -4 * len(c.Ctx.Arch.CalleeSaveRegs())
+		} else {
+			base = -(8 * len(c.Ctx.Arch.CalleeSaveRegs())) - argSave
+		}
 		arch.SetupVarOffsets(origNode, c.Ctx.StackAlignment, base)
 	}
 

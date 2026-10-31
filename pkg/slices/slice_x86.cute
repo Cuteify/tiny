@@ -22,26 +22,16 @@ fn cap[T](s *[]T) int {
 }
 
 fn make[T](initialCap int) ptr {
-    // Go 序头：p@0 / n@w / c@2w（w = arch 字宽，x86 = 4/8）
+    // Go 序头：p@0=buf / n@8=0 / c@16=initialCap
     // 形态纪律（S0-3 寄存器复用冲突绕行，实锤于 probe_gen5/6）：sizeof[T]()
-    // 不直接出现在乘法内——先提 elemSize 局部变量，乘法降为纯 var×var。
-    //
-    // 缺陷⑰ x86 绕行（sprobe01 实锤、槽表全景）：泛型单态化下 x86 的
-    // field-assign base 加载与 var 实参 push 各读模板槽 -0x18/-0x1c，
-    // 而函数体 4B 分配序 elemSize/s/hdr/bufSize 四变量排到 -0x8..-0x14 为止，
-    // 模板槽正好对应后续 decl 的 body 槽。绕行 = 播两个影子变量让
-    // body 槽落在表位上：padA:ptr = s（base 表槽 -0x18 → base 加载读到真头
-    // 地址）、padB:int = bufSize（push 表槽 -0x1c → push [ebp-28] 读到真 size）。
+    // 不直接出现在乘法内（`n * sizeof[T]()` 形态触发编译器列车复用冲突，
+    // 之后字段 lhs 的 VarAddr 全部落空 [RBP]）——先提 elemSize 局部变量，
+    // 乘法降为纯 var×var（mk9 实锤 GOOD）。push/remove 既有形态本就如此。
     var elemSize: int = sizeof[T]()
     var s: ptr = memory.malloc(24)
     var hdr: *sliceHdr = unsafe.cast[*sliceHdr](s)
     var bufSize: int = initialCap * elemSize
-    var padA: ptr = s
-    var padB: int = bufSize
-    var dataB: ptr = memory.malloc(bufSize)
-    var padC: int = 0
-    var padD: ptr = dataB
-    hdr.p = dataB
+    hdr.p = memory.malloc(bufSize)
     hdr.n = 0
     hdr.c = initialCap
     ret s
@@ -61,12 +51,6 @@ fn _elemPtr[T](s ptr, index int) ptr {
 fn push[T](s *[]T, val T) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
-    // 缺陷⑰ x86 绕行（实证 cont.）：field 读/写的 base 表槽 = decl 序第 5 个 body 槽（-24），
-    // 同 make 的 padA 位置（实证 make base 读 [ebp-24]，padA 恰为第 5 decl）。
-    // padP1/padP2 前排占位，padP3 = sAddr 落第 5 位 → hdr.* 读/写 base 恒读 sAddr。
-    var padP1: ptr = sAddr
-    var padP2: ptr = sAddr
-    var padP3: ptr = sAddr
     var curLen: int = hdr.n
     var curCap: int = hdr.c
 
