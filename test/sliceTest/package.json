@@ -1,6 +1,7 @@
 {
-    "name": "sliceTest",
-    "imports": {
-        "slices": "std:slices"
-    }
+  "name": "sliceTest",
+  "imports": {
+    "slices": "std:slices",
+    "strings": "std:strings"
+  }
 }

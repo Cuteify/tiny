@@ -2,6 +2,7 @@
   "name": "gcfree2",
   "version": "1.0.0",
   "imports": {
-    "memory": "std:memory"
+    "memory": "std:memory",
+    "strings": "std:strings"
   }
 }

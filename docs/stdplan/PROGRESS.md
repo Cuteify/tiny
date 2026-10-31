@@ -1,6 +1,6 @@
 # stdplan 执行日志（实时）
 
-> SSOT：`docs/stdplan/PLAN.md`（现为 **v2.1**）。本文件逐日记录实施与验证事实。
+> SSOT：`docs/stdplan/PLAN.md`（现为 **v2.3**）。本文件逐日记录实施与验证事实。
 
 ## 2026-10-29（Wave L 实施完成）
 
@@ -140,7 +140,49 @@
   6. **commit×2 已落库**：`1741806`（strings+memory x86 收口=缺陷⑯结案+⑫残余）/ `2b323f2`
      （slices arch 分片+缺陷⑰播槽暂胜版+病理）。
 
-## 待办池（v2 · Wave 0 基线）
+## 2026-11-01（开门日志·环境重建·三拍板）
+
+> 用户指令「完成 stdplan」+ 三拍板：① derefTest 挂账后续专项（不进本波次）；
+> ② 每收口一模块立刻 commit（CLAUDE.md 模块独立提交纪律沿用）；③ **Wave I 终波立项**
+> （PLAN §4.7：现有波次收口后全库 imports 文件级迁移 + json 通道弃用；日志先写、边做边写）。
+
+- **工作区盘点（未提交半成品=上代会话遗留）**：
+  - Wave Mp：`pkg/maps/maps.cute` 已全量重写（泛型 [K] 单参数、开放寻址+墓碑、FNV-1a 手写 hash/eq、
+    只 import memory=P7）；`test/_mp_probe`（自带 maps.cute 副本 fixture，非 std:maps 真挂载）；
+  - Wave T：`pkg/sort/tim.cute`（string 行族）+ `tim_x86_64.cute` / `tim_x86.cute`（int/uint 特化族）
+    未跟踪新文件；`api.cute` 已改路由 timSortIntsImpl/UIntsImpl/StringsImpl；`pkg/sort/test` 加缺陷⑪绕行
+    direct caller（strings.count）+ package.json 显式 import strings；
+  - Wave F：`pkg/testing/testing.cute` 重写（assertEq/assertEqU/assertEqS 全局轨计数 +
+    assertEqT/UT/ST T 轨 + NewT/Fail/Error/Equal/EqualStr/Passed）。
+- **环境袭击**：/tmp/opencode 曾被清空（bin、e2e 脚本全失）。本会话重建：
+  - `TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/main_s02f .`（工作区树编译器）
+    + `git worktree add /tmp/opencode/base HEAD` → `/tmp/opencode/bin/base`（HEAD 干净对拍二进制）；
+  - `/tmp/opencode/run_e2e.sh <repo相对目录> <bin>` / `run_e2e_x86.sh`（x64 elf64 / x86 elf32+-m32 gcc）；
+  - `/tmp/opencode/run` → repo 符号链接；脚本把关汇编（nasm -w-label-redef-late）与链接失败信息落
+    /tmp/opencode/last_{compile,nasm,link}_err.txt。
+- **HEAD 实测 regard 表（摸底首发现）**：`test/derefTest` 双 arch **编译级挂**（base 二进制同挂=非工作区引入）：
+  - x64：NASM `std_strings_count not defined`——缺陷⑪病理同型：derefTest 仅 json-import memory；
+    builtin 根自动导入链把 strings 全量加载 → arch 文件（strings_x86_64.cute splitN）整体拉进二进制，
+    splitN 体内 `strings.count` 发出 call 但 common def 绑定缺席（direct caller 无→间接连带面缺 def）——
+    pkg/sort/test 同款，绕先例=farm package.json 显式 import strings；
+  - x86：compile 段 Go panic——`cdecl.go:120 needExtend 判定 arg.Type==nil`（exp.leaf→x86 Call 链），
+    同链发射段 nil Type 面。**处置：挂账后续专项 ❗derefTest**，本波次哨兵清单剔出绿承诺。
+- **本会话执行表**：哨兵矩阵摸底 → Mp 收口（test/mp_map 真挂 std:maps + template 切包 + git rm hashmap）
+  → T 收口（sort 哨兵+timsort 对拍 farm+esccheck R2）→ F 收口 → docs 补账；每模块独立 commit。
+  全程本文件边做边写。
+
+- **执行表第 1 步：哨兵矩阵摸底（2026-11-01 下午，复跑三连确认）**：
+  - **首跑全红异常与根因定位（缺陷⑪全局面）**：首跑 x64 仅 slice_test/sortStrOnly/pkg-strings 通过，其余全 NASM `std_strings_count not defined`；x86 仅 pkg-strings 通过，其余 compile 段 `Cdecl.Call arg.Type=nil` panic（cdecl.go:120，exp.leaf:546 链）。
+    - **三重取证**：① base（HEAD 编译器）同挂 rctest；② 纯 HEAD worktree（/tmp/opencode/base 源树）rctest x64 同样 NASM 挂——**非工作区引入，HEAD 即痛**；③ 提交点考古：40d2089 / 2b323f2 / 749a91a 三点各自自建编译器复跑全部同红——**10-31 记录的「x64 六 farm 全绿 / 23 项矩阵」在该状态不可复现=日志漂移第三处**（sprobe01 前二）。
+    - **根因（缺陷⑪病理定案）**：std 包文件体内的**自/对等命名空间调用**（strings 内部 `strings.count`、console 内部 `syscall.write`）依赖根 farm 的别名表解析——farm 未显式 import 该包时：Check 期不标 Useful → x64 **def 缺失**（NASM 符号未定义）；发射期 BindDanglingCall 兜底补绑后**签名面不齐**（参数 Type 未适配）→ x86 **Cdecl.Call panic**。双 arch 双症状同一根因。
+    - **决定性实验**：rctest 补显式 `strings: std:strings` 单行 → x64=60 / x86=60 双 arch 全绿，理论闭环。
+    - **处置（与 40d2089「farm 显式 import 补录」先例同构）**：批量补录 `strings: std:strings` 至受影响 farm package.json——rctest/gcfree/gcfree2/rcSimple/complexTest/m5/map_test/slice_minimal/sliceTest/negIdx/sortMinimal/sortMinimal2/sortQuick/sortIntOnly/pkg/slices/test/derefTest 共 16 项；**derefTest 解除挂账**（补录后双 arch rc=7=历史挂账值全等，❗支线池撤销改已结案）。
+  - **复跑后的开工基线（x64 全绿 / x86 分族）**：
+    - x64（22 项）：rctest=60｜gcfree=60｜gcfree2=0｜rcSimple=12｜complexTest=17｜m5=7（7 项 struct 审计全过）｜map_test=0｜slice_minimal=0｜slice_test=0｜sliceTest=0｜negIdx=48｜sortMinimal/2/Quick/IntOnly/StrOnly=0｜pkg/slices/test=230｜pkg/strings/test=42｜derefTest=7；❗sortTest=**139**（基线 110，SEGFAULT——归 Wave T 收口体）。
+    - x86（12+ 绿）：rctest=60｜gcfree=60｜gcfree2=0｜rcSimple=12｜complexTest=17｜m5=7｜map_test=0｜sliceTest=0｜negIdx=**32**（x86 独立确定性 UB 值，x64=48 分 arch 记基线）｜slices/test=230｜strings/test=42｜derefTest=7。
+    - x86 预存红面（**10-31 仅六 farm x86 绿记录相容**，非新回归）：① slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly x86 NASM `operation size not specified`——pkg/console 全局量（STDOUT_FD/ESC）push 缺 dword 尺寸=**x86 全局 push 代码gen缺陷（预存，console 2026-09 后未改动）**，记支线池；② sortStrOnly/sortTest x86 COMPILE panic（nil Type 链）=Wave T 收口体领域。
+  - **哨兵清单修订**：sprobe01 目录**repo 缺失**（10-31 记录漂移二处）→ 从矩阵剔除，不重建（主人探针族素材不属本波次）；矩阵口径=22 项。
+  - 结论：**开工基线成立**（x64 全备 + x86 十二绿 + 红项分族挂账），Wave Mp/T/F 按此推进；sortTest(139/x64) 与 x86 排序面红项=Wave T 验收面相应承担。
 
 - [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
 - [ ] (**已降级为非阻断**) console.println stdout 复验——用户裁定 2026-10-30：验收面=编译器核心+M/S/St/Mp 四模块，上层 stdlib 不作保证（println 归上层，仅定性记录）
@@ -193,17 +235,24 @@
 - [ ] 13 绿哨兵复跑基线
 - [ ] Wave 0 尾：exp_check.go 还原
 
+## 待办池（v2 · Wave 0 基线）
+
+- [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
+
 ## 待办池（v2 · 后续 Wave）
 
 - [x] Wave M：memory 公开面（ptrToStringHeader/calloc/memmove 提级）+ F1 RC_BIT 修复 + F2 memset 修复 + F3 gDbg 清理 + F4/F5/F6 文档；M 尾删 RCMARK（**✅ 2026-10-30**，narrative 见上「Wave M memory」条目）
 - [x] Wave S：slices grow/clone/copy/contains/… + sliceHdr 覆写 + push 走 grow；S 尾删 leaf PROBE-CAST（**✅ 2026-10-30**，narrative 见上「Wave S slices 全套」条目；join 三参变体落地、真形延期）
 - [x] Wave St：strings split 族/Builder/compare/… + str 覆写（**✅ 2026-10-31**，双 arch rc=42 全绿、x86 首个收口 pkg；narrative 见上「2026-10-31（Wave St 双战线收口 + Wave S x86 分片追凶）」段）
-- [ ] Wave N：build align(N)/noalign（parser/build.go 新 case + StructBlock 携带 + type/struct.go 有限分支，见 R6）+ stdlib 用例 + test/align
+- [x] Wave N（撤销=并入 Wave L）：build align(N)/noalign 已随 L 波落地（parser/build.go align case+attachPendingAlign；type/struct.go Layout pack 分支；test/align 全绿，见 2026-10-29 Wave L 段）
 - [ ] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps
 - [ ] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq
+- [ ] Wave I（终波）：imports 全量文件级迁移 + json 通道弃用（PLAN §4.7，**拍板 2026-11-01**）
 
 ## 支线池（插空，不入波次）
 
+- [x] ❗derefTest 双 arch 编译挂（2026-11-01 实测，HEAD 即挂→**同日结案**）：根因=缺陷⑪全局面（farm 未显式 import strings → x64 def 缺失 / x86 nil Type panic）；farm package.json 补录显式 import 后**双 arch rc=7=历史挂账值全等**，挂账撤销 ✅
+- [ ] ❗x86 全局 push 代码gen缺陷（**2026-11-01 矩阵摸底新记**，预存非回归）：全局量（如 pkg/console STDOUT_FD/ESC）作为 call 实参 push 时缺 dword 尺寸前缀 → NASM `operation size not specified`（slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly x86 全体预存红；console 2026-09-22 后未改动=历史遗留）；Wave T 收口排序面 x86 时一并考虑（sortMin 族 farm 依赖此路径）
 - [ ] `||`/`&&` 链缺陷（recursion 53→51）：参数版 vs 字面量版判别探针 ×4
 - [ ] 139 簇其余：rcTracking/stringsUtils/sliceTest（栈耗尽定性，先量 rsp 距离）
 - [ ] structMethod=45

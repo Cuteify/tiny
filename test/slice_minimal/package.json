@@ -1,9 +1,10 @@
 {
-    "name": "slice_minimal",
-    "version": "1.0.0",
-    "imports": {
-        "slices": "std:slices",
-        "console": "std:console",
-        "memory": "std:memory"
-    }
+  "name": "slice_minimal",
+  "version": "1.0.0",
+  "imports": {
+    "slices": "std:slices",
+    "console": "std:console",
+    "memory": "std:memory",
+    "strings": "std:strings"
+  }
 }

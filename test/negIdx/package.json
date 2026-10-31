@@ -1,1 +1,6 @@
-{"imports":{"slices":"../../pkg/slices"}}
+{
+  "imports": {
+    "slices": "../../pkg/slices",
+    "strings": "std:strings"
+  }
+}

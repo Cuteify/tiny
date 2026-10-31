@@ -2,6 +2,7 @@
   "imports": {
     "slices": "std:slices",
     "sort": "std:sort",
-    "memory": "std:memory"
+    "memory": "std:memory",
+    "strings": "std:strings"
   }
 }

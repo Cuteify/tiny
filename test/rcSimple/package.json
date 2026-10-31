@@ -1,1 +1,7 @@
-{ "name": "rcSimple", "imports": { "memory": "std:memory" } }
+{
+  "name": "rcSimple",
+  "imports": {
+    "memory": "std:memory",
+    "strings": "std:strings"
+  }
+}
