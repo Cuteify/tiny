@@ -4,9 +4,9 @@ build arch("x86")
 
 fn memmove(dst ptr, src ptr, n uint) {
     build asm {
-        push [$n]
-        push [$src]
-        push [$dst]
+        push dword [$n]
+        push dword [$src]
+        push dword [$dst]
         call _memmove
         add esp, 12
     }

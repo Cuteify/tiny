@@ -53,7 +53,9 @@ fn trackAlloc(p: ptr) {
     gAllocCount = gAllocCount + 1
     // 表满则静默丢弃（不影响正常运行，仅丢失追踪）
     if gLeakCount < 256 {
-        leakStore(gLeakCount, p)
+        // 缺陷⑫绕行（x86 生成器 push 无尺寸内存寻址）：全局实参先 staging var
+        var cntV: uint = gLeakCount
+        leakStore(cntV, p)
         gLeakCount = gLeakCount + 1
     }
 }
@@ -99,7 +101,9 @@ fn reportFreeCount() uint {
 // resetLeakTracker 重置追踪器（测试前调用）
 // 清零所有计数器，但不清零 gLeaks 数组本身（不影响运行）
 fn resetLeakTracker() {
-    gAllocCount = 0
-    gFreeCount = 0
-    gLeakCount = 0
+    // 缺陷⑫绕行（x86 生成器字面量全局写 mov [global],imm 无尺寸非法）：staging var 转存
+    var zeroU: uint = 0
+    gAllocCount = zeroU
+    gFreeCount = zeroU
+    gLeakCount = zeroU
 }

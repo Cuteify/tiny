@@ -44,7 +44,9 @@ fn mallocRC(size: uint) ptr {
         // 在 data 起始位置设置 RC=1 和 flags=RC_BIT
         var p: ptr = old + rcPrefix
         rcStore(p, 1)
-        flagStore(p, RC_BIT)
+        // 缺陷⑫绕行（x86 生成器 push 无尺寸内存寻址）：全局 const 实参先 staging var
+        var flagRC: uint = RC_BIT
+        flagStore(p, flagRC)
         trackAlloc(p)
         ret p
     }
@@ -76,7 +78,9 @@ fn mallocRC(size: uint) ptr {
         }
         var p: ptr = merged + rcPrefix
         rcStore(p, 1)
-        flagStore(p, RC_BIT)
+        // 缺陷⑫绕行（x86 生成器 push 无尺寸内存寻址）：全局 const 实参先 staging var
+        var flagRC: uint = RC_BIT
+        flagStore(p, flagRC)
         trackAlloc(p)
         ret p
     }
@@ -116,7 +120,9 @@ fn mallocRC(size: uint) ptr {
     // 设置 RC=1 和 flags=RC_BIT
     var p: ptr = head + rcPrefix
     rcStore(p, 1)
-    flagStore(p, RC_BIT)
+    // 缺陷⑫绕行（x86 生成器 push 无尺寸内存寻址）：全局 const 实参先 staging var
+    var flagRC: uint = RC_BIT
+    flagStore(p, flagRC)
     trackAlloc(p)
     ret p
 }

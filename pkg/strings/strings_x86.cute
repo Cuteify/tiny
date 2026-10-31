@@ -78,20 +78,28 @@ fn toCstring(s string) uint {
     ret *_p11
 }
 // toU64 int→u64 位模式桥（语言层无 int↔uint 转换，地址/位模式拷贝实现）
-fn toU64(n int) u64 {
+// 缺陷⑬绕行（x86 生成器）：`ret *_p12` 的 uint→u64 返回转换会走坏的 u64-mul
+// 内建模板（空源 `mov ebx, ; a.lo`），第一版 struct shim（u64Box 半字拼装）也已废：
+// 缺陷⑯定谳 = x86 生成器对 u64 返回签名走双 dword 接收装配，但栈分配只按 4B 推游标，
+// hi 半字踩上邻槽（toString.neg / builderWrite.n0 全踩实，gdb eax=0x20 现场）。
+// 绕行 = x86 文件全链去 u64：域内消费点值域恒 <2^32（char/段数/digit），uint 语义等价。
+// x86_64 版保持原生 u64 不动（rc=42 已验证）。build link 只别名挂接，签名可变。
+fn toU64(n int) uint {
     build link("__string_toU64")
     var p: ptr = &n
     var _p12: *uint = p
-    ret *_p12
+    var lo: uint = *_p12
+    ret lo
 }
 
-// fromI64 u64→int 位模式桥
-fn fromI64(n u64) int {
+// fromI64 u64→int 位模式桥（x86 特化版：形参 uint 化绕缺陷⑯——x86 下 u64 形参/返回
+// 装配不安全；x86 域内不存在真 64 位源值，位模式直传等价。x86_64 版 u64 原生不动）
+fn fromI64(n uint) int {
     build link("__string_fromI64")
     var x: int = 0
     var p: ptr = &x
     var _p13: *uint = p
-    *_p13 = unsafe.cast[uint](n)
+    *_p13 = n
     ret x
 }
 
@@ -670,7 +678,12 @@ fn splitN(s string, sep string, n int) ptr {
     var sepPtr: ptr = toCstring(sep)
     var sepLen: uint = len(sep)
 
-    var nNeg: bool = n < 0
+    // 缺陷⑭绕行（x86 生成器）：bool 直赋比较（var b: bool = cmp）生成 setl→movzx mem
+    // 非法形态，改 if-dispatch（toString neg 形态既有先例）
+    var nNeg: bool = false
+    if n < 0 {
+        nNeg = true
+    }
     var nMag: uint = 0
     if nNeg {
         var absN: int = 0 - n
