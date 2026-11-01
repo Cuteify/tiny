@@ -1,3 +1,5 @@
+import "std:slices"
+import "std:strings"
 fn lenInt(s *[]int) int {
     var _p1: *ptr = unsafe.cast[ptr](s)
     ret *_p1

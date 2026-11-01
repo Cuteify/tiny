@@ -1,3 +1,6 @@
+import "std:thread"
+import "std:console"
+import "std:memory"
 // test/thread/main.cute — Test function as value (native)
 var mtx: i32 = 0
 var counter: i32 = 0

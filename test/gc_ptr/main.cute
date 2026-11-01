@@ -1,3 +1,4 @@
+import "std:memory"
 type Point struct {
     x: int
     y: int

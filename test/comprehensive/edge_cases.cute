@@ -1,3 +1,4 @@
+import "std:memory"
 // 边界情况测试
 
 // 空列表

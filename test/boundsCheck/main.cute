@@ -1,3 +1,4 @@
+import "std:memory"
 fn main() int {
     arr := []int{10, 20, 30}
     x := arr[1]

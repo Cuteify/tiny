@@ -1,3 +1,7 @@
+import "std:time"
+import "std:console"
+import "std:strings"
+import "std:memory"
 fn main() int {
     var a: int = -2177481943
     var b: int = 1696204800

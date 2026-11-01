@@ -1,6 +1,8 @@
 // 64 位指针解引用测试（仅 x86_64）
 build os("linux")
 build arch("x86_64")
+import "std:memory"
+import "std:strings"
 
 fn t_u64() int {
     var e: u64 = 0

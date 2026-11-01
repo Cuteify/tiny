@@ -1,3 +1,4 @@
+import "std:memory"
 // 列表操作测试 - 覆盖各种列表边界情况
 
 fn main() int {

@@ -1,3 +1,5 @@
+import "../../pkg/slices"
+import "std:strings"
 fn main() int {
     var s: *[]int = slices.make[int](4)
     slices.set[int](s, 0, 10)

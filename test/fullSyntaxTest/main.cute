@@ -1,3 +1,4 @@
+import "std:memory"
 // Full syntax test - tests all language features
 
 // Type alias tests

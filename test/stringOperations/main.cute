@@ -1,3 +1,4 @@
+import "std:memory"
 // 字符串测试 - 覆盖字符串操作的各种情况
 
 fn string_length() int {

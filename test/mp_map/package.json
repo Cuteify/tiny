@@ -1,9 +1,5 @@
 {
     "name": "mp_map",
     "version": "1.0.0",
-    "description": "Wave Mp真挂载验证farm:std:maps(int/string/ptr键,收口验收面)",
-    "imports": {
-        "maps": "std:maps",
-        "strings": "std:strings"
-    }
+    "description": "Wave Mp真挂载验证farm:std:maps(int/string/ptr键,收口验收面)"
 }

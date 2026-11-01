@@ -1,6 +1,2 @@
 {
-  "imports": {
-    "slices": "../../pkg/slices",
-    "strings": "std:strings"
-  }
 }

@@ -1,3 +1,4 @@
+import "std:console"
 type Stringer interface {
     stringify() string
 }

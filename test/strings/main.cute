@@ -1,3 +1,5 @@
+import "std:strings"
+import "std:memory"
 fn main() int {
     var up: string = strings.toUpper("hello")
     var _p1: *u8 = strings.toCstring(up)

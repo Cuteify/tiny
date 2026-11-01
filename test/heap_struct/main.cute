@@ -1,3 +1,4 @@
+import "std:memory"
 // 堆上结构体测试（M4）：*T 字段访问 + malloc 分配 + 指针链 + &struct 取址
 
 

@@ -1,3 +1,6 @@
+import "std:time"
+import "std:console"
+import "std:strings"
 // fib30 基准测试：用 std:time 计时（纳秒精度）
 
 fn fib(n int) int {

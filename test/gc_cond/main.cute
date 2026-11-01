@@ -1,4 +1,5 @@
 build os("linux")
+import "std:memory"
 
 type Item struct {
     name: string

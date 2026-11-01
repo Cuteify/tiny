@@ -1,3 +1,8 @@
+import "std:slices"
+import "std:sort"
+import "std:memory"
+import "std:strings"
+import "std:console"
 // test/sortStrOnly/main.cute - minimal string comparison test
 
 fn main() int {

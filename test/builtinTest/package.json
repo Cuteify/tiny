@@ -1,8 +1,5 @@
 {
   "name": "builtinTest",
   "version": "1.0.0",
-  "description": "Built-in runtime package: bare calls without imports",
-  "imports": {
-    "memory": "std:memory"
-  }
+  "description": "Built-in runtime package: bare calls without imports"
 }

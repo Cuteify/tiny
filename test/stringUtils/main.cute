@@ -1,3 +1,6 @@
+import "std:console"
+import "std:strings"
+import "std:slices"
 // 字符串工具函数测试
 
 fn main() int {

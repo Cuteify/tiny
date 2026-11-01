@@ -2,8 +2,5 @@
   "name": "gc_complex",
   "build": {
     "arch": ["x86"]
-  },
-  "imports": {
-    "memory": "std:memory"
   }
 }

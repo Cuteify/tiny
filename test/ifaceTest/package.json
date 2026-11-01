@@ -1,8 +1,5 @@
 {
     "name": "iface_test",
     "version": "1.0.0",
-    "description": "Interface test",
-    "imports": {
-        "console": "std:console"
-    }
+    "description": "Interface test"
 }

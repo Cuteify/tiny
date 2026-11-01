@@ -1,4 +1,6 @@
 build os("linux")
+import "std:memory"
+import "std:strings"
 
 fn main() int {
     var p: ptr = memory.mallocRC(32)

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // 超级复杂测试程序
 
 // 基础结构体

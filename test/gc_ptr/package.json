@@ -1,7 +1,4 @@
 {
   "name": "gc_ptr",
-  "version": "1.0.0",
-  "imports": {
-    "memory": "std:memory"
-  }
+  "version": "1.0.0"
 }

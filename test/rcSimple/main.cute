@@ -1,4 +1,6 @@
 build os("linux")
+import "std:memory"
+import "std:strings"
 
 var gTestNum: int = 0
 var gPassed: int = 0

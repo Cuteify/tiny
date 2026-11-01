@@ -1,5 +1,6 @@
 build os("linux")
 build arch("x86_64")
+import "std:memory"
 
 fn toU64(n int) u64 {
     var p: ptr = &n

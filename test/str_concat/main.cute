@@ -1,3 +1,5 @@
+import "std:console"
+import "std:strings"
 fn buildStr() string {
     var s: string = "A"
     var i: int = 0

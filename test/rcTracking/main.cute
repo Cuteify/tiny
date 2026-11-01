@@ -1,4 +1,8 @@
 build os("linux")
+import "std:memory"
+import "std:console"
+import "std:fmt"
+import "std:strings"
 
 // === RC 内存跟踪综合测试 ===
 // 测试：大量对象分配、跨函数引用传递、全局泄露检测

@@ -1,3 +1,4 @@
+import "std:time"
 // fib30 无输出版本：只计算 + 内部计时（结果不打印，外部测总耗时）
 
 fn fib(n int) int {

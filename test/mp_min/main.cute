@@ -1,3 +1,5 @@
+import "std:maps"
+import "std:strings"
 // test/mp_min —— CES 分片:8 断言 S1 全量(int 键),ret = pass*10+fail
 fn main() int {
     var pass: int = 0

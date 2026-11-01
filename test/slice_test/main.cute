@@ -1,3 +1,7 @@
+import "std:slices"
+import "std:console"
+import "std:memory"
+import "std:strings"
 // test/slice_test/main.cute
 fn main() int {
     var x: int = 42

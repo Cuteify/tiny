@@ -1,6 +1,8 @@
 // 解引用测试入口（x86，不含 64 位）
 build os("linux")
 build arch("x86")
+import "std:memory"
+import "std:strings"
 
 fn main() int {
     if t_stack() == 0 {

@@ -1,1 +1,1 @@
-{ "name": "gcStructFree", "imports": { "memory": "std:memory" } }
+{ "name": "gcStructFree" }

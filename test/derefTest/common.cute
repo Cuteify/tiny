@@ -1,5 +1,7 @@
 // 指针解引用通用测试（x86 / x86_64 共用）
 build os("linux")
+import "std:memory"
+import "std:strings"
 
 fn t_stack() int {
     var a: int = 100

@@ -1,3 +1,5 @@
+import "std:slices"
+import "std:strings"
 fn main() int {
     var s: *[]int = slices.make[int](8)
     var l: int = slices.len[int](s)

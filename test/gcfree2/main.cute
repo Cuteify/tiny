@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // GC 出口释放回归测试：循环 1000 次调用 makeGreeting("test")，
 // 结果经 useTemp 消费后丢弃（useTemp 内局部 t 拥有 concat 缓冲，
 // 由出口释放计划在函数出口自动 std_memory_free1）。

@@ -1,4 +1,6 @@
 build os("linux")
+import "std:memory"
+import "std:syscall"
 
 fn t_distinct() int {
     var p1: ptr = memory.malloc(16)

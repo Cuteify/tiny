@@ -1,3 +1,4 @@
+import "std:strings"
 fn main () int {
 	var m : map[string]int
 	ret 0

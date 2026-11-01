@@ -1,9 +1,3 @@
 {
-  "name": "sortMinimal2",
-  "imports": {
-    "slices": "std:slices",
-    "sort": "std:sort",
-    "memory": "std:memory",
-    "strings": "std:strings"
-  }
+  "name": "sortMinimal2"
 }

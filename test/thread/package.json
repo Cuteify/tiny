@@ -1,8 +1,3 @@
 {
-    "name": "thread_test",
-    "imports": {
-        "thread": "std:thread",
-        "console": "std:console",
-        "memory": "std:memory"
-    }
+    "name": "thread_test"
 }

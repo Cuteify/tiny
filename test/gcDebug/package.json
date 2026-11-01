@@ -1,8 +1,4 @@
 {
   "name": "gcDebug",
-  "version": "1.0.0",
-  "imports": {
-    "memory": "std:memory",
-    "strings": "std:strings"
-  }
+  "version": "1.0.0"
 }

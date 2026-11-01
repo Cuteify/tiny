@@ -1,3 +1,6 @@
+import "std:console"
+import "std:memory"
+import "std:strings"
 // test/console_adv/main.cute — advanced console API test
 
 fn main() int {

@@ -1,3 +1,5 @@
+import "std:maps"
+import "std:strings"
 // test/mp_map —— Wave Mp 收口 farm:真 std:maps 挂载(非副本 fixture)
 // 覆面:int 键基础/覆盖/delete/has、string 键、string 值视图、ptr 键、rehash(16→32→64)、
 //       keys/values、clone 独立性、equal、clear;ret = pass*10+fail;断言 33 项:

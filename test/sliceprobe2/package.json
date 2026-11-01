@@ -1,7 +1,4 @@
 {
   "name": "sliceprobe2",
-  "version": "1.0.0",
-  "imports": {
-    "memory": "std:memory"
-  }
+  "version": "1.0.0"
 }

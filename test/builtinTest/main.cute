@@ -1,3 +1,4 @@
+import "std:memory"
 // 零 import 测试：
 // - print/println 来自内置包 std:builtin（自动导入，裸调用）
 // - len/cap/copy/new 为编译器内建（类型分派）

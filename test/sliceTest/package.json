@@ -1,7 +1,3 @@
 {
-  "name": "sliceTest",
-  "imports": {
-    "slices": "std:slices",
-    "strings": "std:strings"
-  }
+  "name": "sliceTest"
 }

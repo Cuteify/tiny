@@ -1,3 +1,7 @@
+import "std:slices"
+import "std:sort"
+import "std:memory"
+import "std:strings"
 // test/sortTest/main.cute - 排序算法测试
 // 快排（不稳定）+ Timsort（稳定）整数/字符串排序
 

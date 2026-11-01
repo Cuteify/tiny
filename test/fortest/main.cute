@@ -1,3 +1,5 @@
+import "std:memory"
+import strlib "./lib"
 fn sLen(s string) uint {
     var p: ptr = &s
     var _p1: *ptr = p + 8

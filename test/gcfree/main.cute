@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 fn makeGreeting(name: string) string {
     ret "hello, " + name + "!"
 }

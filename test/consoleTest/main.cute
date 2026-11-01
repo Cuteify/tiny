@@ -1,3 +1,4 @@
+import "std:console"
 fn main() i32 {
     // print 返回写出的字节数
     var w: i32 = console.print("hi")

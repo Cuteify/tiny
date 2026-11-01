@@ -1,3 +1,5 @@
+import "std:strings"
+import "std:memory"
 // strconv 测试：strings.toString / strings.parse（2-62 进制）
 fn sLen(s string) uint {
     var p: ptr = &s

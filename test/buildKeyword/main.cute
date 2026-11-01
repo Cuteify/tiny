@@ -1,4 +1,5 @@
 build os(windows)
+import "std:fs"
 
 fn windowsFunc() int {
     ret 1

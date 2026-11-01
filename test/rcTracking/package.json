@@ -1,8 +1,2 @@
 {
-  "imports": {
-    "memory": "std:memory",
-    "console": "std:console",
-    "fmt": "std:fmt",
-    "strings": "std:strings"
-  }
 }

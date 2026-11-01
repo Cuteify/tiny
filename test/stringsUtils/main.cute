@@ -1,3 +1,4 @@
+import "std:strings"
 // trimSpace 单独测试
 fn main() int {
     var ts: string = strings.trimSpace("  hi  ")

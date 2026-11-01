@@ -1,3 +1,4 @@
+import "std:memory"
 fn main() i32 {
     a := []int{1, 2, 3}
 

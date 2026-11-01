@@ -1,4 +1,6 @@
 build os("linux")
+import "std:memory"
+import "std:strings"
 
 type Node struct {
     val: int

@@ -1,3 +1,7 @@
+import "std:slices"
+import "std:sort"
+import "std:memory"
+import "std:strings"
 // test/sortMinimal/main.cute - 最小排序测试
 fn main() int {
     var s: *[]int = slices.make[int](4)
