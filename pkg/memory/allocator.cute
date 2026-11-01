@@ -195,12 +195,34 @@ fn setHead(cls: uint, v: ptr) {
     *_p = v
 }
 
+// freeListClassOf 空闲块入链 class：取「规范块大小 <= 实际块大小」的最大 class。
+// coalesce 合并块尺寸不保证等于某 class 的规范大小（如 80+80=160，而 class 8
+// 规范大小=168）；若按 slotOf(160)=8 入链，malloc 从 class 8 取块时按 168 写
+// footer，会越过真实块尾踩坏后继块 header（Wave T sortTest 139 现场）。
+// 入链/摘链必须同用本函数，保证链内块实际尺寸 >= 该 class 规范尺寸。
+fn freeListClassOf(size: uint) uint {
+    var cls: uint = slotOf(size)
+    if cls >= 60 {
+        ret 60
+    }
+    for ; cls > 0; {
+        if blkSizeOf(cls) <= size {
+            ret cls
+        }
+        cls = cls - 1
+    }
+    if blkSizeOf(0) > size {
+        ret 60
+    }
+    ret 0
+}
+
 // insertFreeList 将空闲块插入对应 class 的空闲链表头部（双向链表）
 // 插入后 blk 成为新的链表头
 fn insertFreeList(blk: ptr) {
     // 从 header 读取块大小（清除标志位），计算 class
     var size: uint = hdrSizeRaw(blk) & ~FLAG_MASK
-    var cls: uint = slotOf(size)
+    var cls: uint = freeListClassOf(size)
     if cls >= 60 {
         ret
     }
@@ -221,7 +243,7 @@ fn removeFreeList(blk: ptr) {
     var prev: ptr = freePrev(blk)
     var next: ptr = freeNext(blk)
     var size: uint = hdrSizeRaw(blk) & ~FLAG_MASK
-    var cls: uint = slotOf(size)
+    var cls: uint = freeListClassOf(size)
     if cls >= 60 {
         ret
     }
@@ -410,12 +432,53 @@ fn malloc(size: uint) ptr {
         freeSetPrev(next, 0)
     }
 
-    // 设置 header/footer（清除 IS_FREE，块现在是已分配的）
-    hdrSetSizeRaw(head, blkSize)
-    hdrSetFooter(head, blkSize)
+    // 实际块尺寸可能大于 class 规范尺寸（coalesce 合并产物；freeListClassOf
+    // 按「规范尺寸 <= 实际尺寸」入链）。余量够最小块则拆块回链；不足则整块
+    // 使用。两种形态都必须以实际尺寸为物理边界，不能按规范尺寸硬写 footer。
+    var rawSize: uint = hdrSizeRaw(head) & ~FLAG_MASK
+    // 空闲链表最小可表示块 = max(4*ptrSize, class 0 规范尺寸)。x86 的 4*ptrSize=16
+    // 小于 class 0 规范尺寸 32；若拆出 16B 余块，freeListClassOf 会返回 60 而
+    // 不入链（IS_FREE 却不在任何链表的不变式破口）。故下限取 class 0 规范尺寸。
+    var minBlk: uint = ptrSize * 4
+    if minBlk < blkSizeOf(0) {
+        minBlk = blkSizeOf(0)
+    }
+    var useSize: uint = rawSize
+    var rem: uint = 0
+    if rawSize >= blkSize + minBlk {
+        useSize = blkSize
+        rem = rawSize - blkSize
+    } else if rawSize < blkSize {
+        // 防御：入链类失配时退回请求规范尺寸（正常路径不会走到）
+        useSize = blkSize
+    }
+
+    if rem >= minBlk {
+        // 拆块：head 保留 useSize，余块 rem 标记空闲回链
+        hdrSetSizeRaw(head, useSize)
+        hdrSetFooter(head, useSize)
+        var remBlk: ptr = head + useSize
+        hdrSetSizeRaw(remBlk, rem | IS_FREE)
+        hdrSetFooter(remBlk, rem | IS_FREE)
+        insertFreeList(remBlk)
+        // 余块空闲 → 其后继块标 PREV_FREE
+        var afterRem: ptr = remBlk + rem
+        var brkRem: ptr = syscall.brk(0)
+        if afterRem + ptrSize <= brkRem {
+            var nsr: uint = hdrSizeRaw(afterRem)
+            if nsr != 0 {
+                hdrSetSizeRaw(afterRem, nsr | PREV_FREE)
+                hdrSetFooter(afterRem, nsr | PREV_FREE)
+            }
+        }
+    } else {
+        // 设置 header/footer（清除 IS_FREE，块现在是已分配的）
+        hdrSetSizeRaw(head, useSize)
+        hdrSetFooter(head, useSize)
+    }
 
     // 清除后继块的 PREV_FREE（我们的块不再是空闲的）
-    var nextBlk: ptr = head + blkSize
+    var nextBlk: ptr = head + useSize
     var brkTop: ptr = syscall.brk(0)
     if nextBlk + ptrSize <= brkTop {
         var ns: uint = hdrSizeRaw(nextBlk)
