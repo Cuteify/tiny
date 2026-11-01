@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:compress/flate"
 // pkg/compress/zlib/zlib.cute - Zlib 压缩解压
 // Zlib = 2 字节头 + DEFLATE 数据 + 4 字节 ADLER32 校验
 // 头部格式：

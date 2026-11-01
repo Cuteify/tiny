@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/hash/maphash/maphash.cute - 可种子化的哈希函数
 // 使用 MurmurHash3 的简化变体（64 位），适用于哈希表桶分配
 // 支持种子参数，防止哈希碰撞攻击

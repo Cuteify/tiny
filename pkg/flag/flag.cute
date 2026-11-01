@@ -1,3 +1,6 @@
+import "std:strings"
+import "std:memory"
+import "std:syscall"
 // pkg/flag/flag.cute - 命令行参数解析包
 // 简化实现：支持 --name=value 格式的参数解析
 // 注意：Cuteify 没有 os.Args，这里使用全局变量模拟参数输入

@@ -1,3 +1,4 @@
+import "std:strings"
 // pkg/unicode/unicode.cute - Unicode 字符分类包
 // 提供 ASCII 范围的字符分类和转换函数
 // 平台无关实现，纯逻辑判断

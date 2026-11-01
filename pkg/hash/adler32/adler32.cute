@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/hash/adler32/adler32.cute - Adler-32 校验和
 // Adler-32 使用两个 16 位累加器：A（字节和）和 B（A 的累加和）
 // MOD = 65521（最大素数，小于 2^16）

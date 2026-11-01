@@ -1,6 +1,5 @@
 {
     "name": "strings",
     "version": "1.1.0",
-    "description": "String utility package: comparison, search, transform, split/join, conversion and buffer operations",
-    "imports": {}
+    "description": "String utility package: comparison, search, transform, split/join, conversion and buffer operations"
 }

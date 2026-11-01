@@ -1,3 +1,5 @@
+import "std:sort"
+import "std:memory"
 fn main() int {
     // Create a sorted array: [10, 20, 30, 40, 50]
     var arr: ptr = memory.malloc(40)

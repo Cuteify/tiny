@@ -1,7 +1,2 @@
 {
-  "imports": {
-    "slices": "std:slices",
-    "memory": "std:memory",
-    "strings": "std:strings"
-  }
 }

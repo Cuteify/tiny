@@ -1,6 +1,5 @@
 {
     "name": "math/bits",
     "version": "1.0.0",
-    "description": "Bit manipulation functions for unsigned integers",
-    "imports": {}
+    "description": "Bit manipulation functions for unsigned integers"
 }

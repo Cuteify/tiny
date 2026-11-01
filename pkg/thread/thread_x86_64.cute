@@ -1,5 +1,7 @@
 // pkg/thread/thread_x86_64.cute — x86_64 thread primitives
 build arch("x86_64")
+import "std:memory"
+import "std:fmt"
 
 // ThreadCtx: [func_ptr(8) | arg_ptr(8) | retval(8)] = 24 bytes
 type ThreadCtx struct {

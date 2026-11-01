@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:syscall"
 // 时区数据：由 tools/gen_tzdata/main.go 从 IANA tzdata 2026c 编译生成（勿手改）
 // 每行格式: zoneName|unix秒,偏移秒,缩写|unix秒,偏移秒,缩写|...（升序，秒为 UTC 纪元）
 // 通过 time.cute 的 zoneOffset/zoneAbbr 查询；该文本不含转义，单行存储。

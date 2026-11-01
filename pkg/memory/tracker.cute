@@ -1,3 +1,4 @@
+import "std:syscall"
 // ===== Cuteify Memory Manager v3 — Leak Tracker =====
 //
 // 泄漏追踪器用于检测 RC 块的内存泄漏。

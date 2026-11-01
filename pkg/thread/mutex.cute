@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:fmt"
 // pkg/thread/mutex.cute — Mutex using Linux futex
 // state: 0=unlocked, 1=locked(no waiters), 2=locked(has waiters)
 

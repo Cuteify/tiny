@@ -1,9 +1,5 @@
 {
     "name": "image",
     "version": "1.0.0",
-    "description": "Image processing: RGBA pixel manipulation",
-    "imports": {
-        "memory": "std:memory",
-        "color": "std:image.color"
-    }
+    "description": "Image processing: RGBA pixel manipulation"
 }

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:image"
 // pkg/image/jpeg/jpeg.cute - JPEG 编解码存根（占位）
 // 平台无关实现
 

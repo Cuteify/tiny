@@ -1,3 +1,4 @@
+import "std:memory"
 // pkg/container/heap/heap.cute - 最小堆实现
 // 平台无关实现，使用数组存储 int 值
 

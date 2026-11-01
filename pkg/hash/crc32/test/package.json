@@ -1,8 +1,5 @@
 {
     "name": "crc32_test",
     "version": "1.0.0",
-    "description": "CRC32 package tests",
-    "imports": {
-        "crc32": "std:hash/crc32"
-    }
+    "description": "CRC32 package tests"
 }

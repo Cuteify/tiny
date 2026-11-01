@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:fmt"
 // pkg/thread/thread.cute — Thread API for Cuteify
 type Thread struct {
     ctx: ptr

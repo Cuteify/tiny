@@ -1,3 +1,4 @@
+import "std:memory"
 // pkg/image/color/color.cute - 颜色模型与预定义颜色
 // 平台无关实现
 

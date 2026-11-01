@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:image/color"
 // pkg/image/image.cute - 图像处理包：RGBA 像素操作
 // 平台无关实现，底层复用 std:memory
 

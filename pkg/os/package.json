@@ -1,10 +1,5 @@
 {
     "name": "os",
     "version": "1.0.0",
-    "description": "OS operations: exit, constants, getcwd, error checks",
-    "imports": {
-        "syscall": "std:syscall",
-        "strings": "std:strings",
-        "memory": "std:memory"
-    }
+    "description": "OS operations: exit, constants, getcwd, error checks"
 }

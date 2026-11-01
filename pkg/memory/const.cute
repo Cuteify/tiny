@@ -1,3 +1,4 @@
+import "std:syscall"
 // ===== Cuteify Memory Manager v3 — 常量 =====
 
 const TINY_MAX: uint = 1024

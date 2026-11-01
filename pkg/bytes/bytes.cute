@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/bytes/bytes.cute - 字节缓冲区包
 // 提供可增长的字节缓冲区，用于 I/O 操作和字节序列构建
 // 平台无关实现，底层复用 std:memory 和 std:strings

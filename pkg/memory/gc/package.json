@@ -1,8 +1,5 @@
 {
   "name": "gc",
   "version": "1.0.0",
-  "description": "Garbage collection for Cuteify memory manager",
-  "imports": {
-    "memory": "std:memory"
-  }
+  "description": "Garbage collection for Cuteify memory manager"
 }

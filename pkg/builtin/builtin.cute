@@ -1,3 +1,5 @@
+import "std:strings"
+import "std:syscall"
 // pkg/builtin/builtin.cute - 内置包
 // 由编译器自动导入（package.json 标记 "builtin": true），
 // 顶层函数可无命名空间直接调用：print(...) 而非 builtin.print(...)。

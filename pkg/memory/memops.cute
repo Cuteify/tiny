@@ -1,3 +1,4 @@
+import "std:syscall"
 // ===== Cuteify Memory Manager v3 — Memory Operations =====
 //
 // 底层内存操作：memcpy 和 memset。

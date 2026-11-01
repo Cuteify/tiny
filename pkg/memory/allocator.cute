@@ -1,3 +1,4 @@
+import "std:syscall"
 // ===== Cuteify Memory Manager v3 — Allocator Core =====
 //
 // 内存布局：

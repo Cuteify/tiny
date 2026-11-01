@@ -1,8 +1,5 @@
 {
     "name": "log_test",
     "version": "1.0.0",
-    "description": "log package tests",
-    "imports": {
-        "log": "std:log"
-    }
+    "description": "log package tests"
 }

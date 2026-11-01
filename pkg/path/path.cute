@@ -1,3 +1,6 @@
+import "std:strings"
+import "std:memory"
+import "std:syscall"
 // pkg/path/path.cute - 路径操作库：纯字符串 manipulation
 // 平台无关实现，不依赖 syscall
 

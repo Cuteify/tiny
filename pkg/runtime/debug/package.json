@@ -1,8 +1,5 @@
 {
     "name": "debug",
     "version": "1.0.0",
-    "description": "Runtime debug utilities: stack traces, build info",
-    "imports": {
-        "strings": "std:strings"
-    }
+    "description": "Runtime debug utilities: stack traces, build info"
 }

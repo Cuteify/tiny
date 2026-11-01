@@ -1,9 +1,4 @@
 {
     "name": "uuid_test",
-    "version": "1.0.0",
-    "imports": {
-        "uuid": "std:uuid",
-        "memory": "std:memory",
-        "strings": "std:strings"
-    }
+    "version": "1.0.0"
 }

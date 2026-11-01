@@ -2,6 +2,8 @@
 build os("linux")
 import "std:memory"
 build arch("x86_64")
+import "std:slices"
+import "std:strings"
 
 // PLAN §4.5 Wave T：minrun 计算 + 自然 run 检测（严格降序就地反转）+ run 二分插入
 // 补长 + 归并栈（Java merge_collapse 不变式）+ gallop 简化=指数跳后二分收敛批量落位。

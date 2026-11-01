@@ -1,3 +1,6 @@
+import "std:path"
+import "std:strings"
+import "std:memory"
 fn main() int {
     var failures: int = 0
 

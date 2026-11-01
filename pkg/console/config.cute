@@ -1,3 +1,6 @@
+import "std:syscall"
+import "std:strings"
+import "std:memory"
 // pkg/console/config.cute — 全局开关配置
 //
 // 控制台高级功能全局开关

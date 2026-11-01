@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/hash/crc32/crc32.cute - CRC-32 IEEE 校验和
 // 使用标准 IEEE 多项式 0xEDB88320 的逐字节实现
 // 无需预计算查找表，适用于平台无关场景

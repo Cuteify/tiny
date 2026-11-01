@@ -1,3 +1,4 @@
+import "std:console"
 fn main() int {
     // Test 1: console.print returns correct byte count
     var n: i32 = console.print("hello")

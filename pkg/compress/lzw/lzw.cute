@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/compress/lzw/lzw.cute - LZW 压缩解压
 // 经典 LZW 压缩算法，支持可配置的字宽（litWidth）
 

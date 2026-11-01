@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/mime/mime.cute - MIME 类型检测
 // 平台无关实现，基于文件扩展名返回 MIME 类型
 

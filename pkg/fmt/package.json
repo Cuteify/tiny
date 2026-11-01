@@ -1,9 +1,5 @@
 {
     "name": "fmt",
     "version": "1.0.0",
-    "description": "Formatting package: integer-to-string conversion utilities",
-    "imports": {
-        "memory": "std:memory",
-        "strings": "std:strings"
-    }
+    "description": "Formatting package: integer-to-string conversion utilities"
 }

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/fmt/fmt.cute - 格式化包
 // 提供整数到字符串转换工具函数
 // 平台无关实现，底层复用 std:memory 和 std:strings

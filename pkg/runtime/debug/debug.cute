@@ -1,3 +1,4 @@
+import "std:strings"
 // pkg/runtime/debug/debug.cute - 运行时调试工具包
 // 平台无关实现
 

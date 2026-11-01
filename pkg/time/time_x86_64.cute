@@ -1,5 +1,8 @@
 build os("linux")
 build arch("x86_64")
+import "std:memory"
+import "std:strings"
+import "std:syscall"
 
 // clock_gettime(CLOCK_REALTIME=0, &ts)：x86_64 syscall 228
 // nanosleep(&req)：x86_64 syscall 35

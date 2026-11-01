@@ -10,6 +10,8 @@
 // 三个实质字段（间隙字节为分配噪声，比较器不读，拷贝/补插语义自洽）。
 
 import "std:memory"
+import "std:slices"
+import "std:strings"
 
 // _timMinRunStrn 行族同款 minrun（与 tim_x86_64.cute / tim_x86.cute 同名不同参）
 fn _timMinRunStrn(n int) int {

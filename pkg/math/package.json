@@ -1,6 +1,5 @@
 {
     "name": "math",
     "version": "1.0.0",
-    "description": "Mathematical functions: integer and float operations",
-    "imports": {}
+    "description": "Mathematical functions: integer and float operations"
 }

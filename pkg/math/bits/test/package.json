@@ -1,8 +1,5 @@
 {
     "name": "bits_test",
     "version": "1.0.0",
-    "description": "Bits package tests",
-    "imports": {
-        "bits": "std:math/bits"
-    }
+    "description": "Bits package tests"
 }

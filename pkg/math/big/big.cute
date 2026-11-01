@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/math/big/big.cute - 任意精度整数/浮点占位包
 // TODO: 实现任意精度算术
 

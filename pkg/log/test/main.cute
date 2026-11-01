@@ -1,3 +1,4 @@
+import "std:log"
 fn main() int {
     // Test 1: log.log should not crash
     log.log("test message")

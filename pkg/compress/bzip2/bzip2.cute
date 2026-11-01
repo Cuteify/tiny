@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/compress/bzip2/bzip2.cute - Bzip2 解压缩（桩实现）
 // Bzip2 解压过于复杂，此处仅提供接口桩
 // 实际使用需完整实现 BWT/Huffman 解码

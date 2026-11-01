@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/hash/crc64/crc64.cute - CRC-64 ECMA-182 校验和
 // 使用 ECMA-182 多项式 0x42F0E1EBA9EA3693 的逐字节实现
 // 注意：u32 运算模拟 u64 的低 32 位，高 32 位用单独变量

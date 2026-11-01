@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/archive/zip/zip.cute - Zip 归档读取
 // Zip 文件结构：
 //   本地文件头 + 文件数据 + ...

@@ -1,3 +1,4 @@
+import "std:memory"
 var gLargeHead: ptr = 0
 
 // ===== Inline RC — RC counter at ptr-2*ptrSize =====

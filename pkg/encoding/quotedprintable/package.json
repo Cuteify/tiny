@@ -1,9 +1,5 @@
 {
     "name": "quotedprintable",
     "version": "1.0.0",
-    "description": "Quoted-printable encoding/decoding",
-    "imports": {
-        "memory": "std:memory",
-        "strings": "std:strings"
-    }
+    "description": "Quoted-printable encoding/decoding"
 }

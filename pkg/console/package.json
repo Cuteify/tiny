@@ -1,10 +1,5 @@
 {
     "name": "console",
     "version": "1.0.0",
-    "description": "Console operations: standard input/output/error",
-    "imports": {
-        "syscall": "std:syscall",
-        "strings": "std:strings",
-        "memory": "std:memory"
-    }
+    "description": "Console operations: standard input/output/error"
 }

@@ -1,7 +1,4 @@
 {
     "name": "strings_test",
-    "version": "1.0.0",
-    "imports": {
-        "strings": "std:strings"
-    }
+    "version": "1.0.0"
 }

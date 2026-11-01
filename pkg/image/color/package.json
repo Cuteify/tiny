@@ -1,8 +1,5 @@
 {
     "name": "color",
     "version": "1.0.0",
-    "description": "Color models and predefined colors for image processing",
-    "imports": {
-        "memory": "std:memory"
-    }
+    "description": "Color models and predefined colors for image processing"
 }

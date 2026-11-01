@@ -1,9 +1,5 @@
 {
     "name": "flate",
     "version": "1.0.0",
-    "description": "DEFLATE compression/decompression (store mode)",
-    "imports": {
-        "memory": "std:memory",
-        "strings": "std:strings"
-    }
+    "description": "DEFLATE compression/decompression (store mode)"
 }

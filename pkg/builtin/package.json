@@ -2,9 +2,5 @@
     "name": "builtin",
     "version": "1.0.0",
     "description": "Built-in package: auto-imported, top-level functions callable without namespace prefix",
-    "builtin": true,
-    "imports": {
-        "strings": "std:strings",
-        "syscall": "std:syscall"
-    }
+    "builtin": true
 }

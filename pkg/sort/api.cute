@@ -1,3 +1,5 @@
+import "std:slices"
+import "std:strings"
 // pkg/sort/api.cute - 公开排序 API 层（参照 Go sort / slices.Sort 命名）
 // 规划: docs/stdplan/PLAN.md §3.5。每一层非悄悄顶替——timsort* 在 Phase E 升级为
 // 真 timsort（minrun 归并插入）；现阶段调度到快排，e2e 哨兵只验证「结果有序」不变式。

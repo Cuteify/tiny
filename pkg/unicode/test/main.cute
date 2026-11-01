@@ -1,3 +1,4 @@
+import "std:unicode"
 // unicode package test
 
 fn main() int {

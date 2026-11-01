@@ -1,6 +1,7 @@
 // pkg/slices/memmove_x86.cute - x86 平台 memmove 包装
 build os("linux")
 build arch("x86")
+import "std:syscall"
 
 fn memmove(dst ptr, src ptr, n uint) {
     build asm {

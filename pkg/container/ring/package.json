@@ -1,8 +1,5 @@
 {
     "name": "ring",
     "version": "1.0.0",
-    "description": "Circular buffer (ring buffer) for integers",
-    "imports": {
-        "memory": "std:memory"
-    }
+    "description": "Circular buffer (ring buffer) for integers"
 }

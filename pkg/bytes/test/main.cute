@@ -1,3 +1,6 @@
+import "std:bytes"
+import "std:strings"
+import "std:memory"
 // bytes package test
 
 fn main() int {

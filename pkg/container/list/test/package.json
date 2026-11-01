@@ -1,8 +1,4 @@
 {
     "name": "list_test",
-    "version": "1.0.0",
-    "imports": {
-        "list": "std:container/list",
-        "memory": "std:memory"
-    }
+    "version": "1.0.0"
 }

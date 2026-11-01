@@ -1,3 +1,5 @@
+import "std:strings"
+import "std:syscall"
 // pkg/runtime/runtime.cute - 运行时信息包
 // 平台无关实现
 

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/index/suffixarray/suffixarray.cute - 后缀数组
 // 平台无关实现，使用 O(n^2) 构建算法和 O(n log n) 搜索
 

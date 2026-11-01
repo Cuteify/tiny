@@ -1,3 +1,4 @@
+import "std:memory"
 // pkg/container/ring/ring.cute - 环形缓冲区实现
 // 平台无关实现，固定容量的循环缓冲区
 

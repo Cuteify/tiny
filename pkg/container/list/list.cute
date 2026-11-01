@@ -1,3 +1,4 @@
+import "std:memory"
 // pkg/container/list/list.cute - 双向链表实现
 // 平台无关实现
 

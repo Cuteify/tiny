@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/hash/fnv/fnv.cute - FNV-1 和 FNV-1a 哈希函数
 // FNV-1：先乘后异或
 // FNV-1a：先异或后乘（更好的分布特性）

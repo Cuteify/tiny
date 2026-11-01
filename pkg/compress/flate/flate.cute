@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/compress/flate/flate.cute - DEFLATE 压缩解压（简化版：仅存储模式）
 // 存储模式不做压缩，仅对数据进行分块帧封装
 // 块头：1 字节 BFINAL+BTYPE（bit 0=BFINAL, bit 1-2=BTYPE）

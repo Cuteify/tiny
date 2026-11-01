@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:image"
 // pkg/image/png/png.cute - PNG 编码存根（简化版）
 // 平台无关实现，底层复用 std:memory 和 std:image
 

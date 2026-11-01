@@ -1,3 +1,6 @@
+import "std:mime"
+import "std:memory"
+import "std:strings"
 fn main() int {
     var failures: int = 0
 

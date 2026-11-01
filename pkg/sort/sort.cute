@@ -1,3 +1,5 @@
+import "std:slices"
+import "std:strings"
 // pkg/sort/sort.cute - 排序函数（int / string）
 // 使用原始指针操作，避免触发泛型单态化
 // 字符串元素大小 = 24 字节（ptr 8 + len 8 + cap 8）

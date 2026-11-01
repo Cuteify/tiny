@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/encoding/quotedprintable/quotedprintable.cute - Quoted-Printable 编码/解码
 // 平台无关实现，遵循 RFC 2045 规范
 

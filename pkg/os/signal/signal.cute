@@ -1,3 +1,6 @@
+import "std:strings"
+import "std:memory"
+import "std:syscall"
 // pkg/os/signal/signal.cute - 信号处理包
 // 简化实现：基于回调的信号处理
 // 注意：Cuteify 没有 goroutines/channels，使用回调函数

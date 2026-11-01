@@ -1,3 +1,6 @@
+import "std:syscall"
+import "std:strings"
+import "std:memory"
 // pkg/console/advanced.cute - 高级终端控制 API
 // 基于 ANSI/VT100 转义序列，支持颜色、字体样式、光标控制、终端控制和 Sixel 图形
 // 平台无关，通过 syscall.write 输出转义序列

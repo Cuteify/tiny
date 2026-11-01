@@ -1,3 +1,6 @@
+import "std:slices"
+import "std:memory"
+import "std:strings"
 // pkg/slices/test/main.cute - slices 标准库完整测试
 fn main() int {
     var pass: int = 0

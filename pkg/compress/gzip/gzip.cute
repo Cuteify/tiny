@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:compress/flate"
 // pkg/compress/gzip/gzip.cute - Gzip 压缩解压
 // Gzip = 10 字节头 + DEFLATE 数据 + 8 字节尾
 // 头部格式：

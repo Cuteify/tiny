@@ -1,7 +1,4 @@
 {
     "name": "unicode_test",
-    "version": "1.0.0",
-    "imports": {
-        "unicode": "std:unicode"
-    }
+    "version": "1.0.0"
 }

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/encoding/ascii85/ascii85.cute - Ascii85 (Base85) 编码/解码
 // 平台无关实现，遵循 btoa/atob 标准格式
 // 编码使用 '!' (33) 到 'u' (117) 共 85 个字符

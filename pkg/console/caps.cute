@@ -1,3 +1,6 @@
+import "std:syscall"
+import "std:strings"
+import "std:memory"
 // pkg/console/caps.cute — 终端能力检测
 //
 // 检测终端支持的颜色、鼠标、Sixel等功能

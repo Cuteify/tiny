@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:syscall"
 // 时间库（参考 Go time 包设计，小驼峰命名）
 //
 // Time 内部存储（24 字节）：

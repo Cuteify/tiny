@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/uuid/uuid.cute - UUID v4 生成
 // 平台无关实现，使用简单伪随机数生成器
 // 格式: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx

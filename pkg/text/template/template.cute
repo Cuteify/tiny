@@ -1,3 +1,6 @@
+import "std:memory"
+import "std:strings"
+import "std:maps"
 // pkg/text/template/template.cute - 简单模板引擎
 // 支持 {{.FieldName}} 占位符替换
 // 使用 std:maps 存储键值对(string 键, ptr→string 头 值)

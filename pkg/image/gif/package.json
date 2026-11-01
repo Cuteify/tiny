@@ -1,9 +1,5 @@
 {
     "name": "gif",
     "version": "1.0.0",
-    "description": "GIF image encoding/decoding stub placeholder",
-    "imports": {
-        "memory": "std:memory",
-        "image": "std:image"
-    }
+    "description": "GIF image encoding/decoding stub placeholder"
 }

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/unicode/utf8/utf8.cute - UTF-8 编码/解码包
 // 提供 UTF-8 编码和解码操作
 // 平台无关实现，底层复用 std:memory 和 std:strings

@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/archive/tar/tar.cute - Tar 归档读取（USTAR 格式）
 // USTAR 格式头：512 字节
 //   [0,100]    文件名 (NUL 填充)

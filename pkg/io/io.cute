@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/io/io.cute - I/O 接口包
 // 提供 Reader 和 Writer 结构体及常用 I/O 操作
 // 平台无关实现

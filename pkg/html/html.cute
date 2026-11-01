@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/html/html.cute - HTML 转义/反转义工具
 // 平台无关实现，提供 HTML 实体的转义和反转义功能
 

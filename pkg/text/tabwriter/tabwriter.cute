@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/text/tabwriter/tabwriter.cute - 制表符对齐写入器包
 // 提供弹性制表符（elastic tabstop）对齐功能
 // 平台无关实现，底层复用 std:memory 和 std:strings

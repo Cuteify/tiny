@@ -1,3 +1,4 @@
+import "std:math"
 fn main() int {
     // math.abs
     if math.abs(-5) != 5 {

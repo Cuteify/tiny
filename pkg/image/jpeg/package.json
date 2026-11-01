@@ -1,9 +1,5 @@
 {
     "name": "jpeg",
     "version": "1.0.0",
-    "description": "JPEG image encoding/decoding stub placeholder",
-    "imports": {
-        "memory": "std:memory",
-        "image": "std:image"
-    }
+    "description": "JPEG image encoding/decoding stub placeholder"
 }

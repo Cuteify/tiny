@@ -1,3 +1,5 @@
+import "std:memory"
+import "std:strings"
 // pkg/testing/testing.cute - 简化测试框架（Wave F 真实现）
 // 平台无关实现，底层复用 std:memory 和 std:strings
 // 缺陷⑨a 纪律：本包禁止 fn 类型形参形态（fn f fn(*T) 曾致 parser 死循环，
