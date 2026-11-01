@@ -345,6 +345,42 @@
     不在 22 项矩阵，未随本波改动。
 - **提交**：4828d7a memory（allocator）｜b0ff70b sort（Wave T）｜a7cb4bc testing（Wave F）。
 
+## 2026-11-02（Wave I 收口 ✅ · imports 全量文件级迁移 + json 通道弃用）
+
+- **I-1 全库迁移**（PLAN §4.7）：144 个 tracked 非空 package.json imports（另 1 个为未跟踪
+  探针 `test/_mp_probe`）逐条改写为文件顶层 `import`——别名沿用 json key；默认别名与 key
+  相同时省略别名。170 个 tracked `.cute` 文件新增 1–4 条 import（另 2 个文件已显式 import：
+  `pkg/maps/maps.cute`、`pkg/strings/test/main.cute`）；151 个 tracked package.json 的
+  `imports` 字段清零（含 7 个 `"imports": {}` 空壳）。五 farm 缺陷⑪绕行（显式 strings）
+  按「保持依赖集不动」口径转为文件级显式 import，未削弱。
+  - 两处预存坏路径顺修（否则文件级 import 无法解析）：
+    `pkg/image` color `std:image.color` → `std:image/color`；
+    `pkg/unicode/utf8/test` utf8 `std:utf8` → `std:unicode/utf8`。
+  - 相对路径保持原值：`test/fortest` strlib `./lib`、`test/negIdx` slices
+    `../../pkg/slices`（resolveImportPath 按包目录拼接）。
+- **I-2 json 通道弃用**（package/*.go 最小 diff）：`GetPackage` 解码后
+  `packageInfo.Imports = nil`，json 仅保留 name/version/description/builtin 等元数据；
+  根包 `builtin` 注入保留，仍走文件级 import 同一加载/别名机器。依赖声明唯一通道 =
+  文件级 import。
+- **I-3 autoImport 兜底复核 → 删除**：全库取证 `LookupAutoImport` 零读者（仅
+  `package/fmt/fmt.go` 定义 + `package/imports.go`、`package/package.go` 三处写入），
+  注册表纯写侧死代码；bare `print/println` 的绑定真相 = 根包 `builtin` 注入 +
+  `parser.BuiltinFuncs`（test/builtinTest 形态），与 autoImport 无关。删除
+  `autoImport` map / `RegisterAutoImport` / `LookupAutoImport` 及三处调用。
+- **验证**：
+  - I-1（w11，json 仍消费 + 文件级 import 冗余）：22 项 × 双 arch × 三连，与 Wave T+F
+    收口 v2 基线逐位一致（x64 全绿；x86 预存红面不变）。
+  - I-2（w12，json 通道关闭）：22 项 × 双 arch × 三连，与 I-1/v2 逐位一致；
+    x64 sortTest=110、sliceTest=0、mp_min=80、mp_map=330（raw 74）；x86 预存红面不变。
+  - esccheck（当前源重建）：have=103 fail=9，对象=107 泄漏=0 提前释放=0 作用域=79
+    转移=22，与 Wave T+F 基线逐位一致。
+  - `grep -rn '"imports"' pkg test --include=package.json` = 零命中（rc=1）。
+  - 冒烟：`test/import` 双 arch RC:0；`test/builtinTest`、`test/helloWorld`、
+    `test/fortest`、`pkg/image`、`pkg/image/color`、`pkg/unicode/utf8/test` 与 HEAD
+    基线（w11 + HEAD 树）逐项同 rc（均为预存红面，非 Wave I 回归）。
+- **提交**：8779026 imports/pkg｜502dde8 imports/test｜1306ddb package（json 通道弃用 +
+  autoImport 删除）。
+
 ## 待办池（v2 · Wave 0 基线）
 
 - [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
@@ -357,7 +393,7 @@
 - [x] Wave N（撤销=并入 Wave L）：build align(N)/noalign 已随 L 波落地（parser/build.go align case+attachPendingAlign；type/struct.go Layout pack 分支；test/align 全绿，见 2026-10-29 Wave L 段）
 - [x] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps（**✅ 2026-11-02**，mp_min=80/mp_map=330 双 arch 三连；narrative 见上「Wave Mp maps 收口」段）
 - [x] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq（**✅ 2026-11-02**，sortTest x64=110（11 pass/0 fail）双 arch 三连、sliceTest=0；narrative 见上「Wave T+F 收口」段）
-- [ ] Wave I（终波）：imports 全量文件级迁移 + json 通道弃用（PLAN §4.7，**拍板 2026-11-01**）
+- [x] Wave I（终波）：imports 全量文件级迁移 + json 通道弃用（PLAN §4.7，**✅ 2026-11-02**，22 项双 arch 三连逐位一致 + esccheck 红项 0；narrative 见上「2026-11-02（Wave I 收口）」段）
 
 ## 支线池（插空，不入波次）
 
