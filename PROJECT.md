@@ -27,8 +27,8 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w11
 - farm 期望 rc（PROGRESS.md 基线，**2026-11-02 Wave Mp 收口后实测**）：
   `test/complexTest=17` ｜ `test/rctest=60` ｜ `test/sliceTest=0` ｜
   `pkg/slices/test=230`（断言 pass*10+fail 公式）｜ `pkg/strings/test=42` ｜
-  排序面全 0（sortMinimal/2/Quick/IntOnly/StrOnly，**x64**）｜ `sortTest=x64 139（旧110，Wave T 收口体）` ｜ `slice_test=x64 0` ｜ `negIdx=48（x64；x86=32 分 arch UB 值）` ｜ `derefTest=7（缺陷⑪补录后复活）` ｜ `rcSimple=12` ｜ `gcfree=60` ｜ `gcfree2=0` ｜ `m5=7`（struct 审计 7 项）｜ `map_test=0`（builtin map 语法探针）｜ **`mp_min=80`｜`mp_map=330`（进程 rc 取模=74，Wave Mp 双 arch 三连）**
-  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，Wave T 面）；sprobe01 farm 目录缺失已剔出矩阵
+  排序面全 0（sortMinimal/2/Quick/IntOnly/StrOnly，**x64**）｜ `sortTest=x64 110（11 pass/0 fail，Wave T 收口）` ｜ `slice_test=x64 0` ｜ `negIdx=48（x64；x86=32 分 arch UB 值）` ｜ `derefTest=7（缺陷⑪补录后复活）` ｜ `rcSimple=12` ｜ `gcfree=60` ｜ `gcfree2=0` ｜ `m5=7`（struct 审计 7 项）｜ `map_test=0`（builtin map 语法探针）｜ **`mp_min=80`｜`mp_map=330`（进程 rc 取模=74，Wave Mp 双 arch 三连）**
+  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，预存 deref-store/泛型 len 碰撞面，见 §4）；sprobe01 farm 目录缺失已剔出矩阵
 - farm 跑 rc 要**三连稳定**才可判绿；异 rc 先 re-run。
 - 看生成 asm：`cd /tmp/opencode/run && CUTE_ROOT=/home/gx/Desktop/代码/tiny CUTE_ARCH=x86|x86_64 <bin> -S <dir>`（run 目录=repo 符号 symlink）
 - 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "w1[01] -S"`——**必须字符类**（直写二进制名= pkill 自杀实证）
@@ -60,8 +60,11 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w11
 - ⑫ Wave Mp 借用指针被 GC 误判 owned——✅ 2026-11-02（三站点收窄 `IsBuiltinNewAlloc()`）
 - `||`/`&&` 链 BeParent 缺 `exp.Father=e.Father`（≥3 项中间复合链丢第 3 叶）——✅ 2026-11-02（1 行修复+双 arch 真向短路）
 - **x86 `uint %` 发有符号 `cdq; idiv`**（新记，未全局修）——高位 FNV 哈希变负偏移；maps 六处 `& (cap-1)` 局部绕行（cap 恒 2^n）
+- **free-list class 尺寸错配**（合并块 160B 按 slotOf=8 入链，class 8 规范=168，footer 越界 8B 踩后继 header）——✅ 2026-11-02 `4828d7a`（`freeListClassOf` 取规范尺寸≤实际的最大 class；malloc 按实际 rawSize 拆/消费；sortTest 139→110）
+- **deref-store 右值调用静默丢弃**（预存，未修）——farm 同 import slices/sort（间接带 `slices.len[T]`/`cap[T]`）时 `*p = unsafe.cast[ptr](strings.len/cap(...))` 的调用从 asm 消失、落 stale RAX；x64 sortStrOnly 输出多 2B / x86 COMPILE_FAIL:2（nil Type 链）；w7 同现象
+- **`pkg/sort/test` 陈旧测试**（预存，未修）——引用已删除的 `sort.isSortedInts/searchInts/sortInts`（仅存 `str_sort.cute.bak3`），w7/w11 同 rc=1；不在 22 项矩阵
 - 缺陷⑰病理详细档案=/tmp/opencode/wave_st_progress.md L212 段
-- R3 = monomorphize 缓存量（泛型组合爆炸）观测面；R2 = timsort↔RC 释放路径（Wave T 完成后 esccheck 复验）
+- R3 = monomorphize 缓存量（泛型组合爆炸）观测面；R2 = timsort↔RC 释放路径——✅ 2026-11-02 esccheck 红项 0
 
 ## 5. 关键资源
 - bin：`/tmp/opencode/bin/`（w11=Wave Mp 收口编译器；esccheck=逃逸检查器）

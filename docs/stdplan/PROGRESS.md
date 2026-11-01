@@ -305,6 +305,46 @@
 - **提交**：4732408 compiler｜84a1c12 hashmap 删包｜a7f8986 maps+mp farms｜786b9fd template 切包。
   Wave T/F 工作区改动（tim*.cute/testing.cute/sort api）未随 Mp 提交，下一步收口。
 
+## 2026-11-02（Wave T+F 收口 ✅ + allocator class 错配修复）
+
+- **Wave T 真 timsort 落地**（PLAN §4.5）：`pkg/sort/tim.cute`（字符串行族，24B 行步进，
+  u8 无符号序 + 长度决胜）+ `tim_x86_64.cute` / `tim_x86.cute`（int/uint 特化族）；
+  `api.cute` 三个 timsort* 入口由快排调度改为真实现。算法=minrun（MIN_MERGE=64 折半
+  累积）+ 自然 run（严格降序就地反转）+ run 二分插入补长 + 归并栈（Java merge_collapse
+  不变式）+ gallop 简化=指数跳后二分批量落位；稳定性=归并同值取左、二分插入 upper bound。
+- **Wave F assertEq 真实现**：`pkg/testing/testing.cute` 双轨计分——全局轨
+  assertEq/assertEqU/assertEqS（失败 assertFailCnt+1，assertFailNum 出口）+ T 轨
+  assertEqT/assertEqUT/assertEqST（复用 Fail/Error）；NewT 取代 fn 形参 Run（缺陷⑨a 纪律）。
+  sliceTest=0 双 arch 三连。
+- **allocator 堆腐修复（Wave T 现场）**：sortTest x64 由 139 收口到 110（11 pass/0 fail）。
+  根因=free-list class 尺寸错配：80+80 合并块 160B 按 slotOf(160)=8 入链，而 class 8
+  规范尺寸=168；malloc 按 168 写 footer，越过真实块尾 8B 踩坏后继块 header，后续
+  hdrSetFooter 写到堆指针→SIGSEGV。修法：
+  1. `freeListClassOf(size)` = 「规范尺寸 <= 实际尺寸」的最大 class，insert/remove 同用；
+  2. malloc TINY/SMALL 路径按 header 实际 rawSize 取块：余量 >= max(4*ptrSize, class 0
+     规范尺寸) 时拆块回链（余块 IS_FREE + 后继 PREV_FREE），否则整块消费；footer 一律
+     按实际边界写。
+  确定性复现 `/tmp/opencode/probe_alloc`：修前 rc=139、修后 rc=0。
+- **验证（w11，22 项 × 双 arch × 三连，v2 修后复跑）**：
+  - x64 全绿：rctest=60｜gcfree=60｜gcfree2=0｜rcSimple=12｜complexTest=17｜m5=7｜
+    map_test=0｜slice_minimal=0｜slice_test=0｜sliceTest=0｜negIdx=48｜sortMinimal/2/Quick/
+    IntOnly/StrOnly=0｜pkg/slices/test=230｜pkg/strings/test=42｜derefTest=7｜**sortTest=110**
+    ｜mp_min=80｜mp_map=330（raw 74）。
+  - x86：与 Wave Mp 基线逐位一致（十二绿 + mp 双绿）；预存红面不变：slice_minimal/
+    slice_test/sortMinimal/2/Quick/IntOnly=NASM_FAIL（全局 push 缺 dword），
+    sortStrOnly/sortTest=COMPILE_FAIL:2（nil Type 链）。
+  - esccheck 红项 0（泄漏=0/提前释放=0；对象 107/作用域释放 79/转移 22；fail=9 为既有
+    不可解析探针目录）。
+- **现场旁证（预存非回归，不入本波）**：
+  - `test/sortStrOnly` x64 输出 `hello\0do`/`hello\0en`（rc=0）：根因=当 farm 同时
+    import slices/sort（间接带入 `slices.len[T]`/`cap[T]`）时，deref-store 右值
+    `*p = unsafe.cast[ptr](strings.len(...))` 的调用被静默丢弃，落入 stale RAX（偏移 8），
+    makeString len 变 8；w7 旧编译器同现象，确认预存。x86 同形态即 COMPILE_FAIL:2。
+  - `pkg/sort/test` rc=1：测试引用已不存在的 `sort.isSortedInts/searchInts/sortInts`
+    （仅存 str_sort.cute.bak3），编译器静默丢未解析调用；w7 同 rc=1，预存陈旧测试，
+    不在 22 项矩阵，未随本波改动。
+- **提交**：4828d7a memory（allocator）｜b0ff70b sort（Wave T）｜a7cb4bc testing（Wave F）。
+
 ## 待办池（v2 · Wave 0 基线）
 
 - [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
@@ -316,7 +356,7 @@
 - [x] Wave St：strings split 族/Builder/compare/… + str 覆写（**✅ 2026-10-31**，双 arch rc=42 全绿、x86 首个收口 pkg；narrative 见上「2026-10-31（Wave St 双战线收口 + Wave S x86 分片追凶）」段）
 - [x] Wave N（撤销=并入 Wave L）：build align(N)/noalign 已随 L 波落地（parser/build.go align case+attachPendingAlign；type/struct.go Layout pack 分支；test/align 全绿，见 2026-10-29 Wave L 段）
 - [x] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps（**✅ 2026-11-02**，mp_min=80/mp_map=330 双 arch 三连；narrative 见上「Wave Mp maps 收口」段）
-- [ ] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq
+- [x] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq（**✅ 2026-11-02**，sortTest x64=110（11 pass/0 fail）双 arch 三连、sliceTest=0；narrative 见上「Wave T+F 收口」段）
 - [ ] Wave I（终波）：imports 全量文件级迁移 + json 通道弃用（PLAN §4.7，**拍板 2026-11-01**）
 
 ## 支线池（插空，不入波次）
@@ -326,6 +366,8 @@
 - [ ] ❗x86 全局 push 代码gen缺陷（**2026-11-01 矩阵摸底新记**，预存非回归）：全局量（如 pkg/console STDOUT_FD/ESC）作为 call 实参 push 时缺 dword 尺寸前缀 → NASM `operation size not specified`（slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly x86 全体预存红；console 2026-09-22 后未改动=历史遗留）；Wave T 收口排序面 x86 时一并考虑（sortMin 族 farm 依赖此路径）
 - [ ] ❗x86 `uint %` 发有符号 `cdq; idiv`（**2026-11-02 Wave Mp 新记**）：高位 FNV 哈希变负偏移；maps 六处改 `& (cap-1)` 局部绕行（cap 恒 2^n）。全局修复需 division 符号语义专项，未在本波范围
 - [x] `||`/`&&` 链缺陷（recursion 53→51）：参数版 vs 字面量版判别探针 ×4（**✅ 2026-11-02**：BeParent 1 行 + 双 arch 真向短路；eq_min v5=1/mp_map=330 双 arch 三连，见上「`||`/`&&` 链」段）
+- [ ] ❗deref-store 右值调用静默丢弃（**2026-11-02 Wave T 现场旁证，预存非回归**）：farm 同时 import slices/sort（间接带入 `slices.len[T]`/`cap[T]`）时，`*p = unsafe.cast[ptr](strings.len/cap(...))` 的调用从 asm 消失、落 stale RAX（偏移 8）→ sortStrOnly x64 输出多 2 字节；x86 同形态 COMPILE_FAIL:2（nil Type 链）。w7 旧编译器同现象，根因疑为包限定名与泛型 `len/cap` 解析碰撞，未在本波修
+- [ ] ❗`pkg/sort/test` 陈旧测试（**2026-11-02 定性**）：引用已删除的 `sort.isSortedInts/searchInts/sortInts`（仅存 `str_sort.cute.bak3`），w7/w11 同 rc=1；不在 22 项矩阵，未改动
 - [ ] 139 簇其余：rcTracking/stringsUtils/sliceTest（栈耗尽定性，先量 rsp 距离）
 - [ ] structMethod=45
 - [ ] console.println 输出链修复专项（R1，含 setCursorPos）
