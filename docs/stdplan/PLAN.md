@@ -1,6 +1,6 @@
 # stdlib 重构规划 v2（参照 Go 设计）
 
-> 状态：**v2.2**（2026-10-30）。v1 → v2 变更：① 用户架构铁律固化（依赖方向 / 结构体表示 / build 对齐控制）；
+> 状态：**v2.3**（2026-11-01）。v1 → v2 变更：① 用户架构铁律固化（依赖方向 / 结构体表示 / build 对齐控制）；
 > ② 内存管理器结构审阅结论并入（§2）；③ 三个决策点拍板（波次顺序 / W5 随手清 / hashmap 删包）。
 > v2.1 变更：④ 波次顺序微调 + import 五形态定案。
 > v2.2 变更：⑤ **切片头布局改 Go 序**（v2.1 的 len@0/cap@8/data@16 撤销——user 定案「slice 参考 Go，真的
@@ -8,6 +8,8 @@
 > 与现编译器 `listFields()` 及 string 布局天然同构）；⑥ **P11 类型视图铁律**（裸偏移清零：stdlib 一律
 > unsafe.cast 到覆写结构体、编译器一律 shape 字段查表）；⑦ Wave S 前插 **S0 shape 基建**；
 > ⑧ Wave 0 门禁 ④ A5 探针收口（谱系见 PROGRESS.md）。
+> v2.3 变更（2026-11-01 用户拍板）：⑨ **Wave I 终波立项**——现有波次全部收口后，全库 package.json
+> imports 迁移为文件级 `import`，随后**弃用 json imports 通道**（详见 §4.7）。
 > SSOT：本文件 = 规划；`PROGRESS.md` = 实时执行日志。
 > 上游决策：用户 2026-10-29 指示「好好规划和实现 memory、slice、string、map 等，参考 go」（v1 起点）；
 > 同日追加：「string 和 slice 单向依赖 memory，反过来说没有依赖的，map 也同理；各种数据结构尽量使用
@@ -32,8 +34,8 @@
      （pack(N) = min(自然对齐, N)，noalign = align(1)）；默认路径逐位不变；
    - `import` 关键字（P10）：依赖声明从 package.json 迁到文件顶层（参考 Go），json 降级为纯包信息；
    - CUTE_ROOT：std 根解析 = 环境变量 → 编译器本地兜底，替代 Getwd。
-4. **波次顺序（拍板 v2.1；v2.2 增补 S0）**：`Wave 0 门禁 → L 语言设施(import+align+CUTE_ROOT) → M memory → S slices（S0 shape 基建先行 → 全套） →
-   St strings → Mp maps → T timsort + F assertEq`；
+4. **波次顺序（拍板 v2.1；v2.2 增补 S0；v2.3 增补终波 I）**：`Wave 0 门禁 → L 语言设施(import+align+CUTE_ROOT) → M memory → S slices（S0 shape 基建先行 → 全套） →
+   St strings → Mp maps → T timsort + F assertEq → I imports 全量文件级迁移（json 通道弃用，终波，§4.7）`；
    **W5 探针删除改为各 Wave 尾部随手清**（不设独立阶段）；**hashmap 删包**（不做薄壳），
    text/template 切 std:maps。
 5. **内存管理器结构审阅完成**（§2）：分层健全、60 class 分级空闲链表 + boundary tag + RC 族，
@@ -308,7 +310,23 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 
 ---
 
-## 5. 波次实施与验收（v2）
+### 4.7 imports 全量文件级迁移（Wave I；拍板 2026-11-01，终波）
+
+> 用户拍板：「现有都完成后，替换所有 package.json 的 import，然后放弃原本的 import 方式」。
+
+前提：Wave Mp / T / F 全部收口且哨兵基线建立后开工。
+
+- **I-1 全库迁移**：所有 `.cute` 包与 farm（`pkg/**`、`test/**`、根 fixture）的 package.json
+  `imports` 字段逐条改写为对应文件顶层的 `import "std:x"`（别名沿用 json key）；
+  五 farm 等显式 import 过的（缺陷⑪绕行）保持不动；
+- **I-2 json 通道弃用**（package/*.go 最小 diff，用户已授权）：`GetPackage` 停止消费
+  package.json `imports` 字段——依赖声明唯一通道 = 文件级 import；
+  json 只保留 name/version/description/builtin 等元数据；根包 builtin 注入保留；
+- **I-3 autoImport 兜底复核**：先取证 bare 名调用（如根 farm 直呼 `print/println`）的绑定路径
+  真相，再定 autoImport 兜底去留；能删则删（P7 机器可验证彻底成立），不能删则收窄并文档化；
+- **I-4 验收**：迁移前后 23 项哨兵（derefTest 挂账除外）双 arch 逐位对拍零回归；
+  `grep -rn '"imports"' pkg test --include=package.json` 面清零（builtin 除外，视 I-2 决议）；
+- **I-5 日志纪律**：迁移全程 PROGRESS.md 边做边写；先落 PLAN/PROGRESS 条目再动手。
 
 | Wave | 交付 | e2e 哨兵 / 门禁 | 量级 |
 |---|---|---|---|
@@ -319,6 +337,7 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 | **St strings** | §4.3 | stringsUtils 复跑 + 新哨兵 | L |
 | **Mp maps** | §4.4（删包 + 切包） | 新 test/maps 哨兵 + fmt/sortTest 复跑 | L |
 | **T+F** | §4.5 Wave T + assertEq 真实现 | sortTest 归零 + sliceTest 归零 | M |
+| **I imports** | §4.7 全量文件级迁移 + json 通道弃用（**终波，拍板 2026-11-01**） | 迁移前后哨兵逐位对拍（derefTest 挂账除外）；json imports 残留面=0 | L |
 
 每 Wave 三条验收（v1 沿用）：① exit-code 哨兵全绿 ② esccheck 语料 +N 单独归因记录（PROGRESS.md），
 不变列逐位比对 ③ 主线程分批提交（包×Wave 一 commit）。

@@ -235,6 +235,76 @@
 - [ ] 13 绿哨兵复跑基线
 - [ ] Wave 0 尾：exp_check.go 还原
 
+## 2026-11-02（Wave Mp 收口前：`||`/`&&` 链丢叶根因实锤 + 支线池修复）
+
+- **症状**：farm mp_map S6.2 `*pk == 50 || *pk == 60 || *pk == 70` 命中数恒 2（期望 3），
+  eq_min v5 rc=7；compile 侧条件树探针只见 2 叶。
+- **根因（parser/exp.go `BeParent`，缺 1 行）**：
+  ```go
+  func (e *Expression) BeParent(exp *Expression) {
+      if e.Father != nil {
+          e.Father.Right = exp   // 新父挂到祖父 Right…
+      }
+      e.Father = exp
+      exp.Left = e
+      // ❌ 缺 exp.Father = e.Father → 新父 Father 恒 nil，链断
+  }
+  ```
+  逐 token 指针级实证：`*pk == 60` 经 BeParent 后 `==60.Father=nil`；下一个 `||` 左结合爬链
+  `for current.Father != nil && ...` 立即停住 → 新 `||` 挂错层、root 检查失败 → 第 3 项起整棵子树游离，
+  `ParseExp` 末尾 `return root` 返回截断树。
+- **触发矩阵（实测）**：≥3 项 `&&`/`||`/混合链，且**中间项**比较的左操作数为运算符表达式
+  （一元 `*`/`-`、二元 `+`、索引等）→ 丢第 3 项及以后；首/末项复合、函数调用、字段访问、纯变量链、
+  2 项链安全；括号规避无效（`(a||b)||c` 仍丢）。
+- **影响面**：生产代码 9 处静默受害——pkg/html/html.cute L108/116/126/137/147、
+  pkg/encoding/ascii85 L107/114、pkg/encoding/quotedprintable L103、pkg/text/template L31；
+  加 farm mp_map S6.2 共 10 处。缺陷考古：BeParent 引入于 03bf454、左结合爬链 21b2279，长期潜伏非回归。
+- **处置**：按 PLAN §5「支线池（插空，不入波次）·`||`/`&&` 链缺陷」立项；先备份
+  `/tmp/opencode/backup/parser_exp.go.20261102_022741`（sha256 同源），再落 1 行修复
+  `exp.Father = e.Father`；/tmp 副本已验证全部形态恢复、安全形态叶数零变化。
+- **验证 ✅ 2026-11-02**：eq_min v5 rc=1 双 arch 三连；farm mp_map rc=330（raw 74）双 arch 三连；
+  哨兵矩阵 22 项双 arch 三连（x64 全绿，sortTest=139 仍为 Wave T 收口面；x86 红面与开工基线分族一致）；
+  esccheck 红项 0（对象 107/泄漏 0/提前释放 0/作用域释放 79/转移 22）。
+
+## 2026-11-02（Wave Mp maps 收口 ✅）
+
+- **maps 泛型重写落地**（`pkg/maps/maps.cute` 716 行）：单类型形参 `[K]`、开放寻址 + 墓碑、
+  FNV-1a 手写 hash/eq（string 键逐字节、int/uint/ptr 按字宽）、只依赖 memory（P7 零横依赖）；
+  公开面 new/set/get/hasKey/len/keys/values/clone/equal/delete。cap 恒 2^n（初始 16）。
+- **x86 `uint %` 缺陷实锤（新记，未全局修）**：x86 `%` 发 `cdq; idiv`（有符号），
+  FNV-1a 高位哈希被解释为负 → `idx=4294967287`，set 写到 slots 块外而 count 自增；
+  maps 六处取模改 `& (cap-1)`（cap 构造上恒 2^n，语义等价且避开有符号 idiv）。
+  该缺陷为编译器级潜在雷，记入 PROJECT §4；全局修复不在本波范围。
+- **template 切包**：`pkg/text/template` imports `hashmap` → `maps`；句柄改裸 `ptr`，
+  查值 `maps.get[string](data, key, &val)`，string 头经本文件 `strView{p,n,c}` 字段读取
+  （泛型内禁 deref/field 的形态纪律绕行）。execute("Hello {{.name}}!") 双 arch
+  输出 `Hello World!`（len=12）实证通过。
+- **hashmap 删包**：`git rm -r pkg/hashmap`；全库 grep `std:hashmap`/`"hashmap"` 源码引用=0。
+- **编译器配套面**（随 Wave Mp 收口，commit 4732408）：
+  1. `||`/`&&` 链：`Expression.BeParent` 补 `exp.Father = e.Father`（≥3 项中间复合链丢第 3 叶）；
+     双 arch 条件发射改「假目标 + 真目标」双出口，`||` 任一叶真短路进体、`&&` 左真落 mid。
+  2. GC 所有权判据三站点收窄 `Call.NewType != nil` → `Call.IsBuiltinNewAlloc()`（仅 new/newRC），
+     修 maps fnv1a 借用指针被块尾误 free（病灶⑫）。
+  3. 单态化病灶⑯/⑰b：else 子树深拷贝 + 克隆先于原树替身，避免双 mono（int+string）
+     sizeof[K] 被首例污染、else 写点整体 +16。
+  4. x86 `sizeof` 内建尊重 `result=="push"`（maps.new 的 sizeof[int]() 实参）。
+  5. `*dst = unsafe.cast[u8](*src)` 装载丢失：未 Check 实参子树表达式 Type=nil，
+     `emitUnary` 回退 `Right.Var.Type` 取解引用宽度（derefcast 双 arch rc=42）。
+  6. `binRL` 左子指针基/this 字段就地写覆盖右子活值（病灶⑱，sb=2×slots）：该形态退回独立寄存器。
+- **验证矩阵（22 项 × 双 arch × 三连，w11）**：
+  - x64 全绿：rctest=60｜gcfree=60｜gcfree2=0｜rcSimple=12｜complexTest=17｜m5=7｜map_test=0｜
+    slice_minimal=0｜slice_test=0｜sliceTest=0｜negIdx=48｜sortMinimal/2/Quick/IntOnly/StrOnly=0｜
+    pkg/slices/test=230｜pkg/strings/test=42｜derefTest=7｜**mp_min=80｜mp_map=330（raw 74）**；
+    sortTest=139 SEGFAULT 仍为 Wave T 收口面（非 Mp 回归）。
+  - x86：十二绿全同开工基线（rctest=60/gcfree=60/gcfree2=0/rcSimple=12/complexTest=17/m5=7/
+    map_test=0/sliceTest=0/negIdx=32/pkg-slices=230/pkg-strings=42/derefTest=7/**mp_min=80/mp_map=330**）；
+    预存红面不变：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM_FAIL，
+    sortStrOnly/sortTest=COMPILE_FAIL:2。
+  - esccheck：红项 0（泄漏=0/提前释放=0；对象 107/作用域释放 79/转移 22；fail=9 为既有不可解析探针目录）。
+  - eq_min v5（`||` 三链 + maps clone/equal）双 arch 三连 rc=1。
+- **提交**：4732408 compiler｜84a1c12 hashmap 删包｜a7f8986 maps+mp farms｜786b9fd template 切包。
+  Wave T/F 工作区改动（tim*.cute/testing.cute/sort api）未随 Mp 提交，下一步收口。
+
 ## 待办池（v2 · Wave 0 基线）
 
 - [ ] C1–C7 分批提交：BindDanglingCall/context/compiler.go、setArgsOffset、ops.go 六根因、sort.cute、api.cute、stdplan 文档
@@ -245,15 +315,17 @@
 - [x] Wave S：slices grow/clone/copy/contains/… + sliceHdr 覆写 + push 走 grow；S 尾删 leaf PROBE-CAST（**✅ 2026-10-30**，narrative 见上「Wave S slices 全套」条目；join 三参变体落地、真形延期）
 - [x] Wave St：strings split 族/Builder/compare/… + str 覆写（**✅ 2026-10-31**，双 arch rc=42 全绿、x86 首个收口 pkg；narrative 见上「2026-10-31（Wave St 双战线收口 + Wave S x86 分片追凶）」段）
 - [x] Wave N（撤销=并入 Wave L）：build align(N)/noalign 已随 L 波落地（parser/build.go align case+attachPendingAlign；type/struct.go Layout pack 分支；test/align 全绿，见 2026-10-29 Wave L 段）
-- [ ] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps
+- [x] Wave Mp：maps 泛型重写（只依赖 memory，开放寻址+墓碑）+ 删 pkg/hashmap + text/template 切 std:maps（**✅ 2026-11-02**，mp_min=80/mp_map=330 双 arch 三连；narrative 见上「Wave Mp maps 收口」段）
 - [ ] Wave T+F：真 timsort（minrun/run/归并栈）+ testing.assertEq
 - [ ] Wave I（终波）：imports 全量文件级迁移 + json 通道弃用（PLAN §4.7，**拍板 2026-11-01**）
 
 ## 支线池（插空，不入波次）
 
+- [x] ✅**Wave Mp 病灶⑫（2026-11-01 现场实锤，2026-11-02 结案）**：mp/mp_map x64 运行 139 SIGSEGV —— gdb 尸检连环钉死：①崩点=std_memory_hdrSetFooter 写 [rbx]（rbx=栈址+0xFFF8）；② Caller 归属=std_memory_coalesce else_if_28（objdump 0x40226b call→0x402270 归 coalesce 函数段）；③ free 入参三连 0x7fffffffdfb8/dfb9/dfba（逐字节+1）= **循环内指针算术变量被 free**；④ 最小 repro `/tmp/opencode/rp_cast`（注解指针+cast 初始化 x64 编译过、rc=86=正确）——裸 `var x = …`（无注解）parse 挂，farm 形态须注解；malloc(0) 本身安全（rp_malloc0 rc=42）；⑤ 源归因=`pkg/maps/maps.cute` fnv1a `var bp: *u8 = unsafe.cast[*u8](p+i)`（借用指针，源里无 malloc）被编译器 GC 通路标 owned → for 块尾插 `; gc: block free bp` → free(用户区/栈)踩分配器（trace: free→freeAt→coalesce→hdrSetFooter SIGSEGV）。**根因=三站点 NewType 判据混洞性**：`parser/call.go` handleName 泛型调用 `f[T](…)` 也置 Call.NewType（=类型实参非分配目标），而 `compile/gc/analyze.go:360 exprAllocates` / `parser/gc_pred.go:66 freshAllocExpr` / `parser/gc_write.go:214` 把 `Call.NewType!=nil` 一律当 new/newRC 分配 → 借用别名误获所有权。derefTest 族 fn 级 free 全在 jmp 后=死代码不可达，块级 free=首个可达撞点（「139 只在 Wave Mp 现形」的原因）。**修法（已定）**：三站点收窄为 CallBlock.IsBuiltinNewAlloc()（new/newRC 才算分配；cast 无参数 malloc→null_init-escaped 安全，cast 参数含 malloc→仍 owned 保额）；rebuild 后先后验序：rp_cast 恒 86 → mp_min x64 三连非 139 → mp_map x64 rc=340 → 哨兵 23 项零回归 → 再攻 x86 侧。**结案（2026-11-02）**：三站点已收窄 `IsBuiltinNewAlloc()`，x86 追加 unsigned `%` 病灶（maps 局部 mask 绕行）；mp_min=80/mp_map=330（raw 74）双 arch 三连，哨兵零回归，esccheck 红项 0。
 - [x] ❗derefTest 双 arch 编译挂（2026-11-01 实测，HEAD 即挂→**同日结案**）：根因=缺陷⑪全局面（farm 未显式 import strings → x64 def 缺失 / x86 nil Type panic）；farm package.json 补录显式 import 后**双 arch rc=7=历史挂账值全等**，挂账撤销 ✅
 - [ ] ❗x86 全局 push 代码gen缺陷（**2026-11-01 矩阵摸底新记**，预存非回归）：全局量（如 pkg/console STDOUT_FD/ESC）作为 call 实参 push 时缺 dword 尺寸前缀 → NASM `operation size not specified`（slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly x86 全体预存红；console 2026-09-22 后未改动=历史遗留）；Wave T 收口排序面 x86 时一并考虑（sortMin 族 farm 依赖此路径）
-- [ ] `||`/`&&` 链缺陷（recursion 53→51）：参数版 vs 字面量版判别探针 ×4
+- [ ] ❗x86 `uint %` 发有符号 `cdq; idiv`（**2026-11-02 Wave Mp 新记**）：高位 FNV 哈希变负偏移；maps 六处改 `& (cap-1)` 局部绕行（cap 恒 2^n）。全局修复需 division 符号语义专项，未在本波范围
+- [x] `||`/`&&` 链缺陷（recursion 53→51）：参数版 vs 字面量版判别探针 ×4（**✅ 2026-11-02**：BeParent 1 行 + 双 arch 真向短路；eq_min v5=1/mp_map=330 双 arch 三连，见上「`||`/`&&` 链」段）
 - [ ] 139 簇其余：rcTracking/stringsUtils/sliceTest（栈耗尽定性，先量 rsp 距离）
 - [ ] structMethod=45
 - [ ] console.println 输出链修复专项（R1，含 setCursorPos）

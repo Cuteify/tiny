@@ -8,26 +8,30 @@
 ## 0. 仓库与编译器
 - repo=`/home/gx/Desktop/代码/tiny`（module `cuteify`，Go 1.25；**编译器入口=仓库根 `main.go`**；语言=CUTE）
 - build：`cd /home/gx/Desktop/代码/tiny && TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/<name> .`（仓库根=main 包）
-  - `main_s01` / `main_s02` = 公共基线二进制（S0-1/S0-2 增量代）；`main_s02f` = 缺陷⑰修后版（即验证常用）
-  - **2026-11-01**：/tmp/opencode 曾被清空并重建——`main_s02f`（工作区树重编）+ `base`（HEAD git worktree 对拍二进制）已重建就位；run→repo 符号链接恢复
+  - **2026-11-02 现行**：收口二进制=`/tmp/opencode/bin/w11`（Wave Mp 收口树，含 `||`/GC/单态化/sizeof/cast/binRL 修）；
+    e2e=`/tmp/opencode/run_one.sh <bin> <repo相对dir> <arch>`（绝对目录用 `run_dir.sh <bin> <dir> <arch>`）；
+    esccheck=`/tmp/opencode/bin/esccheck`（全语料脚本 `/tmp/opencode/esccheck_all.sh`，红项判据=泄漏/提前释放 0）
+  - 旧 `main_s01/main_s02/main_s02f` 与 `run_e2e*.sh` 已随 /tmp 清理失存；HEAD 干净对拍需自建 worktree（`/tmp/opencode/base`）
   - ast_html/ast 系文件=运行副产物，非资产；farm 跑完可能 M 态（不 commit）
 - 目标产物：.cute → NASM（x86_64: elf64 / x86: elf32 + gcc -m32 -no-pie）
 
 ## 1. e2e（唯一验证方式，恒 flock）
 ```bash
-# x86_64
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_e2e.sh <dir> /tmp/opencode/bin/main_s02f"
+# x86_64（<dir> = 仓库相对目录）
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w11 <dir> x86_64"
 # x86
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_e2e_x86.sh <dir> /tmp/opencode/bin/main_s02f"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w11 <dir> x86"
+# 绝对目录探针（/tmp 下）
+flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w11 <绝对dir> x86_64"
 ```
-- farm 期望 rc（PROGRESS.md 基线，**2026-11-01 缺陷⑪ farm 补录后实测**）：
+- farm 期望 rc（PROGRESS.md 基线，**2026-11-02 Wave Mp 收口后实测**）：
   `test/complexTest=17` ｜ `test/rctest=60` ｜ `test/sliceTest=0` ｜
   `pkg/slices/test=230`（断言 pass*10+fail 公式）｜ `pkg/strings/test=42` ｜
-  排序面全 0（sortMinimal/2/Quick/IntOnly/StrOnly，**x64**）｜ `sortTest=x64 139（旧110，Wave T 收口体）` ｜ `slice_test=x64 0` ｜ `negIdx=48（x64；x86=32 分 arch UB 值）` ｜ `derefTest=7（缺陷⑪补录后复活）` ｜ `rcSimple=12` ｜ `gcfree=60` ｜ `gcfree2=0` ｜ `m5=7`（struct 审计 7 项）｜ `map_test=0`（builtin map 语法探针）
-  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMin 族=console 全局 push 缺 dword（codégen 病灶见 PROGRESS 支线池）；sprobe01 farm 目录缺失已剔出矩阵
+  排序面全 0（sortMinimal/2/Quick/IntOnly/StrOnly，**x64**）｜ `sortTest=x64 139（旧110，Wave T 收口体）` ｜ `slice_test=x64 0` ｜ `negIdx=48（x64；x86=32 分 arch UB 值）` ｜ `derefTest=7（缺陷⑪补录后复活）` ｜ `rcSimple=12` ｜ `gcfree=60` ｜ `gcfree2=0` ｜ `m5=7`（struct 审计 7 项）｜ `map_test=0`（builtin map 语法探针）｜ **`mp_min=80`｜`mp_map=330`（进程 rc 取模=74，Wave Mp 双 arch 三连）**
+  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，Wave T 面）；sprobe01 farm 目录缺失已剔出矩阵
 - farm 跑 rc 要**三连稳定**才可判绿；异 rc 先 re-run。
 - 看生成 asm：`cd /tmp/opencode/run && CUTE_ROOT=/home/gx/Desktop/代码/tiny CUTE_ARCH=x86|x86_64 <bin> -S <dir>`（run 目录=repo 符号 symlink）
-- 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "main_s0[12Ff] -S"`——**必须字符类**（"main_s02" 直写= pkill 自杀实证）
+- 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "w1[01] -S"`——**必须字符类**（直写二进制名= pkill 自杀实证）
 - SIG 现场 gdb 尸检：先 `ulimit -Sc 0`，完整后恢复 `ulimit -Sc unlimited`
 
 ## 2. 提交与文件纪律
@@ -46,18 +50,24 @@ flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_e2e_x86.
 6. 双 arch 分片先例=P8 屏障（common+arch 文件；strings/slices 已分片；slice_x86_64.cute=直写全绿蓝本）
 7. x86 参数槽新语义（缺陷⑰②修后）：sub-4B 参数占 dword 槽（API 无感，系统级）
 
-## 4. 缺陷台账快照（2026-10-31）
+## 4. 缺陷台账快照（2026-11-02）
 - ⑨a fn 类型形参 parser 死循环——⏸ 未修，绕行=禁用形态
 - ⑪ 包加载器间接连带不对等——⏸ 未修，绕行=farm package.json 全显式 import
 - ⑯ x86 u64 返回双 dword 接收踩邻槽——✅ 结案（strings_x86 全链去 u64；scan64.py=/tmp/opencode/scan64.py 可复扫）
 - ⑰ x86 泛型单态化槽表错位——✅ 结案 `749a91a`（双病灶：mono 预刷 base 公式 `PushSize()` 分支；`x86/ops.go setArgsOffset` 参数表 4B 槽粒度）
+- ⑰b/⑯随修 单态化 else 子树共享 + 先替身再克隆污染 `sizeof[K]`——✅ 2026-11-02（克隆先于原树替身；else 深拷贝+Father 重绑）
+- ⑱ binRL 左子指针基/this 字段就地写覆盖右子活值（sb=2×slots）——✅ 2026-11-02（该形态退回独立寄存器）
+- ⑫ Wave Mp 借用指针被 GC 误判 owned——✅ 2026-11-02（三站点收窄 `IsBuiltinNewAlloc()`）
+- `||`/`&&` 链 BeParent 缺 `exp.Father=e.Father`（≥3 项中间复合链丢第 3 叶）——✅ 2026-11-02（1 行修复+双 arch 真向短路）
+- **x86 `uint %` 发有符号 `cdq; idiv`**（新记，未全局修）——高位 FNV 哈希变负偏移；maps 六处 `& (cap-1)` 局部绕行（cap 恒 2^n）
 - 缺陷⑰病理详细档案=/tmp/opencode/wave_st_progress.md L212 段
 - R3 = monomorphize 缓存量（泛型组合爆炸）观测面；R2 = timsort↔RC 释放路径（Wave T 完成后 esccheck 复验）
 
 ## 5. 关键资源
-- bin：`/tmp/opencode/bin/`（main_s01 / main_s02 / main_s02f / esccheck_re）
+- bin：`/tmp/opencode/bin/`（w11=Wave Mp 收口编译器；esccheck=逃逸检查器）
 - asm 留档：`/tmp/opencode/asm86_sprobe.asm`、`/tmp/opencode/asm64_sprobe.asm`（x86/x64 修后对照）、`/tmp/opencode/x64tmp/_main.asm`（x64 base 正确形状真值）
-- esccheck：`/tmp/opencode/bin/esccheck_re`（验收=红项全 0；complexTest 基线=对象 3/释放 2/转移 1 逐位；W2 口径见 PROGRESS.md 待办池）
+- esccheck：`/tmp/opencode/bin/esccheck`（验收=红项全 0；complexTest 基线=对象 3/释放 2/转移 1 逐位；全语料脚本=`/tmp/opencode/esccheck_all.sh`，W2 口径见 PROGRESS.md 待办池）
+- 矩阵脚本：`/tmp/opencode/matrix.sh <bin> <arch> <runs>`；日志 `matrix_x64.log`/`matrix_x86.log`
 - SSOT：`docs/stdplan/PLAN.md`（计划）/ `docs/stdplan/PROGRESS.md`（执行日志+哨兵基线全表）
 - Wave St 假想攻坚台账：`/tmp/opencode/wave_st_progress.md`
 
