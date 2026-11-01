@@ -1,0 +1,9 @@
+{
+    "name": "mp_min",
+    "version": "1.0.0",
+    "description": "Wave Mp最小分片[int键S1]",
+    "imports": {
+        "maps": "std:maps",
+        "strings": "std:strings"
+    }
+}

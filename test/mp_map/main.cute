@@ -1,0 +1,315 @@
+// test/mp_map —— Wave Mp 收口 farm:真 std:maps 挂载(非副本 fixture)
+// 覆面:int 键基础/覆盖/delete/has、string 键、string 值视图、ptr 键、rehash(16→32→64)、
+//       keys/values、clone 独立性、equal、clear;ret = pass*10+fail;断言 33 项:
+//       S1=8 S2=5 S3=3 S4=4 S5=4 S6=3 S7=4 S8=2 → 全绿 rc=330
+// StrView 本 farm 覆写视图(P4:覆写视图在使用文件内定义;随 arch 自适应)
+type StrView struct {
+    p: ptr
+    n: uint
+    c: uint
+}
+
+fn main() int {
+    var pass: int = 0
+    var fail: int = 0
+
+    // ---- S1. int 键 / int 值:8 断言 =====
+    var m1: ptr = maps.new[int](0, sizeof[int]())
+    var v1: int = 42
+    maps.set[int](m1, 1, &v1)
+    var o1: int = 0
+    var ok1: bool = maps.get[int](m1, 1, &o1)
+    if ok1 && o1 == 42 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var ok2: bool = maps.get[int](m1, 99, &o1)
+    if !ok2 && o1 == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var l1: uint = maps.len(m1)
+    if l1 == 1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var v1b: int = 99
+    maps.set[int](m1, 1, &v1b)
+    var ok1b: bool = maps.get[int](m1, 1, &o1)
+    var l1b: uint = maps.len(m1)
+    if ok1b && o1 == 99 && l1b == 1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var h1: bool = maps.has[int](m1, 1)
+    if h1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var d1: bool = maps.delete[int](m1, 1)
+    var l1c: uint = maps.len(m1)
+    if d1 && l1c == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var d2: bool = maps.delete[int](m1, 1)
+    var ok1c: bool = maps.get[int](m1, 1, &o1)
+    if !d2 && !ok1c {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var h1b: bool = maps.has[int](m1, 77)
+    if !h1b {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S2. string 键 / int 值:5 断言 =====
+    var sw: string = ""
+    var ms: ptr = maps.new[string](sw, sizeof[int]())
+    var a1: int = 1
+    var a2: int = 2
+    maps.set[string](ms, "alpha", &a1)
+    maps.set[string](ms, "beta", &a2)
+    var os1: int = 0
+    var os2: int = 0
+    var oks1: bool = maps.get[string](ms, "alpha", &os1)
+    var oks2: bool = maps.get[string](ms, "beta", &os2)
+    if oks1 && os1 == 1 && oks2 && os2 == 2 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var ls: uint = maps.len(ms)
+    if ls == 2 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var hs: bool = maps.has[string](ms, "gamma")
+    if !hs {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var a1b: int = 11
+    maps.set[string](ms, "alpha", &a1b)
+    var oks1b: bool = maps.get[string](ms, "alpha", &os1)
+    var lsb: uint = maps.len(ms)
+    if oks1b && os1 == 11 && lsb == 2 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var ds: bool = maps.delete[string](ms, "alpha")
+    var oks1c: bool = maps.get[string](ms, "alpha", &os1)
+    if ds && !oks1c {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S3. string 键 / string 值(视图:值域为 24B 头拷贝):3 断言 =====
+    var msv: ptr = maps.new[string](sw, sizeof[string]())
+    var strv: string = "v_beta"
+    maps.set[string](msv, "k1", &strv)
+    var back: string = ""
+    var oksv: bool = maps.get[string](msv, "k1", &back)
+    var svBack: *StrView = unsafe.cast[*StrView](&back)
+    var bc: *u8 = unsafe.cast[*u8](svBack.p)
+    if oksv && svBack.n == 6 && svBack.p != 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    if *bc == 118 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var dsv: bool = maps.has[string](msv, "k1")
+    if dsv {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S4. ptr 键 / int 值:4 断言 =====
+    var holdA: int = 7
+    var pa: *int = &holdA
+    var holdB: int = 8
+    var pb: *int = &holdB
+    var mp: ptr = maps.new[*int](pa, sizeof[int]())
+    var pv: int = 55
+    maps.set[*int](mp, pa, &pv)
+    var op: int = 0
+    var okp: bool = maps.get[*int](mp, pa, &op)
+    if okp && op == 55 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var okp2: bool = maps.get[*int](mp, pb, &op)
+    if !okp2 && op == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var hp: bool = maps.has[*int](mp, pa)
+    if hp {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var dp: bool = maps.delete[*int](mp, pa)
+    var lpx: uint = maps.len(mp)
+    if dp && lpx == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S5. rehash(int 键 40 项,16→32):4 断言 =====
+    var mr: ptr = maps.new[int](0, sizeof[int]())
+    var i5: int = 0
+    for ; i5 < 40; {
+        var kv: int = i5
+        var vv: int = i5 * 3
+        maps.set[int](mr, kv, &vv)
+        i5 = i5 + 1
+    }
+    var lr: uint = maps.len(mr)
+    if lr == 40 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var or5: int = 0
+    var okr1: bool = maps.get[int](mr, 0, &or5)
+    var okr2: bool = maps.get[int](mr, 25, &or5)
+    var okr3: bool = maps.get[int](mr, 39, &or5)
+    if okr1 || okr2 || okr3 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var or5b: int = 0
+    var or5b2: int = 0
+    var okr1b: bool = maps.get[int](mr, 0, &or5b)
+    var okr2b: bool = maps.get[int](mr, 25, &or5b2)
+    if okr1b && or5b == 0 && okr2b && or5b2 == 75 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var okr4: bool = maps.get[int](mr, 5, &or5b)
+    if okr4 && or5b == 15 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S6. keys/values(int 键 3 项 {50,60,70}/{100,200,300}):4 断言 =====
+    var m3: ptr = maps.new[int](0, sizeof[int]())
+    var kv50: int = 50
+    var kv60: int = 60
+    var kv70: int = 70
+    var bv1: int = 100
+    var bv2: int = 200
+    var bv3: int = 300
+    maps.set[int](m3, kv50, &bv1)
+    maps.set[int](m3, kv60, &bv2)
+    maps.set[int](m3, kv70, &bv3)
+    var l3: uint = maps.len(m3)
+    if l3 == 3 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var kp: ptr = maps.keys(m3)
+    var hitC: int = 0
+    var kWU: uint = unsafe.cast[uint](sizeof[int]())
+    var i6: uint = 0
+    for ; i6 < 3; {
+        var pk: *int = unsafe.cast[*int](kp + i6 * kWU)
+        if *pk == 50 || *pk == 60 || *pk == 70 {
+            hitC = hitC + 1
+        }
+        i6 = i6 + 1
+    }
+    if hitC == 3 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var vp: ptr = maps.values(m3)
+    var vsum: int = 0
+    var i6b: uint = 0
+    for ; i6b < 3; {
+        var pv2: *int = unsafe.cast[*int](vp + i6b * kWU)
+        vsum = vsum + *pv2
+        i6b = i6b + 1
+    }
+    if vsum == 600 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S7. clone 独立性 + equal:4 断言 =====
+    var c1: ptr = maps.clone(m3)
+    var lc: uint = maps.len(c1)
+    if lc == 3 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var eqPre: bool = maps.equal(m3, c1)
+    if eqPre {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var bvn: int = 999
+    maps.set[int](m3, 51, &bvn)
+    var oc: int = 0
+    var okc2: bool = maps.get[int](c1, 51, &oc)
+    if !okc2 && oc == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var eqPost: bool = maps.equal(m3, c1)
+    if !eqPost {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    // ---- S8. clear:2 断言 =====
+    maps.clear(c1)
+    var lcl: uint = maps.len(c1)
+    if lcl == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    maps.set[int](c1, 5, &bv1)
+    var ocl: int = 0
+    var okcl: bool = maps.get[int](c1, 5, &ocl)
+    if okcl && ocl == 100 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+
+    ret pass * 10 + fail
+}

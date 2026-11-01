@@ -1,10 +1,8 @@
 {
     "name": "maps",
-    "version": "1.0.0",
-    "description": "Map utility functions: keys, values, hasKey, len",
+    "version": "2.0.0",
+    "description": "Standalone generic hash map: open addressing + tombstones, FNV-1a (depends on memory only, P7)",
     "imports": {
-        "memory": "std:memory",
-        "strings": "std:strings",
-        "hashmap": "std:hashmap"
+        "memory": "std:memory"
     }
 }

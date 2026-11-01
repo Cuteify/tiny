@@ -1,71 +1,667 @@
-// pkg/maps/maps.cute - HashMap 工具函数
-// 平台无关实现，依赖 hashmap 包
+// pkg/maps/maps.cute —— Wave Mp v2:独立泛型 hash map(开放寻址+墓碑,FNV-1a 手写)
+// PLAN §4.4:hashmap 删包,text/template 切 std:maps(唯一外部用户);本包就地重写
+// 依赖铁律 P7:只 import memory;string 键 hash(FNV-1a)/eq(逐字节)手写,不 import strings
+// 形状:开放寻址+墓碑;载荷 0.75→2× 成长(rehash);桶数组单块 malloc(P8,槽内偏移按 ptrSize 取齐)
+// K 初批:int/uint/ptr/string——键宽 sizeof[K]()(mono 单位);string 判据 ksz==3*ptrSize→内容路径
+//   数值/ptr 键=键字节流 FNV+逐字节 eq;string 键=内容字节流 FNV+逐字节 eq
+// V 全运行期带宽:vsz 由 new 实参给出;值域只做字节拷贝/清零/比较;string 值为视图(数据块所有权留在调用方)
+// API:new/set/get(零值+ok)/has/delete/len/clear/keys/values/clone/equal
+// mono 纪律 R3:单类型参数 [K]([K,V] 两参推断实测调用标签自冲突——mpp01 探针,弃);
+//   泛型 fn 体内独立实现探测/寻址,泛型↔泛型零代理调用;泛型 fn 内禁 *T 解引 field——
+//   照 pkg/slices 蓝本 cast 具体非泛型 struct(本包 mapHdr/strView)取字段
 
-// keys 返回 HashMap 中所有键的切片
-// 返回值: ptr (字符串数组指针), count (元素数量)
-fn keys(m *hashmap.HashMap) ptr {
-    var count: uint = hashmap.size(m)
-    if count == 0 {
+import "std:memory"
+
+// ---- 内部头(非泛型具体 struct;偏移单点 = 头 6 槽 × ptrSize) ----
+type mapHdr struct {
+    slots: ptr   // @0 插槽阵列基地址(单块 malloc)
+    cap: uint    // @ps 槽数
+    count: uint  // @2ps 存量元素
+    ksz: uint    // @3ps 键宽(运行期权威,= sizeof[K]())
+    vsz: uint    // @4ps 值宽(运行期权威,= new 实参 vsize)
+    row: uint    // @5ps 单槽字节数
+}
+
+// ---- 内部 str 覆写视图(P4 规约:覆写视图必须在使用文件内定义;uint 字段随 arch 自适应 4/8B) ----
+type strView struct {
+    p: ptr
+    n: uint
+    c: uint
+}
+
+// 插槽布局:i*row → meta@0(1B:0 空/1 满/2 墓,pad 到 ps) / key@ps / val@ps+roundUp(ksz,ps)
+// 槽字节全 0 ≡ 空表(memset 语义即 clear)
+// 索引:cap 恒 2^n(16→2×)→ idx = hv & (cap-1)(等价无符号取模;规避 x86 uint % 走有符号 idiv 的缺陷)
+
+// ==== 内部非泛型 helpers ====
+
+// _roundUp 将 x 上取整为 a 的倍数(a = ptrSize;纯 uint 数学,免 cast[int])
+fn _roundUpU(x uint, a uint) uint {
+    var q: uint = (x + a) - 1
+    ret (q / a) * a
+}
+
+// _fnv1a 手写 FNV-1a(32bit)
+fn _fnv1a(p ptr, n uint) u32 {
+    var h: u32 = 2166136261
+    var i: uint = 0
+    for ; i < n; {
+        var bp: *u8 = unsafe.cast[*u8](p + i)
+        var b: u32 = *bp
+        h = h ^ b
+        h = h * 16777619
+        i = i + 1
+    }
+    ret h
+}
+
+// _bytesEq 逐字节相等(先比长)
+fn _bytesEq(pa ptr, na uint, pb ptr, nb uint) bool {
+    if na != nb {
+        ret false
+    }
+    var i: uint = 0
+    for ; i < na; {
+        var ap: *u8 = unsafe.cast[*u8](pa + i)
+        var bp: *u8 = unsafe.cast[*u8](pb + i)
+        if *ap != *bp {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// ==== 泛型 API(单类型参数 [K];泛型体独立实现,R3 零代理) ====
+
+// new 新建 map(含 16 槽表)。sampleK 为键类型见证值(参与 [K] 推断,不入表);
+// vsize = 值类型字节数(调用方 sizeof[int]() 等给出;V 全运行期)。
+fn new[K](sampleK K, vsize int) ptr {
+    var psU: uint = unsafe.cast[uint](sizeof[ptr]())
+    var kszU: uint = unsafe.cast[uint](sizeof[K]())
+    var vszU: uint = unsafe.cast[uint](vsize)
+    // row 依赖键/值宽:meta(ps) + key(roundUp(ksz,ps)) + val(roundUp(vsz,ps))
+    // ——前任半成品的 ps*3 只覆盖小键值,string 键(val@ps+ksz)会溢进邻槽,实测即崩
+    var keyOffU: uint = psU
+    var valOffU: uint = keyOffU + _roundUpU(kszU, psU)
+    var rowU: uint = valOffU + _roundUpU(vszU, psU)
+    var slotBytes: uint = rowU * 16
+    var slots: ptr = memory.malloc(slotBytes)
+    memory.memset(slots, 0, slotBytes)
+    // 表头 malloc 后紧跟连续 field 写,中间零调用——call-arg staging 错拍绕行(clone 同病灶)
+    var hraw: ptr = memory.malloc(psU * 6)
+    var hdr: *mapHdr = unsafe.cast[*mapHdr](hraw)
+    hdr.slots = slots
+    hdr.cap = 16
+    hdr.count = 0
+    hdr.ksz = kszU
+    hdr.vsz = vszU
+    hdr.row = rowU
+    ret unsafe.cast[ptr](hdr)
+}
+
+// set 插入/覆盖。先探查(续航用首墓),未命中落位写字节;载荷 0.75→2× rehash(体内独立实现)
+fn set[K](m ptr, key K, valAddr ptr) {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kI: int = sizeof[K]()
+    var kszU: uint = unsafe.cast[uint](kI)
+    var strK: uint = psU * 3
+    var isStr: uint = 0
+    if kszU == strK {
+        isStr = 1
+    }
+    var keyAddr: ptr = &key
+    var kData: ptr = keyAddr
+    var kLen: uint = kszU
+    if isStr == 1 {
+        var sv: *strView = unsafe.cast[*strView](keyAddr)
+        kData = sv.p
+        kLen = sv.n
+    }
+    var h: u32 = _fnv1a(kData, kLen)
+    var hv: uint = h
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var slots: ptr = mp.slots
+    var vszU: uint = mp.vsz
+    var keyOffU: uint = psU
+    var valOffU: uint = psU + _roundUpU(kszU, psU)
+    var idx: uint = hv & (capU - 1)
+    var widx: uint = idx
+    var steps: uint = 0
+    var hitSlot: ptr = 0
+    var emptySlot: ptr = 0
+    var tombSlot: ptr = 0
+    var placed: uint = 0
+    // 泛型 mono 绕行：if/else 链末位 else 内的 break 会发未重命名标号(for_0_end 实锤)
+    // → 统一 stop 标志收路，break 只许出现在嵌套 plain-if 内
+    var stopP: uint = 0
+    for ; steps < capU; {
+        var sb: ptr = slots + widx * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        var meta: u8 = *mP
+        if meta == 1 {
+            var kf: ptr = sb + keyOffU
+            var same: bool = false
+            if isStr == 1 {
+                var sv2: *strView = unsafe.cast[*strView](kf)
+                same = _bytesEq(sv2.p, sv2.n, kData, kLen)
+            } else {
+                same = _bytesEq(kf, kszU, keyAddr, kszU)
+            }
+            if same == true {
+                hitSlot = sb
+                stopP = 1
+            }
+        } else if meta == 2 {
+            if tombSlot == 0 {
+                tombSlot = sb
+            }
+        } else {
+            emptySlot = sb
+            placed = 1
+            stopP = 1
+        }
+        if stopP == 1 {
+            steps = capU
+        }
+        widx = widx + 1
+        if widx >= capU {
+            widx = 0
+        }
+        steps = steps + 1
+    }
+    if hitSlot != 0 {
+        var vf: ptr = hitSlot + valOffU
+        memory.memmove(vf, valAddr, vszU)
+        ret
+    }
+    var place: ptr = emptySlot
+    if tombSlot != 0 {
+        place = tombSlot
+    }
+    if placed == 0 && tombSlot == 0 {
+        ret
+    }
+    var pm: *u8 = unsafe.cast[*u8](place)
+    *pm = 1
+    var pkf: ptr = place + keyOffU
+    memory.memmove(pkf, keyAddr, kszU)
+    var pvf: ptr = place + valOffU
+    memory.memmove(pvf, valAddr, vszU)
+    var nc: uint = mp.count + 1
+    mp.count = nc
+    // 载荷 0.75 → 2× 成长:count*4 > cap*3
+    var lc: uint = nc * 4
+    var rc: uint = capU * 3
+    if lc > rc {
+        var newCap: uint = capU * 2
+        var nszU: uint = newCap * rowU
+        var ns: ptr = memory.malloc(nszU)
+        memory.memset(ns, 0, nszU)
+        var oi: uint = 0
+        for ; oi < capU; {
+            var osb: ptr = slots + oi * rowU
+            var omP: *u8 = unsafe.cast[*u8](osb)
+            if *omP == 1 {
+                var okf: ptr = osb + keyOffU
+                var oh: u32 = 0
+                if isStr == 1 {
+                    var osv: *strView = unsafe.cast[*strView](okf)
+                    oh = _fnv1a(osv.p, osv.n)
+                } else {
+                    oh = _fnv1a(okf, kszU)
+                }
+                var ohv: uint = oh
+                var nIdx: uint = ohv & (newCap - 1)
+                var guard: uint = 0
+                for ; guard < newCap; {
+                    var nBase: ptr = ns + nIdx * rowU
+                    var nmP: *u8 = unsafe.cast[*u8](nBase)
+                    if *nmP == 0 {
+                        *nmP = 1
+                        var ndst: ptr = nBase + keyOffU
+                        memory.memmove(ndst, okf, kszU)
+                        var nvdst: ptr = nBase + valOffU
+                        var ovf: ptr = osb + valOffU
+                        memory.memmove(nvdst, ovf, vszU)
+                        break
+                    }
+                    nIdx = nIdx + 1
+                    if nIdx >= newCap {
+                        nIdx = 0
+                    }
+                    guard = guard + 1
+                }
+            }
+            oi = oi + 1
+        }
+        memory.free(slots)
+        mp.slots = ns
+        mp.cap = newCap
+    }
+}
+
+// get 查询:命中拷值进 out 并 true;未中 out 清零(零值语义)并 false
+fn get[K](m ptr, key K, out ptr) bool {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kI: int = sizeof[K]()
+    var kszU: uint = unsafe.cast[uint](kI)
+    var strK: uint = psU * 3
+    var isStr: uint = 0
+    if kszU == strK {
+        isStr = 1
+    }
+    var keyAddr: ptr = &key
+    var kData: ptr = keyAddr
+    var kLen: uint = kszU
+    if isStr == 1 {
+        var sv: *strView = unsafe.cast[*strView](keyAddr)
+        kData = sv.p
+        kLen = sv.n
+    }
+    var h: u32 = _fnv1a(kData, kLen)
+    var hv: uint = h
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var slots: ptr = mp.slots
+    var vszU: uint = mp.vsz
+    var keyOffU: uint = psU
+    var valOffU: uint = psU + _roundUpU(kszU, psU)
+    var idx: uint = hv & (capU - 1)
+    var widx: uint = idx
+    var steps: uint = 0
+    var found: ptr = 0
+    var stopG: uint = 0
+    for ; steps < capU; {
+        var sb: ptr = slots + widx * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        var meta: u8 = *mP
+        if meta == 1 {
+            var kf: ptr = sb + keyOffU
+            var same: bool = false
+            if isStr == 1 {
+                var sv2: *strView = unsafe.cast[*strView](kf)
+                same = _bytesEq(sv2.p, sv2.n, kData, kLen)
+            } else {
+                same = _bytesEq(kf, kszU, keyAddr, kszU)
+            }
+            if same == true {
+                found = sb
+                stopG = 1
+            }
+        } else if meta == 2 {
+            // 墓碑续航
+        } else {
+            stopG = 1
+        }
+        if stopG == 1 {
+            steps = capU
+        }
+        widx = widx + 1
+        if widx >= capU {
+            widx = 0
+        }
+        steps = steps + 1
+    }
+    if found != 0 {
+        var vf: ptr = found + valOffU
+        memory.memmove(out, vf, vszU)
+        ret true
+    }
+    memory.memset(out, 0, vszU)
+    ret false
+}
+
+// has 键存在性
+fn has[K](m ptr, key K) bool {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kI: int = sizeof[K]()
+    var kszU: uint = unsafe.cast[uint](kI)
+    var strK: uint = psU * 3
+    var isStr: uint = 0
+    if kszU == strK {
+        isStr = 1
+    }
+    var keyAddr: ptr = &key
+    var kData: ptr = keyAddr
+    var kLen: uint = kszU
+    if isStr == 1 {
+        var sv: *strView = unsafe.cast[*strView](keyAddr)
+        kData = sv.p
+        kLen = sv.n
+    }
+    var h: u32 = _fnv1a(kData, kLen)
+    var hv: uint = h
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var slots: ptr = mp.slots
+    var keyOffU: uint = psU
+    var idx: uint = hv & (capU - 1)
+    var widx: uint = idx
+    var steps: uint = 0
+    var found: ptr = 0
+    var stopH: uint = 0
+    for ; steps < capU; {
+        var sb: ptr = slots + widx * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        var meta: u8 = *mP
+        if meta == 1 {
+            var kf: ptr = sb + keyOffU
+            var same: bool = false
+            if isStr == 1 {
+                var sv2: *strView = unsafe.cast[*strView](kf)
+                same = _bytesEq(sv2.p, sv2.n, kData, kLen)
+            } else {
+                same = _bytesEq(kf, kszU, keyAddr, kszU)
+            }
+            if same == true {
+                found = sb
+                stopH = 1
+            }
+        } else if meta == 2 {
+            // 墓碑续航
+        } else {
+            stopH = 1
+        }
+        if stopH == 1 {
+            steps = capU
+        }
+        widx = widx + 1
+        if widx >= capU {
+            widx = 0
+        }
+        steps = steps + 1
+    }
+    if found != 0 {
+        ret true
+    }
+    ret false
+}
+
+// delete 删除(落墓碑复用);存在 true / 不存在 false
+fn delete[K](m ptr, key K) bool {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kI: int = sizeof[K]()
+    var kszU: uint = unsafe.cast[uint](kI)
+    var strK: uint = psU * 3
+    var isStr: uint = 0
+    if kszU == strK {
+        isStr = 1
+    }
+    var keyAddr: ptr = &key
+    var kData: ptr = keyAddr
+    var kLen: uint = kszU
+    if isStr == 1 {
+        var sv: *strView = unsafe.cast[*strView](keyAddr)
+        kData = sv.p
+        kLen = sv.n
+    }
+    var h: u32 = _fnv1a(kData, kLen)
+    var hv: uint = h
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var slots: ptr = mp.slots
+    var keyOffU: uint = psU
+    var idx: uint = hv & (capU - 1)
+    var widx: uint = idx
+    var steps: uint = 0
+    var delHit: uint = 0
+    var stopD: uint = 0
+    for ; steps < capU; {
+        var sb: ptr = slots + widx * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        var meta: u8 = *mP
+        if meta == 1 {
+            var kf: ptr = sb + keyOffU
+            var same: bool = false
+            if isStr == 1 {
+                var sv2: *strView = unsafe.cast[*strView](kf)
+                same = _bytesEq(sv2.p, sv2.n, kData, kLen)
+            } else {
+                same = _bytesEq(kf, kszU, keyAddr, kszU)
+            }
+            if same == true {
+                *mP = 2
+                var dc: uint = mp.count - 1
+                mp.count = dc
+                delHit = 1
+                stopD = 1
+            }
+        } else if meta == 2 {
+            // 墓碑续航
+        } else {
+            stopD = 1
+        }
+        if stopD == 1 {
+            steps = capU
+        }
+        widx = widx + 1
+        if widx >= capU {
+            widx = 0
+        }
+        steps = steps + 1
+    }
+    if delHit == 1 {
+        ret true
+    }
+    ret false
+}
+
+// ==== 非泛型面(布局读头运行期字段;泛型外) ====
+
+// len 元素数量
+fn len(m ptr) uint {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    ret mp.count
+}
+
+// clear 清空(容量保留;槽字节全 0 )
+fn clear(m ptr) {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var slots: ptr = mp.slots
+    memory.memset(slots, 0, capU * rowU)
+    mp.count = 0
+}
+
+// keys 键数组(按 i 升序收满槽;count×ksz 字节;空表返回 0)
+fn keys(m ptr) ptr {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var kszU: uint = mp.ksz
+    var countU: uint = mp.count
+    if countU == 0 {
         ret 0
     }
-    var result: ptr = memory.malloc(count * 8)
-    // 遍历所有桶收集键
-    var bucketCount: uint = m.cap
-    var idx: uint = 0
-    var pos: uint = 0
-    for ; idx < bucketCount; {
-        var _p1: *ptr = m.buckets + idx * 8
-        var entry: ptr = *_p1
-        var e: ptr = entry
-        for ; e != 0; {
-            // hashEntry 结构: key(string,8bytes) + value(ptr,8bytes) + next(ptr,8bytes)
-            var _p2: *ptr = e
-            var key: string = *_p2
-            var _p3: *ptr = result + pos * 8
-            *_p3 = unsafe.cast[ptr](key)
-            pos = pos + 1
-            var _p4: *ptr = e + 16
-            e = *_p4 // next
+    var slots: ptr = mp.slots
+    var out: ptr = memory.malloc(countU * kszU)
+    var wOff: uint = 0
+    var keyOffU: uint = psU
+    var i: uint = 0
+    for ; i < capU; {
+        var sb: ptr = slots + i * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        if *mP == 1 {
+            var kf: ptr = sb + keyOffU
+            memory.memmove(out + wOff, kf, kszU)
+            wOff = wOff + kszU
         }
-        idx = idx + 1
+        i = i + 1
     }
-    ret result
+    ret out
 }
 
-// values 返回 HashMap 中所有值的切片
-fn values(m *hashmap.HashMap) ptr {
-    var count: uint = hashmap.size(m)
-    if count == 0 {
+// values 值数组(同 keys,按 i 升序;count×vsz 字节;空表返回 0)
+fn values(m ptr) ptr {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kI: int = 0
+    var _unusedBoot: int = kI
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    var vszU: uint = mp.vsz
+    var kszU: uint = mp.ksz
+    var countU: uint = mp.count
+    if countU == 0 {
         ret 0
     }
-    var result: ptr = memory.malloc(count * 8)
-    var bucketCount: uint = m.cap
-    var idx: uint = 0
-    var pos: uint = 0
-    for ; idx < bucketCount; {
-        var _p5: *ptr = m.buckets + idx * 8
-        var entry: ptr = *_p5
-        var e: ptr = entry
-        for ; e != 0; {
-            var _p6: *ptr = e + 8
-            var val: ptr = *_p6 // value
-            var _p7: *ptr = result + pos * 8
-            *_p7 = unsafe.cast[ptr](val)
-            pos = pos + 1
-            var _p8: *ptr = e + 16
-            e = *_p8 // next
+    var slots: ptr = mp.slots
+    var out: ptr = memory.malloc(countU * vszU)
+    var wOff: uint = 0
+    var valOffU: uint = psU + _roundUpU(kszU, psU)
+    var i: uint = 0
+    for ; i < capU; {
+        var sb: ptr = slots + i * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        if *mP == 1 {
+            var vf: ptr = sb + valOffU
+            memory.memmove(out + wOff, vf, vszU)
+            wOff = wOff + vszU
         }
-        idx = idx + 1
+        i = i + 1
     }
-    ret result
+    ret out
 }
 
-// hasKey 检查 HashMap 中是否存在指定键
-fn hasKey(m *hashmap.HashMap, key string) bool {
-    ret hashmap.has(m, key)
+// clone 深拷布:同布局头+表字节复制(容量/布局不变;字符串值仍为视图)
+fn clone(m ptr) ptr {
+    var mp: *mapHdr = unsafe.cast[*mapHdr](m)
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var capU: uint = mp.cap
+    var rowU: uint = mp.row
+    // 同 new：cast 内嵌 malloc 调用的 field 写偏移错拍病灶——两段式拆解
+    var craw: ptr = memory.malloc(psU * 6)
+    var hdr2: *mapHdr = unsafe.cast[*mapHdr](craw)
+    var slots2raw: ptr = memory.malloc(capU * rowU)
+    var slots2: ptr = slots2raw
+    memory.memmove(slots2, mp.slots, capU * rowU)
+    hdr2.slots = slots2
+    hdr2.cap = capU
+    hdr2.count = mp.count
+    hdr2.ksz = mp.ksz
+    hdr2.vsz = mp.vsz
+    hdr2.row = rowU
+    ret unsafe.cast[ptr](hdr2)
 }
 
-// len 返回 HashMap 中的元素数量
-fn len(m *hashmap.HashMap) uint {
-    ret hashmap.size(m)
+// equal 两 map 逐键等值(键 eq 按 ksz 判据,值 eq 按 vsz 判据;string 路径均逐字节内容)
+fn equal(a ptr, b ptr) bool {
+    if a == b {
+        ret true
+    }
+    var am: *mapHdr = unsafe.cast[*mapHdr](a)
+    var bm: *mapHdr = unsafe.cast[*mapHdr](b)
+    var ca: uint = am.count
+    var cb: uint = bm.count
+    if ca != cb {
+        ret false
+    }
+    if ca == 0 {
+        ret true
+    }
+    var ps: int = sizeof[ptr]()
+    var psU: uint = unsafe.cast[uint](ps)
+    var kszU: uint = am.ksz
+    var vszU: uint = am.vsz
+    var isStrK: uint = 0
+    if kszU == psU * 3 {
+        isStrK = 1
+    }
+    var isStrV: uint = 0
+    if vszU == psU * 3 {
+        isStrV = 1
+    }
+    var keyOffU: uint = psU
+    var valOffU: uint = psU + _roundUpU(kszU, psU)
+    var rowU: uint = am.row
+    var capU: uint = am.cap
+    var bSlots: ptr = bm.slots
+    var bCapU: uint = bm.cap
+    var bRowU: uint = bm.row
+    var i: uint = 0
+    for ; i < capU; {
+        var sb: ptr = am.slots + i * rowU
+        var mP: *u8 = unsafe.cast[*u8](sb)
+        if *mP == 1 {
+            var kf: ptr = sb + keyOffU
+            var aKD: ptr = kf
+            var aKL: uint = kszU
+            if isStrK == 1 {
+                var sv: *strView = unsafe.cast[*strView](kf)
+                aKD = sv.p
+                aKL = sv.n
+            }
+            var h: u32 = _fnv1a(aKD, aKL)
+            var hv: uint = h
+            var idx: uint = hv & (bCapU - 1)
+            var widx: uint = idx
+            var steps: uint = 0
+            var foundSlot: ptr = 0
+            var stopE: uint = 0
+            for ; steps < bCapU; {
+                var bb: ptr = bSlots + widx * bRowU
+                var bP: *u8 = unsafe.cast[*u8](bb)
+                var bMeta: u8 = *bP
+                if bMeta == 1 {
+                    var bkf: ptr = bb + keyOffU
+                    var same: bool = false
+                    if isStrK == 1 {
+                        var sv2: *strView = unsafe.cast[*strView](bkf)
+                        same = _bytesEq(sv2.p, sv2.n, aKD, aKL)
+                    } else {
+                        same = _bytesEq(bkf, kszU, kf, kszU)
+                    }
+                    if same == true {
+                        foundSlot = bb
+                        stopE = 1
+                    }
+                } else if bMeta == 2 {
+                    // 墓碑续航
+                } else {
+                    stopE = 1
+                }
+                if stopE == 1 {
+                    steps = bCapU
+                }
+                widx = widx + 1
+                if widx >= bCapU {
+                    widx = 0
+                }
+                steps = steps + 1
+            }
+            if foundSlot == 0 {
+                ret false
+            }
+            var avf: ptr = sb + valOffU
+            var bvf: ptr = foundSlot + valOffU
+            var vSame: bool = false
+            if isStrV == 1 {
+                var asv: *strView = unsafe.cast[*strView](avf)
+                var bsv: *strView = unsafe.cast[*strView](bvf)
+                vSame = _bytesEq(asv.p, asv.n, bsv.p, bsv.n)
+            } else {
+                vSame = _bytesEq(avf, vszU, bvf, vszU)
+            }
+            if vSame == false {
+                ret false
+            }
+        }
+        i = i + 1
+    }
+    ret true
 }

@@ -1,0 +1,63 @@
+// test/mp_min —— CES 分片:8 断言 S1 全量(int 键),ret = pass*10+fail
+fn main() int {
+    var pass: int = 0
+    var fail: int = 0
+    var m1: ptr = maps.new[int](0, sizeof[int]())
+    var v1: int = 42
+    maps.set[int](m1, 1, &v1)
+    var o1: int = 0
+    var ok1: bool = maps.get[int](m1, 1, &o1)
+    if ok1 && o1 == 42 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var ok2: bool = maps.get[int](m1, 99, &o1)
+    if !ok2 && o1 == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var l1: uint = maps.len(m1)
+    if l1 == 1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var v1b: int = 99
+    maps.set[int](m1, 1, &v1b)
+    var ok1b: bool = maps.get[int](m1, 1, &o1)
+    var l1b: uint = maps.len(m1)
+    if ok1b && o1 == 99 && l1b == 1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var h1: bool = maps.has[int](m1, 1)
+    if h1 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var d1: bool = maps.delete[int](m1, 1)
+    var l1c: uint = maps.len(m1)
+    if d1 && l1c == 0 {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var d2: bool = maps.delete[int](m1, 1)
+    var ok1c: bool = maps.get[int](m1, 1, &o1)
+    if !d2 && !ok1c {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    var h1b: bool = maps.has[int](m1, 77)
+    if !h1b {
+        pass = pass + 1
+    } else {
+        fail = fail + 1
+    }
+    ret pass * 10 + fail
+}
