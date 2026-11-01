@@ -5,6 +5,6 @@
     "imports": {
         "memory": "std:memory",
         "strings": "std:strings",
-        "hashmap": "std:hashmap"
+        "maps": "std:maps"
     }
 }
