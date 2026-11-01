@@ -788,7 +788,7 @@ func allocSiteDesc(e *parser.Expression) string {
 		return "unknown"
 	}
 	if e.Call != nil {
-		if e.Call.NewType != nil {
+		if e.Call.IsBuiltinNewAlloc() {
 			return "new"
 		}
 		if e.Call.Func != nil && len(e.Call.Func.Return) > 0 && isOwning(e.Call.Func.Return[0]) {

@@ -16,7 +16,8 @@ import (
 // x86Ops 实现 x86 架构共用的 Arch 接口方法（寄存器/指令/地址等）。
 // 通过内嵌到 Cdecl/Stdcall 复用。
 type x86Ops struct {
-	ctx *context.Context
+	ctx     *context.Context
+	condSeq int // 条件表达式内部标签序号（&& mid / || andFail，保证唯一）
 }
 
 // newOps 创建共享实现
@@ -357,7 +358,10 @@ func (a *x86Ops) ForBegin(forBlock *parser.ForBlock) string {
 	code += utils.Format(forLabel + ": ; for循环开始")
 
 	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		code += a.compileCond(forBlock.Condition, forEndLabel)
+		// 条件真目标 = 循环体入口标签(|| 链任一叶真直接进体)
+		bodyLabel := forLabel + "_body"
+		code += a.compileCond(forBlock.Condition, forEndLabel, bodyLabel)
+		code += utils.Format(bodyLabel + ":")
 	}
 
 	code += utils.Format("")
@@ -465,13 +469,12 @@ func (a *x86Ops) compileCond64(cond *parser.Expression, jumpLabel string) string
 	return code
 }
 
-func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
+func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string, trueLabel string) string {
 	if cond == nil {
 		return ""
 	}
 
 	scratchReg1 := "EAX"
-	scratchReg2 := "ECX"
 
 	var code string
 
@@ -480,65 +483,27 @@ func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
 
 		is64 := (cond.Left != nil && a.Is64Type(cond.Left.Type)) || (cond.Right != nil && a.Is64Type(cond.Right.Type))
 
-		if !is64 {
-			if cond.Left != nil {
-				code += a.exp(cond.Left, scratchReg1, "left operand")
-			}
-			if cond.Right != nil {
-				code += a.exp(cond.Right, scratchReg2, "right operand")
-			}
-
-			code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
-
-			// 判断是否为无符号类型比较
-			isUnsigned := false
-			if cond.Left != nil && cond.Left.Type != nil {
-				isUnsigned = typeSys.CheckKind(cond.Left.Type, "uint")
-			} else if cond.Right != nil && cond.Right.Type != nil {
-				isUnsigned = typeSys.CheckKind(cond.Right.Type, "uint")
-			}
-			var jumpOp string
-			switch cond.Separator {
-			case "==":
-				jumpOp = "jne"
-			case "!=":
-				jumpOp = "je"
-			case "<":
-				if isUnsigned {
-					jumpOp = "jnb"
-				} else {
-					jumpOp = "jge"
-				}
-			case ">":
-				if isUnsigned {
-					jumpOp = "jbe"
-				} else {
-					jumpOp = "jle"
-				}
-			case "<=":
-				if isUnsigned {
-					jumpOp = "jnbe"
-				} else {
-					jumpOp = "jg"
-				}
-			case ">=":
-				if isUnsigned {
-					jumpOp = "jb"
-				} else {
-					jumpOp = "jl"
-				}
-			}
-			code += utils.Format(jumpOp + " " + jumpLabel)
+		if is64 {
+			// 32 位下 64 位比较沿用假向路径(compileCond64 无真向出口,不扩基线)
+			code += a.compileCond64(cond, jumpLabel)
 			break
 		}
 
-		code += a.compileCond64(cond, jumpLabel)
-	case "&&", "||":
+		code += a.emitCondCompare(cond)
+		opFalse, _ := condJumpOps(cond)
+		code += utils.Format(opFalse + " " + jumpLabel)
+	case "||":
+		// 或链:任一叶真 → trueLabel(循环体);末叶假 → jumpLabel(循环结束)
+		code += a.compileOrChain(cond, trueLabel, jumpLabel, true)
+	case "&&":
+		// 左侧"真"仅代表还需评估右侧:左子链真目标落局部 mid,不能直跳 trueLabel
 		if cond.Left != nil {
-			code += a.compileCond(cond.Left, jumpLabel)
+			mid := a.nextCondLabel("for_and_mid_")
+			code += a.compileCond(cond.Left, jumpLabel, mid)
+			code += utils.Format(mid + ":")
 		}
 		if cond.Right != nil {
-			code += a.compileCond(cond.Right, jumpLabel)
+			code += a.compileCond(cond.Right, jumpLabel, trueLabel)
 		}
 	default:
 		code += a.exp(cond, scratchReg1, "condition")
@@ -546,6 +511,126 @@ func (a *x86Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
 		code += utils.Format("jz " + jumpLabel)
 	}
 
+	return code
+}
+
+// nextCondLabel 生成条件表达式内部唯一标签（前缀 + 单调序号）
+func (a *x86Ops) nextCondLabel(prefix string) string {
+	a.condSeq++
+	return prefix + strconv.Itoa(a.condSeq)
+}
+
+// emitCondCompare 装载比较节点左右操作数并发射 cmp(不发跳转)
+func (a *x86Ops) emitCondCompare(cond *parser.Expression) string {
+	scratchReg1 := "EAX"
+	scratchReg2 := "ECX"
+	var code string
+
+	if cond.Left != nil {
+		code += a.exp(cond.Left, scratchReg1, "left operand")
+	}
+	if cond.Right != nil {
+		code += a.exp(cond.Right, scratchReg2, "right operand")
+	}
+	code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
+	return code
+}
+
+// condJumpOps 计算比较节点双向跳转助记:opFalse(假向)/opTrue(真向,|| 链用)
+func condJumpOps(cond *parser.Expression) (string, string) {
+	isUnsigned := false
+	if cond.Left != nil && cond.Left.Type != nil {
+		isUnsigned = typeSys.CheckKind(cond.Left.Type, "uint")
+	} else if cond.Right != nil && cond.Right.Type != nil {
+		isUnsigned = typeSys.CheckKind(cond.Right.Type, "uint")
+	}
+	switch cond.Separator {
+	case "==":
+		return "jne", "je"
+	case "!=":
+		return "je", "jne"
+	case "<":
+		if isUnsigned {
+			return "jnb", "jb"
+		}
+		return "jge", "jl"
+	case ">":
+		if isUnsigned {
+			return "jbe", "ja"
+		}
+		return "jle", "jg"
+	case "<=":
+		if isUnsigned {
+			return "jnbe", "jbe"
+		}
+		return "jg", "jle"
+	case ">=":
+		if isUnsigned {
+			return "jb", "jae"
+		}
+		return "jl", "jge"
+	}
+	return "jne", "je"
+}
+
+// compileOrChain 摊平 || 链(左结合,任一侧是 || 均下钻):
+// 每叶为真即跳 trueLabel;非末叶假直接落下一叶;末叶假补跳 falseLabel
+func (a *x86Ops) compileOrChain(node *parser.Expression, trueLabel string, falseLabel string, isLast bool) string {
+	if node == nil {
+		return ""
+	}
+	var code string
+	if node.Left != nil && node.Left.Separator == "||" {
+		code += a.compileOrChain(node.Left, trueLabel, falseLabel, false)
+	} else if node.Left != nil {
+		code += a.compileOrLeaf(node.Left, trueLabel, falseLabel, false)
+	}
+	if node.Right != nil && node.Right.Separator == "||" {
+		code += a.compileOrChain(node.Right, trueLabel, falseLabel, isLast)
+	} else if node.Right != nil {
+		code += a.compileOrLeaf(node.Right, trueLabel, falseLabel, isLast)
+	}
+	return code
+}
+
+// compileOrLeaf 发射 || 链单个叶子:比较叶真向跳;算式叶 Exp+test;
+// && 子叶经 compileCond 递归(全真→跳 trueLabel)
+func (a *x86Ops) compileOrLeaf(term *parser.Expression, trueLabel string, falseLabel string, isLast bool) string {
+	if term == nil {
+		return ""
+	}
+	var code string
+	switch term.Separator {
+	case "==", "!=", "<", ">", "<=", ">=":
+		if (term.Left != nil && a.Is64Type(term.Left.Type)) || (term.Right != nil && a.Is64Type(term.Right.Type)) {
+			// 32 位下 64 位比较:沿用假向路径(不扩基线)
+			return a.compileCond64(term, falseLabel)
+		}
+		_, opTrue := condJumpOps(term)
+		code += a.emitCondCompare(term)
+		code += utils.Format(opTrue + " " + trueLabel)
+		if isLast {
+			opFalse, _ := condJumpOps(term)
+			code += utils.Format(opFalse + " " + falseLabel)
+		}
+	case "&&":
+		andFail := a.nextCondLabel("for_or_and_")
+		code += a.compileCond(term, andFail, trueLabel)
+		code += utils.Format("jmp " + trueLabel)
+		code += utils.Format(andFail + ":")
+		if isLast {
+			// 到达 andFail 即 && 整体为假,无条件跳假目标(不依赖标志位)
+			code += utils.Format("jmp " + falseLabel)
+		}
+	default:
+		scratchReg1 := "EAX"
+		code += a.exp(term, scratchReg1, "||-chain leaf")
+		code += utils.Format("test " + scratchReg1 + ", " + scratchReg1)
+		code += utils.Format("jnz " + trueLabel)
+		if isLast {
+			code += utils.Format("jz " + falseLabel)
+		}
+	}
 	return code
 }
 

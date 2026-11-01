@@ -63,7 +63,7 @@ func freshAllocExpr(e *Expression) bool {
 		return false
 	}
 	if e.Call != nil {
-		if e.Call.NewType != nil {
+		if e.Call.IsBuiltinNewAlloc() {
 			return true // newRC 由 isRCExpr 另行排除
 		}
 		// 过程摘要：被调方声明"返回值里有它自己分配的对象" → 所有权已是调用者的

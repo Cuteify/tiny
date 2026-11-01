@@ -795,7 +795,13 @@ func (c *ECompiler) emitUnary(exp *parser.Expression, result string, rReg *regmg
 
 	// 解引用读（必须在 push 通用处理之前，因为 push + deref 需要特殊生成）
 	if exp.Separator == "*" {
-		prefix := c.derefPrefix(exp.Right.Type)
+		pt := exp.Right.Type
+		// 未 Check 的实参子树（如 unsafe.cast[u8](*p)）表达式节点无 Type，
+		// 但变量块已解析：回退 Var.Type，否则 derefPrefix 返回空串、装载整条丢失。
+		if pt == nil && exp.Right.Var != nil {
+			pt = exp.Right.Var.Type
+		}
+		prefix := c.derefPrefix(pt)
 		if result == "push" {
 			code = c.derefLoad(prefix, rVal, rVal)
 			code += utils.Format("push " + rVal)
@@ -1301,6 +1307,20 @@ func (c *ECompiler) binRL(exp *parser.Expression, result string, ei *ExpInfo) st
 	// 左子：就地计算到 result（push 或与 callee-save 冲突时退回分配独立寄存器）
 	lVal := result
 	inPlace := result != "push" && !(ei.Left.HasCall && result == calleeName)
+	// [病灶⑱ 修复 2026-11-02] 左子这种"ulus 确实落内存"在 binRL 里必须让位：
+	// 右子先编，结果常驻 ReturnReg；随后左子以 inPlace 形态直接写内存 result，
+	// 而指针基字段（p.x）/this 字段（self.x）叶子的 derefLoad 走"内存目标经
+	// ReturnReg 中转"模板——把右子活值覆盖掉。之后 emitBin 生成 add [X], RAX
+	// 时 RAX 已是左子自身的字段值 → X=X+X（equal 实锤：sb=am.slots+i*rowU 编出
+	// sb=2×slots，内层同型式因左子是普通 Var 不走 derefLoad 而正确）。
+	// 该形态退回独立寄存器：allocRegAvoid 避开右侧在用的 RAX；derefLoad 对
+	// 寄存器 dst 直接装载不走 ReturnReg 中转，天然无冲。
+	if inPlace && callee == "" && rVal == c.arch.ReturnReg() && strings.Contains(result, "[") {
+		lo := exp.Left
+		if lo != nil && lo.Separator == "" && lo.Var != nil && (needPtrMem(lo.Var) || isThisField(lo.Var)) {
+			inPlace = false
+		}
+	}
 
 	// 就地且 result 是空闲寄存器：绑定到左子，使右子分配避开（结果值仍在使用）
 	if inPlace && !strings.Contains(result, "[") {
@@ -2969,17 +2989,26 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 		return c.builtinNewRC(exp, call, result)
 	case "sizeof", "memory.sizeof":
 		if call.NewType != nil {
+			// 结果交付形态：x86 cdecl 调用实参走 push（result=="push"），
+			// 旧实现一律发 mov <result>,imm → `mov push, 4` NASM 报错
+			// （Wave Mp x86 实锤：maps.new(0, sizeof[int]())）。
+			emit := func(size int) string {
+				if result == "push" {
+					return utils.Format("push " + strconv.Itoa(size))
+				}
+				return utils.Format("mov " + result + ", " + strconv.Itoa(size))
+			}
 			// TypeParam: 从单态化替换表解析具体类型
 			if tp, ok := call.NewType.(*typeSys.TypeParam); ok {
 				if c.ctx.TypeSubst != nil {
 					if concrete, ok := c.ctx.TypeSubst[tp.Name]; ok {
-						return utils.Format("mov " + result + ", " + strconv.Itoa(concrete.Size()))
+						return emit(concrete.Size())
 					}
 				}
 				// 编译泛型包时不知道具体类型 → 返回 0 (占位，单态化后重编译)
-				return utils.Format("mov " + result + ", 0")
+				return emit(0)
 			}
-			return utils.Format("mov " + result + ", " + strconv.Itoa(call.NewType.Size()))
+			return emit(call.NewType.Size())
 		}
 	case "unsafe.cast":
 		// unsafe.cast[T](addr) — 类型转换 no-op，直接返回 addr 值

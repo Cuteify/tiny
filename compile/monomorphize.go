@@ -1,11 +1,12 @@
 package compile
 
 import (
+	"fmt"
+	"strings"
+
 	"cuteify/compile/arch"
 	"cuteify/parser"
 	typeSys "cuteify/type"
-	"fmt"
-	"strings"
 )
 
 // GenericInstantiation 记录一个单态化的函数特化。
@@ -198,9 +199,10 @@ func (c *Compiler) MonomorphizeFunction(fn *parser.FuncBlock, typeSubst map[stri
 	// 创建特化后的参数列表
 	specializedArgs := make([]*parser.ArgBlock, len(fn.Args))
 	for i, arg := range fn.Args {
+		sub := typeSys.SubstituteTypeParams(arg.Type, typeSubst)
 		newArg := &parser.ArgBlock{
 			Name:    arg.Name,
-			Type:    typeSys.SubstituteTypeParams(arg.Type, typeSubst),
+			Type:    sub,
 			Default: arg.Default,
 			Offset:  arg.Offset,
 		}
@@ -290,6 +292,15 @@ func deepCopyNode(n *parser.Node) *parser.Node {
 		Checked: n.Checked,
 	}
 	cp.Value = deepCopyBlock(n.Value)
+	// 病灶⑯随修：IfBlock.ElseBlock 深拷贝出的 else 子树节点不在任何
+	// Children 列表里（它是克隆 if 节点的"结构体指针儿子"），这里把它的
+	// Father 重绑到克隆 if 节点，恢复向上找宿主函数/块的 Father 链
+	// （collectFnNameOfN / remap 走宿主函数名都依赖它）。
+	if ib, ok := cp.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil {
+		if defVar, ok2 := n.Value.(*parser.IfBlock); ok2 && defVar != nil && ib.ElseBlock != defVar.ElseBlock {
+			ib.ElseBlock.Father = cp
+		}
+	}
 	for _, child := range n.Children {
 		childCopy := deepCopyNode(child)
 		if childCopy != nil {
@@ -402,11 +413,24 @@ func deepCopyIfBlock(v *parser.IfBlock) *parser.IfBlock {
 	cp := &parser.IfBlock{
 		Else:      v.Else,
 		Condition: deepCopyExpression(v.Condition),
-		// Node and ElseBlock are structural pointers into the AST tree;
-		// they are rebuilt by the parser, not by substituteBodyTypes, so we
-		// share them. If needed, they can be deep-copied later.
-		Node:      v.Node,
-		ElseBlock: v.ElseBlock,
+		// Node 仍共享：它指向本 if 节点自身（解析期的自反性结构指针），
+		// 单态化不依赖它。
+		Node: v.Node,
+	}
+	// 病灶⑯（2026-11-02）：ElseBlock（else 子树节点）不在 node.Children，
+	// 仅经此结构体指针可达：
+	//   · 发射：compileElseBlock → c.Compile(ifBlock.ElseBlock)（compiler.go）；
+	//   · 盖章：collectVarOffsets 显式用它递归（arch/utils.go）。
+	// 原样共享会把"原树 else 语句"直接装进克隆身体——其 Define 仍指原树
+	// decl，GenVarAddr 发射期 live 重绑读到"最后一个 Setup(orig) 刷过的
+	// 布局"（多 mono 串扰：单 mono 时原树 = 唯一布局，错位不可见；
+	// x86_64 mp_map 双 mono（int+string）触发 else 写点整体 +16 → place
+	// 读到零值 → *pm = 1 写空指针 SIGSEGV）。同时 deepCopyNode 和
+	// remapNodeRefs 的 node.Children 遍历都够不到 else 子树 → 双向漏网。
+	// 此处深拷贝 else 子树（deepCopyNode 递归克隆其 Children），克隆 if
+	// 节点生成后再把 Father 挂上（deepCopyNode 病灶⑯随修注释）。
+	if v.ElseBlock != nil {
+		cp.ElseBlock = deepCopyNode(v.ElseBlock)
 	}
 	return cp
 }
@@ -594,12 +618,29 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 	node := &parser.Node{Value: fn}
 	node.Father = root
 
+	// [病灶⑰b 修复 2026-11-02] 克隆必须先于原树替身执行：
+	// substituteBodyTypes(origNode, substMap) 会把原树 body 中的 TypeParam（含
+	// sizeof[K]() 的 CallBlock.NewType）改写为 subst 首例的具体类型（{K:int} →
+	// IntType(8)，改写不可逆）。旧序"先替身后深拷贝"，克隆体从被污染的原树出发；
+	// 后续第二例（如 {K:string}）单态化时体内 sizeof[K] 已是 IntType(8)——TypeParam
+	// 身份消失，替身表查不到 → 不再替换 → 键宽 kszU=8 而参数实宽 24 →
+	// isStr=0，string 键内容路径全灭（S2/S3 实锤：get[string] kI=8）。
+	// 克隆先行：克隆体从净树复制，克隆体自身的 substituteBodyTypes(node, substMap)
+	// （下方）用本例 substMap 正确改写 NewType→string-24。
+	if origNode != nil {
+		for _, child := range origNode.Children {
+			copied := deepCopyNode(child)
+			copied.Father = node
+			node.Children = append(node.Children, copied)
+		}
+	}
+
 	// [S0-3 根因修复] 单态化克隆体内的共享引用指向原泛型树：
 	//   · FIELD 基址（v.Define.Type=FindTypeField）取 Define.Path[0]——原树 define；
 	//   · remap 未触达的读端 Define.Value 同样指向原树 define。
 	// 原体被 Useful=false 抑制后永远轮不到 Prologue 的 SetupVarOffsets，
 	// 其 define Offset 恒 0 → 生成 [RBP]/[rbp]（读 saved-rbp，SIGSEGV）。
-	// 深拷贝前给原树补齐真实偏移：
+	// 给原树补齐真实偏移（克隆已先行完成，污染不进克隆体）：
 	//   ① 原树局部类型补 subst（只改身体类型，orig.Args 的 TypeParam 保全，
 	//      inferTypeParams 跨 [T] 重复单态化仍可推断）；
 	//   ② 原参数块 Offset 与特化体对齐（漏绑的 Arg 读也落真位）；
@@ -610,24 +651,31 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 	// 否则原树 Offset 表与克隆体 4B/8B body 分配错位（x86 曾整体错 8B：field base
 	// 表槽恒读克隆体第 5 个 4B 槽 -24）：
 	//   · x86_64 linux_sysv.go：base = -8*len(csRegs) - argSaveBytes（this 指针 8B
-	//     + ΣArgs.Size，参数保存区纳入局部变量区 callee-save 之下）；
+	//     + Σ=((Size+7)/8)*8，与 setArgsOffset 槽带消耗单源同式——病灶⑬修复后
+	//     用 arch.ArgSaveBytes，参数保存区纳入局部变量区 callee-save 之下）；
 	//   · x86 ops.go prologue：base = -4*len(csRegs)，无 argSave 预扣
 	//     （参数在 ebp+8 起正侧区，不进 base）；
 	// 分支按 arch.PushSize()（4/8）判别，与 Prologue 唯一同源。
+	// [病灶⑰b v2 修复 2026-11-02] 原树替身降级为"只替 VarBlock 类型"：
+	// substituteBodyTypes 会把表达式层的 TypeParam（含 sizeof[K]() 的
+	// CallBlock.NewType）改写为 subst 首例具体类型，改写不可逆——原树是全部
+	// mono 例共享的克隆源，第一例（{K:int}）替身后 NewType 已是 IntType(8)，
+	// 第二例（{K:string}）克隆出的 body 中 TypeParam 身份已消亡，替身表
+	// 查不到 → sizeof[K] 折常量 8 → 键宽 kszU=8 而参数实宽 24 → isStr=0，
+	// string 键内容路径全灭（farm 实锤：get[string] kI=8）。SetupVarOffsets
+	// 只消费 VarBlock.Type/MultiTypes、ForBlock Init.Var/RangeNames 的类型
+	// （偏移算账账源），故改用 substituteVarTypesOnly 仅替换这些枝叶，
+	// 表达式层全保 TypeParam，原树对所有例保持"净身"。
+	// 替换仅"供应偏移算账"，跨例幂等：第一例刷 int 账、第二例刷 string 账，
+	// 各例发射时刻恰好各自消费各自账（fallback 读端按同例发射同例账）。
 	if origNode != nil && orig != nil {
-		substituteBodyTypes(origNode, substMap)
+		substituteVarTypesOnly(origNode, substMap)
 		for i, arg := range orig.Args {
 			if i < len(fn.Args) {
 				arg.Offset = fn.Args[i].Offset
 			}
 		}
-		argSave := 0
-		if fn.Class != nil {
-			argSave += 8
-		}
-		for i := range fn.Args {
-			argSave += fn.Args[i].Type.Size()
-		}
+		argSave := arch.ArgSaveBytes(fn)
 		var base int
 		if c.Ctx.Arch.PushSize() == 4 {
 			base = -4 * len(c.Ctx.Arch.CalleeSaveRegs())
@@ -637,15 +685,10 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 		arch.SetupVarOffsets(origNode, c.Ctx.StackAlignment, base)
 	}
 
-	// 深拷贝原始函数的子节点（函数体语句），使特化函数拥有独立的 AST 副本，
-	// 避免 substituteBodyTypes 修改共享节点导致原始泛型函数的 AST 被污染。
-	if origNode != nil {
-		for _, child := range origNode.Children {
-			copied := deepCopyNode(child)
-			copied.Father = node
-			node.Children = append(node.Children, copied)
-		}
-	}
+	// [病灶⑰b 修复 2026-11-02] 克隆已上移至 substituteBodyTypes(origNode) 之前：
+	// 克隆体从净树出发完成复制后，原树替身/偏移补账留在克隆下方执行，
+	// 故此处不再重复克隆。
+
 	// 在 Remap 之前，先将特化函数的参数偏移刷新为 callee-local 位置（-48/-56 等），
 	// 这样 remapFuncBodyRefs 修改 VarBlock 时，读到的 Offset 就是正确的。
 	c.Ctx.Arch.SetArgsOffset(fn)
@@ -701,6 +744,12 @@ func collectDefineVarBlocksWalk(node *parser.Node, names map[string]*parser.VarB
 		if _, exists := names[name]; !exists {
 			names[name] = vb
 		}
+	}
+	// 病灶⑯：else 子树经 IfBlock.ElseBlock 结构体指针入选（不在 node.Children），
+	// 同法收集其身体内的变量定义，否则 varCounts 少挂该分支 decl、
+	// uniqueLocalDefine 判歧义失败，引用保守不重绑。
+	if ib, ok := node.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil {
+		collectDefineVarBlocksWalk(ib.ElseBlock, names, counts)
 	}
 	for _, child := range node.Children {
 		collectDefineVarBlocksWalk(child, names, counts)
@@ -775,6 +824,13 @@ func remapNodeRefs(node *parser.Node, argMap map[string]*parser.ArgBlock, varMap
 			return
 		}
 		remapExpRefs(v.Condition, argMap, varMap, varCounts)
+		// 病灶⑯：else 子树经 IfBlock.ElseBlock 结构体指针入选（不在
+		// node.Children），同法递归重绑其体内语句（含嵌套 else-if 链）的
+		// Define/Offset 到克隆 decl；否则克隆体发射时 Define 仍指原树 decl，
+		// live 重绑读到其他 mono 刷过的布局（+16 错位）。
+		if v.ElseBlock != nil {
+			remapNodeRefs(v.ElseBlock, argMap, varMap, varCounts)
+		}
 
 	case *parser.ElseBlock:
 		if v == nil {
@@ -834,9 +890,46 @@ func remapExpRefs(exp *parser.Expression, argMap map[string]*parser.ArgBlock, va
 		// 本地变量引用同样重绑到克隆体（泛型原树 define 的 Offset 恒为 0）
 		if exp.Var.Define.Node != nil && exp.Var.Define.Type == parser.FindTypeVar {
 			if vb, ok := exp.Var.Define.Value.(*parser.VarBlock); ok && vb != nil && vb.Name != nil {
-				if newVB, found := uniqueLocalDefine(varMap, varCounts, vb.Name.String()); found {
+				newVB, found := uniqueLocalDefine(varMap, varCounts, vb.Name.String())
+				if found {
 					exp.Var.Define.Value = newVB
 					exp.Var.Offset = newVB.Offset
+				}
+			}
+		}
+		// 病灶⑮（2026-11-02）：多段名赋值（hdr.slots = slots、self.x += dx）的发射
+		// 载体不是 VarBlock 语句本身，而是紧跟其后的匿名 Expression 语句——其
+		// exp.Var 携带"完整赋值 VB"（parser 解析多段名赋值时两处挂树共享同一
+		// orig 对象；compileExprBlock: exp.Var.Value != nil → VarDecl(exp.Var)）。
+		// deepCopyNode 不去重共享引用：语句槽位上的克隆 A 与匿名 exp 的 .Var克隆 B
+		// 是两个独立对象——上面只重绑了 B 的 Define/Path（写端），B 的 RHS
+		// （.Var.Value）引用仍指向原树 define，发射期读到的是被后续 mono
+		// Setup(orig) 重刷过的槽（mp_map SIGSEGV 决定性第三病灶）。
+		// 与 VarBlock 语句路径同法：把 .Var.Value 一并 remap。
+		if exp.Var.Value != nil {
+			remapExpRefs(exp.Var.Value, argMap, varMap, varCounts)
+		}
+		// 病灶⑭修复：字段访问基区重绑。FindTypeField 读端的基变量挂在 Define.Path[0]，
+		// deepCopyFindResult 对 Path 只做浅拷——克隆体的 Path[0] 仍指向泛型原树 define。
+		// 原树槽位表随后会被后续单态化的 Setup(orig) 按其自身布局重刷（671 多 mono
+		// 布局不同：argSave 24 vs 40 → 局部基 −64 vs −80），读端便读到别的特化的槽
+		// （mp_map SIGSEGV 实测：set[int] 读端拿到 −88/−168 = set[int] 克隆槽位）。
+		// 与参数/本地引用重绑同法：把 Path[0] 重绑到克隆体自己的 define/arg。
+		// 不缓存 Offset——发射期（ptrMem / GenVarAddr FindTypeField 分支）从
+		// Path[0].Offset 现取，此时克隆体 Prologue 的 Setup 已完成。
+		if exp.Var.Define.Node != nil && exp.Var.Define.Type == parser.FindTypeField && len(exp.Var.Define.Path) > 0 {
+			switch base := exp.Var.Define.Path[0].(type) {
+			case *parser.VarBlock:
+				if base != nil && base.Name != nil {
+					if newVB, found := uniqueLocalDefine(varMap, varCounts, base.Name.String()); found && newVB != base {
+						exp.Var.Define.Path[0] = newVB
+					}
+				}
+			case *parser.ArgBlock:
+				if base != nil {
+					if newArg, found := argMap[base.Name.String()]; found && newArg != base {
+						exp.Var.Define.Path[0] = newArg
+					}
 				}
 			}
 		}
@@ -897,6 +990,12 @@ func clearExprChecked(node *parser.Node) {
 	case *parser.IfBlock:
 		if v != nil {
 			clearExprCheckedExp(v.Condition)
+			// 病灶⑯：else 子树经 IfBlock.ElseBlock 结构体指针入选（不在
+			// node.Children），同法复位其 Checked 标记，否则克隆 else 分支
+			// 的语句带原树 checked 状态跳过 Check()。
+			if v.ElseBlock != nil {
+				clearExprChecked(v.ElseBlock)
+			}
 		}
 	case *parser.ElseBlock:
 		if v != nil {
@@ -955,6 +1054,42 @@ func DebugPrintGenerics() {
 	}
 }
 
+// substituteVarTypesOnly [病灶⑰b v2 修复 2026-11-02] 原树局部类型替身（限定枝叶）：
+// 只替换 SetupVarOffsets/collectVarOffsets 算账消费的类型位——VarBlock.Type、
+// VarBlock.MultiTypes、ForBlock 的 Init.Var.Type 与 RangeNames[].Type；
+// 表达式层（Expression.Type/Var.Type/CallBlock.NewType 等）全保 TypeParam。
+// 原树是全部 mono 例共享的克隆源，完整 substituteBodyTypes 的表达式层替身
+// 会把 sizeof[K]() 的 NewType 改写为首例具体类型（不可逆），使后续例的克隆体
+// 失去 TypeParam 身份、替身表无从下手（S2/S3 get[string] kszU 折 8 实锤）。
+func substituteVarTypesOnly(node *parser.Node, subst map[string]typeSys.Type) {
+	if node == nil || len(subst) == 0 {
+		return
+	}
+	if vb, ok := node.Value.(*parser.VarBlock); ok && vb.IsDefine {
+		if vb.Type != nil {
+			vb.Type = typeSys.SubstituteTypeParams(vb.Type, subst)
+		}
+		for i, mt := range vb.MultiTypes {
+			if mt != nil {
+				vb.MultiTypes[i] = typeSys.SubstituteTypeParams(mt, subst)
+			}
+		}
+	}
+	for _, child := range node.Children {
+		if fb, ok := child.Value.(*parser.ForBlock); ok {
+			if fb.Init != nil && fb.Init.Var != nil && fb.Init.Var.Type != nil {
+				fb.Init.Var.Type = typeSys.SubstituteTypeParams(fb.Init.Var.Type, subst)
+			}
+			for _, rn := range fb.RangeNames {
+				if rn != nil && rn.Type != nil {
+					rn.Type = typeSys.SubstituteTypeParams(rn.Type, subst)
+				}
+			}
+		}
+		substituteVarTypesOnly(child, subst)
+	}
+}
+
 // substituteBodyTypes 递归遍历函数体 AST，将所有 VarBlock 和 ForBlock 中的
 // TypeParam 类型替换为具体类型。这确保 collectVarOffsets 能正确计算栈帧布局，
 // 因为 TypeParam.Size() 返回 -1，会导致偏移量计算错误（变量重叠）。
@@ -985,6 +1120,12 @@ func substituteBodyTypes(node *parser.Node, subst map[string]typeSys.Type) {
 	case *parser.IfBlock:
 		if v != nil {
 			substituteExprTypes(v.Condition, subst)
+			// 病灶⑯：else 子树经 IfBlock.ElseBlock 结构体指针入选（不在
+			// node.Children），同法替换其体内 TypeParam，否则 else 分支里
+			// 的泛型局部变量 TypeParam.Size()==-1 会撞坏栈帧偏向计算。
+			if v.ElseBlock != nil {
+				substituteBodyTypes(v.ElseBlock, subst)
+			}
 		}
 	case *parser.ReturnBlock:
 		if v != nil {

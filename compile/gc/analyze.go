@@ -362,7 +362,7 @@ func exprAllocates(e *parser.Expression) bool {
 		return false
 	}
 	if e.Call != nil {
-		if e.Call.NewType != nil {
+		if e.Call.IsBuiltinNewAlloc() {
 			return true
 		}
 		if e.Call.Func != nil && len(e.Call.Func.Return) > 0 && isOwning(e.Call.Func.Return[0]) {

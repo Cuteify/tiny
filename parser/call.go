@@ -359,6 +359,31 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	return false
 }
 
+// IsBuiltinNewAlloc 该调用是否为内建 new/newRC 分配形态（NewType 是"分配目标类型"）。
+//
+// NewType 有两种来源，语义完全不同：
+//   - new(T)/newRC(T)：ParseNew 把 T 记进 NewType —— 是分配目标，产生新块；
+//   - 泛型调用 f[T](…)（handleName 的 "[" 分支）：NewType 只承载类型实参
+//     （单态化信息），不产生新块。
+//
+// 早期判据 `Call.NewType != nil → 是分配` 把两者混为一体：unsafe.cast[*T](p+i)
+// 这类泛型形态的借用别名（指针算术结果）会被 GC 通路（exprAllocates /
+// freshAllocExpr / gc_write）误判为全新 owned 对象，继而在块尾插入
+// memory.free(借用指针) —— pkg/maps fnv1a 的 bp 即实战撞点（2026-11-01，
+// mp/mp_map x64 运行 139 SIGSEGV的第一现场）。判据收窄到 new/newRC 后：
+// cast 形态走 null_init-escaped（不 free，不误放借名指针）；
+// cast 的实参里若真含 malloc（unsafe.cast[*T](memory.malloc(n))），
+// 由实参递归判据保额，所有权照旧成立。
+func (c *CallBlock) IsBuiltinNewAlloc() bool {
+	if c == nil || c.NewType == nil {
+		return false
+	}
+	if c.IsRC {
+		return true // newRC：ParseNew 产物，ParseNew 已置位
+	}
+	return c.Name != nil && c.Name.String() == "new"
+}
+
 // ParseNew 解析 new(T[, v1, v2...])：首个参数为类型名（parseTypeAnnotation），其余为字段初值
 func (c *CallBlock) ParseNew(p *Parser) {
 	// newRC(T) 与 new(T) 同形态，区别是块带 RC 头、生命周期由用户手工 rcDec 管。

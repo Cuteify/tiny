@@ -10,6 +10,30 @@ func IsListLikeType(t typeSys.Type) bool {
 	return t != nil && (t.Kind() == "list" || t.Kind() == "string")
 }
 
+// ArgSaveBytes 计算 x86_64 SysV Prologue 的参数保存区字节数（局部槽起始游标预扣）。
+//
+// [病灶⑬修复 2026-11-01] 旧公式 Σ裸 Type.Size() 与 setArgsOffset 的槽带消耗
+// （窄类型也按满 8B 步进，见 arch/x86_64/ops.go）两本账同式不同值：memset(s,c,n)
+// 三参 Σ裸=17 与槽带消耗 24 差 7B，Prologue 局部槽游标从旧终点 −57 起步，
+// 回咬 n:uint 条带 [−64..−57]，词清零循环把 n 槽冲成 0 → rem 无符号化写飞。
+// 本 helper 与 setArgsOffset 单源同式：每参消耗 = ((Size+7)/8)*8；
+// 全 8B 参数/无参时与旧 Σ裸 size 恒等（旧布局不漂移），仅含窄参函数加深让带。
+// 注意：此 helper 专用于 x86_64 参数在 callee-local 区的布局（SysV）；
+// x86(32 位) 参数在 ebp+8 正区、Win64 Prologue 无预扣，均不消费此值。
+func ArgSaveBytes(fn *parser.FuncBlock) int {
+	save := 0
+	if fn != nil && fn.Class != nil {
+		save += typeSys.TargetPointerSize // this 指针占满一个槽
+	}
+	if fn != nil {
+		for i := 0; i < len(fn.Args); i++ {
+			size := fn.Args[i].Type.Size()
+			save += ((size + typeSys.TargetPointerSize - 1) / typeSys.TargetPointerSize) * typeSys.TargetPointerSize
+		}
+	}
+	return save
+}
+
 // ArgSlots 计算参数/返回值占用的指针宽度槽数：
 // 容器固定 3 槽（ptr/len/cap）；>指针宽度的结构体按 Size/PointerSize 拆槽；其余 1 槽。
 func ArgSlots(t typeSys.Type) int {

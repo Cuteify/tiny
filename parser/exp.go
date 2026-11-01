@@ -100,6 +100,7 @@ func (e *Expression) SetLeft(exp *Expression) {
 
 func (e *Expression) BeParent(exp *Expression) {
 	if e.Father != nil {
+		exp.Father = e.Father // 新父节点继承原父，否则后续同优先级爬链断链丢叶
 		e.Father.Right = exp
 	}
 	e.Father = exp

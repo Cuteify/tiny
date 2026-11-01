@@ -18,6 +18,7 @@ import (
 type x86_64Ops struct {
 	ctx            *context.Context
 	calleeSaveList []string
+	condSeq        int // 条件表达式内部标签序号（&& mid / || andFail，保证唯一）
 }
 
 func newOps(ctx *context.Context, calleeSaveList []string) *x86_64Ops {
@@ -537,7 +538,10 @@ func (a *x86_64Ops) ForBegin(forBlock *parser.ForBlock) string {
 	code += utils.Format(forLabel + ": ; for循环开始")
 
 	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		code += a.compileCond(forBlock.Condition, forEndLabel)
+		// 条件真目标 = 循环体入口标签(|| 链任一叶真直接进体)
+		bodyLabel := forLabel + "_body"
+		code += a.compileCond(forBlock.Condition, forEndLabel, bodyLabel)
+		code += utils.Format(bodyLabel + ":")
 	}
 
 	code += utils.Format("")
@@ -629,9 +633,18 @@ func setArgsOffset(fn *parser.FuncBlock) {
 			arg.Offset = argOffset - (slots*8 - 8)
 			argOffset -= slots * 8
 		} else {
-			// 标量/窄类型：Offset 即其唯一槽
+			// 标量/窄类型：Offset 即其唯一槽。
+			// 窄类型（u8/bool/u16/i32 等 Size<8）也按满 8 字节步进预约槽带：
+			// 病灶⑬（2026-11-01 memset 实锤）——旧实现 `argOffset -= size` 让
+			// 后序 8 字节参数的条带从窄槽正下方紧贴起步，其 [Offset,Offset+8)
+			// 跨度回吞窄槽的原字节位。memset(s:ptr, c:u8, n:uint) 即实战撞点：
+			// c 槽(-56) 落入 n 条带(-57..-50)，存 n=384=0x180 时 c 被篡改为
+			// n 的 byte[1]=0x01 → Prologue 存参环后 c==0 判据失真，快路径
+			// 被绕过、逐字节慢路径把 0x01 写满全块（maps slots 全 01，
+			// mp/mp_map 139 现象的第二个独立根因）。存参环用 GetLenName(size)
+			// 只写窄宽低字节，槽带的空余字节天然无害（读方按类型宽度读同一低字节）。
 			arg.Offset = argOffset
-			argOffset -= size
+			argOffset -= 8
 		}
 	}
 }
@@ -702,13 +715,13 @@ func (a *x86_64Ops) returnJump() string {
 }
 
 // compileCond 编译条件表达式，生成比较和跳转指令（与 compiler.compileCondition 逻辑一致）
-func (a *x86_64Ops) compileCond(cond *parser.Expression, jumpLabel string) string {
+// jumpLabel = 假目标;trueLabel = 真目标(|| 链任一叶真即跳此)
+func (a *x86_64Ops) compileCond(cond *parser.Expression, jumpLabel string, trueLabel string) string {
 	if cond == nil {
 		return ""
 	}
 
 	scratchReg1 := "RAX"
-	scratchReg2 := "RCX"
 
 	var code string
 
@@ -716,85 +729,164 @@ func (a *x86_64Ops) compileCond(cond *parser.Expression, jumpLabel string) strin
 		cond.Separator == "<" || cond.Separator == ">" ||
 		cond.Separator == "<=" || cond.Separator == ">=" {
 
-		leftSavedReg := ""
+		code += a.emitCondCompare(cond)
+		opFalse, _ := condJumpOps(cond)
+		code += utils.Format(opFalse + " " + jumpLabel)
+	} else if cond.Separator == "||" {
+		// 或链:任一叶真 → trueLabel(循环体);末叶假 → jumpLabel(循环结束)
+		code += a.compileOrChain(cond, trueLabel, jumpLabel, true)
+	} else if cond.Separator == "&&" {
+		// 左侧"真"仅代表还需评估右侧:左子链真目标落局部 mid,不能直跳 trueLabel
 		if cond.Left != nil {
-			code += a.exp(cond.Left, scratchReg1, "left operand")
-			// 用空闲 callee-save 寄存器保存左操作数（跨右子函数调用保持）。
-			// 不能压栈：被调函数参数槽 [rbp+16]（=调用指令时的 rsp）落在调用者
-			// 栈顶，会覆盖压栈保存的左操作数（如 load8(a) != load8(b) 这类左右都
-			// 是函数调用时，右调用会覆盖左操作数的栈保存）。
-			leftSavedReg = a.ctx.Reg.AllocCalleeSaveBind(cond.Left, a.CalleeSaveRegs(), a.CalleeSaveReg())
-			if leftSavedReg != "" {
-				code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存左操作数到callee-save")
-			} else {
-				code += utils.Format("push RAX; 保护左操作数\n")
-			}
+			mid := a.nextCondLabel("for_and_mid_")
+			code += a.compileCond(cond.Left, jumpLabel, mid)
+			code += utils.Format(mid + ":")
 		}
 		if cond.Right != nil {
-			code += a.exp(cond.Right, scratchReg2, "right operand")
-		}
-		if cond.Left != nil {
-			if leftSavedReg != "" {
-				code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复左操作数")
-				a.ctx.Reg.Free(cond.Left)
-			} else {
-				code += utils.Format("pop RAX; 恢复左操作数\n")
-			}
-		}
-
-		code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
-
-		var jumpOp string
-		isUnsigned := false
-		if cond.Left != nil && cond.Left.Type != nil {
-			isUnsigned = typeSys.CheckKind(cond.Left.Type, "uint")
-		} else if cond.Right != nil && cond.Right.Type != nil {
-			isUnsigned = typeSys.CheckKind(cond.Right.Type, "uint")
-		}
-		switch cond.Separator {
-		case "==":
-			jumpOp = "jne"
-		case "!=":
-			jumpOp = "je"
-		case "<":
-			if isUnsigned {
-				jumpOp = "jnb"
-			} else {
-				jumpOp = "jge"
-			}
-		case ">":
-			if isUnsigned {
-				jumpOp = "jbe"
-			} else {
-				jumpOp = "jle"
-			}
-		case "<=":
-			if isUnsigned {
-				jumpOp = "jnbe"
-			} else {
-				jumpOp = "jg"
-			}
-		case ">=":
-			if isUnsigned {
-				jumpOp = "jb"
-			} else {
-				jumpOp = "jl"
-			}
-		}
-		code += utils.Format(jumpOp + " " + jumpLabel)
-	} else if cond.Separator == "&&" || cond.Separator == "||" {
-		if cond.Left != nil {
-			code += a.compileCond(cond.Left, jumpLabel)
-		}
-		if cond.Right != nil {
-			code += a.compileCond(cond.Right, jumpLabel)
+			code += a.compileCond(cond.Right, jumpLabel, trueLabel)
 		}
 	} else {
 		code += a.exp(cond, scratchReg1, "condition")
-	code += utils.Format("test " + scratchReg1 + ", " + scratchReg1)
-	code += utils.Format("jz " + jumpLabel)
+		code += utils.Format("test " + scratchReg1 + ", " + scratchReg1)
+		code += utils.Format("jz " + jumpLabel)
 	}
 
+	return code
+}
+
+// nextCondLabel 生成条件表达式内部唯一标签（前缀 + 单调序号）
+func (a *x86_64Ops) nextCondLabel(prefix string) string {
+	a.condSeq++
+	return prefix + strconv.Itoa(a.condSeq)
+}
+
+// emitCondCompare 装载比较节点左右操作数并发射 cmp(不发跳转)
+func (a *x86_64Ops) emitCondCompare(cond *parser.Expression) string {
+	scratchReg1 := "RAX"
+	scratchReg2 := "RCX"
+	var code string
+
+	leftSavedReg := ""
+	if cond.Left != nil {
+		code += a.exp(cond.Left, scratchReg1, "left operand")
+		// 用空闲 callee-save 寄存器保存左操作数（跨右子函数调用保持）。
+		// 不能压栈：被调函数参数槽 [rbp+16]（=调用指令时的 rsp）落在调用者
+		// 栈顶，会覆盖压栈保存的左操作数（如 load8(a) != load8(b) 这类左右都
+		// 是函数调用时，右调用会覆盖左操作数的栈保存）。
+		leftSavedReg = a.ctx.Reg.AllocCalleeSaveBind(cond.Left, a.CalleeSaveRegs(), a.CalleeSaveReg())
+		if leftSavedReg != "" {
+			code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存左操作数到callee-save")
+		} else {
+			code += utils.Format("push RAX; 保护左操作数\n")
+		}
+	}
+	if cond.Right != nil {
+		code += a.exp(cond.Right, scratchReg2, "right operand")
+	}
+	if cond.Left != nil {
+		if leftSavedReg != "" {
+			code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复左操作数")
+			a.ctx.Reg.Free(cond.Left)
+		} else {
+			code += utils.Format("pop RAX; 恢复左操作数\n")
+		}
+	}
+
+	code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
+	return code
+}
+
+// condJumpOps 计算比较节点双向跳转助记:opFalse(假向)/opTrue(真向,|| 链用)
+func condJumpOps(cond *parser.Expression) (string, string) {
+	isUnsigned := false
+	if cond.Left != nil && cond.Left.Type != nil {
+		isUnsigned = typeSys.CheckKind(cond.Left.Type, "uint")
+	} else if cond.Right != nil && cond.Right.Type != nil {
+		isUnsigned = typeSys.CheckKind(cond.Right.Type, "uint")
+	}
+	switch cond.Separator {
+	case "==":
+		return "jne", "je"
+	case "!=":
+		return "je", "jne"
+	case "<":
+		if isUnsigned {
+			return "jnb", "jb"
+		}
+		return "jge", "jl"
+	case ">":
+		if isUnsigned {
+			return "jbe", "ja"
+		}
+		return "jle", "jg"
+	case "<=":
+		if isUnsigned {
+			return "jnbe", "jbe"
+		}
+		return "jg", "jle"
+	case ">=":
+		if isUnsigned {
+			return "jb", "jae"
+		}
+		return "jl", "jge"
+	}
+	return "jne", "je"
+}
+
+// compileOrChain 摊平 || 链(左结合,任一侧是 || 均下钻):
+// 每叶为真即跳 trueLabel;非末叶假直接落下一叶;末叶假补跳 falseLabel
+func (a *x86_64Ops) compileOrChain(node *parser.Expression, trueLabel string, falseLabel string, isLast bool) string {
+	if node == nil {
+		return ""
+	}
+	var code string
+	if node.Left != nil && node.Left.Separator == "||" {
+		code += a.compileOrChain(node.Left, trueLabel, falseLabel, false)
+	} else if node.Left != nil {
+		code += a.compileOrLeaf(node.Left, trueLabel, falseLabel, false)
+	}
+	if node.Right != nil && node.Right.Separator == "||" {
+		code += a.compileOrChain(node.Right, trueLabel, falseLabel, isLast)
+	} else if node.Right != nil {
+		code += a.compileOrLeaf(node.Right, trueLabel, falseLabel, isLast)
+	}
+	return code
+}
+
+// compileOrLeaf 发射 || 链单个叶子:比较叶真向跳;算式叶 Exp+test;
+// && 子叶经 compileCond 递归(全真→跳 trueLabel)
+func (a *x86_64Ops) compileOrLeaf(term *parser.Expression, trueLabel string, falseLabel string, isLast bool) string {
+	if term == nil {
+		return ""
+	}
+	var code string
+	switch term.Separator {
+	case "==", "!=", "<", ">", "<=", ">=":
+		_, opTrue := condJumpOps(term)
+		code += a.emitCondCompare(term)
+		code += utils.Format(opTrue + " " + trueLabel)
+		if isLast {
+			opFalse, _ := condJumpOps(term)
+			code += utils.Format(opFalse + " " + falseLabel)
+		}
+	case "&&":
+		andFail := a.nextCondLabel("for_or_and_")
+		code += a.compileCond(term, andFail, trueLabel)
+		code += utils.Format("jmp " + trueLabel)
+		code += utils.Format(andFail + ":")
+		if isLast {
+			// 到达 andFail 即 && 整体为假,无条件跳假目标(不依赖标志位)
+			code += utils.Format("jmp " + falseLabel)
+		}
+	default:
+		scratchReg1 := "RAX"
+		code += a.exp(term, scratchReg1, "||-chain leaf")
+		code += utils.Format("test " + scratchReg1 + ", " + scratchReg1)
+		code += utils.Format("jnz " + trueLabel)
+		if isLast {
+			code += utils.Format("jz " + falseLabel)
+		}
+	}
 	return code
 }
 

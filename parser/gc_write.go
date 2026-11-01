@@ -211,7 +211,7 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 	}
 
 	// 处理 new(T) 调用
-	if e.Call != nil && e.Call.NewType != nil {
+	if e.Call != nil && e.Call.IsBuiltinNewAlloc() {
 		m := []mark{{flag: mkFuncOwns, fb: fb}}
 		if l := LifeOf(e.Call.ThisVar); l != nil {
 			if o := l.Obj; o != nil && !o.Escapes {

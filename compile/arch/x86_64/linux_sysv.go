@@ -17,6 +17,27 @@ import (
 // sysvArgRegs System V AMD64 ABI 参数寄存器（第1-6个参数）
 var sysvArgRegs = []string{"RDI", "RSI", "RDX", "RCX", "R8", "R9"}
 
+// sysvArgSlotType [病灶⑰a 修复 2026-11-02] 装侧槽位判型：返回该参数应据此求
+// ArgSlots 的类型。单态化调用点的 ArgBlock.Type 保留泛型占位（TypeParam，
+// Size()=-1），而写端 a.Exp 对 string/list 型实参按容器发 3 qword（p/n/c）——
+// 槽位账本必须与写端同源，否则后续参数的 buffer 槽撞进容器条带、且 Loader 只按
+// 1 槽发寄存器（S3 实锤：参数2 写进参数1 的 n 槽、R8 无人喂）。
+// arg.Type 不可判定（nil 或 Size()<0）时退回实参表达式的静态类型 arg.Value.Type
+// （与 inferTypeParams 同优先级）；两者都不可用才维持旧行为（TypeParam 原样，
+// ArgSlots 计 1）。非泛型调用点 arg.Type.Size()>=0 → 零变化，哨兵安全。
+func sysvArgSlotType(arg *parser.ArgBlock) typeSys.Type {
+	if arg == nil {
+		return nil
+	}
+	if arg.Type != nil && arg.Type.Size() >= 0 {
+		return arg.Type
+	}
+	if arg.Value != nil && arg.Value.Type != nil && arg.Value.Type.Size() >= 0 {
+		return arg.Value.Type
+	}
+	return arg.Type
+}
+
 // sysvCalleeSaved System V ABI 的 callee-save 寄存器
 var sysvCalleeSaved = []string{"RBX", "R12", "R13", "R14", "R15"}
 
@@ -73,14 +94,11 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		code += utils.Format("push " + regName + "; 保存" + regName)
 	}
 
-	// 计算参数保存所需空间，将其纳入局部变量区（参数在 callee-saved regs 之下）
-	argSaveBytes := 0
-	if fn.Class != nil {
-		argSaveBytes += 8 // this 指针
-	}
-	for i := 0; i < len(fn.Args); i++ {
-		argSaveBytes += fn.Args[i].Type.Size()
-	}
+	// 参数保存区字节数（arch.ArgSaveBytes 与 setArgsOffset 槽带消耗单源同式），
+	// Prologue 局部槽起始游标 = −8*len(csRegs) − ArgSaveBytes：全 8B/无参时
+	// 与旧 Σ裸 size 公式恒等（旧布局不漂移）；含窄参函数加深，局部槽不再
+	// 回咬参数槽带（病灶⑬第二半，见 arch/utils.go ArgSaveBytes 注释）。
+	argSaveBytes := arch.ArgSaveBytes(fn)
 
 	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs)-argSaveBytes)
 
@@ -265,7 +283,7 @@ normalCall:
 			continue
 		}
 		argRegStart[i] = cursor
-		cursor += arch.ArgSlots(arg.Type)
+		cursor += arch.ArgSlots(sysvArgSlotType(arg))
 	}
 
 	// 栈参数对齐（rsp 16 字节对齐）
@@ -275,7 +293,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		need := arch.ArgSlots(arg.Type)
+		need := arch.ArgSlots(sysvArgSlotType(arg))
 		if argRegStart[i]+need > len(sysvArgRegs) {
 			stackArgs += need
 		}
@@ -292,7 +310,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		need := arch.ArgSlots(arg.Type)
+		need := arch.ArgSlots(sysvArgSlotType(arg))
 		if argRegStart[i]+need > len(sysvArgRegs) {
 			if arch.IsListLikeType(arg.Type) {
 				code += a.pushContainer(arg.Value, "参数"+strconv.Itoa(i))
@@ -313,7 +331,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		slots := arch.ArgSlots(arg.Type)
+		slots := arch.ArgSlots(sysvArgSlotType(arg))
 		if cursor+slots <= len(sysvArgRegs) {
 			numRegArgs += slots
 		}
@@ -335,7 +353,7 @@ normalCall:
 			if arg == nil {
 				continue
 			}
-			slots := arch.ArgSlots(arg.Type)
+			slots := arch.ArgSlots(sysvArgSlotType(arg))
 			if cursor+slots <= len(sysvArgRegs) {
 				bufOff := bufIdx * 8
 				if arch.IsListLikeType(arg.Type) {
@@ -393,7 +411,7 @@ normalCall:
 			if arg == nil {
 				continue
 			}
-			slots := arch.ArgSlots(arg.Type)
+			slots := arch.ArgSlots(sysvArgSlotType(arg))
 			if cursor+slots <= len(sysvArgRegs) {
 				for k := 0; k < slots; k++ {
 					bufOff := (bufIdx + k) * 8
