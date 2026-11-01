@@ -77,21 +77,6 @@ func LookupGlobalVarAll(varName string) any {
 	return nil
 }
 
-// AutoImport 全局自动导入注册表：短包名 → 完整包路径。
-// 用于无显式 import 的跨包调用（如编译器内置的 memory.load64）。
-// key = FixPathName(短名如 "memory")，value = FixPathName(完整路径如 ".../pkg/memory")。
-var autoImport = make(map[string]string)
-
-// RegisterAutoImport 注册短包名到完整路径的映射
-func RegisterAutoImport(shortName, fullPath string) {
-	autoImport[FixPathName(shortName)] = FixPathName(fullPath)
-}
-
-// LookupAutoImport 通过短包名查找完整路径，找不到返回空串
-func LookupAutoImport(shortName string) string {
-	return autoImport[FixPathName(shortName)]
-}
-
 // DefaultImportAlias 取导入路径的默认别名（Go 语义：最后一个路径段）。
 // "std:memory" -> "memory"；":github.com/x/y" -> "y"；"./sub/dir" -> "dir"。
 func DefaultImportAlias(importPath string) string {

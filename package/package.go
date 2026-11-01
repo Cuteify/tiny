@@ -197,6 +197,10 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	} else {
 		return nil, err // 打开失败（非不存在）仍报错
 	}
+	// Wave I-2：package.json imports 通道弃用——依赖声明唯一通道 = 文件级 import。
+	// json 仅保留 name/version/description/builtin 等元数据；根包 builtin 注入
+	// 在下方单独进行，仍走文件级 import 的同一加载/别名机器。
+	packageInfo.Imports = nil
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
@@ -223,17 +227,12 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 					return nil, err
 				}
 				resolvedPath = stdDir
-				// 注册短包名到完整路径的自动导入映射（供无 import 的跨包调用使用）
-				packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
 			} else {
 				resolvedPath = path.Join(packagePath, ppath)
 			}
 			// 检查是否已加载（用解析后的路径检查）
 			if _, ok2 := packages[resolvedPath]; ok2 {
 				packageInfo.Imports[k] = resolvedPath
-				if strings.HasPrefix(ppath, "std:") {
-					packageFmt.RegisterAutoImport(ppath[4:], resolvedPath)
-				}
 				continue
 			}
 			info, err := GetPackage(resolvedPath, false)

@@ -193,10 +193,6 @@ func registerFileImports(info *packageFmt.Info, filePath string) error {
 			}
 			packages[resolved] = sub
 		}
-		// 镜像 json 行为：std: 注册短名自动导入映射
-		if strings.HasPrefix(item.Path, "std:") {
-			packageFmt.RegisterAutoImport(item.Path[4:], resolved)
-		}
 	}
 	return nil
 }
