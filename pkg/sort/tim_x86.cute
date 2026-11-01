@@ -1,0 +1,576 @@
+// pkg/sort/tim_x86.cute - int/uint 真 timsort（Wave T，x86 分片）
+build os("linux")
+import "std:memory"
+build arch("x86")
+// PLAN §4.5 Wave T：minrun 计算 + 自然 run 检测（严格降序就地反转）+ run 二分插入
+// 补长 + 归并栈（Java merge_collapse 不变式）+ gallop 简化=指数跳后二分收敛批量落位。
+// 形态纪律（PROJECT.md §3）：裸指针序契约（切片头 p@0/n@4/c@8，x86 4B）+
+// 特化族（禁 fn 形参）+ 循环显式自增 + 全程无泛型/无结构体字段赋值。
+// 稳定性保证：归并同值取左（≤ 左批量 / < 右批量）；二分插入 upper bound 同值停于右侧。
+
+// _timMinRun Java MIN_MERGE=64：n<64 → n；否则折半累积奇偶位（x + (x&1) 平移和）
+fn _timMinRun(n int) int {
+    var minrun: int = n
+    var shift: int = 0
+    for ; minrun >= 64; {
+        shift = shift + (minrun - (minrun / 2) * 2)
+        minrun = minrun / 2
+    }
+    ret minrun + shift
+}
+
+// ————————— int 特化族 —————————
+
+fn _timIntGet(data: ptr, idx: int, esz: int) int {
+    var p: ptr = data + idx * esz
+    var vp: *int = p
+    ret *vp
+}
+
+fn _timIntSet(data: ptr, idx: int, val: int, esz: int) {
+    var p: ptr = data + idx * esz
+    var vp: *int = p
+    *vp = val
+}
+
+// _timIntUpper 指数跳 + 二分：[lo,hi) 中首个 > key 的索引（无则 hi）。
+// 首样即中（temp[lo] > key）→ cand==lo → 二分环不动 → 返 lo（cnt=0 走右批量轨）；
+// 全程无 > key → cand==hi → 二分收敛返 hi（cnt=全左批）。
+fn _timIntUpper(data: ptr, lo: int, hi: int, key: int, esz: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timIntGet(data, pos, esz) > key {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timIntGet(data, midV, esz) > key {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1
+}
+
+// _timIntLtCount 指数跳 + 二分：data[lo..) 中严格 < key 的连续前缀长度。
+// 首样即中（data[lo] >= key）→ cand==lo → 返 lo（前缀长 0）；全程 < key → 返 hi-lo。
+fn _timIntLtCount(data: ptr, lo: int, hi: int, key: int, esz: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timIntGet(data, pos, esz) >= key {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timIntGet(data, midV, esz) >= key {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1 - lo
+}
+
+// _timIntRevSeg 就地反转 [lo, hi]（含端点）
+fn _timIntRevSeg(data: ptr, lo: int, hi: int, esz: int) {
+    var a: int = lo
+    var b: int = hi
+    for ; a < b; {
+        var va: int = _timIntGet(data, a, esz)
+        var vb: int = _timIntGet(data, b, esz)
+        _timIntSet(data, a, vb, esz)
+        _timIntSet(data, b, va, esz)
+        a = a + 1
+        b = b - 1
+    }
+}
+
+// _timIntBinExtend 二分插入补长：[rs, re] 已升序，逐个取 [re+1, rt) 键插入
+// （upper bound 同值停于右侧 → 稳定）
+fn _timIntBinExtend(data: ptr, rs: int, re: int, rt: int, esz: int) {
+    var sortedHi: int = re + 1
+    var keyIdx: int = re + 1
+    for ; keyIdx < rt; {
+        var key: int = _timIntGet(data, keyIdx, esz)
+        var k: int = _timIntUpper(data, rs, sortedHi, key, esz)
+        var p: int = keyIdx
+        for ; p > k; {
+            var moved: int = _timIntGet(data, p - 1, esz)
+            _timIntSet(data, p, moved, esz)
+            p = p - 1
+        }
+        _timIntSet(data, k, key, esz)
+        sortedHi = sortedHi + 1
+        keyIdx = keyIdx + 1
+    }
+}
+
+// _timIntMerge 归并 run1=[b1,b1+l1) 与 run2=[b1+l1,…+l2)（首段拷出 temp）
+// gallop 简化=指数跳批量落位；同值取左 → 稳定
+fn _timIntMerge(data: ptr, b1: int, l1: int, l2: int, temp: ptr, esz: int) {
+    var b2: int = b1 + l1
+    var end1: int = l1
+    var end2: int = l2
+    var k: int = 0
+    for ; k < end1; {
+        var v: int = _timIntGet(data, b1 + k, esz)
+        _timIntSet(temp, k, v, esz)
+        k = k + 1
+    }
+    var i: int = 0
+    var j: int = 0
+    var out: int = b1
+    for ; i < end1; {
+        if j >= end2 {
+            var t: int = i
+            for ; t < end1; {
+                var tv: int = _timIntGet(temp, t, esz)
+                _timIntSet(data, out, tv, esz)
+                out = out + 1
+                t = t + 1
+            }
+            break
+        }
+        var key: int = _timIntGet(data, b2 + j, esz)
+        var cnt: int = _timIntUpper(temp, i, end1, key, esz) - i
+        if cnt > 0 {
+            var m: int = 0
+            for ; m < cnt; {
+                var tv: int = _timIntGet(temp, i + m, esz)
+                _timIntSet(data, out, tv, esz)
+                out = out + 1
+                m = m + 1
+            }
+            i = i + cnt
+        } else {
+            // 左侧无 ≤ key 者：key 必定小于 temp[i] → 右侧批量取严格小前缀
+            var tv2: int = _timIntGet(temp, i, esz)
+            var cnt2: int = _timIntLtCount(data, b2 + j, b2 + end2, tv2, esz)
+            var n: int = 0
+            for ; n < cnt2; {
+                var dv: int = _timIntGet(data, b2 + j + n, esz)
+                _timIntSet(data, out, dv, esz)
+                out = out + 1
+                n = n + 1
+            }
+            j = j + cnt2
+        }
+    }
+}
+
+// ————————— uint 特化族 —————————
+
+fn _timUintGet(data: ptr, idx: int, esz: int) uint {
+    var p: ptr = data + idx * esz
+    var vp: *uint = p
+    ret *vp
+}
+
+fn _timUintSet(data: ptr, idx: int, val: uint, esz: int) {
+    var p: ptr = data + idx * esz
+    var vp: *uint = p
+    *vp = val
+}
+
+fn _timUintUpper(data: ptr, lo: int, hi: int, key: uint, esz: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timUintGet(data, pos, esz) > key {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timUintGet(data, midV, esz) > key {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1
+}
+
+fn _timUintLtCount(data: ptr, lo: int, hi: int, key: uint, esz: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timUintGet(data, pos, esz) >= key {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timUintGet(data, midV, esz) >= key {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1 - lo
+}
+
+fn _timUintRevSeg(data: ptr, lo: int, hi: int, esz: int) {
+    var a: int = lo
+    var b: int = hi
+    for ; a < b; {
+        var va: uint = _timUintGet(data, a, esz)
+        var vb: uint = _timUintGet(data, b, esz)
+        _timUintSet(data, a, vb, esz)
+        _timUintSet(data, b, va, esz)
+        a = a + 1
+        b = b - 1
+    }
+}
+
+fn _timUintBinExtend(data: ptr, rs: int, re: int, rt: int, esz: int) {
+    var sortedHi: int = re + 1
+    var keyIdx: int = re + 1
+    for ; keyIdx < rt; {
+        var key: uint = _timUintGet(data, keyIdx, esz)
+        var k: int = _timUintUpper(data, rs, sortedHi, key, esz)
+        var p: int = keyIdx
+        for ; p > k; {
+            var moved: uint = _timUintGet(data, p - 1, esz)
+            _timUintSet(data, p, moved, esz)
+            p = p - 1
+        }
+        _timUintSet(data, k, key, esz)
+        sortedHi = sortedHi + 1
+        keyIdx = keyIdx + 1
+    }
+}
+
+fn _timUintMerge(data: ptr, b1: int, l1: int, l2: int, temp: ptr, esz: int) {
+    var b2: int = b1 + l1
+    var end1: int = l1
+    var end2: int = l2
+    var k: int = 0
+    for ; k < end1; {
+        var v: uint = _timUintGet(data, b1 + k, esz)
+        _timUintSet(temp, k, v, esz)
+        k = k + 1
+    }
+    var i: int = 0
+    var j: int = 0
+    var out: int = b1
+    for ; i < end1; {
+        if j >= end2 {
+            var t: int = i
+            for ; t < end1; {
+                var tv: uint = _timUintGet(temp, t, esz)
+                _timUintSet(data, out, tv, esz)
+                out = out + 1
+                t = t + 1
+            }
+            break
+        }
+        var key: uint = _timUintGet(data, b2 + j, esz)
+        var cnt: int = _timUintUpper(temp, i, end1, key, esz) - i
+        if cnt > 0 {
+            var m: int = 0
+            for ; m < cnt; {
+                var tv: uint = _timUintGet(temp, i + m, esz)
+                _timUintSet(data, out, tv, esz)
+                out = out + 1
+                m = m + 1
+            }
+            i = i + cnt
+        } else {
+            var tv2: uint = _timUintGet(temp, i, esz)
+            var cnt2: int = _timUintLtCount(data, b2 + j, b2 + end2, tv2, esz)
+            var n: int = 0
+            for ; n < cnt2; {
+                var dv: uint = _timUintGet(data, b2 + j + n, esz)
+                _timUintSet(data, out, dv, esz)
+                out = out + 1
+                n = n + 1
+            }
+            j = j + cnt2
+        }
+    }
+}
+
+// ————————— 主循环（栈式驱动；_timStackGet/Set 走 int 槽，栈深 < 32）—————————
+
+// _timStackGet 读索引数组的第 idx 槽（int 语义；x64 8B）
+fn _timStackGet(base: ptr, idx: int, esz: int) int {
+    var p: ptr = base + idx * esz
+    var vp: *int = p
+    ret *vp
+}
+
+// _timStackSet 写索引数组的第 idx 槽
+fn _timStackSet(base: ptr, idx: int, val: int, esz: int) {
+    var p: ptr = base + idx * esz
+    var vp: *int = p
+    *vp = val
+}
+
+// _timCollapse 一次 merge_collapse：判定并归并至少一发（0=无动作 1=归并了一批）
+// Java 规则：栈顶三段 len[i-1] <= len[i] + len[i+1] → 归并较短邻对；否则
+// len[i] <= len[i+1] → 归并顶两段。
+fn _timCollapse(data: ptr, sb: ptr, sl: ptr, depth: int, temp: ptr, esz: int) int {
+    var d: int = depth
+    if d >= 3 {
+        var lA: int = _timStackGet(sl, d - 3, esz)
+        var lB: int = _timStackGet(sl, d - 2, esz)
+        var lC: int = _timStackGet(sl, d - 1, esz)
+        if lA <= lB + lC {
+            // 归并 (d-3, d-2) 或 (d-2, d-1) —— 较短邻对优先（Java pick）
+            if lB < lC {
+                var bA2: int = _timStackGet(sb, d - 3, esz)
+                _timIntMerge(data, bA2, lA, lB, temp, esz)
+                _timStackSet(sl, d - 3, lA + lB, esz)
+                // 栈移位：上面一段下来
+                _timStackSet(sb, d - 2, _timStackGet(sb, d - 1, esz), esz)
+                _timStackSet(sl, d - 2, lC, esz)
+            } else {
+                var bB2: int = _timStackGet(sb, d - 2, esz)
+                _timIntMerge(data, bB2, lB, lC, temp, esz)
+                _timStackSet(sl, d - 2, lB + lC, esz)
+            }
+            ret 1
+        }
+    }
+    if d >= 2 {
+        var lPre: int = _timStackGet(sl, d - 2, esz)
+        var lTop: int = _timStackGet(sl, d - 1, esz)
+        if lPre <= lTop {
+            var bPre: int = _timStackGet(sb, d - 2, esz)
+            _timIntMerge(data, bPre, lPre, lTop, temp, esz)
+            _timStackSet(sl, d - 2, lPre + lTop, esz)
+            ret 1
+        }
+    }
+    ret 0
+}
+
+fn _timCollapseU(data: ptr, sb: ptr, sl: ptr, depth: int, temp: ptr, esz: int) int {
+    var d: int = depth
+    if d >= 3 {
+        var lA: int = _timStackGet(sl, d - 3, esz)
+        var lB: int = _timStackGet(sl, d - 2, esz)
+        var lC: int = _timStackGet(sl, d - 1, esz)
+        if lA <= lB + lC {
+            if lB < lC {
+                var bA2: int = _timStackGet(sb, d - 3, esz)
+                _timUintMerge(data, bA2, lA, lB, temp, esz)
+                _timStackSet(sl, d - 3, lA + lB, esz)
+                _timStackSet(sb, d - 2, _timStackGet(sb, d - 1, esz), esz)
+                _timStackSet(sl, d - 2, lC, esz)
+            } else {
+                var bB2: int = _timStackGet(sb, d - 2, esz)
+                _timUintMerge(data, bB2, lB, lC, temp, esz)
+                _timStackSet(sl, d - 2, lB + lC, esz)
+            }
+            ret 1
+        }
+    }
+    if d >= 2 {
+        var lPre: int = _timStackGet(sl, d - 2, esz)
+        var lTop: int = _timStackGet(sl, d - 1, esz)
+        if lPre <= lTop {
+            var bPre: int = _timStackGet(sb, d - 2, esz)
+            _timUintMerge(data, bPre, lPre, lTop, temp, esz)
+            _timStackSet(sl, d - 2, lPre + lTop, esz)
+            ret 1
+        }
+    }
+    ret 0
+}
+
+// timSortIntsImpl 真 timsort（int 切片；切片头 x86 4B：p@0 / n@4 / c@8；len 槽 @+4）
+fn timSortIntsImpl(s *[]int) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var dataP: *ptr = sAddr
+    var data: ptr = *dataP
+    var lenP: *int = sAddr + 4
+    var n: int = *lenP
+    if n < 2 {
+        ret
+    }
+    var esz: int = sizeof[int]()
+    var temp: ptr = memory.malloc(n * esz)
+    var sb: ptr = memory.malloc(32 * esz)
+    var sl: ptr = memory.malloc(32 * esz)
+    var depth: int = 0
+    var minrun: int = _timMinRun(n)
+    var i: int = 0
+    for ; i < n; {
+        // 自然 run 检测（升序直接扫；严格降序反转）
+        var runEnd: int = i + 1
+        if runEnd < n {
+            var v0: int = _timIntGet(data, i, esz)
+            var v1: int = _timIntGet(data, runEnd, esz)
+            if v1 < v0 {
+                var j: int = runEnd
+                for ; j < n; {
+                    var vj: int = _timIntGet(data, j, esz)
+                    var vp: int = _timIntGet(data, j - 1, esz)
+                    if vp <= vj {
+                        break
+                    }
+                    j = j + 1
+                }
+                runEnd = j
+                _timIntRevSeg(data, i, runEnd - 1, esz)
+            } else {
+                var j: int = runEnd
+                for ; j < n; {
+                    var vj: int = _timIntGet(data, j, esz)
+                    var vp: int = _timIntGet(data, j - 1, esz)
+                    if vj < vp {
+                        break
+                    }
+                    j = j + 1
+                }
+                runEnd = j
+            }
+        }
+        var rlen: int = runEnd - i
+        var want: int = minrun
+        if n - i < want {
+            want = n - i
+        }
+        if rlen < want {
+            _timIntBinExtend(data, i, runEnd - 1, i + want, esz)
+            rlen = want
+        }
+        _timStackSet(sb, depth, i, esz)
+        _timStackSet(sl, depth, rlen, esz)
+        depth = depth + 1
+        for ; depth > 1; {
+            var acted: int = _timCollapse(data, sb, sl, depth, temp, esz)
+            if acted == 0 {
+                break
+            }
+            depth = depth - 1
+        }
+        i = i + rlen
+    }
+    // 收尾：从底向上两两归并
+    for ; depth > 1; {
+        var bA: int = _timStackGet(sb, depth - 2, esz)
+        var lA: int = _timStackGet(sl, depth - 2, esz)
+        var lB: int = _timStackGet(sl, depth - 1, esz)
+        _timIntMerge(data, bA, lA, lB, temp, esz)
+        _timStackSet(sl, depth - 2, lA + lB, esz)
+        depth = depth - 1
+    }
+    memory.free(temp)
+    memory.free(sb)
+    memory.free(sl)
+}
+
+// timSortUIntsImpl 真 timsort（uint 切片；算法 int 镜像；len 槽经 *int 直读，
+// x86 4B（uint 与 int 同宽同位）——timsort 下标全程 int 走索引）
+fn timSortUIntsImpl(s *[]uint) {
+    var sAddr: ptr = unsafe.cast[ptr](s)
+    var dataP: *ptr = sAddr
+    var data: ptr = *dataP
+    var lenP: *int = sAddr + 4
+    var n: int = *lenP
+    if n < 2 {
+        ret
+    }
+    var wesz: int = sizeof[uint]()
+    var esz: int = sizeof[int]()
+    var temp: ptr = memory.malloc(n * wesz)
+    var sb: ptr = memory.malloc(32 * esz)
+    var sl: ptr = memory.malloc(32 * esz)
+    var depth: int = 0
+    var minrun: int = _timMinRun(n)
+    var i: int = 0
+    for ; i < n; {
+        var runEnd: int = i + 1
+        if runEnd < n {
+            var v0: uint = _timUintGet(data, i, wesz)
+            var v1: uint = _timUintGet(data, runEnd, wesz)
+            if v1 < v0 {
+                var j: int = runEnd
+                for ; j < n; {
+                    var vj: uint = _timUintGet(data, j, wesz)
+                    var vp: uint = _timUintGet(data, j - 1, wesz)
+                    if vp <= vj {
+                        break
+                    }
+                    j = j + 1
+                }
+                runEnd = j
+                _timUintRevSeg(data, i, runEnd - 1, wesz)
+            } else {
+                var j: int = runEnd
+                for ; j < n; {
+                    var vj: uint = _timUintGet(data, j, wesz)
+                    var vp: uint = _timUintGet(data, j - 1, wesz)
+                    if vj < vp {
+                        break
+                    }
+                    j = j + 1
+                }
+                runEnd = j
+            }
+        }
+        var rlen: int = runEnd - i
+        var want: int = minrun
+        if n - i < want {
+            want = n - i
+        }
+        if rlen < want {
+            _timUintBinExtend(data, i, runEnd - 1, i + want, wesz)
+            rlen = want
+        }
+        _timStackSet(sb, depth, i, esz)
+        _timStackSet(sl, depth, rlen, esz)
+        depth = depth + 1
+        for ; depth > 1; {
+            var acted: int = _timCollapseU(data, sb, sl, depth, temp, wesz)
+            if acted == 0 {
+                break
+            }
+            depth = depth - 1
+        }
+        i = i + rlen
+    }
+    for ; depth > 1; {
+        var bA: int = _timStackGet(sb, depth - 2, esz)
+        var lA: int = _timStackGet(sl, depth - 2, esz)
+        var lB: int = _timStackGet(sl, depth - 1, esz)
+        _timUintMerge(data, bA, lA, lB, temp, wesz)
+        _timStackSet(sl, depth - 2, lA + lB, esz)
+        depth = depth - 1
+    }
+    memory.free(temp)
+    memory.free(sb)
+    memory.free(sl)
+}

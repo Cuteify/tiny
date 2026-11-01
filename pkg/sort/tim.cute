@@ -1,0 +1,323 @@
+// pkg/sort/tim.cute - 字符串行族真 timsort（Wave T，平台中立层）
+// PLAN §4.5 Wave T。行约定镜像 api.cute 裸阵列族：24B 三个 8B 槽
+// {dataPtr@0 / len@8 / cap@16}——test farm _strPut 与 _checkStrSorted 自洽；
+// 比较走逐字节 u8 无符号序 + 长度决胜（镜像 _strCompareStrs），全平台一致。
+// 算法与 tim_x86_64.cute 同构：minrun（MIN_MERGE=64 折半累积）+ 自然 run
+// （严格降序就地反转）+ 二分插入补长 + 归并栈 + gallop 简化=指数跳批量落位。
+// 稳定性：归并同值取左，二分插入 upper bound 同值停右。
+// 形态纪律：无泛型 / 无 fn 形参 / 无行内注释 / 循环显式自增。
+// x86 注意：行单元格经 *ptr 读写（x86 ptr=4B），只覆盖 p@0/len@8/len@16
+// 三个实质字段（间隙字节为分配噪声，比较器不读，拷贝/补插语义自洽）。
+
+import "std:memory"
+
+// _timMinRunStrn 行族同款 minrun（与 tim_x86_64.cute / tim_x86.cute 同名不同参）
+fn _timMinRunStrn(n int) int {
+    var minrun: int = n
+    var shift: int = 0
+    for ; minrun >= 64; {
+        shift = shift + (minrun - (minrun / 2) * 2)
+        minrun = minrun / 2
+    }
+    ret minrun + shift
+}
+
+// _timRowLessX 跨缓冲行比较：buf1[io] 是否 < buf2[jo]（u8 无符号 + 长度决胜）
+fn _timRowLessX(buf1: ptr, io: int, buf2: ptr, jo: int) bool {
+    var sa: ptr = _rowStrPtr(buf1, io)
+    var na: int = _rowStrLen(buf1, io)
+    var sb: ptr = _rowStrPtr(buf2, jo)
+    var nb: int = _rowStrLen(buf2, jo)
+    var m: int = na
+    if nb < na {
+        m = nb
+    }
+    var k: int = 0
+    for ; k < m; {
+        var _pa: *u8 = sa + k
+        var ca: int = *_pa
+        var _pb: *u8 = sb + k
+        var cb: int = *_pb
+        if ca < cb {
+            ret true
+        }
+        if ca > cb {
+            ret false
+        }
+        k = k + 1
+    }
+    ret na < nb
+}
+
+// _timRowCopy 行实质字段拷贝（3 × ptr 宽槽，x86/x64 同构走行约定）
+fn _timRowCopy(dst: ptr, di: int, src: ptr, si: int) {
+    var k: int = 0
+    for ; k < 3; {
+        var _pd: *ptr = dst + di * 24 + k * 8
+        var _ps: *ptr = src + si * 24 + k * 8
+        *_pd = *_ps
+        k = k + 1
+    }
+}
+
+// _timRowUpper 指数跳 + 二分：temp[lo..hi) 中首个严格 > key 行的索引（无则 hi）。
+// key < temp[x] 即 x 严格大 → cand；首样即中（temp[lo] > key）→ cand==lo →
+// 二分环不动 → 返 lo；全程无严格大者 → 收敛返 hi。
+fn _timRowUpper(temp: ptr, lo: int, hi: int, keyBuf: ptr, keyIdx: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timRowLessX(keyBuf, keyIdx, temp, pos) {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timRowLessX(keyBuf, keyIdx, temp, midV) {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1
+}
+
+// _timRowLtCount 指数跳 + 二分：data[lo..hi) 中严格 < key 行的连续前缀长度。
+// data[x] >= key 命中（x < key 不成立）；首样即中 → 返 lo（前缀 0）；
+// 全程严格小 → 收敛返 hi-lo。
+fn _timRowLtCount(data: ptr, lo: int, hi: int, keyBuf: ptr, keyIdx: int) int {
+    var cand: int = hi
+    var step: int = 1
+    var pos: int = lo
+    for ; pos < hi; {
+        if _timRowLessX(data, pos, keyBuf, keyIdx) == false {
+            cand = pos
+            break
+        }
+        pos = pos + step
+        step = step * 2
+    }
+    var l1: int = lo
+    var r1: int = cand
+    for ; r1 > l1 + 1; {
+        var midV: int = l1 + (r1 - l1) / 2
+        if _timRowLessX(data, midV, keyBuf, keyIdx) == false {
+            r1 = midV
+        } else {
+            l1 = midV
+        }
+    }
+    ret r1 - lo
+}
+
+// ————————— 行族主循环（a = 裸阵列头，n = 行数，buf = 24B 行临时区）—————————
+// 栈槽（run 起点 / run 长度）自管 8B 步距：_timRowStackGet/Set 经 *int 读写
+// （x86 4B / x64 8B 双宽自洽，仅存 int 槽值），不跨文件借 arch 分片符号。
+
+// _timRowStackGet 读栈数组第 idx 槽（int 语义，8B 步距）
+fn _timRowStackGet(base: ptr, idx: int) int {
+    var p: ptr = base + idx * 8
+    var vp: *int = p
+    ret *vp
+}
+
+// _timRowStackSet 写栈数组第 idx 槽
+fn _timRowStackSet(base: ptr, idx: int, val: int) {
+    var p: ptr = base + idx * 8
+    var vp: *int = p
+    *vp = val
+}
+
+// _timRowRun 从 start 起探测自然 run（升序/严格降序反转），返回 run 终点（不含）
+fn _timRowRun(a: ptr, start: int, n: int) int {
+    if start + 1 >= n {
+        ret start + 1
+    }
+    if _timRowLessX(a, start + 1, a, start) {
+        // 严格降序
+        var j: int = start + 2
+        for ; j < n; {
+            if _timRowLessX(a, j, a, j - 1) {
+                j = j + 1
+            } else {
+                break
+            }
+        }
+        // 就地反转 [start, j)
+        var lo: int = start
+        var hi: int = j - 1
+        for ; lo < hi; {
+            _rowSwap(a, lo, hi)
+            lo = lo + 1
+            hi = hi - 1
+        }
+        ret j
+    }
+    var j: int = start + 2
+    for ; j < n; {
+        if _timRowLessX(a, j - 1, a, j) {
+            j = j + 1
+        } else {
+            break
+        }
+    }
+    ret j
+}
+
+// _timRowBinExtend 二分插入补长：[rs, re] 已升序，逐取 [re+1, rt) 行插入
+// （key 行先出槽驻 hold（24B 孤行），定位 upper bound 后整段右移再落位 →
+// upper bound 同值停右 → 稳定）
+fn _timRowBinExtend(a: ptr, rs: int, re: int, rt: int, hold: ptr) {
+    var sortedHi: int = re + 1
+    var keyIdx: int = re + 1
+    for ; keyIdx < rt; {
+        _timRowCopy(hold, 0, a, keyIdx)
+        var k: int = _timRowUpper(a, rs, sortedHi, hold, 0)
+        var p: int = keyIdx
+        for ; p > k; {
+            _timRowCopy(a, p, a, p - 1)
+            p = p - 1
+        }
+        _timRowCopy(a, k, hold, 0)
+        keyIdx = keyIdx + 1
+        sortedHi = sortedHi + 1
+    }
+}
+
+// _timRowMerge 归并 run1=[b1,b1+l1) 与 run2（首段行拷出 temp）
+// gallop 简化=指数跳批量落位；同值取左 → 稳定。run2 未发落尾部物理位
+// 置即终位（out=b1+i+j ≤ b2+j 恒成立），循环终了无需收尾拷贝。
+fn _timRowMerge(a: ptr, b1: int, l1: int, l2: int, temp: ptr) {
+    var b2: int = b1 + l1
+    var end1: int = l1
+    var end2: int = l2
+    var k: int = 0
+    for ; k < end1; {
+        _timRowCopy(temp, k, a, b1 + k)
+        k = k + 1
+    }
+    var i: int = 0
+    var j: int = 0
+    var out: int = b1
+    for ; i < end1; {
+        if j >= end2 {
+            var t: int = i
+            for ; t < end1; {
+                _timRowCopy(a, out, temp, t)
+                out = out + 1
+                t = t + 1
+            }
+            break
+        }
+        var cnt: int = _timRowUpper(temp, i, end1, a, b2 + j) - i
+        if cnt > 0 {
+            var m: int = 0
+            for ; m < cnt; {
+                _timRowCopy(a, out, temp, i + m)
+                out = out + 1
+                m = m + 1
+            }
+            i = i + cnt
+        } else {
+            // 左侧无 <= key 行者：左首行 temp[i] > key → 右批量取严格小前缀
+            var cnt2: int = _timRowLtCount(a, b2 + j, b2 + end2, temp, i)
+            var n: int = 0
+            for ; n < cnt2; {
+                _timRowCopy(a, out, a, b2 + j + n)
+                out = out + 1
+                n = n + 1
+            }
+            j = j + cnt2
+        }
+    }
+}
+
+// _timRowCollapse 行族 merge_collapse 一发
+fn _timRowCollapse(a: ptr, sb: ptr, sl: ptr, depth: int, temp: ptr) int {
+    var d: int = depth
+    if d >= 3 {
+        var lA: int = _timRowStackGet(sl, d - 3)
+        var lB: int = _timRowStackGet(sl, d - 2)
+        var lC: int = _timRowStackGet(sl, d - 1)
+        if lA <= lB + lC {
+            if lB < lC {
+                var bA2: int = _timRowStackGet(sb, d - 3)
+                _timRowMerge(a, bA2, lA, lB, temp)
+                _timRowStackSet(sl, d - 3, lA + lB)
+                _timRowStackSet(sb, d - 2, _timRowStackGet(sb, d - 1))
+                _timRowStackSet(sl, d - 2, lC)
+            } else {
+                var bB2: int = _timRowStackGet(sb, d - 2)
+                _timRowMerge(a, bB2, lB, lC, temp)
+                _timRowStackSet(sl, d - 2, lB + lC)
+            }
+            ret 1
+        }
+    }
+    if d >= 2 {
+        var lPre: int = _timRowStackGet(sl, d - 2)
+        var lTop: int = _timRowStackGet(sl, d - 1)
+        if lPre <= lTop {
+            var bPre: int = _timRowStackGet(sb, d - 2)
+            _timRowMerge(a, bPre, lPre, lTop, temp)
+            _timRowStackSet(sl, d - 2, lPre + lTop)
+            ret 1
+        }
+    }
+    ret 0
+}
+
+// timSortStringsImpl 行族真 timsort
+fn timSortStringsImpl(a: ptr, n: int) {
+    if n < 2 {
+        ret
+    }
+    var temp: ptr = memory.malloc(n * 24)
+    var hold: ptr = memory.malloc(24)
+    var sb: ptr = memory.malloc(32 * 8)
+    var sl: ptr = memory.malloc(32 * 8)
+    var depth: int = 0
+    var minrun: int = _timMinRunStrn(n)
+    var i: int = 0
+    for ; i < n; {
+        var runEnd: int = _timRowRun(a, i, n)
+        var rlen: int = runEnd - i
+        var want: int = minrun
+        if n - i < want {
+            want = n - i
+        }
+        if rlen < want {
+            _timRowBinExtend(a, i, runEnd - 1, i + want, hold)
+            rlen = want
+        }
+        _timRowStackSet(sb, depth, i)
+        _timRowStackSet(sl, depth, rlen)
+        depth = depth + 1
+        for ; depth > 1; {
+            var acted: int = _timRowCollapse(a, sb, sl, depth, temp)
+            if acted == 0 {
+                break
+            }
+            depth = depth - 1
+        }
+        i = i + rlen
+    }
+    for ; depth > 1; {
+        var bA: int = _timRowStackGet(sb, depth - 2)
+        var lA: int = _timRowStackGet(sl, depth - 2)
+        var lB: int = _timRowStackGet(sl, depth - 1)
+        _timRowMerge(a, bA, lA, lB, temp)
+        _timRowStackSet(sl, depth - 2, lA + lB)
+        depth = depth - 1
+    }
+    memory.free(temp)
+    memory.free(hold)
+    memory.free(sb)
+    memory.free(sl)
+}

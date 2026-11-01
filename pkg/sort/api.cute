@@ -121,15 +121,20 @@ fn insertionSortStrings(a ptr, n int) {
     }
 }
 
-// timsortInts 稳定排序 int 切片。Phase E: 真 timsort（PLAN §3.5），
-// 现调度快排——稳定性与否不改变「结果有序」哨兵的判定面
+// timsortInts 稳定排序 int 切片——Wave T 真实现（minrun + 自然 run + run
+// 二分插入补长 + 归并栈 + gallop 双倍跳，实现在 tim.cute）
 fn timsortInts(s *[]int) {
-    qsortInts(s)
+    timSortIntsImpl(s)
 }
 
-// timsortStrings 稳定排序裸 string 阵列。Phase E: 真 timsort；
-// 现调度同为行级快排
+// timsortUInts 稳定排序 uint 切片（Wave T 特化家族，tim.cute）
+fn timsortUInts(s *[]uint) {
+    timSortUIntsImpl(s)
+}
+
+// timsortStrings 稳定排序裸 string 阵列——Wave T 真实现（行 24B 步进，比较
+// 按字节无符号序 + 长度决胜，排序稳定；实现在 tim.cute）
 fn timsortStrings(a ptr, n int) {
-    quickSortStrings(a, n)
+    timSortStringsImpl(a, n)
 }
 
