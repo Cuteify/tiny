@@ -6,9 +6,11 @@ import (
 )
 
 type Info struct {
-	Name    string            `json:"name,omitempty"`
-	Version string            `json:"version"`
-	Imports map[string]string `json:"imports"`
+	Name    string `json:"name,omitempty"`
+	Version string `json:"version"`
+	// Imports 内部包导入表（别名→解析后路径），由文件级 import 与根包 builtin
+	// 注入写入；json:"-" 确保 package.json 的 imports 字段被完全忽略（Wave I）。
+	Imports map[string]string `json:"-"`
 	Action  map[string]string `json:"action"`
 	// Builtin 标记内置包：根包自动导入，顶层函数可无命名空间直接调用
 	Builtin bool `json:"builtin,omitempty"`

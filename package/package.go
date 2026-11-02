@@ -197,10 +197,8 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	} else {
 		return nil, err // 打开失败（非不存在）仍报错
 	}
-	// Wave I-2：package.json imports 通道弃用——依赖声明唯一通道 = 文件级 import。
-	// json 仅保留 name/version/description/builtin 等元数据；根包 builtin 注入
-	// 在下方单独进行，仍走文件级 import 的同一加载/别名机器。
-	packageInfo.Imports = nil
+	// Wave I：package.json 只承载 name/version/description/builtin 等元数据，
+	// imports 字段被 Info 的 `json:"-"` 完全忽略——依赖声明唯一通道 = 文件级 import。
 	packageInfo.Path = packagePath
 	packageInfo.AST = &parser.Node{}
 	//packageInfo.Children = make(map[string]*packageFmt.Info)
@@ -210,38 +208,24 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			projectRoot = abs
 		}
 		projectName = packageInfo.Name
-		// 根包自动导入内置包：顶层函数可无命名空间直接调用
-		if _, ok := packageInfo.Imports["builtin"]; !ok {
-			if packageInfo.Imports == nil {
-				packageInfo.Imports = map[string]string{}
-			}
-			packageInfo.Imports["builtin"] = "std:builtin"
+		// 根包自动导入内置包：顶层函数可无命名空间直接调用。
+		// 包导入表只由文件级 import（registerFileImports）与此处 builtin 注入写入。
+		if packageInfo.Imports == nil {
+			packageInfo.Imports = map[string]string{}
 		}
-	}
-	for k, ppath := range packageInfo.Imports {
-		if _, ok := packages[ppath]; !ok {
-			resolvedPath := ppath
-			if strings.HasPrefix(ppath, "std:") {
-				stdDir, err := stdPackageDir(ppath[4:])
-				if err != nil {
-					return nil, err
-				}
-				resolvedPath = stdDir
-			} else {
-				resolvedPath = path.Join(packagePath, ppath)
-			}
-			// 检查是否已加载（用解析后的路径检查）
-			if _, ok2 := packages[resolvedPath]; ok2 {
-				packageInfo.Imports[k] = resolvedPath
-				continue
-			}
-			info, err := GetPackage(resolvedPath, false)
+		if _, ok := packageInfo.Imports["builtin"]; !ok {
+			builtinPath, err := stdPackageDir("builtin")
 			if err != nil {
 				return nil, err
 			}
-			// 回写import
-			packageInfo.Imports[k] = resolvedPath
-			packages[resolvedPath] = info
+			packageInfo.Imports["builtin"] = builtinPath
+			if _, ok := packages[builtinPath]; !ok {
+				info, err := GetPackage(builtinPath, false)
+				if err != nil {
+					return nil, err
+				}
+				packages[builtinPath] = info
+			}
 		}
 	}
 

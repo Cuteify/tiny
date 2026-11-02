@@ -153,11 +153,11 @@ func dirExists(p string) bool {
 }
 
 // registerFileImports 扫描单个文件的文件级 import，解析路径并注册别名。
-// 别名写入包导入表（info.Imports，与 package.json imports 同一通道），
+// 别名写入包导入表（info.Imports，文件级 import 唯一通道），
 // 解析期 FixPath / fixPkgNamePaths / lookupGlobalType 的既有机器零改动可用。
-// 被导入的包在此处加载（物理路径去重），与 json imports 行为一致。
+// 被导入的包在此处加载（物理路径去重）。
 // 注意：包自导入（如 pkg/memory 里 import "std:memory"）与 a↔b 循环
-// 会无限递归——与 json 现状 bug-for-bug 保持，暂不设环防护。
+// 会无限递归——与历史行为 bug-for-bug 保持，暂不设环防护。
 func registerFileImports(info *packageFmt.Info, filePath string) error {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
