@@ -362,6 +362,11 @@
   `packageInfo.Imports = nil`，json 仅保留 name/version/description/builtin 等元数据；
   根包 `builtin` 注入保留，仍走文件级 import 同一加载/别名机器。依赖声明唯一通道 =
   文件级 import。
+  - **终态补刀（2026-11-03）**：`packageFmt.Info.Imports` 加 `json:"-"`——package.json 的
+    `imports` 字段在解码层彻底忽略（此前只是解码后置 nil）；`GetPackage` 删除 json 导入
+    解析循环，builtin 注入直接解析 `std:builtin` 并加载。取证：`probe_json_local`
+    （json 声明 lib、无文件级 import）生成 asm 零 `lib/seven` 引用（调用被静默丢弃，
+    RC:56）；对照 `probe_import_local`（文件级 `import lib "./lib"`）双 arch RC:7。
 - **I-3 autoImport 兜底复核 → 删除**：全库取证 `LookupAutoImport` 零读者（仅
   `package/fmt/fmt.go` 定义 + `package/imports.go`、`package/package.go` 三处写入），
   注册表纯写侧死代码；bare `print/println` 的绑定真相 = 根包 `builtin` 注入 +
@@ -372,6 +377,9 @@
     收口 v2 基线逐位一致（x64 全绿；x86 预存红面不变）。
   - I-2（w12，json 通道关闭）：22 项 × 双 arch × 三连，与 I-1/v2 逐位一致；
     x64 sortTest=110、sliceTest=0、mp_min=80、mp_map=330（raw 74）；x86 预存红面不变。
+  - I-2 终态补刀（w13，`json:"-"` + json 解析循环删除）：22 项 × 双 arch × 三连与 I-2
+    逐位一致（仅 sortStrOnly 载荷为预存 stale RAX 抖动、rc 恒 0；x86 恒 COMPILE_FAIL:2）；
+    esccheck 红项 0 不变（对象=107 泄漏=0 提前释放=0 作用域=79 转移=22）。
   - esccheck（当前源重建）：have=103 fail=9，对象=107 泄漏=0 提前释放=0 作用域=79
     转移=22，与 Wave T+F 基线逐位一致。
   - `grep -rn '"imports"' pkg test --include=package.json` = 零命中（rc=1）。
@@ -379,7 +387,7 @@
     `test/fortest`、`pkg/image`、`pkg/image/color`、`pkg/unicode/utf8/test` 与 HEAD
     基线（w11 + HEAD 树）逐项同 rc（均为预存红面，非 Wave I 回归）。
 - **提交**：8779026 imports/pkg｜502dde8 imports/test｜1306ddb package（json 通道弃用 +
-  autoImport 删除）。
+  autoImport 删除）｜d120c4a package（package.json imports 字段彻底忽略 `json:"-"`）。
 
 ## 待办池（v2 · Wave 0 基线）
 

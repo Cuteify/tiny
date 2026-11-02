@@ -324,6 +324,7 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 - **I-2 json 通道弃用**（package/*.go 最小 diff，用户已授权）：`GetPackage` 停止消费
   package.json `imports` 字段——依赖声明唯一通道 = 文件级 import；
   json 只保留 name/version/description/builtin 等元数据；根包 builtin 注入保留；
+  **终态（2026-11-03）**：`Info.Imports` 加 `json:"-"`，json 解码层彻底忽略该字段；
 - **I-3 autoImport 兜底复核**：先取证 bare 名调用（如根 farm 直呼 `print/println`）的绑定路径
   真相，再定 autoImport 兜底去留；能删则删（P7 机器可验证彻底成立），不能删则收窄并文档化；
 - **I-4 验收**：迁移前后 23 项哨兵（derefTest 挂账除外）双 arch 逐位对拍零回归；
@@ -336,6 +337,8 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
   151 个 package.json imports 清零）；两处预存坏路径顺修（`std:image.color`→`std:image/color`、
   `std:utf8`→`std:unicode/utf8`）；五 farm 缺陷⑪绕行转为文件级显式 import，依赖集不变。
 - I-2：`GetPackage` 解码后 `packageInfo.Imports = nil`；根包 builtin 注入保留。
+  2026-11-03 终态：`Info.Imports` 加 `json:"-"`（解码层彻底忽略）+ 删除 json 导入解析循环；
+  `probe_json_local`（仅 json 声明 lib）asm 零 `lib/seven` 引用，对照文件级 import RC:7。
 - I-3：`LookupAutoImport` 零读者取证成立 → `autoImport` 注册表与三处写入全删；
   bare `print/println` 绑定路径 = 根包 builtin 注入 + `parser.BuiltinFuncs`。
 - I-4：22 项 × 双 arch × 三连，迁移前（w11）/json 关闭后（w12）与 Wave T+F v2 基线逐位一致；
