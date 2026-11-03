@@ -14,8 +14,9 @@
 1. **ret 释放要分两类**：
    - 有名字的局部对象（`t`、`s`）应在修正逃逸摘要后由函数出口释放；函数出口本来就在
      `ret` 求值之后执行，不需要为它单独插入 call 后释放。
-   - 没有名字的临时对象（`ret compareStrings(makeString(...), makeString(...))`）以及
-     条件表达式里的分配，必须由 return 节点上的 `RetFree` 标记驱动，在 call 求值后释放。
+   - 没有名字的临时对象（`ret compareStrings(repeatN(...), repeatN(...))`）以及
+     条件表达式里的真实分配（被调自身 `HasHeapAllocs=true`），必须由清理点标记驱动，
+     在 call 求值后释放；`makeString` 这类只包装外部 ptr 的非分配临时不释放。
 2. **double-free 不能只靠“free 后把变量置 nil”解决**。置 nil 只能消除同一个栈槽的
    重复释放；两个别名槽指向同一对象时，第二个槽仍然是悬空指针。但这不是说“有别名也
    可以先 free 再置 nil”：free 的安全前提是对象在 free 点之后不再被任何路径使用，
@@ -180,9 +181,10 @@ const (
 因此：
 
 - **有名字的局部对象**：修正 `len`/内建摘要后，函数出口释放即可，不需要额外标记。
-- **没有名字的临时对象**：例如 `ret compareStrings(makeString(...), makeString(...))`，
-  当前 LLR 根本没有为这两个 `makeString` 结果建立对象，函数出口无从释放；必须在
-  return 表达式求值后、跳转前释放。
+- **没有名字的临时对象**：例如 `ret compareStrings(repeatN(...), repeatN(...))`，
+  当前 LLR 根本没有为这两个 `repeatN` 结果建立对象，函数出口无从释放；必须在
+  return 表达式求值后、跳转前释放。`makeString` 是包装外部 ptr 的非分配函数，
+  只建对象、不登记释放，避免误杀调用方仍持有的缓冲。
 
 ### 3.2 标记挂载方式
 
@@ -282,8 +284,9 @@ type LLRRetFree struct {
 增加一个“值生成后执行的释放代码”参数；否则 3.4 的第 3 步没有落点。`emitRetFrees` 也应
 遵守 `main` 和 build-link alias 的跳过规则。
 
-对 `ret len(t)`（修正后）不需要第 3 步；对 `ret compareStrings(makeString(...), ...)`
-第 3 步释放两个临时字符串。
+对 `ret len(t)`（修正后）不需要第 3 步；对 `ret compareStrings(repeatN(...), ...)`
+第 3 步释放两个临时字符串。`strings.makeString` 只是包装外部 ptr 的非分配函数，其
+返回值不登记释放（释放会误杀调用方仍持有的缓冲）。
 
 关键安全条件：
 
@@ -316,18 +319,19 @@ FREE t [string] point=func_exit
 
 `len` 是纯内建，`t` 不逃逸；函数出口释放。这里不需要 `RetFree`。
 
-**例 2：`ret compareStrings(makeString(...), makeString(...))`**
+**例 2：`ret compareStrings(repeatN(...), repeatN(...))`**
 
 目标 LLR：
 
 ```
-obj[0] tmp0 site=call:makeString FRAME_OWN
-obj[1] tmp1 site=call:makeString FRAME_OWN
+obj[0] tmp0 site=call:repeatN FRAME_OWN
+obj[1] tmp1 site=call:repeatN FRAME_OWN
 RET_FREE tmp0 after=call:compareStrings flag=1
 RET_FREE tmp1 after=call:compareStrings flag=1
 ```
 
-codegen 在 `compareStrings` 返回后、`jmp func_end` 前释放两个临时。
+`compareStrings` 返回后、`jmp func_end` 前释放两个临时。`makeString` 不产生该标记：
+它只把外部缓冲包装成 string，缓冲区所有权仍属于调用方/容器。
 
 **例 3：`ret f(g())` 且 `f` 返回 `g()` 的别名**
 
@@ -564,6 +568,9 @@ end_label:
 - then/else 都应有块级释放，当前 else 缺失；
 - 条件表达式中的临时对象要在条件求值后释放；若为了简单延迟到分支尾，then/else 两条
   路径都必须生成释放，不能只放在汇合点（汇合点只覆盖到达该点的路径）；
+- 真/假两条边都要清理时，比较/单表达式条件的真路径是直落，false 清理块必须放在
+  `jmp trueLabel` 之后（或把 false 清理移到体后），否则真路径会执行 false 清理并
+  跳进 else/循环出口；`||` 链的真跳转直接落到 `trueLabel`；
 - 当前 `emitGCFrees` 会把 `BlockFreesMap` 中出现的变量从函数出口释放计划中剔除；如果
   `return` 从 then 分支直接跳到 `func_end`，块尾释放不会执行，函数出口又跳过该变量，
   就会漏释放。必须保证所有出口边都经过 cleanup，或让函数出口保留这些变量并依赖
@@ -795,6 +802,8 @@ if retOwns {
 - **临时对象创建**：条件表达式/return 表达式里的 owning call 结果需要新建
   `site=call:<fn>` 对象，并挂到条件清理点或 `RetFree`。只做逃逸传播不会让
   `makeString` 的结果出现在 LLR 中。
+- 是否登记释放还要看被调自身是否分配：`makeString` 只包装外部 ptr，对象可见但
+  不释放；`repeatN`/`repeat`/`trimPrefix` 等自身 malloc 的返回值才可进入释放点。
 
 因此还需要一个 `trackExprTemps`（或复用 ReturnBlock 的临时对象逻辑）遍历
 `IfBlock.Condition`/`ForBlock.Condition`/`ForBlock.Increment`/`VarBlock.Value`，
@@ -803,7 +812,9 @@ if retOwns {
 验收：
 
 - `gcprobe_paramesc` 的 `f` 中 `n` 应为 `ESCAPED`，无 `FREE`；
-- `sortTest._checkStrSorted` 的 `hasHeapAllocs=true`，条件中的 `makeString` 有对象；
+- `sortTest._checkStrSorted` 的 `hasHeapAllocs=true`，条件中的 `makeString` 对象可见，
+  但不产生 `COND_FREE`（非分配包装器）；
+- `test/gcCondTemp` 的 `makeMaybe`/`makeItem` 条件调用产生 `COND_FREE` 且运行稳定；
 - `gcprobe_overesc`/`gcprobe_overesc2` 行为一致。
 
 ### 7.2 独立调用与变量初始化不一致
@@ -943,7 +954,7 @@ if st.objBlockID[refObj] == st.currentBlockID && st.currentBlockID != 0 {
 | `gcprobe_paramesc` | `keep` 的 `p` 为 `EscGlobal`；`f` 的 `n` 为 `ESCAPED`，无 `FREE n` |
 | `gcprobe_retparam` | `ident` 为 `RetAliasParam`；`n` 是 owner，`m` 是借用；只 `FREE n` |
 | `gcprobe_overesc2` | 六个输入不再全部 `ESCAPED`；至少可释放的临时生成 `FREE` |
-| `sortTest._checkStrSorted` | `hasHeapAllocs=true`；条件中的 `makeString` 有对象/释放点 |
+| `sortTest._checkStrSorted` | `hasHeapAllocs=true`；条件中的 `makeString` 对象可见但无释放点（非分配包装器） |
 
 ### 9.2 当前 22 项
 

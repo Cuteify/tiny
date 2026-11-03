@@ -54,9 +54,11 @@
 - `gc_llr.txt` 输出 `RET_FREE <var> after=call:<callee> flag=1`。
 
 验收：
-- `ret compareStrings(makeString(...), makeString(...))` 生成两个 `RET_FREE`，运行无
+- `ret compareStrings(repeatN(...), repeatN(...))` 生成两个 `RET_FREE`，运行无
   double-free/崩溃；
 - `ret len(t)` 不生成 `RET_FREE`，`t` 由函数出口释放；
+- `strings.makeString` 只是包装外部 ptr 的非分配函数，即使摘要为 `RetFresh` 也不得
+  登记释放（否则会释放调用方仍持有的缓冲）；其对象可见但不产生 `RET_FREE`；
 - 单态化函数（ReturnBlock 深拷贝）仍携带/匹配标记。
 
 ### Phase 3：double-free 硬化（`pkg/memory/allocator.cute`、`pkg/memory/rc.cute`、`compile/compiler.go`）
@@ -88,25 +90,33 @@
 - `break` 统一跳 `for_cleanup`：先执行本轮 body 临时释放，再执行 loop-exit 释放。
 - 条件表达式（`IfBlock.Condition`、`ForBlock.Condition`、`ForBlock.Increment`）中的
   owning call 结果建对象并在条件求值后/每轮释放。
+- 条件清理必须覆盖 true/false 两条边；比较/单表达式条件的真路径是直落，false 清理块
+  前必须补 `jmp <trueLabel>`，否则真路径会执行 false 清理后跳进 else/循环出口。
+  true/false 清理共用 `RetScratchSlots` 槽位（三类清理点不同时求值）。
+- 仅当摘要 `RetFresh`、alias/borrow mask 为 0 且被调自身 `HasHeapAllocs=true` 时才
+  登记释放；`makeString` 这类非分配包装器只建对象、不释放。
 - `return` 绕过块尾时，函数出口仍保留该变量（由 `freeSlot` 幂等兜底）。
 
 验收：
 - `test/gcOwnership.testBranchAlloc` 的 `n`/`result` 有明确释放点；
 - `test/gcOwnership.testLoopAlloc`/`testMassiveLoop` 每轮释放；
-- 带 `break` 的循环不泄漏本轮临时对象。
+- 带 `break` 的循环不泄漏本轮临时对象；
+- `test/gcCondTemp` 双 arch 通过：if/else 两路径、`||` 短路、for 条件均生成
+  `COND_FREE`，`makeMaybe` 结果在条件后释放且运行无 UAF。
 
 ### Phase 5：回归与收口
 
 - 新增/固化最小探针到 `test/`（或现有测试内断言）：
   - `ret len(t)`；
-  - `ret f(makeString(...), ...)`；
+  - `ret f(repeatN(...), ...)`；`makeString` 非分配包装器只建对象、不释放；
   - `ret ident(p)` 别名；
   - `if/else` 分支局部对象；
-  - `for + break` 临时对象。
-- 构建 `/tmp/opencode/bin/w14`。
+  - `for + break` 临时对象；
+  - 条件/增量表达式临时对象（`test/gcCondTemp`）。
+- 构建 `/tmp/opencode/bin/w14c`。
 - 跑双 arch 三连 farm：`test/gcfree`、`test/gcfree2`、`test/gcOwnership`、
-  `test/sortTest`、`test/complexTest`、`test/rctest`、`pkg/strings/test`、
-  `pkg/slices/test`、`test/m5`、`test/mp_min`、`test/mp_map`。
+  `test/gcCondTemp`、`test/sortTest`、`test/complexTest`、`test/rctest`、
+  `pkg/strings/test`、`pkg/slices/test`、`test/m5`、`test/mp_min`、`test/mp_map`。
 - 跑 `esccheck_all.sh`，红项 0。
 - 更新 `PROJECT.md` 的二进制/基线/缺陷态。
 - 按域提交：`compile/gc`、`compile/compiler.go`、`compile/arch`、`pkg/memory`、
@@ -130,13 +140,15 @@
 
 ```bash
 cd /home/gx/Desktop/代码/tiny
-TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/w14 .
+TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/w14c .
 
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14 test/gcfree x86_64"
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14 test/gcfree x86"
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14 test/gcOwnership x86_64"
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14 test/gcOwnership x86"
-bash /tmp/opencode/esccheck_all.sh /tmp/opencode/bin/w14
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcfree x86_64"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcfree x86"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcOwnership x86_64"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcOwnership x86"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcCondTemp x86_64"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c test/gcCondTemp x86"
+bash /tmp/opencode/esccheck_all.sh
 ```
 
 三连稳定判据：同一目录/架构连续 3 次 rc 相同；双 arch 均满足 `PROJECT.md` 基线。
