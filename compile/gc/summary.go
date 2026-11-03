@@ -97,6 +97,36 @@ func (e Escape) Merge(o Escape) Escape {
 	return e
 }
 
+// RetKind 返回值所有权来源分类。
+// RetFresh 表示新分配、调用者拥有；RetAliasParam/RetBorrowParam 表示返回值
+// 可能复用某个参数的对象/内部指针；mask 非零时调用者不得自动释放返回值。
+type RetKind uint8
+
+const (
+	RetNone RetKind = iota
+	RetFresh
+	RetAliasParam
+	RetBorrowParam
+	RetUnknown
+)
+
+// retKindNames 返回值的可读名称表
+var retKindNames = map[RetKind]string{
+	RetNone:        "None",
+	RetFresh:       "Fresh",
+	RetAliasParam:  "AliasParam",
+	RetBorrowParam: "BorrowParam",
+	RetUnknown:     "Unknown",
+}
+
+// String 返回返回值分类的可读名称，未知值返回 "Unknown"
+func (r RetKind) String() string {
+	if n, ok := retKindNames[r]; ok {
+		return n
+	}
+	return "Unknown"
+}
+
 // ParamSummary 单个拥有指针参数的摘要
 type ParamSummary struct {
 	Index  int    `json:"index"`  // 参数序号（0 起）
@@ -108,9 +138,14 @@ type ParamSummary struct {
 type FnSummary struct {
 	Name      string         `json:"name"`      // 全路径名（跨包 SetPkgPath 后的形态）
 	Params    []ParamSummary `json:"params"`    // 仅含有指针参数
-	RetOwned  bool           `json:"retOwned"`  // 返回值是否携带新分配的拥有指针
+	RetOwned  bool           `json:"retOwned"`  // 返回值类型是否携带拥有指针
 	RetEscape Escape         `json:"retEscape"` // 返回值的最高逃逸层级（RetOwned 时有意义）
-	CallsAny  []string       `json:"callsAny"` // 调用过的无摘要函数名（导致参数退化为 any）
+	RetKind   RetKind        `json:"retKind"`   // 返回值所有权来源
+	// RetAliasMask/RetBorrowMask：bit i = 可能返回第 i 个参数本身/内部指针。
+	// 只要 mask 非零，调用方就不能自动释放返回值（混合路径如 clone 的空串分支）。
+	RetAliasMask  uint64   `json:"retAliasMask,omitempty"`
+	RetBorrowMask uint64   `json:"retBorrowMask,omitempty"`
+	CallsAny      []string `json:"callsAny"` // 调用过的无摘要函数名（导致参数退化为 any）
 
 	// HasGlobalOwnStore 函数体内存在“全局 = 拥有值”赋值（含调用结果直接存全局）。
 	// 此类函数禁用自动释放优化（保守门槛，防止 use-after-free）。

@@ -130,11 +130,24 @@ fn mallocRC(size: uint) ptr {
 
 // freeRC 释放带 RC 前缀的内存
 // 将用户指针转换为块起始地址（ptr - 3*ptrSize），调用 freeAt
-fn freeRC(ptr: ptr) {
+fn freeRC(ptr: ptr) bool {
     if ptr == 0 {
-        ret
+        ret true
     }
-    freeAt(ptr - ptrSize * 3)
+    ret freeAt(ptr - ptrSize * 3)
+}
+
+// freeRCSlot 释放 *slot 指向的 RC 对象；成功移交所有权后清空槽。
+fn freeRCSlot(slot: *ptr) bool {
+    var p: ptr = *slot
+    if p == 0 {
+        ret true
+    }
+    if freeRC(p) {
+        *slot = 0
+        ret true
+    }
+    ret false
 }
 
 // ===== RC 操作 — 引用计数管理 =====

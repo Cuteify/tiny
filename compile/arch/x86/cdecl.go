@@ -126,7 +126,7 @@ normalCall:
 		switch {
 		case needNarrow:
 			code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
-			code += utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 窄化为32位\n")
+			code += utils.Format("push EAX; 参数" + strconv.Itoa(i) + " 窄化为32位\n")
 		case needExtend:
 			code += a.exp(arg.Value, "EAX", "参数"+strconv.Itoa(i))
 			code += utils.Format("push 0\n") + utils.Format("push EAX; 参数"+strconv.Itoa(i)+" 扩展到64位\n")
@@ -219,6 +219,14 @@ normalCall:
 	}
 	if isContainerRet {
 		code += utils.Format("add esp, 4; 清理返回槽地址")
+	}
+
+	// GC ret 临时对象捕获：内层 owning call 返回后把结果指针存入 scratch 槽。
+	if off, ok := a.ctx.RetScratchMap[call]; ok && off != 0 {
+		if isContainerRet {
+			code += utils.Format("mov EAX, DWORD [ebp" + strconv.Itoa(a.ctx.RetSlot) + "]; gc ret scratch ptr")
+		}
+		code += utils.Format("mov DWORD [ebp" + strconv.Itoa(off) + "], EAX; gc ret scratch store")
 	}
 
 	return code

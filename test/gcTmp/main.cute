@@ -1,0 +1,17 @@
+import "std:strings"
+fn cmpLen(a: string, b: string) int {
+    var la: int = len(a)
+    var lb: int = len(b)
+    ret la - lb
+}
+fn oneTemp() int {
+    ret cmpLen(strings.repeatN("ab", 2), strings.trimPrefix("abcd", "zzz"))
+}
+fn aliasRisk() int {
+    ret cmpLen(strings.trimPrefix(strings.repeatN("abc", 1), "zzz"), strings.trimPrefix("abc", "zzz"))
+}
+fn main() int {
+    if oneTemp() != 0 { ret 11 }
+    if aliasRisk() != 0 { ret 12 }
+    ret 0
+}

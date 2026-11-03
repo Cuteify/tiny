@@ -3,3 +3,6 @@
 /bin/
 *.exe
 ast.html
+test/*/gc_summary.json
+test/*/gc_llr.txt
+test/*/gc_frees.txt

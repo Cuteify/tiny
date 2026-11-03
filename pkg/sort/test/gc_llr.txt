@@ -5,12 +5,14 @@
 == /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
 == /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
 == /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.calloc
 == /home/gx/Desktop/______/tiny/pkg/memory.coalesce
 == /home/gx/Desktop/______/tiny/pkg/memory.commit
 == /home/gx/Desktop/______/tiny/pkg/memory.flagLoad
 == /home/gx/Desktop/______/tiny/pkg/memory.flagStore
 == /home/gx/Desktop/______/tiny/pkg/memory.free
 == /home/gx/Desktop/______/tiny/pkg/memory.freeAt
+== /home/gx/Desktop/______/tiny/pkg/memory.freeListClassOf
 == /home/gx/Desktop/______/tiny/pkg/memory.freeNext
 == /home/gx/Desktop/______/tiny/pkg/memory.freePrev
 == /home/gx/Desktop/______/tiny/pkg/memory.freeRC
@@ -21,14 +23,17 @@
 == /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
 == /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
 == /home/gx/Desktop/______/tiny/pkg/memory.headOf
+== /home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads
+== /home/gx/Desktop/______/tiny/pkg/memory.initLeakTracker
 == /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
-== /home/gx/Desktop/______/tiny/pkg/memory.load32
-== /home/gx/Desktop/______/tiny/pkg/memory.load64
-== /home/gx/Desktop/______/tiny/pkg/memory.load8
+== /home/gx/Desktop/______/tiny/pkg/memory.leakLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.leakStore
 == /home/gx/Desktop/______/tiny/pkg/memory.malloc
 == /home/gx/Desktop/______/tiny/pkg/memory.mallocRC
 == /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+== /home/gx/Desktop/______/tiny/pkg/memory.memmove
 == /home/gx/Desktop/______/tiny/pkg/memory.memset
+== /home/gx/Desktop/______/tiny/pkg/memory.ptrToStringHeader
 == /home/gx/Desktop/______/tiny/pkg/memory.rcAdd
 == /home/gx/Desktop/______/tiny/pkg/memory.rcDec
 == /home/gx/Desktop/______/tiny/pkg/memory.rcGet
@@ -51,32 +56,31 @@
 == /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
 == /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
 == /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
-== /home/gx/Desktop/______/tiny/pkg/memory.store32
-== /home/gx/Desktop/______/tiny/pkg/memory.store64
-== /home/gx/Desktop/______/tiny/pkg/memory.store8
 == /home/gx/Desktop/______/tiny/pkg/memory.tierOf
 == /home/gx/Desktop/______/tiny/pkg/memory.trackAlloc
 == /home/gx/Desktop/______/tiny/pkg/memory.trackFree
-== /home/gx/Desktop/______/tiny/pkg/slices._byteLen
-== /home/gx/Desktop/______/tiny/pkg/slices._capBytes
 == /home/gx/Desktop/______/tiny/pkg/slices._elemPtr
-== /home/gx/Desktop/______/tiny/pkg/slices._ensureCap
 == /home/gx/Desktop/______/tiny/pkg/slices.cap
+== /home/gx/Desktop/______/tiny/pkg/slices.cat
 == /home/gx/Desktop/______/tiny/pkg/slices.clear
+== /home/gx/Desktop/______/tiny/pkg/slices.clone
+== /home/gx/Desktop/______/tiny/pkg/slices.compact
 == /home/gx/Desktop/______/tiny/pkg/slices.contains
-  obj[0] s site=param:s ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/slices.copy
 == /home/gx/Desktop/______/tiny/pkg/slices.copyOut
+== /home/gx/Desktop/______/tiny/pkg/slices.deleteRange
+== /home/gx/Desktop/______/tiny/pkg/slices.equal
 == /home/gx/Desktop/______/tiny/pkg/slices.find
 == /home/gx/Desktop/______/tiny/pkg/slices.free
 == /home/gx/Desktop/______/tiny/pkg/slices.getPtr
-  obj[0] s site=param:s ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/slices.grow
+== /home/gx/Desktop/______/tiny/pkg/slices.index
 == /home/gx/Desktop/______/tiny/pkg/slices.insert
+== /home/gx/Desktop/______/tiny/pkg/slices.join
 == /home/gx/Desktop/______/tiny/pkg/slices.len
 == /home/gx/Desktop/______/tiny/pkg/slices.loadInt
 == /home/gx/Desktop/______/tiny/pkg/slices.loadPtr
-== /home/gx/Desktop/______/tiny/pkg/slices.memmove
-== /home/gx/Desktop/______/tiny/pkg/slices.new
-== /home/gx/Desktop/______/tiny/pkg/slices.normalizeIndex
+== /home/gx/Desktop/______/tiny/pkg/slices.make
 == /home/gx/Desktop/______/tiny/pkg/slices.pop
 == /home/gx/Desktop/______/tiny/pkg/slices.push
 == /home/gx/Desktop/______/tiny/pkg/slices.remove
@@ -84,61 +88,106 @@
 == /home/gx/Desktop/______/tiny/pkg/slices.set
 == /home/gx/Desktop/______/tiny/pkg/slices.storeInt
 == /home/gx/Desktop/______/tiny/pkg/slices.storePtr
-== /home/gx/Desktop/______/tiny/pkg/sort._cmpStrIdx
+== /home/gx/Desktop/______/tiny/pkg/sort._copyInts
+== /home/gx/Desktop/______/tiny/pkg/sort._copyStringFromBuf
+== /home/gx/Desktop/______/tiny/pkg/sort._getIntVal
 == /home/gx/Desktop/______/tiny/pkg/sort._insertionSortIntsRange
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._insertionSortStrRange
-== /home/gx/Desktop/______/tiny/pkg/sort._intLess
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._intSliceRemove
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._intSwap
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._mergeInts
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._mergeStrRuns
-== /home/gx/Desktop/______/tiny/pkg/sort._partitionInts
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._partitionStrings
-== /home/gx/Desktop/______/tiny/pkg/sort._quickSortIntsRange
-  obj[0] s site=param:s ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._quickSortStrRange
-== /home/gx/Desktop/______/tiny/pkg/sort._rawInsertionSort
-== /home/gx/Desktop/______/tiny/pkg/sort._rawLess
-== /home/gx/Desktop/______/tiny/pkg/sort._rawPartition
-== /home/gx/Desktop/______/tiny/pkg/sort._rawQuickSort
-== /home/gx/Desktop/______/tiny/pkg/sort._rawSwap
+== /home/gx/Desktop/______/tiny/pkg/sort._insertionSortStrsRange
+  obj[0] curStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[1] keyStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  FREE curStr [string] scope=2
+  FREE keyStr [string] scope=2
+== /home/gx/Desktop/______/tiny/pkg/sort._qsortIntsRecurse
+== /home/gx/Desktop/______/tiny/pkg/sort._qsortStrsRecurse
+  obj[0] iStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[1] pivotStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[2] jStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[3] pivotStr2 site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  FREE iStr [string] scope=3
+  FREE pivotStr [string] scope=3
+  FREE jStr [string] scope=3
+  FREE pivotStr2 [string] scope=3
+== /home/gx/Desktop/______/tiny/pkg/sort._rowLess
+== /home/gx/Desktop/______/tiny/pkg/sort._rowStrLen
+== /home/gx/Desktop/______/tiny/pkg/sort._rowStrPtr
+== /home/gx/Desktop/______/tiny/pkg/sort._rowSwap
+== /home/gx/Desktop/______/tiny/pkg/sort._setIntVal
+== /home/gx/Desktop/______/tiny/pkg/sort._storeStringToBuf
+== /home/gx/Desktop/______/tiny/pkg/sort._strCompareStrs
+== /home/gx/Desktop/______/tiny/pkg/sort._strCopy
+== /home/gx/Desktop/______/tiny/pkg/sort._strLess
+  obj[0] a site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[1] b site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  FREE a [string]
+  FREE b [string]
 == /home/gx/Desktop/______/tiny/pkg/sort._strLoad
-  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
-== /home/gx/Desktop/______/tiny/pkg/sort._strStackRemove
-  obj[0] stackLo site=param:stackLo ESCAPED
-  obj[1] stackHi site=param:stackHi ESCAPED
+  obj[0] pPtr site=null_init ESCAPED
+  obj[1] pLen site=null_init ESCAPED
+  obj[2] pCap site=null_init ESCAPED
+  obj[3]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/sort._strStore
 == /home/gx/Desktop/______/tiny/pkg/sort._strSwap
+== /home/gx/Desktop/______/tiny/pkg/sort._swapInts
+== /home/gx/Desktop/______/tiny/pkg/sort._timCollapse
+== /home/gx/Desktop/______/tiny/pkg/sort._timCollapseU
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntBinExtend
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntGet
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntLtCount
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntMerge
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntRevSeg
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntSet
+== /home/gx/Desktop/______/tiny/pkg/sort._timIntUpper
+== /home/gx/Desktop/______/tiny/pkg/sort._timMinRun
+== /home/gx/Desktop/______/tiny/pkg/sort._timMinRunStrn
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowBinExtend
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowCollapse
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowCopy
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowLessX
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowLtCount
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowMerge
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowRun
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowStackGet
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowStackSet
+== /home/gx/Desktop/______/tiny/pkg/sort._timRowUpper
+== /home/gx/Desktop/______/tiny/pkg/sort._timStackGet
+== /home/gx/Desktop/______/tiny/pkg/sort._timStackSet
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintBinExtend
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintGet
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintLtCount
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintMerge
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintRevSeg
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintSet
+== /home/gx/Desktop/______/tiny/pkg/sort._timUintUpper
 == /home/gx/Desktop/______/tiny/pkg/sort.compareStrings
 == /home/gx/Desktop/______/tiny/pkg/sort.insertionSortInts
-  obj[0] s site=param:s ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/sort.insertionSortStrings
-== /home/gx/Desktop/______/tiny/pkg/sort.isSortedInts
-== /home/gx/Desktop/______/tiny/pkg/sort.isSortedStrings
+== /home/gx/Desktop/______/tiny/pkg/sort.insertionSortStrs
+  obj[0] s site=param:s ESCAPED
+  obj[1] lenP site=null_init ESCAPED
+  obj[2] dataP site=null_init ESCAPED
+  obj[3] curStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  obj[4] keyStr site=call:/home/gx/Desktop/______/tiny/pkg/sort._strLoad FRAME_OWN
+  FREE curStr [string] scope=2
+  FREE keyStr [string] scope=2
+== /home/gx/Desktop/______/tiny/pkg/sort.qsortInts
+== /home/gx/Desktop/______/tiny/pkg/sort.qsortStrs
+  obj[0] s site=param:s ESCAPED
+  obj[1] lenP site=null_init ESCAPED
+  obj[2] dataP site=null_init ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/sort.quickSortInts
-  obj[0] s site=param:s ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/sort.quickSortStrings
-== /home/gx/Desktop/______/tiny/pkg/sort.searchInts
-== /home/gx/Desktop/______/tiny/pkg/sort.searchStrings
-== /home/gx/Desktop/______/tiny/pkg/sort.sortInts
-== /home/gx/Desktop/______/tiny/pkg/sort.sortStrings
+== /home/gx/Desktop/______/tiny/pkg/sort.quickSortStringsRange
+== /home/gx/Desktop/______/tiny/pkg/sort.timSortIntsImpl
+== /home/gx/Desktop/______/tiny/pkg/sort.timSortStringsImpl
+== /home/gx/Desktop/______/tiny/pkg/sort.timSortUIntsImpl
 == /home/gx/Desktop/______/tiny/pkg/sort.timsortInts
-  obj[0] s site=param:s ESCAPED
-  obj[1] stackLo site=new FRAME_OWN
-  obj[2] stackHi site=new FRAME_OWN
-  FREE stackLo [unknown]
-  FREE stackHi [unknown]
 == /home/gx/Desktop/______/tiny/pkg/sort.timsortStrings
-  obj[0] stackLo site=new FRAME_OWN
-  obj[1] stackHi site=new FRAME_OWN
-  FREE stackLo [unknown]
-  FREE stackHi [unknown]
+== /home/gx/Desktop/______/tiny/pkg/sort.timsortUInts
+== /home/gx/Desktop/______/tiny/pkg/strings._bGrow
+== /home/gx/Desktop/______/tiny/pkg/strings._byteAt
+== /home/gx/Desktop/______/tiny/pkg/strings._cellP
+== /home/gx/Desktop/______/tiny/pkg/strings._putByte
+== /home/gx/Desktop/______/tiny/pkg/strings._putPiece
 == /home/gx/Desktop/______/tiny/pkg/strings.atoi
 == /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
 == /home/gx/Desktop/______/tiny/pkg/strings.bufNew
@@ -146,25 +195,70 @@
 == /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
 == /home/gx/Desktop/______/tiny/pkg/strings.bufToString
   obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.builderFree
+== /home/gx/Desktop/______/tiny/pkg/strings.builderLen
+== /home/gx/Desktop/______/tiny/pkg/strings.builderNew
+== /home/gx/Desktop/______/tiny/pkg/strings.builderString
+  obj[0] box site=null_init ESCAPED
+  obj[1] tailP site=null_init ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWrite
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWriteString
 == /home/gx/Desktop/______/tiny/pkg/strings.cap
+== /home/gx/Desktop/______/tiny/pkg/strings.clone
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p51 site=null_init ESCAPED
+  obj[2] _p52 site=null_init ESCAPED
+  obj[3] _p53 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.compare
 == /home/gx/Desktop/______/tiny/pkg/strings.contains
 == /home/gx/Desktop/______/tiny/pkg/strings.containsAny
 == /home/gx/Desktop/______/tiny/pkg/strings.containsRune
 == /home/gx/Desktop/______/tiny/pkg/strings.count
+== /home/gx/Desktop/______/tiny/pkg/strings.countByte
 == /home/gx/Desktop/______/tiny/pkg/strings.eq
+== /home/gx/Desktop/______/tiny/pkg/strings.equalFold
+== /home/gx/Desktop/______/tiny/pkg/strings.fields
 == /home/gx/Desktop/______/tiny/pkg/strings.formatBool
-  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
-  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[0] _p34 site=null_init ESCAPED
+  obj[1] _p35 site=null_init ESCAPED
+  obj[2] _p36 site=null_init ESCAPED
+  obj[3] _p37 site=null_init ESCAPED
+  obj[4] _p38 site=null_init ESCAPED
+  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[6] _p39 site=null_init ESCAPED
+  obj[7] _p40 site=null_init ESCAPED
+  obj[8] _p41 site=null_init ESCAPED
+  obj[9] _p42 site=null_init ESCAPED
+  obj[10] _p43 site=null_init ESCAPED
+  obj[11] _p44 site=null_init ESCAPED
+  obj[12]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.fromI64
 == /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
 == /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
+== /home/gx/Desktop/______/tiny/pkg/strings.hasSuffixAny
 == /home/gx/Desktop/______/tiny/pkg/strings.index
+== /home/gx/Desktop/______/tiny/pkg/strings.indexAny
 == /home/gx/Desktop/______/tiny/pkg/strings.indexByte
 == /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
+== /home/gx/Desktop/______/tiny/pkg/strings.isSpace
 == /home/gx/Desktop/______/tiny/pkg/strings.itoa
   obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.join
+  obj[0] sep site=param:sep ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[2] _p62 site=null_init ESCAPED
+  obj[3] _p63 site=null_init ESCAPED
+  obj[4] _p64 site=null_init ESCAPED
+  obj[5] _p65 site=null_init ESCAPED
+  obj[6] _p66 site=null_init ESCAPED
+  obj[7] _p67 site=null_init ESCAPED
+  obj[8] _p68 site=null_init ESCAPED
+  obj[9] _p69 site=null_init ESCAPED
+  obj[10]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
+== /home/gx/Desktop/______/tiny/pkg/strings.lastIndexByte
 == /home/gx/Desktop/______/tiny/pkg/strings.len
 == /home/gx/Desktop/______/tiny/pkg/strings.makeString
 == /home/gx/Desktop/______/tiny/pkg/strings.ne
@@ -172,15 +266,58 @@
 == /home/gx/Desktop/______/tiny/pkg/strings.parse
 == /home/gx/Desktop/______/tiny/pkg/strings.parseBool
 == /home/gx/Desktop/______/tiny/pkg/strings.repeat
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p52 site=null_init ESCAPED
+  obj[2] _p53 site=null_init ESCAPED
+  obj[3] _p54 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.repeatN
+  obj[0] s site=param:s ESCAPED
+  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.repeat ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.replace
+  obj[0] s site=param:s ESCAPED
+  obj[1] old site=param:old ESCAPED
+  obj[2] new site=param:new ESCAPED
+  obj[3] _p55 site=null_init ESCAPED
+  obj[4] _p56 site=null_init ESCAPED
+  obj[5] _p57 site=null_init ESCAPED
+  obj[6] _p58 site=null_init ESCAPED
+  obj[7] _p59 site=null_init ESCAPED
+  obj[8] _p60 site=null_init ESCAPED
+  obj[9] _p61 site=null_init ESCAPED
+  obj[10]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.reverse
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p54 site=null_init ESCAPED
+  obj[2] _p55 site=null_init ESCAPED
+  obj[3] _p56 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.split
+== /home/gx/Desktop/______/tiny/pkg/strings.splitFree
+== /home/gx/Desktop/______/tiny/pkg/strings.splitGet
+  obj[0] hdr site=null_init ESCAPED
+  obj[1] cell site=null_init ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.splitLen
+== /home/gx/Desktop/______/tiny/pkg/strings.splitN
 == /home/gx/Desktop/______/tiny/pkg/strings.strcmp
 == /home/gx/Desktop/______/tiny/pkg/strings.strcpy
 == /home/gx/Desktop/______/tiny/pkg/strings.strlen
 == /home/gx/Desktop/______/tiny/pkg/strings.toCstring
 == /home/gx/Desktop/______/tiny/pkg/strings.toLower
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p38 site=null_init ESCAPED
+  obj[2] _p39 site=null_init ESCAPED
+  obj[3] _p40 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.toString
 == /home/gx/Desktop/______/tiny/pkg/strings.toU64
 == /home/gx/Desktop/______/tiny/pkg/strings.toUpper
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p35 site=null_init ESCAPED
+  obj[2] _p36 site=null_init ESCAPED
+  obj[3] _p37 site=null_init ESCAPED
+  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trim
   obj[0] s site=param:s ESCAPED
   obj[1] cutset site=param:cutset ESCAPED
@@ -188,14 +325,43 @@
 == /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
   obj[0] s site=param:s ESCAPED
   obj[1] cutset site=param:cutset ESCAPED
-  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[2] _p1 site=null_init ESCAPED
+  obj[3] _p2 site=null_init ESCAPED
+  obj[4] _p3 site=null_init ESCAPED
+  obj[5] _p4 site=null_init ESCAPED
+  obj[6] _p5 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+  obj[0] s site=param:s ESCAPED
+  obj[1] prefix site=param:prefix ESCAPED
+  obj[2] _p46 site=null_init ESCAPED
+  obj[3] _p47 site=null_init ESCAPED
+  obj[4] _p48 site=null_init ESCAPED
+  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimRight
   obj[0] s site=param:s ESCAPED
   obj[1] cutset site=param:cutset ESCAPED
-  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[2] _p6 site=null_init ESCAPED
+  obj[3] _p7 site=null_init ESCAPED
+  obj[4] _p8 site=null_init ESCAPED
+  obj[5] _p9 site=null_init ESCAPED
+  obj[6] _p10 site=null_init ESCAPED
+  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
+  obj[0] s site=param:s ESCAPED
+  obj[1] _p41 site=null_init ESCAPED
+  obj[2] _p42 site=null_init ESCAPED
+  obj[3] _p43 site=null_init ESCAPED
+  obj[4] _p44 site=null_init ESCAPED
+  obj[5] _p45 site=null_init ESCAPED
+  obj[6]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
+  obj[0] s site=param:s ESCAPED
+  obj[1] suffix site=param:suffix ESCAPED
+  obj[2] _p49 site=null_init ESCAPED
+  obj[3] _p50 site=null_init ESCAPED
+  obj[4] _p51 site=null_init ESCAPED
+  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/syscall.brk
 == /home/gx/Desktop/______/tiny/pkg/syscall.close
 == /home/gx/Desktop/______/tiny/pkg/syscall.exit

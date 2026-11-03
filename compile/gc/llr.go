@@ -28,6 +28,16 @@ type llrState struct {
 	objScope map[ObjID]int
 	// objBlockID 对象创建时所在的块 ID（用于区分同深度不同块）
 	objBlockID map[ObjID]int
+	// objShared 对象是否被保存到其它变量/字段/容器（存在非 canonical 别名）。
+	// 只有唯一绑定且从未共享的对象才能在覆盖赋值点立即释放旧值。
+	objShared map[ObjID]bool
+	// objReleased 对象是否已在覆盖赋值点释放，后续出口/孤儿/块级释放必须跳过。
+	objReleased map[ObjID]bool
+	// varBlockID 变量声明时所在的块 ID（块级释放只允许释放本块声明的变量，
+	// 避免把“外层变量在分支/循环内被赋值”的对象在块尾释放后仍被外层使用）
+	varBlockID map[string]int
+	// loopDepth 当前嵌套循环深度（0=不在循环内）
+	loopDepth int
 	// nextObj 下一个可用 ObjID
 	nextObj ObjID
 	// orphans 被替换掉的旧对象（需要在函数出口 free）
@@ -51,16 +61,53 @@ type fieldOrphan struct {
 
 // LLRResult 单函数的 LLR 计算结果。
 type LLRResult struct {
-	Fn           string              `json:"fn"`
-	Objects      []LLRObj            `json:"objects"`
-	Frees        []LLRFree           `json:"frees"` // 出口释放
-	FieldFrees   []LLRFieldFree      `json:"fieldFrees"` // 字段级级联释放
-	BlockFreesMap map[*parser.Node][]LLRFree `json:"-"` // 块级释放（按块节点索引）
+	Fn            string                     `json:"fn"`
+	Objects       []LLRObj                   `json:"objects"`
+	Frees         []LLRFree                  `json:"frees"`      // 出口释放
+	FieldFrees    []LLRFieldFree             `json:"fieldFrees"` // 字段级级联释放
+	BlockFreesMap map[*parser.Node][]LLRFree `json:"-"`          // 块级释放（按块节点索引）
+	// AssignFrees 覆盖赋值点释放（按赋值 VarBlock 节点索引）：旧对象唯一、
+	// 未共享、未逃逸时，在 `x = ...` 写入新值前 freeSlot(&x)。
+	AssignFrees map[*parser.Node][]LLRFree `json:"-"`
+	// LoopExitFrees 循环出口释放（按 for 节点索引）：仅包含循环体内声明的
+	// 块局部变量，用于覆盖 break 跳过 body 尾释放的路径；正常迭代已由
+	// BlockFreesMap 清槽，freeSlot 幂等跳过。
+	LoopExitFrees map[*parser.Node][]LLRFree    `json:"-"`
+	RetFrees      []LLRRetFree                  `json:"retFrees,omitempty"` // ret 节点 call 后释放（扁平，调试/输出）
+	RetFreesMap   map[*parser.Node][]LLRRetFree `json:"-"`                  // ret 节点 call 后释放（按 return 节点索引）
+	// CondFreesMap 条件表达式临时对象释放（按 IfBlock/ForBlock 节点索引）。
+	CondFreesMap map[*parser.Node][]LLRCondFree `json:"-"`
+	// IncrFreesMap for 增量表达式临时对象释放（按 ForBlock 节点索引）。
+	IncrFreesMap map[*parser.Node][]LLRCondFree `json:"-"`
+	// RetScratchSlots 本函数单个 return/条件/增量清理点最多需要的临时对象
+	// scratch 槽数。Prologue 据此预留；三类清理点不会同时求值，槽位复用。
+	RetScratchSlots int `json:"-"`
+}
+
+// LLRCondFree 条件/增量表达式中的 owning call 临时对象释放标记。
+// 只在能证明调用结果独占（RetFresh、无 alias/borrow mask）且被调自身确有
+// 堆分配时登记；非分配包装器（如 strings.makeString）只建对象、不释放。
+type LLRCondFree struct {
+	VarName string            `json:"varName"` // 合成槽名（$cond0…，调试用）
+	Callee  string            `json:"callee"`  // 调用摘要键
+	Call    *parser.CallBlock `json:"-"`       // 调用节点（codegen 捕获槽键）
+	Flag    int               `json:"flag"`    // 1 = 条件/增量求值后释放
+}
+
+// LLRRetFree ret 节点上的 call 后释放标记。
+// 语义：内层 call 返回的拥有型临时对象作为外层 call 的实参，外层不保存也不
+// 返回该实参（ParamEscapes=EscNone 且 alias/borrow mask 未命中），故外层调用
+// 返回后即可释放。只登记嵌套实参临时，返回值本身不登记。
+type LLRRetFree struct {
+	VarName string            `json:"varName"` // 合成槽名（$ret0…，调试用）
+	Callee  string            `json:"callee"`  // 内层 call 的摘要键
+	Call    *parser.CallBlock `json:"-"`       // 内层调用节点（codegen 捕获槽键）
+	Flag    int               `json:"flag"`    // 1 = ret 节点上的 call 后释放
 }
 
 // LLRObj 一个抽象对象的完整信息。
 type LLRObj struct {
-	ID       ObjID `json:"id"`
+	ID       ObjID  `json:"id"`
 	Site     string `json:"site"`
 	Escaped  bool   `json:"escaped"`
 	Name     string `json:"name"`     // 主要绑定名（调试用）
@@ -89,10 +136,22 @@ type llrVars struct {
 // ComputeLLR 对单个函数做 LLR 分析，返回结果。
 // body 为函数体节点，fs 为该函数的摘要。
 func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.Node) *LLRResult {
-	res := &LLRResult{Fn: fnKey, BlockFreesMap: map[*parser.Node][]LLRFree{}}
+	res := &LLRResult{
+		Fn:            fnKey,
+		BlockFreesMap: map[*parser.Node][]LLRFree{},
+		AssignFrees:   map[*parser.Node][]LLRFree{},
+		LoopExitFrees: map[*parser.Node][]LLRFree{},
+		CondFreesMap:  map[*parser.Node][]LLRCondFree{},
+		IncrFreesMap:  map[*parser.Node][]LLRCondFree{},
+	}
 
 	// 函数级保守门槛：仅当存在未知调用时禁用
 	if hasRealAnyCalls(fs.CallsAny) {
+		return res
+	}
+	// 有全局拥有存储的函数禁止自动释放帧内对象：全局可能仍持有这些对象，
+	// 且跨函数的别名/生命周期无法在本帧证明。
+	if fs.HasGlobalOwnStore {
 		return res
 	}
 	// 无堆分配的函数：跳过 LLR 分析（无可释放的堆 ptr）
@@ -101,14 +160,17 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 	}
 
 	st := &llrState{
-		bindings:     map[string]ObjID{},
-		objEscaped:   map[ObjID]bool{},
-		objRCAlloc:   map[ObjID]bool{},
-		objSite:      map[ObjID]string{},
-		objScope:     map[ObjID]int{},
-		objBlockID:   map[ObjID]int{},
-		nextObj:      0,
-		nextBlockID:  1, // 从 1 开始，0 留给函数体
+		bindings:    map[string]ObjID{},
+		objEscaped:  map[ObjID]bool{},
+		objRCAlloc:  map[ObjID]bool{},
+		objSite:     map[ObjID]string{},
+		objScope:    map[ObjID]int{},
+		objBlockID:  map[ObjID]int{},
+		objShared:   map[ObjID]bool{},
+		objReleased: map[ObjID]bool{},
+		varBlockID:  map[string]int{},
+		nextObj:     0,
+		nextBlockID: 1, // 从 1 开始，0 留给函数体
 	}
 
 	// 参数中的拥有指针：绑定为 param 对象（调用者管理，不自动释放）
@@ -127,7 +189,15 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 	if body == nil {
 		return res
 	}
-	scanStatements(body, st, fb, paramNames, res.BlockFreesMap)
+	scanStatements(body, st, fb, paramNames, res)
+
+	// 循环出口释放：循环体内声明的块局部变量在 break 跳过 body 尾释放时，
+	// 由 for_end 后的 cleanup 释放。正常迭代 body 尾已清槽，freeSlot 幂等。
+	for node, frees := range res.BlockFreesMap {
+		if _, ok := node.Value.(*parser.ForBlock); ok {
+			res.LoopExitFrees[node] = append([]LLRFree(nil), frees...)
+		}
+	}
 
 	// 汇总结果
 	objIDs := make([]ObjID, 0)
@@ -144,7 +214,8 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 			}
 		}
 		escaped := st.objEscaped[id]
-		frameOwn := !escaped && !isParamObj(st, id)
+		released := st.objReleased[id]
+		frameOwn := !escaped && !released && !isParamObj(st, id)
 
 		res.Objects = append(res.Objects, LLRObj{
 			ID: id, Site: st.objSite[id], Escaped: escaped,
@@ -162,7 +233,7 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 	// 孤儿对象：被替换掉的旧 ptr，需要在出口 free（无变量名绑定，用 site 标识）
 	for _, id := range st.orphans {
 		escaped := st.objEscaped[id]
-		if escaped || isParamObj(st, id) {
+		if escaped || st.objReleased[id] || isParamObj(st, id) {
 			continue
 		}
 		site := st.objSite[id]
@@ -207,7 +278,164 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 		}
 	}
 
+	// ret 节点 call 后释放：收集 return 表达式里“外层调用不保存/不返回”的
+	// 嵌套 owning call 临时对象。放在摘要收紧之后，读取的是最终 Table。
+	res.RetFrees, res.RetFreesMap, res.RetScratchSlots = collectRetFrees(fb, body)
+	// 条件/增量清理点与 ret 不会同时求值，scratch 槽可复用；取最大需求。
+	for _, frees := range res.CondFreesMap {
+		if len(frees) > res.RetScratchSlots {
+			res.RetScratchSlots = len(frees)
+		}
+	}
+	for _, frees := range res.IncrFreesMap {
+		if len(frees) > res.RetScratchSlots {
+			res.RetScratchSlots = len(frees)
+		}
+	}
+
 	return res
+}
+
+// collectRetFrees 收集函数体内每个 return 节点上的 call 后释放标记。
+// 返回：扁平标记列表、按 return 节点索引的映射、单节点最大标记数（scratch 槽数）。
+func collectRetFrees(fb *parser.FuncBlock, body *parser.Node) ([]LLRRetFree, map[*parser.Node][]LLRRetFree, int) {
+	var flat []LLRRetFree
+	byNode := map[*parser.Node][]LLRRetFree{}
+	maxSlots := 0
+	seq := 0
+
+	var walk func(n *parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil {
+			return
+		}
+		if ret, ok := n.Value.(*parser.ReturnBlock); ok {
+			seen := map[*parser.CallBlock]bool{}
+			var frees []LLRRetFree
+			report := func(inner *parser.CallBlock, callee string) {
+				if inner == nil || seen[inner] {
+					return
+				}
+				seen[inner] = true
+				rf := LLRRetFree{
+					VarName: "$ret" + itoa(seq),
+					Callee:  callee,
+					Call:    inner,
+					Flag:    1,
+				}
+				seq++
+				frees = append(frees, rf)
+				flat = append(flat, rf)
+			}
+			for _, rv := range ret.Value {
+				collectRetFreesExpr(rv, report)
+			}
+			if len(frees) > 0 {
+				byNode[n] = frees
+				if len(frees) > maxSlots {
+					maxSlots = len(frees)
+				}
+			}
+		}
+		for _, ch := range n.Children {
+			walk(ch)
+		}
+		// IfBlock.ElseBlock 不在 Children 列表里，需显式下钻。
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil {
+			walk(ib.ElseBlock)
+		}
+	}
+	walk(body)
+	return flat, byNode, maxSlots
+}
+
+// collectRetFreesExpr 后序遍历表达式，识别可在外层 call 返回后释放的嵌套
+// owning call 临时对象。
+//
+// 安全条件（全部满足才登记）：
+//  1. 内层 call 返回值 RetFresh 且 alias/borrow mask 均为 0（caller 独占）；
+//  2. 内层 call 直接作为外层 call 的实参（不做任意表达式折叠）；
+//  3. 外层参数摘要为 EscNone（不保存实参地址）；
+//  4. 外层摘要存在且不是 RetUnknown，且其返回 alias/borrow mask 未命中该实参
+//     （外层不会把该实参返回出去）；纯内建视为不返回实参。
+func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, string)) {
+	if e == nil {
+		return
+	}
+	if e.Call != nil {
+		outer := e.Call
+		outerKey := callKey(outer)
+		outerFS := Table[outerKey]
+		outerSafe := false
+		if outerFS != nil {
+			outerSafe = outerFS.RetKind != RetUnknown
+		} else if _, pure := pureBuiltinEscapes(outerKey); pure {
+			outerSafe = true
+		}
+		if outerSafe {
+			for idx, ag := range outer.Args {
+				if ag == nil || ag.Value == nil || ag.Value.Call == nil {
+					continue
+				}
+				inner := ag.Value.Call
+				innerFS := Table[callKey(inner)]
+				if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
+					innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+					continue
+				}
+				if ParamEscapes(outerKey, idx) != EscNone {
+					continue
+				}
+				if outerFS != nil {
+					bit := uint64(1) << uint(idx)
+					if outerFS.RetAliasMask&bit != 0 || outerFS.RetBorrowMask&bit != 0 {
+						continue
+					}
+				}
+				report(inner, callKey(inner))
+			}
+		}
+		for _, ag := range outer.Args {
+			if ag != nil {
+				collectRetFreesExpr(ag.Value, report)
+			}
+		}
+	}
+	collectRetFreesExpr(e.Left, report)
+	collectRetFreesExpr(e.Right, report)
+	for _, ix := range e.Index {
+		if ix != nil {
+			collectRetFreesExpr(ix.Left, report)
+			collectRetFreesExpr(ix.Right, report)
+		}
+	}
+}
+
+// RetFreesForNode 返回指定函数某个 return 节点上的 call 后释放标记。
+func RetFreesForNode(fnKey string, n *parser.Node) []LLRRetFree {
+	llr := LLRResults[fnKey]
+	if llr == nil || llr.RetFreesMap == nil {
+		return nil
+	}
+	return llr.RetFreesMap[n]
+}
+
+// CondFreesForNode 返回指定 if/for 节点条件表达式上的临时对象释放标记。
+func CondFreesForNode(fnKey string, n *parser.Node) []LLRCondFree {
+	llr := LLRResults[fnKey]
+	if llr == nil || llr.CondFreesMap == nil {
+		return nil
+	}
+	return llr.CondFreesMap[n]
+}
+
+// IncrFreesForNode 返回指定 for 节点增量表达式上的临时对象释放标记。
+func IncrFreesForNode(fnKey string, n *parser.Node) []LLRCondFree {
+	llr := LLRResults[fnKey]
+	if llr == nil || llr.IncrFreesMap == nil {
+		return nil
+	}
+	return llr.IncrFreesMap[n]
 }
 
 // newObj 创建新抽象对象。
@@ -383,8 +611,8 @@ func collectStructFieldFrees(fb *parser.FuncBlock, body *parser.Node, frees []LL
 }
 
 // scanStatements 前向扫描语句列表，更新绑定与逃逸状态。
-// blockFreesMap 按块节点记录该块末尾需要释放的对象。
-func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool, blockFreesMap map[*parser.Node][]LLRFree) {
+// res 记录块级/覆盖赋值/条件/增量释放计划。
+func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool, res *LLRResult) {
 	var walk func(n *parser.Node)
 	walk = func(n *parser.Node) {
 		if n == nil {
@@ -392,7 +620,18 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 		}
 		switch v := n.Value.(type) {
 		case *parser.VarBlock:
-			processAssign(v, st, fb, paramNames)
+			processAssign(n, v, st, fb, paramNames, res.AssignFrees)
+		case *parser.Expression:
+			// 简单赋值/字段赋值可能以 Expression.Var 形式出现，统一走
+			// processAssign，保证覆盖释放计划与代码生成节点一致。
+			if v.Var != nil && v.Var.Value != nil {
+				processAssign(n, v.Var, st, fb, paramNames, res.AssignFrees)
+			} else if v.Separator == "[]=" || v.Separator == "=" {
+				// 元素/字段写入会把右值对象保存到容器中，形成非 canonical 别名。
+				// 这里只标记裸变量引用，阻止其后续被覆盖释放误杀。
+				markStoredRefs(v.Right, st)
+			}
+			markExprCallArgs(v.Right, st)
 		case *parser.ReturnBlock:
 			retOwns := len(fb.Return) > 0 && isOwning(fb.Return[0])
 			if retOwns {
@@ -402,14 +641,16 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 				if rv == nil {
 					continue
 				}
+				// 返回表达式内所有调用实参都按摘要传播逃逸（含嵌套调用）。
+				markExprCallArgs(rv, st)
 				if rv.Call != nil {
-					markCallArgObjExpr(rv, st, fb)
 					// Escape call results that return owning types (e.g. ret makeNode(val))
-					if retOwns && rv.Call.Func != nil && len(rv.Call.Func.Return) > 0 &&
-						isOwning(rv.Call.Func.Return[0]) {
-						site := "call:" + rv.Call.Func.Name.String()
-						id := st.newObj(site)
-						st.objEscaped[id] = true
+					if retOwns {
+						if fs := callSummary(rv.Call); fs != nil && fs.RetOwned {
+							site := "call:" + callKey(rv.Call)
+							id := st.newObj(site)
+							st.objEscaped[id] = true
+						}
 					}
 				}
 				// Escape field/element results of owning type in return (e.g. ret node.left)
@@ -422,8 +663,31 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			}
 		case *parser.CallBlock:
 			markCallArgObjs(v, st, fb)
+			for _, ag := range v.Args {
+				if ag != nil {
+					markExprCallArgs(ag.Value, st)
+				}
+			}
 		case *parser.ForBlock:
+			// 循环初始化/条件/增量/range 表达式中的调用同样可能保存实参。
+			markExprCallArgs(v.Init, st)
+			markExprCallArgs(v.Condition, st)
+			markExprCallArgs(v.Increment, st)
+			markExprCallArgs(v.Range, st)
+			// 初始化/range 只建临时对象（当前无清理点，不登记释放）；
+			// 条件每轮求值，增量每轮收尾，均可建立清理点。
+			collectExprTemps(v.Init, st, false)
+			if frees := collectExprTemps(v.Condition, st, true); len(frees) > 0 {
+				res.CondFreesMap[n] = frees
+			}
+			// 增量是赋值时，右值结果会被变量持有，不能当临时释放。
+			incrFree := v.Increment != nil && v.Increment.Var == nil
+			if frees := collectExprTemps(v.Increment, st, incrFree); len(frees) > 0 {
+				res.IncrFreesMap[n] = frees
+			}
+			collectExprTemps(v.Range, st, false)
 			st.scopeDepth++
+			st.loopDepth++
 			savedBlockID := st.currentBlockID
 			st.currentBlockID = st.nextBlockID
 			st.nextBlockID++
@@ -433,12 +697,17 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			// 退出 for 循环块：收集该块的释放条目
 			frees := collectBlockFrees(st, st.currentBlockID, fb, body)
 			if len(frees) > 0 {
-				blockFreesMap[n] = frees
+				res.BlockFreesMap[n] = frees
 			}
 			st.currentBlockID = savedBlockID
+			st.loopDepth--
 			st.scopeDepth--
 			return
 		case *parser.IfBlock:
+			markExprCallArgs(v.Condition, st)
+			if frees := collectExprTemps(v.Condition, st, true); len(frees) > 0 {
+				res.CondFreesMap[n] = frees
+			}
 			st.scopeDepth++
 			savedBlockID := st.currentBlockID
 			st.currentBlockID = st.nextBlockID
@@ -449,7 +718,7 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			// 退出 if 块：收集该块的释放条目
 			frees := collectBlockFrees(st, st.currentBlockID, fb, body)
 			if len(frees) > 0 {
-				blockFreesMap[n] = frees
+				res.BlockFreesMap[n] = frees
 			}
 			st.currentBlockID = savedBlockID
 			st.scopeDepth--
@@ -462,7 +731,7 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 				}
 				ef := collectBlockFrees(st, st.currentBlockID, fb, body)
 				if len(ef) > 0 {
-					blockFreesMap[v.ElseBlock] = ef
+					res.BlockFreesMap[v.ElseBlock] = ef
 				}
 				st.currentBlockID = savedBlockID
 				st.scopeDepth--
@@ -476,6 +745,102 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 	walk(body)
 }
 
+// collectExprTemps 为表达式中的 owning call 结果建立抽象对象；当 allowFree
+// 为真且能证明结果独占、被调自身有堆分配时，登记条件/增量临时释放标记。
+// 返回的槽名按清理点内序号编号；同一调用只登记一次。
+func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool) []LLRCondFree {
+	if e == nil {
+		return nil
+	}
+	var out []LLRCondFree
+	seen := map[*parser.CallBlock]bool{}
+	var walk func(x *parser.Expression, freeOK bool)
+	walk = func(x *parser.Expression, freeOK bool) {
+		if x == nil {
+			return
+		}
+		if x.Call != nil {
+			cb := x.Call
+			key := callKey(cb)
+			fs := Table[key]
+			if fs != nil && fs.RetOwned && !cb.IsRC && !seen[cb] {
+				seen[cb] = true
+				id := st.newObj("call:" + key)
+				if freeOK && allowFree && condTempFreeable(fs) {
+					out = append(out, LLRCondFree{
+						VarName: "$cond" + itoa(len(out)),
+						Callee:  key,
+						Call:    cb,
+						Flag:    1,
+					})
+				} else {
+					// 包装器/未知别名/被外层保存：保留对象可见性，但不自动释放。
+					st.objEscaped[id] = true
+				}
+			}
+			for i, ag := range cb.Args {
+				if ag == nil {
+					continue
+				}
+				walk(ag.Value, freeOK && callArgSafe(cb, i))
+			}
+			for _, ag := range cb.VariadicArgs {
+				if ag != nil {
+					walk(ag.Value, false)
+				}
+			}
+		}
+		walk(x.Left, freeOK)
+		walk(x.Right, freeOK)
+		for _, ix := range x.Index {
+			if ix != nil {
+				walk(ix.Left, freeOK)
+				walk(ix.Right, freeOK)
+			}
+		}
+		// 列表字面量会把元素指针存入容器，不能当独立临时释放。
+		for _, el := range x.ListElems {
+			walk(el, false)
+		}
+	}
+	walk(e, allowFree)
+	return out
+}
+
+// condTempFreeable 判断一次 owning call 的结果能否作为独立临时释放。
+// 必须同时满足：新分配、无参数别名/借用 mask、被调自身确有堆分配。
+// 最后一条排除 strings.makeString 这类只包装外部 ptr 的非分配函数：
+// 其 RetFresh 目前只是“返回局部容器”的近似，底层缓冲仍由调用方/容器持有。
+func condTempFreeable(fs *FnSummary) bool {
+	if fs == nil || !fs.RetOwned || fs.RetKind != RetFresh {
+		return false
+	}
+	if fs.RetAliasMask != 0 || fs.RetBorrowMask != 0 {
+		return false
+	}
+	return fs.HasHeapAllocs
+}
+
+// callArgSafe 判断外层调用第 idx 个实参是否只被读取：不保存、不返回、
+// 不通过返回值别名/借用。只有安全时，实参表达式内部的临时对象才能在
+// 外层调用返回后释放。
+func callArgSafe(cb *parser.CallBlock, idx int) bool {
+	if cb == nil {
+		return false
+	}
+	key := callKey(cb)
+	fs := Table[key]
+	if fs == nil {
+		_, pure := pureBuiltinEscapes(key)
+		return pure
+	}
+	if ParamEscapes(key, idx) != EscNone {
+		return false
+	}
+	bit := uint64(1) << uint(idx)
+	return fs.RetAliasMask&bit == 0 && fs.RetBorrowMask&bit == 0
+}
+
 // collectBlockFrees 收集指定块 ID 的所有帧内拥有对象，生成块级释放条目。
 func collectBlockFrees(st *llrState, blockID int, fb *parser.FuncBlock, body *parser.Node) []LLRFree {
 	var frees []LLRFree
@@ -483,7 +848,7 @@ func collectBlockFrees(st *llrState, blockID int, fb *parser.FuncBlock, body *pa
 		if st.objBlockID[id] != blockID {
 			continue
 		}
-		if st.objEscaped[id] || isParamObj(st, id) {
+		if st.objEscaped[id] || st.objReleased[id] || isParamObj(st, id) {
 			continue
 		}
 		if st.objRCAlloc[id] {
@@ -499,6 +864,12 @@ func collectBlockFrees(st *llrState, blockID int, fb *parser.FuncBlock, body *pa
 		if mainName == "" {
 			continue // 无绑定名（孤儿），由 orphan 机制处理
 		}
+		// 只释放本块声明的变量：外层变量在本块内被赋值时，其对象生命周期
+		// 属于外层作用域，块尾释放会导致汇合后/循环出口使用悬空指针。
+		// 外层变量的旧值由覆盖点释放（或保守地留到函数出口）。
+		if declBlock, declared := st.varBlockID[mainName]; !declared || declBlock != blockID {
+			continue
+		}
 		tk := typeKindOf(st, id, fb, body)
 		frees = append(frees, LLRFree{VarName: mainName, Type: tk, ScopeDepth: st.objScope[id]})
 	}
@@ -506,7 +877,7 @@ func collectBlockFrees(st *llrState, blockID int, fb *parser.FuncBlock, body *pa
 }
 
 // processAssign 处理赋值/定义语句。
-func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool) {
+func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool, assignFreesMap map[*parser.Node][]LLRFree) {
 	name := ""
 	if v.Name != nil {
 		name = v.Name.First()
@@ -515,11 +886,18 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 		return
 	}
 
+	// 右值中的所有调用都可能保存实参；先传播逃逸，再决定覆盖/孤儿。
+	if v.Value != nil {
+		markExprCallArgs(v.Value, st)
+		markStoredRefs(v.Value, st)
+	}
+
 	// 定义 + 无值 + owning 类型 → null_init 绑定（var x: *T）
 	// 例如 var result: *Node —— 需要绑定以便后续 result = n 追踪
 	if v.IsDefine && v.Value == nil && v.Type != nil && isOwning(v.Type) {
 		id := st.newObj("null_init")
 		st.bindings[name] = id
+		st.varBlockID[name] = st.currentBlockID
 		st.objEscaped[id] = true
 		return
 	}
@@ -530,18 +908,24 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 
 	// 字段赋值（node.left = X）：跟踪字段级 orphan，不重绑父变量
 	if len(v.Name) > 1 {
-		if !v.IsDefine && exprAllocates(v.Value) {
-			fieldName := v.Name.Last()
-			// 查找父变量当前绑定的对象
-			if parentObj, ok := st.bindings[name]; ok {
-				// 只有帧内拥有的父对象才需要字段级 orphan free
-				// 已逃逸的对象由调用者管理，不在本帧释放
-				if !isParamObj(st, parentObj) && !st.objEscaped[parentObj] {
-					st.fieldOrphans = append(st.fieldOrphans, fieldOrphan{
-						varName:   name,
-						fieldName: fieldName,
-						parentObj: parentObj,
-					})
+		if !v.IsDefine {
+			// 右值对象被保存进字段，形成非 canonical 别名；禁止覆盖释放。
+			if refObj := getRefObj(v.Value, st); refObj != NilObj {
+				st.objShared[refObj] = true
+			}
+			if exprAllocates(v.Value) {
+				fieldName := v.Name.Last()
+				// 查找父变量当前绑定的对象
+				if parentObj, ok := st.bindings[name]; ok {
+					// 只有帧内拥有的父对象才需要字段级 orphan free
+					// 已逃逸的对象由调用者管理，不在本帧释放
+					if !isParamObj(st, parentObj) && !st.objEscaped[parentObj] {
+						st.fieldOrphans = append(st.fieldOrphans, fieldOrphan{
+							varName:   name,
+							fieldName: fieldName,
+							parentObj: parentObj,
+						})
+					}
 				}
 			}
 		}
@@ -553,6 +937,7 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 		if v.Type == nil || !isOwning(v.Type) {
 			return
 		}
+		st.varBlockID[name] = st.currentBlockID
 		// 新定义：创建新对象绑定
 		if exprAllocates(v.Value) {
 			site := allocSiteDesc(v.Value)
@@ -562,7 +947,8 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 				st.objRCAlloc[id] = true // newRC() 分配，由手动 rcDec 管理
 			}
 		} else if refObj := getRefObj(v.Value, st); refObj != NilObj {
-			// 别名赋值：b = a → b 绑定到 a 的对象
+			// 别名赋值：b = a → b 绑定到 a 的对象；a 不再是唯一 owner。
+			st.objShared[refObj] = true
 			st.bindings[name] = refObj
 		} else {
 			// 非分配初始化（如 var tree: *Node = 0），创建空绑定以便后续重赋值追踪
@@ -582,7 +968,32 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 		return
 	}
 
-	// 全局目标：对象逃逸到全局
+	refObj := getRefObj(v.Value, st)
+
+	if v.IsGlobal {
+		// 全局目标：旧对象与新右值都逃逸到全局，由全局/RC 生命周期管理。
+		st.objEscaped[targetObj] = true
+		if refObj != NilObj {
+			st.objEscaped[refObj] = true
+		}
+		return
+	}
+
+	// 覆盖前释放：旧对象唯一、未共享、未逃逸，且右值不引用目标变量本身
+	// （如 c = c.next / head = prepend(head, ...) 一律保留旧值）。
+	if refObj != targetObj && canFreeOverwrite(st, targetObj, name) && !exprReferencesVar(v.Value, name) {
+		tk := "string"
+		if v.Type != nil {
+			tk = v.Type.Kind()
+		}
+		st.objReleased[targetObj] = true
+		assignFreesMap[n] = append(assignFreesMap[n], LLRFree{
+			VarName:    name,
+			Type:       tk,
+			ScopeDepth: st.objScope[targetObj],
+		})
+	}
+
 	// 局部目标：重新绑定
 	if exprAllocates(v.Value) {
 		site := allocSiteDesc(v.Value)
@@ -591,25 +1002,113 @@ func processAssign(v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, param
 		if isRCAlloc(v.Value) {
 			st.objRCAlloc[newID] = true // newRC() 分配，由手动 rcDec 管理
 		}
-		// 旧对象不再由此名持有，如果不是参数管理的，记入孤儿列表
-		// 全局变量不走孤儿机制（由 RC 管理生命周期）
-		if !v.IsGlobal && !isParamObj(st, targetObj) && !st.objEscaped[targetObj] {
+		// 旧对象不再由此名持有；已覆盖释放的不再记孤儿（孤儿机制当前不会
+		// 在出口实际释放无名对象，仅保留调试信息）。
+		if !st.objReleased[targetObj] && !isParamObj(st, targetObj) && !st.objEscaped[targetObj] {
 			st.orphans = append(st.orphans, targetObj)
 		}
-	} else if refObj := getRefObj(v.Value, st); refObj != NilObj {
-		if v.IsGlobal {
-			st.objEscaped[targetObj] = true
-			_ = refObj
-		} else {
-			// 局部间别名：target 重绑到 value 的对象
-			st.bindings[name] = refObj
-			// 如果引用的对象在同一块内分配，标记为已逃逸
-			// 原因：别名变量可能在块外使用（如 head = n 在 for 内，head 在 for 外使用）
-			// 不标记会导致 block free 释放后，别名变量成为悬空指针
-			if st.objBlockID[refObj] == st.currentBlockID && st.currentBlockID != 0 {
-				st.objEscaped[refObj] = true
+	} else if refObj != NilObj {
+		// 局部间别名：target 重绑到 value 的对象
+		st.objShared[refObj] = true
+		st.bindings[name] = refObj
+		// 如果引用的对象在同一块内分配，标记为已逃逸
+		// 原因：别名变量可能在块外使用（如 head = n 在 for 内，head 在 for 外使用）
+		// 不标记会导致 block free 释放后，别名变量成为悬空指针
+		if st.objBlockID[refObj] == st.currentBlockID && st.currentBlockID != 0 {
+			st.objEscaped[refObj] = true
+		}
+	} else {
+		// 右值不分配也不是裸变量（nil/字段/元素等）：目标不再持有旧对象，
+		// 绑定到逃逸的 null_init，避免后续把已释放对象当成仍被持有。
+		id := st.newObj("null_init")
+		st.bindings[name] = id
+		st.objEscaped[id] = true
+	}
+}
+
+// canFreeOverwrite 判断旧对象能否在覆盖赋值点立即释放。
+// 安全前提：唯一绑定、未逃逸、未共享、非参数/RC，且来源可识别为帧内分配。
+func canFreeOverwrite(st *llrState, id ObjID, name string) bool {
+	if id == NilObj || st.objReleased[id] || st.objEscaped[id] ||
+		st.objShared[id] || st.objRCAlloc[id] || isParamObj(st, id) {
+		return false
+	}
+	switch site := st.objSite[id]; {
+	case site == "", site == "null_init", site == "unknown", site == "expr":
+		return false
+	}
+	for n, oid := range st.bindings {
+		if oid == id && n != name {
+			return false // 仍有其它名字持有该对象
+		}
+	}
+	return true
+}
+
+// exprReferencesVar 判断表达式是否直接或间接引用了指定变量名。
+func exprReferencesVar(e *parser.Expression, name string) bool {
+	if e == nil {
+		return false
+	}
+	if e.Var != nil && e.Var.Name != nil && e.Var.Name.First() == name {
+		return true
+	}
+	if exprReferencesVar(e.Left, name) || exprReferencesVar(e.Right, name) {
+		return true
+	}
+	for _, ix := range e.Index {
+		if exprReferencesVar(ix, name) {
+			return true
+		}
+	}
+	for _, el := range e.ListElems {
+		if exprReferencesVar(el, name) {
+			return true
+		}
+	}
+	if e.Call != nil {
+		for _, ag := range e.Call.Args {
+			if ag != nil && exprReferencesVar(ag.Value, name) {
+				return true
 			}
 		}
+		for _, ag := range e.Call.VariadicArgs {
+			if ag != nil && exprReferencesVar(ag.Value, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// markStoredRefs 标记被写入列表字面量的裸变量对象为共享。
+// 这类对象可能在容器中长期存活，不能作为覆盖释放的候选。
+func markStoredRefs(e *parser.Expression, st *llrState) {
+	if e == nil {
+		return
+	}
+	for _, el := range e.ListElems {
+		if id := getRefObj(el, st); id != NilObj {
+			st.objShared[id] = true
+		}
+		markStoredRefs(el, st)
+	}
+	if e.Call != nil {
+		for _, ag := range e.Call.Args {
+			if ag != nil {
+				markStoredRefs(ag.Value, st)
+			}
+		}
+		for _, ag := range e.Call.VariadicArgs {
+			if ag != nil {
+				markStoredRefs(ag.Value, st)
+			}
+		}
+	}
+	markStoredRefs(e.Left, st)
+	markStoredRefs(e.Right, st)
+	for _, ix := range e.Index {
+		markStoredRefs(ix, st)
 	}
 }
 
@@ -656,12 +1155,13 @@ func markAllReferencedObjs(v *parser.ReturnBlock, st *llrState, fb *parser.FuncB
 		rec(expr)
 	}
 }
+
 // markCallArgObjs 调用实参引用的对象按被调摘要传播逃逸。
 func markCallArgObjs(cb *parser.CallBlock, st *llrState, fb *parser.FuncBlock) {
-	if cb.Func == nil {
+	if cb == nil {
 		return
 	}
-	calleeKey := cb.Func.Name.String()
+	calleeKey := callKey(cb)
 
 	// 合成内建（__list_len 等）：参数只读，不传播
 	if len(calleeKey) > 2 && calleeKey[:2] == "__" &&
@@ -703,12 +1203,42 @@ func markCallArgObjs(cb *parser.CallBlock, st *llrState, fb *parser.FuncBlock) {
 	}
 }
 
+// markExprCallArgs 递归遍历表达式中的所有调用点，按被调摘要传播实参逃逸。
+// 赋值右值、条件、return 等所有表达式位置都应调用它，否则“外层变量被传给
+// 可能保存它的被调”不会被标记逃逸，后续覆盖/块尾释放会误杀仍被引用的对象。
+func markExprCallArgs(e *parser.Expression, st *llrState) {
+	if e == nil {
+		return
+	}
+	if e.Call != nil {
+		markCallArgObjs(e.Call, st, nil)
+		for _, ag := range e.Call.Args {
+			if ag != nil {
+				markExprCallArgs(ag.Value, st)
+			}
+		}
+		for _, ag := range e.Call.VariadicArgs {
+			if ag != nil {
+				markExprCallArgs(ag.Value, st)
+			}
+		}
+	}
+	markExprCallArgs(e.Left, st)
+	markExprCallArgs(e.Right, st)
+	for _, ix := range e.Index {
+		markExprCallArgs(ix, st)
+	}
+	for _, elem := range e.ListElems {
+		markExprCallArgs(elem, st)
+	}
+}
+
 // markCallArgObjExpr 处理表达式中的嵌套调用参数逃逸（如 ret makeNode(val)）。
 func markCallArgObjExpr(e *parser.Expression, st *llrState, fb *parser.FuncBlock) {
 	if e == nil || e.Call == nil || e.Call.Func == nil {
 		return
 	}
-	calleeKey := e.Call.Func.Name.String()
+	calleeKey := callKey(e.Call)
 	if len(calleeKey) > 2 && calleeKey[:2] == "__" &&
 		len(calleeKey) > 7 && calleeKey[2:7] != "globa" {
 		return
@@ -769,6 +1299,21 @@ func DumpLLR(res *LLRResult) string {
 	for _, ff := range res.FieldFrees {
 		out += fmt.Sprintf("  FIELD_FREE %s.%s [%s]\n", ff.VarName, ff.FieldName, ff.Type)
 	}
+	for _, rf := range res.RetFrees {
+		out += fmt.Sprintf("  RET_FREE %s after=call:%s flag=%d\n", rf.VarName, rf.Callee, rf.Flag)
+	}
+	for node, frees := range res.CondFreesMap {
+		_ = node
+		for _, cf := range frees {
+			out += fmt.Sprintf("  COND_FREE %s after=call:%s flag=%d\n", cf.VarName, cf.Callee, cf.Flag)
+		}
+	}
+	for node, frees := range res.IncrFreesMap {
+		_ = node
+		for _, cf := range frees {
+			out += fmt.Sprintf("  INCR_FREE %s after=call:%s flag=%d\n", cf.VarName, cf.Callee, cf.Flag)
+		}
+	}
 	return out
 }
 
@@ -791,8 +1336,8 @@ func allocSiteDesc(e *parser.Expression) string {
 		if e.Call.IsBuiltinNewAlloc() {
 			return "new"
 		}
-		if e.Call.Func != nil && len(e.Call.Func.Return) > 0 && isOwning(e.Call.Func.Return[0]) {
-			return "call:" + e.Call.Func.Name.String()
+		if fs := callSummary(e.Call); fs != nil && fs.RetOwned {
+			return "call:" + callKey(e.Call)
 		}
 	}
 	if e.Separator == "+" {

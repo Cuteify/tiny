@@ -9,10 +9,10 @@ import (
 
 // VtableEntry represents a vtable for a concrete type implementing an interface.
 type VtableEntry struct {
-	Label     string                   // assembly label (e.g., __vtable_Dog_Stringer)
-	Concrete  typeSys.Type             // concrete struct type
-	Interface *typeSys.InterfaceType   // interface type
-	Methods   []string                 // function labels for each method in order
+	Label     string                 // assembly label (e.g., __vtable_Dog_Stringer)
+	Concrete  typeSys.Type           // concrete struct type
+	Interface *typeSys.InterfaceType // interface type
+	Methods   []string               // function labels for each method in order
 }
 
 // Context 编译器上下文，统一管理编译状态
@@ -38,6 +38,17 @@ type Context struct {
 	// 容器（list/string）返回值槽：负数偏移（[rbp/ebp+RetSlot]）
 	// 每函数预留：x64 返回槽 24B + R10 保存 8B = 32B；x86 返回槽 12B + 隐藏参数保存 4B = 16B
 	RetSlot int
+
+	// GC ret 临时对象 scratch 槽（负数偏移，[rbp/ebp+RetScratchBase]）。
+	// Prologue 按 RetScratchCap 预留；compileReturnBlock 为每个 RetFree
+	// 分配一个槽，Arch.Call 在嵌套 owning call 返回后把指针存入槽，
+	// 外层调用返回、返回值已保存后再逐个 freeSlot。这样既不会让 free
+	// 破坏返回寄存器，也不会与 RetSlot/R10 保存槽重叠。
+	RetScratchBase int
+	RetScratchCap  int
+	RetScratchUsed int
+	// RetScratchMap 当前 return 表达式里需要捕获的嵌套 call → 槽偏移。
+	RetScratchMap map[*parser.CallBlock]int
 
 	// 栈对齐
 	StackAlignment int // 栈对齐大小（字节），默认8
@@ -132,6 +143,7 @@ func NewContext() *Context {
 		Is64Bit:        false,
 		ThisHomeRbp:    0,
 		VtableSeen:     make(map[string]bool),
+		RetScratchMap:  make(map[*parser.CallBlock]int),
 	}
 }
 
@@ -146,6 +158,12 @@ func (ctx *Context) Reset() {
 	ctx.EbxOccupied = false
 	ctx.ExpType = 0
 	ctx.VarStackSize = 0
+	ctx.RetScratchBase = 0
+	ctx.RetScratchCap = 0
+	ctx.RetScratchUsed = 0
+	if ctx.RetScratchMap != nil {
+		ctx.RetScratchMap = make(map[*parser.CallBlock]int)
+	}
 	// Note: Is64Bit and PointerSize are NOT reset - they are arch-level settings
 	// Note: ThisHomeRbp is NOT reset - it is an arch-level setting (set by arch constructor)
 	// Note: VtableEntries and VtableSeen are NOT reset here - they persist across functions
@@ -161,6 +179,11 @@ func (ctx *Context) Clone() *Context {
 		BpOffset:       ctx.BpOffset,
 		StackSize:      ctx.StackSize,
 		ArgsSize:       ctx.ArgsSize,
+		RetSlot:        ctx.RetSlot,
+		RetScratchBase: ctx.RetScratchBase,
+		RetScratchCap:  ctx.RetScratchCap,
+		RetScratchUsed: ctx.RetScratchUsed,
+		RetScratchMap:  ctx.RetScratchMap,
 		StackAlignment: ctx.StackAlignment,
 		UseEBXDirect:   ctx.UseEBXDirect,
 		EbxOccupied:    ctx.EbxOccupied,

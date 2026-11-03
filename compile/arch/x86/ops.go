@@ -2,15 +2,15 @@
 package x86
 
 import (
-	"strings"
 	"cuteify/compile/arch"
-	exppkg "cuteify/compile/exp"
 	"cuteify/compile/context"
+	exppkg "cuteify/compile/exp"
 	"cuteify/compile/regmgr"
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
+	"strings"
 )
 
 // x86Ops 实现 x86 架构共用的 Arch 接口方法（寄存器/指令/地址等）。
@@ -285,8 +285,8 @@ func (a *x86Ops) VarDecl(varBlock *parser.VarBlock) string {
 			// 变量引用：加载变量地址
 			addr := genVarAddr(a.ctx, varBlock.Value.Var)
 			varAddr := genVarAddr(a.ctx, varBlock)
-			return utils.Format("lea eax, " + addr + "; 函数指针地址\n") +
-				utils.Format("mov dword " + varAddr + ", eax; 设置函数指针变量" + varBlock.Name.String())
+			return utils.Format("lea eax, "+addr+"; 函数指针地址\n") +
+				utils.Format("mov dword "+varAddr+", eax; 设置函数指针变量"+varBlock.Name.String())
 		}
 		// 函数名引用：直接加载函数地址
 		if varBlock.Value.Var != nil {
@@ -334,6 +334,12 @@ func (a *x86Ops) MultiVarDecl(varBlock *parser.VarBlock) string {
 
 // ForBegin 生成 for 循环起始代码
 func (a *x86Ops) ForBegin(forBlock *parser.ForBlock) string {
+	return a.ForBeginCond(forBlock, "", "")
+}
+
+// ForBeginCond 生成 for 循环起始代码，条件假/真路径分别跳转到指定标签。
+// falseLabel/trueLabel 为空时使用默认 body 标签（兼容旧路径）。
+func (a *x86Ops) ForBeginCond(forBlock *parser.ForBlock, falseLabel, trueLabel string) string {
 	// 使用独立的 ForCount 计数器，避免与 IfCount 冲突
 	a.ctx.ForCount++
 	forBlock.Offset = a.ctx.ForCount
@@ -358,10 +364,14 @@ func (a *x86Ops) ForBegin(forBlock *parser.ForBlock) string {
 	code += utils.Format(forLabel + ": ; for循环开始")
 
 	if forBlock.Condition != nil && !forBlock.Condition.Bool {
-		// 条件真目标 = 循环体入口标签(|| 链任一叶真直接进体)
-		bodyLabel := forLabel + "_body"
-		code += a.compileCond(forBlock.Condition, forEndLabel, bodyLabel)
-		code += utils.Format(bodyLabel + ":")
+		if falseLabel == "" && trueLabel == "" {
+			// 条件真目标 = 循环体入口标签(|| 链任一叶真直接进体)
+			bodyLabel := forLabel + "_body"
+			code += a.compileCond(forBlock.Condition, forEndLabel, bodyLabel)
+			code += utils.Format(bodyLabel + ":")
+		} else {
+			code += a.compileCond(forBlock.Condition, falseLabel, trueLabel)
+		}
 	}
 
 	code += utils.Format("")
@@ -370,8 +380,9 @@ func (a *x86Ops) ForBegin(forBlock *parser.ForBlock) string {
 	return code
 }
 
-// ForEnd 生成 for 循环结束代码
-func (a *x86Ops) ForEnd(forBlock *parser.ForBlock) string {
+// ForEnd 生成 for 循环结束代码。cleanup 在增量表达式之后、回边之前执行，
+// 用于释放增量表达式里的临时对象。
+func (a *x86Ops) ForEnd(forBlock *parser.ForBlock, cleanup string) string {
 	var code string
 	code += utils.Format("")
 	code += utils.Format("")
@@ -384,6 +395,7 @@ func (a *x86Ops) ForEnd(forBlock *parser.ForBlock) string {
 			code += a.exp(forBlock.Increment, "", "for循环增量")
 		}
 	}
+	code += cleanup
 	code += utils.Format("jmp " + forLabel + "; for循环")
 	code += utils.Format(forLabel + "_end: ; for循环结束")
 	return code
@@ -744,14 +756,32 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 4
 	a.ctx.StackSize += retBytes + 4
 
+	// 预留 ret 临时对象 scratch 槽（每个 4B，位于 RetSlot 之下）。
+	scratchSlots := a.ctx.RetScratchCap
+	if scratchSlots < 0 {
+		scratchSlots = 0
+	}
+	if scratchSlots > 0 {
+		scratchBytes := scratchSlots * 4
+		a.ctx.RetScratchBase = -(a.ctx.StackSize) - scratchBytes
+		a.ctx.StackSize += scratchBytes
+	}
+
 	if a.ctx.StackSize > 0 {
 		code += utils.Format("sub esp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配栈空间(" + strconv.Itoa(a.ctx.StackSize) + "字节)")
+	}
+
+	// scratch 槽清零：freeSlot 读到 0 会安全跳过。
+	if scratchSlots > 0 {
+		for i := 0; i < scratchSlots; i++ {
+			code += utils.Format("mov DWORD [ebp" + strconv.Itoa(a.ctx.RetScratchBase+i*4) + "], 0; gc ret scratch 清零")
+		}
 	}
 
 	// 大值返回函数：保存调用者传入的返回槽地址（[ebp+8] 隐藏参数）
 	if arch.FuncReturnsLarge(fn) {
 		code += utils.Format("mov EAX, DWORD [ebp+8]; 保存返回槽地址") +
-			utils.Format("mov DWORD [ebp" + strconv.Itoa(a.ctx.RetSlot+retBytes) + "], EAX")
+			utils.Format("mov DWORD [ebp"+strconv.Itoa(a.ctx.RetSlot+retBytes)+"], EAX")
 	}
 
 	code += utils.Format("\n")
@@ -857,6 +887,16 @@ func (a *x86Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 func (a *x86Ops) returnJump() string {
 	funcName := formatFuncName(a.ctx.CurrentFunc)
 	return utils.Format("jmp func_end_" + funcName + "; 跳转到公共返回点")
+}
+
+// ReturnValue 导出返回值生成（不跳转），供 compiler 在 ret 临时释放前调用。
+func (a *x86Ops) ReturnValue(ret *parser.ReturnBlock) string {
+	return a.returnValue(ret)
+}
+
+// ReturnJump 导出公共返回点跳转，供 compiler 在 ret 临时释放后调用。
+func (a *x86Ops) ReturnJump() string {
+	return a.returnJump()
 }
 
 // exp 编译表达式（共享 ECompiler）

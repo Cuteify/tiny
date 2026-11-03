@@ -110,6 +110,17 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 8
 	a.ctx.StackSize += retBytes + 8
 
+	// 预留 ret 临时对象 scratch 槽（每个 8B，位于 RetSlot 之下）。
+	scratchSlots := a.ctx.RetScratchCap
+	if scratchSlots < 0 {
+		scratchSlots = 0
+	}
+	if scratchSlots > 0 {
+		scratchBytes := scratchSlots * 8
+		a.ctx.RetScratchBase = -(a.ctx.StackSize) - scratchBytes
+		a.ctx.StackSize += scratchBytes
+	}
+
 	// 编译期 16 字节对齐：call 压返回地址(-8) + push rbp(-8) + 5 callee-save(-40) = -56
 	// RSP = RBP - 40 - StackSize，需 StackSize ≡ 8 (mod 16) 使 RSP ≡ 0 (mod 16)
 	totalPushed := 8 + 8 + 8*len(csRegs)   // return addr + rbp + 5 callee-saves = 56
@@ -120,6 +131,14 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 
 	if a.ctx.StackSize > 0 {
 		code += utils.Format("sub rsp, " + strconv.Itoa(a.ctx.StackSize) + "; 分配局部变量空间(" + strconv.Itoa(a.ctx.StackSize) + "字节, 含对齐)")
+	}
+
+	// scratch 槽清零：ret 表达式若因短路/异常路径没有写入某个槽，
+	// freeSlot 读到 0 会安全跳过，避免释放栈上陈旧值。
+	if scratchSlots > 0 {
+		for i := 0; i < scratchSlots; i++ {
+			code += utils.Format("mov QWORD [rbp" + strconv.Itoa(a.ctx.RetScratchBase+i*8) + "], 0; gc ret scratch 清零")
+		}
 	}
 
 	// 大值返回函数：保存调用者传入的返回槽地址（R10）
@@ -509,6 +528,15 @@ normalCall:
 	// 清理变参数组
 	if variadicArrayBytes > 0 {
 		code += utils.Format("add rsp, " + strconv.Itoa(variadicArrayBytes) + "; clean variadic array")
+	}
+
+	// GC ret 临时对象捕获：内层 owning call 返回后，把结果指针存入
+	// compileReturnBlock 分配的 scratch 槽，避免外层调用/后续实参求值覆盖。
+	if off, ok := a.ctx.RetScratchMap[call]; ok && off != 0 {
+		if isContainerRet {
+			code += utils.Format("mov RAX, QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]; gc ret scratch ptr")
+		}
+		code += utils.Format("mov QWORD [rbp" + strconv.Itoa(off) + "], RAX; gc ret scratch store")
 	}
 
 	return code

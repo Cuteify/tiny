@@ -181,7 +181,7 @@ func (c *Compiler) markLinkProviders(node *parser.Node) {
 func (c *Compiler) markRCFuncs(node *parser.Node) {
 	// malloc/free/realloc 由 emitMalloc/emitFree/emitRealloc 合成调用（字符串拼接、
 	// 列表分配等路径），同样不出现在用户源码里，必须预标记 Useful
-	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true, "malloc": true, "realloc": true, "free": true}
+	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true, "malloc": true, "realloc": true, "free": true, "freeSlot": true, "freeRCSlot": true}
 	var walk func(n *parser.Node)
 	walk = func(n *parser.Node) {
 		if n == nil {
@@ -381,10 +381,36 @@ func (c *Compiler) compileIfBlock(n *parser.Node) string {
 		endLabel = "end_" + label
 	}
 
+	// 进入分支前清零 then/else 块将释放的局部槽：条件为假或零次执行时，
+	// 块尾 freeSlot 不能看到未初始化的栈槽。
+	code += c.emitGCZeroSlots(n, c.blockFreesOf(n))
+	if ifBlock.ElseBlock != nil {
+		code += c.emitGCZeroSlots(ifBlock.ElseBlock, c.blockFreesOf(ifBlock.ElseBlock))
+	}
+
 	// 编译条件表达式，生成比较和跳转指令
 	// P21-||:第三参 = if 体标签(label,真目标)——|| 链任一叶子为真即跳体;
 	// 旧实现只有假目标(jumpLabel),|| 被错误发成 && 形态(每叶 jz/jne-else 且末项蒸发)
-	code += c.compileCondition(ifBlock.Condition, endLabel, label)
+	condPlan := c.prepareScratchFrees(gc.CondFreesForNode(c.currentFuncKey, n), "cond free")
+	if condPlan.code != "" {
+		// 条件表达式里的拥有型临时对象在两条路径上各自释放：
+		// false → 清理后跳 else/end；true → 清理后进 if 体。
+		falseLabel := c.nextCondLabel("cond_false_")
+		trueLabel := c.nextCondLabel("cond_true_")
+		code += c.compileCondition(ifBlock.Condition, falseLabel, trueLabel)
+		c.releaseScratchFrees(condPlan)
+		code += utils.Format(falseLabel + ":")
+		code += condPlan.code
+		if ifBlock.Else {
+			code += utils.Format("jmp else_" + label)
+		} else {
+			code += utils.Format("jmp end_" + label)
+		}
+		code += utils.Format(trueLabel + ":")
+		code += condPlan.code
+	} else {
+		code += c.compileCondition(ifBlock.Condition, endLabel, label)
+	}
 
 	code += utils.Format(label+":") + c.Compile(n)
 	// if 体块级释放
@@ -611,6 +637,8 @@ func (c *Compiler) compileElseBlock(ifBlock *parser.IfBlock, label string) strin
 			code += c.Ctx.Arch.Exp(e.IfCondition, "end_"+label, "")
 		}
 		code += c.Compile(ifBlock.ElseBlock)
+		// else 块级释放：与 then 分支对称，释放 else 体内声明的堆对象。
+		code += c.emitBlockFrees(ifBlock.ElseBlock)
 	}
 	return code
 }
@@ -724,8 +752,76 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 		code += deferCode
 	}
 
-	// 生成返回代码
-	code += c.Ctx.Arch.Return(ret)
+	frees := gc.RetFreesForNode(c.currentFuncKey, n)
+	if len(frees) == 0 || c.Ctx.RetScratchBase == 0 {
+		// 生成返回代码
+		code += c.Ctx.Arch.Return(ret)
+		return code
+	}
+
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	slotSize := 4
+	base := "ebp"
+	retReg, hiReg := "EAX", "EDX"
+	if is64 {
+		slotSize = 8
+		base = "rbp"
+		retReg, hiReg = "RAX", "RDX"
+	}
+
+	if c.Ctx.RetScratchMap == nil {
+		c.Ctx.RetScratchMap = make(map[*parser.CallBlock]int)
+	}
+	// 为每个 ret 临时对象分配 scratch 槽；Arch.Call 在内层调用返回后
+	// 按此表把拥有型指针写入槽，外层调用返回后再统一释放。
+	for i, rf := range frees {
+		if rf.Call == nil {
+			continue
+		}
+		c.Ctx.RetScratchMap[rf.Call] = c.Ctx.RetScratchBase + i*slotSize
+	}
+
+	// 1. 生成返回值（大值写入返回槽/隐藏参数，标量写入 RAX/EAX）
+	code += c.Ctx.Arch.ReturnValue(ret)
+
+	// 2. 先保存返回值寄存器：free 是普通调用，会破坏 caller-saved 寄存器
+	code += utils.Format("push " + retReg + "; gc ret 保存返回值")
+	code += utils.Format("push " + hiReg + "; gc ret 保存返回值")
+
+	// 3. 逐个释放 scratch 槽。freeSlot 成功后清槽，天然幂等。
+	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
+	freeFunc := &parser.FuncBlock{
+		Name: parser.Name(nameParts),
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
+	}
+	freeCall := &parser.CallBlock{
+		Name: freeFunc.Name,
+		Func: freeFunc,
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
+	}
+	for i, rf := range frees {
+		off := c.Ctx.RetScratchBase + i*slotSize
+		code += utils.Format("; gc: ret free " + rf.VarName + " after=call:" + rf.Callee)
+		if is64 {
+			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("call " + freeFunc.MangledName())
+		} else {
+			code += utils.Format("lea eax, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("push eax")
+			code += c.Ctx.Arch.Call(freeCall)
+		}
+	}
+
+	// 4. 恢复返回值寄存器并跳转公共返回点
+	code += utils.Format("pop " + hiReg + "; gc ret 恢复返回值")
+	code += utils.Format("pop " + retReg + "; gc ret 恢复返回值")
+	code += c.Ctx.Arch.ReturnJump()
+
+	for _, rf := range frees {
+		if rf.Call != nil {
+			delete(c.Ctx.RetScratchMap, rf.Call)
+		}
+	}
 	return code
 }
 
@@ -734,11 +830,22 @@ func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	if varBlock.IsGlobal && varBlock.IsDefine {
 		return ""
 	}
+	// 覆盖赋值：旧对象唯一/未共享时，先 freeSlot(&x) 再写入新值。
+	code := c.emitAssignFrees(n)
 	// Multi-return destructuring: a, b := foo()
 	if len(varBlock.MultiNames) > 0 {
-		return c.Ctx.Arch.MultiVarDecl(varBlock)
+		return code + c.Ctx.Arch.MultiVarDecl(varBlock)
 	}
-	return c.Ctx.Arch.VarDecl(varBlock)
+	return code + c.Ctx.Arch.VarDecl(varBlock)
+}
+
+// emitAssignFrees 生成覆盖赋值前的旧对象释放序列（freeSlot 成功后清槽）。
+func (c *Compiler) emitAssignFrees(n *parser.Node) string {
+	llr := gc.LLRResults[c.currentFuncKey]
+	if llr == nil || llr.AssignFrees == nil {
+		return ""
+	}
+	return c.emitSlotFrees(n, llr.AssignFrees[n], "assign free")
 }
 
 func (c *Compiler) compileCallBlock(n *parser.Node) string {
@@ -770,7 +877,7 @@ func (c *Compiler) compileExprBlock(n *parser.Node) string {
 	// 多段名赋值（p1.x = 3、self.x += dx 等）：表达式里携带完整 VarBlock，
 	// 转用变量声明路径生成正确的目标地址
 	if exp.Var != nil && exp.Var.Value != nil {
-		return c.Ctx.Arch.VarDecl(exp.Var)
+		return c.emitAssignFrees(n) + c.Ctx.Arch.VarDecl(exp.Var)
 	}
 	return c.Ctx.Arch.Exp(exp, "", "expression statement")
 }
@@ -778,11 +885,38 @@ func (c *Compiler) compileExprBlock(n *parser.Node) string {
 func (c *Compiler) compileForBlock(n *parser.Node) string {
 	forBlock := n.Value.(*parser.ForBlock)
 	var code string
-	code += c.Ctx.Arch.ForBegin(forBlock)
+	// 进入循环前清零循环体将释放的局部槽：零次迭代时 for_end 后的
+	// 循环出口释放不能看到未初始化的栈槽。
+	code += c.emitGCZeroSlots(n, c.blockFreesOf(n))
+
+	condPlan := c.prepareScratchFrees(gc.CondFreesForNode(c.currentFuncKey, n), "cond free")
+	incrPlan := c.prepareScratchFrees(gc.IncrFreesForNode(c.currentFuncKey, n), "incr free")
+	if condPlan.code != "" {
+		// 条件每轮求值：true 路径清理后进循环体，false 路径清理后直接
+		// 跳到循环出口（跳过增量）。tag 与 for_end 标签由 ForBeginCond
+		// 设定的 Offset 生成。
+		trueLabel := c.nextCondLabel("for_cond_true_")
+		falseLabel := c.nextCondLabel("for_cond_false_")
+		code += c.Ctx.Arch.ForBeginCond(forBlock, falseLabel, trueLabel)
+		c.releaseScratchFrees(condPlan)
+		code += utils.Format(falseLabel + ":")
+		code += condPlan.code
+		code += utils.Format("jmp for_" + strconv.Itoa(forBlock.Offset) + "_end; for条件假路径")
+		code += utils.Format(trueLabel + ":")
+		code += condPlan.code
+	} else {
+		c.releaseScratchFrees(condPlan)
+		code += c.Ctx.Arch.ForBegin(forBlock)
+	}
+
 	code += c.Compile(n)
 	// 块级释放：在循环体末尾释放该块内分配的对象
 	code += c.emitBlockFrees(n)
-	code += c.Ctx.Arch.ForEnd(forBlock)
+	code += c.Ctx.Arch.ForEnd(forBlock, incrPlan.code)
+	c.releaseScratchFrees(incrPlan)
+	// 循环出口释放：覆盖 break 跳过 body 尾释放的路径；正常迭代已清槽，
+	// freeSlot 幂等跳过。
+	code += c.emitLoopExitFrees(n)
 	return code
 }
 
@@ -815,7 +949,9 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 	c.Ctx.ForCount++
 	forBlock.Offset = c.Ctx.ForCount
 	forLabel := "for_range_" + strconv.Itoa(forBlock.Offset)
-	endLabel := forLabel + "_end"
+	// break 统一跳到 for_<n>_end（compileBreakBlock），range 循环必须使用
+	// 同一出口标签，否则 range + break 会引用未定义标签。
+	endLabel := "for_" + strconv.Itoa(forBlock.Offset) + "_end"
 
 	// 3. 分配临时空间存储 range 目标信息（ptr, len）
 	// 在函数开头已经分配了空间，这里使用临时寄存器
@@ -867,7 +1003,8 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 	// 声明索引变量（在函数开头已声明，这里赋值为 0）
 	code += utils.Format("mov " + ln + " [" + frame + strconv.Itoa(indexVar.Offset) + "], 0; range index = 0")
 
-	// 5. 循环开始
+	// 5. 循环开始前清零循环体将释放的局部槽（零次迭代时出口释放需要）。
+	code += c.emitGCZeroSlots(n, c.blockFreesOf(n))
 	code += utils.Format("")
 	code += utils.Format(forLabel + ": ; for range 循环开始")
 
@@ -900,6 +1037,8 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 
 	// 8. 编译循环体
 	code += c.Compile(n)
+	// 块级释放：在循环体末尾释放该块内分配的对象
+	code += c.emitBlockFrees(n)
 
 	// 9. 递增索引
 	code += utils.Format("mov " + rax + ", " + ln + " [" + frame + strconv.Itoa(indexVar.Offset) + "]; 加载索引")
@@ -911,6 +1050,8 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 
 	// 11. 循环结束
 	code += utils.Format(endLabel + ": ; for range 循环结束")
+	// 循环出口释放：覆盖 break 跳过 body 尾释放的路径。
+	code += c.emitLoopExitFrees(n)
 
 	return code
 }
@@ -1220,6 +1361,15 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	savedNow := c.Ctx.Now
 	c.Ctx.Now = node
 
+	// GC ret 临时对象 scratch 槽：Prologue 之前按本函数 LLR 结果预留。
+	// 每个 return 节点最多同时持有 len(RetFrees) 个临时对象。
+	c.Ctx.RetScratchBase = 0
+	c.Ctx.RetScratchUsed = 0
+	c.Ctx.RetScratchCap = 0
+	if llr := gc.LLRResults[c.currentFuncKey]; llr != nil {
+		c.Ctx.RetScratchCap = llr.RetScratchSlots
+	}
+
 	// 生成 prologue（push rbp, mov rbp rsp, 保存 callee-save, 分配栈空间）
 	// callee-save 固定全部保存，栈布局可在函数体编译前确定，避免依赖分配器运行结果
 	code += c.Ctx.Arch.Prologue(funcBlock)
@@ -1275,7 +1425,7 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 		slot = "DWORD"
 		base = "ebp"
 	}
-	// 构建 memory.free 的 CallBlock
+	// 构建 memory.free / memory.freeSlot 的 CallBlock
 	freeNameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "free"}}
 	freeFunc := &parser.FuncBlock{
 		Name: parser.Name(freeNameParts),
@@ -1286,23 +1436,21 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 		Func: freeFunc,
 		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
 	}
-	var code string
-
-	// 收集已在块级释放的变量名，避免函数出口重复释放（double-free）
-	blockFreedVars := map[string]bool{}
-	for _, frees := range llr.BlockFreesMap {
-		for _, fr := range frees {
-			blockFreedVars[fr.VarName] = true
-		}
+	slotNameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
+	slotFunc := &parser.FuncBlock{
+		Name: parser.Name(slotNameParts),
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
 	}
+	slotCall := &parser.CallBlock{
+		Name: slotFunc.Name,
+		Func: slotFunc,
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
+	}
+	var code string
 
 	// 字段级级联释放：在释放 struct 之前先释放其 owning 字段
 	// 确保先释放子对象再释放父容器（sub-before-parent）
 	for _, ff := range llr.FieldFrees {
-		// 跳过已在块级释放的变量的字段，避免访问已释放内存
-		if blockFreedVars[ff.VarName] {
-			continue
-		}
 		off := findLocalVarOffset(node, ff.VarName)
 		if off == -1 {
 			continue
@@ -1316,6 +1464,10 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 		// 使用 RAX/EAX 作为临时寄存器（函数出口前无需保留）
 		tmpReg := c.Ctx.Arch.ReturnReg()
 		code += utils.Format("mov " + tmpReg + ", " + slot + " [" + base + strconv.Itoa(off) + "]")
+		// 父对象可能已在块尾释放并清槽；nil 时跳过，避免解引用空指针。
+		skipLabel := c.nextCondLabel("gc_field_skip")
+		code += utils.Format("test " + tmpReg + ", " + tmpReg)
+		code += utils.Format("jz " + skipLabel)
 		// 计算字段地址 = struct_ptr + field_offset
 		if fieldOff > 0 {
 			code += utils.Format("add " + tmpReg + ", " + strconv.Itoa(fieldOff))
@@ -1331,9 +1483,11 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 			code += c.Ctx.Arch.Call(freeCall)
 			code += utils.Format("add esp, 4")
 		}
+		code += utils.Format(skipLabel + ":")
 	}
 
-	// 顶层变量释放
+	// 顶层变量释放：统一用 freeSlot(&slot)，成功后清槽。块尾已释放的
+	// 变量在函数出口自然变成 nil，freeSlot 幂等跳过，不再需要静态跳过表。
 	for _, fr := range llr.Frees {
 		if fr.Type == "heap-ptr" {
 			// 孤儿对象：用 site 名匹配局部变量（通过 ObjSite 找到绑定名）
@@ -1349,21 +1503,18 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 				continue
 			}
 		}
-		// 跳过已在块级释放的变量，避免 double-free
-		if blockFreedVars[fr.VarName] {
-			continue
-		}
 		off := findLocalVarOffset(node, fr.VarName)
 		if off == -1 {
 			continue // 栈槽未找到（未分配/被豁免），跳过该变量
 		}
 		code += utils.Format("; gc: free " + fr.VarName)
 		if is64 {
-			code += utils.Format("mov RDI, " + slot + " [" + base + strconv.Itoa(off) + "]")
-			code += utils.Format("call " + freeFunc.MangledName())
+			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("call " + slotFunc.MangledName())
 		} else {
-			code += utils.Format("push " + slot + " [" + base + strconv.Itoa(off) + "]")
-			code += c.Ctx.Arch.Call(freeCall)
+			code += utils.Format("lea eax, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("push eax")
+			code += c.Ctx.Arch.Call(slotCall)
 		}
 	}
 	return code
@@ -1375,7 +1526,31 @@ func (c *Compiler) emitBlockFrees(blockNode *parser.Node) string {
 	if llr == nil || llr.BlockFreesMap == nil {
 		return ""
 	}
-	frees := llr.BlockFreesMap[blockNode]
+	return c.emitSlotFrees(blockNode, llr.BlockFreesMap[blockNode], "block free")
+}
+
+// blockFreesOf 返回指定块的块级释放计划（无结果时返回 nil）。
+func (c *Compiler) blockFreesOf(blockNode *parser.Node) []gc.LLRFree {
+	llr := gc.LLRResults[c.currentFuncKey]
+	if llr == nil || llr.BlockFreesMap == nil {
+		return nil
+	}
+	return llr.BlockFreesMap[blockNode]
+}
+
+// emitLoopExitFrees 生成循环出口的块局部变量释放序列（for_end 之后）。
+func (c *Compiler) emitLoopExitFrees(loopNode *parser.Node) string {
+	llr := gc.LLRResults[c.currentFuncKey]
+	if llr == nil || llr.LoopExitFrees == nil {
+		return ""
+	}
+	return c.emitSlotFrees(loopNode, llr.LoopExitFrees[loopNode], "loop exit free")
+}
+
+// emitGCZeroSlots 在进入分支/循环前把该块将释放的局部槽清零。
+// 块尾/循环出口的 freeSlot 可能在没有执行过声明语句的路径上运行（例如
+// if 条件为假、for 零次迭代、break 提前跳出），未清零的栈槽会被误当成指针。
+func (c *Compiler) emitGCZeroSlots(blockNode *parser.Node, frees []gc.LLRFree) string {
 	if len(frees) == 0 {
 		return ""
 	}
@@ -1386,7 +1561,30 @@ func (c *Compiler) emitBlockFrees(blockNode *parser.Node) string {
 		slot = "DWORD"
 		base = "ebp"
 	}
-	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "free"}}
+	seen := map[int]bool{}
+	var code string
+	for _, fr := range frees {
+		off := findBlockVarOffset(blockNode, fr.VarName)
+		if off == -1 || seen[off] {
+			continue
+		}
+		seen[off] = true
+		code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(off) + "], 0; gc: zero slot " + fr.VarName)
+	}
+	return code
+}
+
+// emitSlotFrees 按变量槽生成 freeSlot(&slot) 序列。
+func (c *Compiler) emitSlotFrees(blockNode *parser.Node, frees []gc.LLRFree, tag string) string {
+	if len(frees) == 0 {
+		return ""
+	}
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	base := "rbp"
+	if !is64 {
+		base = "ebp"
+	}
+	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
 	freeFunc := &parser.FuncBlock{
 		Name: parser.Name(nameParts),
 		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
@@ -1397,24 +1595,119 @@ func (c *Compiler) emitBlockFrees(blockNode *parser.Node) string {
 		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
 	}
 	var code string
+	seen := map[int]bool{}
 	for _, fr := range frees {
-		off := findLocalVarOffset(blockNode, fr.VarName)
-		if off == -1 {
+		off := findBlockVarOffset(blockNode, fr.VarName)
+		if off == -1 || seen[off] {
 			continue
 		}
-		code += utils.Format("; gc: block free " + fr.VarName)
+		seen[off] = true
+		code += utils.Format("; gc: " + tag + " " + fr.VarName)
 		if is64 {
-			code += utils.Format("mov RDI, " + slot + " [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
 			code += utils.Format("call " + freeFunc.MangledName())
 		} else {
-			code += utils.Format("push " + slot + " [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("lea eax, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("push eax")
 			code += c.Ctx.Arch.Call(freeCall)
 		}
 	}
 	return code
 }
 
+// scratchFreePlan 条件/增量清理点的 scratch 槽布局与释放代码。
+// 槽位在 prepare 时登记到 RetScratchMap，表达式编译期间 Arch.Call 会把
+// 拥有型结果写入对应槽；清理代码由调用方插到条件/增量求值之后。
+type scratchFreePlan struct {
+	code string
+	keys []*parser.CallBlock
+}
+
+// prepareScratchFrees 为条件/增量表达式中的临时对象分配 scratch 槽并
+// 生成 freeSlot 序列。槽位与 ret 清理复用（三类清理点不会同时求值）。
+func (c *Compiler) prepareScratchFrees(frees []gc.LLRCondFree, tag string) scratchFreePlan {
+	if len(frees) == 0 || c.Ctx.RetScratchBase == 0 {
+		return scratchFreePlan{}
+	}
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	slotSize := 4
+	base := "ebp"
+	if is64 {
+		slotSize = 8
+		base = "rbp"
+	}
+
+	if c.Ctx.RetScratchMap == nil {
+		c.Ctx.RetScratchMap = make(map[*parser.CallBlock]int)
+	}
+	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
+	freeFunc := &parser.FuncBlock{
+		Name: parser.Name(nameParts),
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
+	}
+	freeCall := &parser.CallBlock{
+		Name: freeFunc.Name,
+		Func: freeFunc,
+		Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}},
+	}
+
+	var plan scratchFreePlan
+	for i, f := range frees {
+		if f.Call == nil {
+			continue
+		}
+		off := c.Ctx.RetScratchBase + i*slotSize
+		c.Ctx.RetScratchMap[f.Call] = off
+		plan.keys = append(plan.keys, f.Call)
+		plan.code += utils.Format("; gc: " + tag + " " + f.VarName)
+		if is64 {
+			plan.code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
+			plan.code += utils.Format("call " + freeFunc.MangledName())
+		} else {
+			plan.code += utils.Format("lea eax, [" + base + strconv.Itoa(off) + "]")
+			plan.code += utils.Format("push eax")
+			plan.code += c.Ctx.Arch.Call(freeCall)
+		}
+	}
+	return plan
+}
+
+// releaseScratchFrees 注销表达式编译期间登记的 scratch 捕获点。
+func (c *Compiler) releaseScratchFrees(plan scratchFreePlan) {
+	for _, call := range plan.keys {
+		delete(c.Ctx.RetScratchMap, call)
+	}
+}
+
 // 只匹配非全局的 IsDefine VarBlock 且 Offset 已分配（非 0）；未找到返回 -1。
+// findBlockVarOffset 在指定块内查找局部变量槽偏移。
+// 优先匹配该块的直接声明，避免内层同名变量遮蔽时错误命中内层槽；
+// 找不到再退回递归搜索（兼容包装节点等结构）。
+func findBlockVarOffset(blockNode *parser.Node, name string) int {
+	if blockNode == nil {
+		return -1
+	}
+	// 赋值节点本身携带目标变量槽偏移（非 IsDefine 也算）。
+	if vb, ok := blockNode.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.Offset != 0 &&
+		vb.Name != nil && vb.Name.First() == name {
+		return vb.Offset
+	}
+	// 简单赋值可能以 Expression.Var 形式出现。
+	if exp, ok := blockNode.Value.(*parser.Expression); ok && exp.Var != nil {
+		vb := exp.Var
+		if !vb.IsGlobal && vb.Offset != 0 && vb.Name != nil && vb.Name.First() == name {
+			return vb.Offset
+		}
+	}
+	for _, ch := range blockNode.Children {
+		if vb, ok := ch.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.IsDefine &&
+			vb.Offset != 0 && vb.Name != nil && vb.Name.First() == name {
+			return vb.Offset
+		}
+	}
+	return findLocalVarOffset(blockNode, name)
+}
+
 func findLocalVarOffset(node *parser.Node, name string) int {
 	if node == nil {
 		return -1

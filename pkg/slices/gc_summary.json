@@ -40,6 +40,508 @@
   "retEscape": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.calloc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.calloc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.coalesce
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.coalesce",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.commit
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.commit",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.flagLoad
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.flagLoad",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.flagStore
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.flagStore",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.free
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.free",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freeAt
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freeAt",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freeNext
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freeNext",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freePrev
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freePrev",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freeRC
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freeRC",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetNext
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freeSetNext",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrFooter
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.hdrFooter",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.headOf
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.headOf",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.initLeakTracker
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.initLeakTracker",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.insertFreeList",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.leakLoad
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.leakLoad",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.leakStore
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.leakStore",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.malloc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.malloc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.mallocRC
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.mallocRC",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.memcpy",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.memmove
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.memmove",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.memset
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.memset",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.ptrToStringHeader
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.ptrToStringHeader",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcAdd
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcAdd",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcDec
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcDec",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcGet
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcGet",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcInc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcInc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcIsOne
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcIsOne",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcLoad
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcLoad",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSet
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcSet",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcStore
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcStore",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSub
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcSub",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.rcTryRelease
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.rcTryRelease",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.realloc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.realloc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.removeFreeList",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllocCount
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllocCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportLeaks
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportLeaks",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.resetLeakTracker
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.resetLeakTracker",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.setHead
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.setHead",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.sizeof
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.sizeof",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOf
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.slotOf",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.tierOf
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.tierOf",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.trackAlloc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.trackAlloc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.trackFree
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.trackFree",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/strings._bGrow
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings._bGrow",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings._byteAt
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings._byteAt",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings._cellP
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings._cellP",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings._putByte
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings._putByte",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings._putPiece
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings._putPiece",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
 == /home/gx/Desktop/______/tiny/pkg/strings.atoi
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/strings.atoi",
@@ -92,7 +594,68 @@
   "params": null,
   "retOwned": true,
   "retEscape": 1,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderFree
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderFree",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
   "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderLen
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderLen",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderNew
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderNew",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderString
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderString",
+  "params": null,
+  "retOwned": true,
+  "retEscape": 1,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWrite
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderWrite",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWriteString
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.builderWriteString",
+  "params": [
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.cap
@@ -121,8 +684,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.compare
 {
@@ -266,14 +828,30 @@
   "retEscape": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/strings.fields
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.fields",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
 == /home/gx/Desktop/______/tiny/pkg/strings.formatBool
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/strings.formatBool",
   "params": null,
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.fromI64
 {
@@ -300,8 +878,9 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": [
+    ""
+  ]
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
 {
@@ -320,8 +899,9 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": [
+    ""
+  ]
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.hasSuffixAny
 {
@@ -359,8 +939,9 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": [
+    ""
+  ]
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.indexAny
 {
@@ -417,8 +998,7 @@
   "params": null,
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.join
 {
@@ -432,7 +1012,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
@@ -557,7 +1139,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.repeatN
@@ -572,8 +1156,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.replace
 {
@@ -597,7 +1180,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.reverse
@@ -612,7 +1197,75 @@
   ],
   "retOwned": true,
   "retEscape": 1,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.split
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.split",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
   "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.splitFree
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.splitFree",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.splitGet
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.splitGet",
+  "params": null,
+  "retOwned": true,
+  "retEscape": 1,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.splitLen
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.splitLen",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/strings.splitN
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.splitN",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.strcmp
@@ -665,7 +1318,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.toString
@@ -696,7 +1351,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trim
@@ -736,8 +1393,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
 {
@@ -756,7 +1412,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimRight
@@ -776,8 +1434,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
 {
@@ -791,7 +1448,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
@@ -811,7 +1470,9 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "callsAny": null,
+  "callsAny": [
+    ""
+  ],
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/syscall.brk
@@ -868,7 +1529,8 @@
   "params": null,
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/syscall.getenvName_eq
 {
@@ -981,7 +1643,7 @@
   "retOwned": false,
   "retEscape": 0,
   "callsAny": [
-    "sizeof"
+    ""
   ],
   "hasHeapAllocs": true
 }
@@ -997,8 +1659,116 @@
   ],
   "retOwned": false,
   "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== cat
+{
+  "name": "cat",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
   "callsAny": [
-    "unsafe.cast"
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== clear
+{
+  "name": "clear",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== clone
+{
+  "name": "clone",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== compact
+{
+  "name": "compact",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== contains
+{
+  "name": "contains",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== copy
+{
+  "name": "copy",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
   ],
   "hasHeapAllocs": true
 }
@@ -1019,8 +1789,62 @@
   ],
   "retOwned": false,
   "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== deleteRange
+{
+  "name": "deleteRange",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
   "callsAny": [
-    "unsafe.cast"
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== equal
+{
+  "name": "equal",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== find
+{
+  "name": "find",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
   ],
   "hasHeapAllocs": true
 }
@@ -1036,9 +1860,8 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": [
-    "unsafe.cast"
-  ]
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == getPtr
 {
@@ -1052,8 +1875,84 @@
   ],
   "retOwned": false,
   "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== grow
+{
+  "name": "grow",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
   "callsAny": [
-    "unsafe.cast"
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== index
+{
+  "name": "index",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== insert
+{
+  "name": "insert",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== join
+{
+  "name": "join",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 2,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
   ],
   "hasHeapAllocs": true
 }
@@ -1069,9 +1968,7 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": [
-    "unsafe.cast"
-  ],
+  "callsAny": null,
   "hasHeapAllocs": true
 }
 == loadInt
@@ -1090,23 +1987,31 @@
   "retEscape": 0,
   "callsAny": null
 }
-== memmove
+== make
 {
-  "name": "memmove",
-  "params": null,
-  "retOwned": false,
-  "retEscape": 0,
-  "callsAny": null
-}
-== new
-{
-  "name": "new",
+  "name": "make",
   "params": null,
   "retOwned": false,
   "retEscape": 0,
   "callsAny": [
-    "sizeof"
-  ]
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== pop
+{
+  "name": "pop",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == push
 {
@@ -1120,10 +2025,7 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": [
-    "unsafe.cast",
-    "sizeof"
-  ],
+  "callsAny": null,
   "hasHeapAllocs": true
 }
 == remove
@@ -1139,8 +2041,24 @@
   "retOwned": false,
   "retEscape": 0,
   "callsAny": [
-    "unsafe.cast",
-    "sizeof"
+    ""
+  ],
+  "hasHeapAllocs": true
+}
+== reverse
+{
+  "name": "reverse",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "callsAny": [
+    ""
   ],
   "hasHeapAllocs": true
 }
@@ -1156,10 +2074,7 @@
   ],
   "retOwned": false,
   "retEscape": 0,
-  "callsAny": [
-    "unsafe.cast",
-    "sizeof"
-  ],
+  "callsAny": null,
   "hasHeapAllocs": true
 }
 == storeInt

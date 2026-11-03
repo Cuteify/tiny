@@ -19,12 +19,20 @@ type Arch interface {
 	// ---- 函数调用 ----
 	Call(call *parser.CallBlock) string
 	Return(ret *parser.ReturnBlock) string
+	// ReturnValue 只生成返回值代码（不跳转）；ReturnJump 只生成跳到公共
+	// 返回点的代码。compileReturnBlock 在两者之间插入 ret 临时对象释放。
+	ReturnValue(ret *parser.ReturnBlock) string
+	ReturnJump() string
 	ReturnReg() string // 返回值寄存器名（EAX/RAX）
 
 	// ---- 表达式与语句 ----
 	Exp(exp *parser.Expression, result, desc string) string
 	ForBegin(forBlock *parser.ForBlock) string
-	ForEnd(forBlock *parser.ForBlock) string
+	// ForBeginCond 与 ForBegin 相同，但条件假/真路径分别跳到 falseLabel/
+	// trueLabel，且不发射默认 body 标签；falseLabel/trueLabel 为空时等价于
+	// ForBegin。用于在条件求值后插入临时对象释放。
+	ForBeginCond(forBlock *parser.ForBlock, falseLabel, trueLabel string) string
+	ForEnd(forBlock *parser.ForBlock, cleanup string) string
 	VarDecl(varBlock *parser.VarBlock) string
 	VarAddr(v *parser.VarBlock) string
 	MultiVarDecl(varBlock *parser.VarBlock) string // 多返回值解构（a, b := foo()）

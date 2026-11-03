@@ -497,7 +497,9 @@ fn malloc(size: uint) ptr {
 //   - HUGE: 如果 blk 在堆顶，直接 brk 回缩
 //   - LARGE: coalesce 后如果在堆顶则 brk 回缩
 //   - TINY/SMALL: coalesce 后加入空闲链表
-fn freeAt(blk: ptr) {
+// 返回 true 表示所有权已移交（内存已回收/进入空闲链表），false 表示未释放
+// （LARGE/HUGE 不在堆顶，空间仍滞留在堆内）。
+fn freeAt(blk: ptr) bool {
     var raw: uint = hdrSizeRaw(blk)
     var pure: uint = raw & ~FLAG_MASK
 
@@ -506,8 +508,9 @@ fn freeAt(blk: ptr) {
         var cur: ptr = syscall.brk(0)
         if blk + pure == cur {
             syscall.brk(blk)  // 回缩 brk 到 blk 位置
+            ret true
         }
-        ret
+        ret false
     }
 
     // LARGE 块：合并后如果在堆顶则释放
@@ -518,32 +521,52 @@ fn freeAt(blk: ptr) {
         var cur: ptr = syscall.brk(0)
         if merged + mPure == cur {
             syscall.brk(merged)
+            ret true
         }
-        ret
+        ret false
     }
 
     // TINY/SMALL 块：合并后加入空闲链表
     var merged: ptr = coalesce(blk)
     insertFreeList(merged)
+    ret true
 }
 
 // free 释放用户指针指向的内存
 // 运行时检测 flags 字段（ptr-ptrSize）：
 //   - (flags & RC_BIT) != 0 → mallocRC 分配的块，走 rcDec（引用计数释放）
 //   - 否则走 freeAt（直接释放）
-fn free(ptr: ptr) {
+// 返回 true 表示调用方对这块内存的所有权引用已释放（nil/RC 递减/普通释放），
+// false 表示底层 freeAt 未能回收（仅 LARGE/HUGE 非堆顶）。
+fn free(ptr: ptr) bool {
     if ptr == 0 {
-        ret
+        ret true
     }
     // 读 flags 字段（在用户指针的前一个 ptrSize 位置）
     var flags: uint = flagLoad(ptr)
     if (flags & RC_BIT) != 0 {
         // mallocRC 分配的块：走引用计数释放
         rcDec(ptr)
-        ret
+        ret true
     }
     // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - ptrSize）
-    freeAt(ptr - ptrSize)
+    var base: ptr = ptr - ptrSize
+    ret freeAt(base)
+}
+
+// freeSlot 释放 *slot 指向的对象；成功移交所有权后清空槽。
+// 槽级幂等用于块尾/函数出口的重复释放计划；别名安全仍由 LLR 的唯一
+// canonical owner 前提保证，不能只靠置 nil。
+fn freeSlot(slot: *ptr) bool {
+    var p: ptr = *slot
+    if p == 0 {
+        ret true
+    }
+    if free(p) {
+        *slot = 0
+        ret true
+    }
+    ret false
 }
 
 // realloc 重新分配内存

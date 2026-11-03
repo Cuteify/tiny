@@ -1,20 +1,119 @@
 == /home/gx/Desktop/______/tiny/pkg/builtin.panic
 == /home/gx/Desktop/______/tiny/pkg/builtin.print
 == /home/gx/Desktop/______/tiny/pkg/builtin.println
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.calloc
+== /home/gx/Desktop/______/tiny/pkg/memory.coalesce
+== /home/gx/Desktop/______/tiny/pkg/memory.commit
+== /home/gx/Desktop/______/tiny/pkg/memory.flagLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.flagStore
+== /home/gx/Desktop/______/tiny/pkg/memory.free
+== /home/gx/Desktop/______/tiny/pkg/memory.freeAt
+== /home/gx/Desktop/______/tiny/pkg/memory.freeNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freePrev
+== /home/gx/Desktop/______/tiny/pkg/memory.freeRC
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetNext
+== /home/gx/Desktop/______/tiny/pkg/memory.freeSetPrev
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetFooter
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSetSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.hdrSizeRaw
+== /home/gx/Desktop/______/tiny/pkg/memory.headOf
+== /home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads
+== /home/gx/Desktop/______/tiny/pkg/memory.initLeakTracker
+== /home/gx/Desktop/______/tiny/pkg/memory.insertFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.leakLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.leakStore
+== /home/gx/Desktop/______/tiny/pkg/memory.malloc
+== /home/gx/Desktop/______/tiny/pkg/memory.mallocRC
+== /home/gx/Desktop/______/tiny/pkg/memory.memcpy
+== /home/gx/Desktop/______/tiny/pkg/memory.memmove
+== /home/gx/Desktop/______/tiny/pkg/memory.memset
+== /home/gx/Desktop/______/tiny/pkg/memory.ptrToStringHeader
+  obj[0] bp site=null_init ESCAPED
+  obj[1] vv site=new FRAME_OWN
+  FREE vv [unknown]
+== /home/gx/Desktop/______/tiny/pkg/memory.rcAdd
+== /home/gx/Desktop/______/tiny/pkg/memory.rcDec
+== /home/gx/Desktop/______/tiny/pkg/memory.rcGet
+== /home/gx/Desktop/______/tiny/pkg/memory.rcInc
+== /home/gx/Desktop/______/tiny/pkg/memory.rcIsOne
+== /home/gx/Desktop/______/tiny/pkg/memory.rcLoad
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSet
+== /home/gx/Desktop/______/tiny/pkg/memory.rcStore
+== /home/gx/Desktop/______/tiny/pkg/memory.rcSub
+== /home/gx/Desktop/______/tiny/pkg/memory.rcTryRelease
+== /home/gx/Desktop/______/tiny/pkg/memory.realloc
+== /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllocCount
+== /home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount
+== /home/gx/Desktop/______/tiny/pkg/memory.reportLeaks
+== /home/gx/Desktop/______/tiny/pkg/memory.resetLeakTracker
+== /home/gx/Desktop/______/tiny/pkg/memory.setHead
+== /home/gx/Desktop/______/tiny/pkg/memory.sizeof
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOf
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfMiddle
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfSmall
+== /home/gx/Desktop/______/tiny/pkg/memory.slotOfTiny
+== /home/gx/Desktop/______/tiny/pkg/memory.tierOf
+== /home/gx/Desktop/______/tiny/pkg/memory.trackAlloc
+== /home/gx/Desktop/______/tiny/pkg/memory.trackFree
+== /home/gx/Desktop/______/tiny/pkg/strings._bGrow
+  obj[0] box site=new FRAME_OWN
+  FREE box [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings._byteAt
+  obj[0] bP site=new FRAME_OWN
+  FREE bP [uint]
+== /home/gx/Desktop/______/tiny/pkg/strings._cellP
+  obj[0] hdrH site=new FRAME_OWN
+  obj[1] cellH site=new FRAME_OWN
+  FREE hdrH [unknown]
+  FREE cellH [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings._putByte
+  obj[0] dP site=new FRAME_OWN
+  obj[1] sP site=new FRAME_OWN
+  FREE dP [uint]
+  FREE sP [uint]
+== /home/gx/Desktop/______/tiny/pkg/strings._putPiece
+  obj[0] tailP site=new FRAME_OWN
+  obj[1] cell site=new FRAME_OWN
+  FREE tailP [uint]
+  FREE cell [unknown]
 == /home/gx/Desktop/______/tiny/pkg/strings.atoi
 == /home/gx/Desktop/______/tiny/pkg/strings.bufCopyFrom
 == /home/gx/Desktop/______/tiny/pkg/strings.bufNew
 == /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
 == /home/gx/Desktop/______/tiny/pkg/strings.bufSetInt
 == /home/gx/Desktop/______/tiny/pkg/strings.bufToString
-  obj[0] s site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.builderFree
+  obj[0] box site=new FRAME_OWN
+  FREE box [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.builderLen
+  obj[0] box site=new FRAME_OWN
+  FREE box [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.builderNew
+  obj[0] box site=new FRAME_OWN
+  FREE box [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.builderString
+  obj[0] box site=new FRAME_OWN
+  obj[1] tailP site=new FRAME_OWN
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  FREE box [unknown]
+  FREE tailP [uint]
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWrite
+  obj[0] box site=new FRAME_OWN
+  obj[1] wP site=new FRAME_OWN
+  FREE box [unknown]
+  FREE wP [uint]
+== /home/gx/Desktop/______/tiny/pkg/strings.builderWriteString
+  obj[0] s site=param:s ESCAPED
+  obj[1] box site=new FRAME_OWN
+  FREE box [unknown]
 == /home/gx/Desktop/______/tiny/pkg/strings.cap
 == /home/gx/Desktop/______/tiny/pkg/strings.clone
-  obj[0] s site=param:s ESCAPED
-  obj[1] _p51 site=null_init ESCAPED
-  obj[2] _p52 site=null_init ESCAPED
-  obj[3] _p53 site=null_init ESCAPED
-  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.compare
 == /home/gx/Desktop/______/tiny/pkg/strings.contains
 == /home/gx/Desktop/______/tiny/pkg/strings.containsAny
@@ -23,41 +122,21 @@
 == /home/gx/Desktop/______/tiny/pkg/strings.countByte
 == /home/gx/Desktop/______/tiny/pkg/strings.eq
 == /home/gx/Desktop/______/tiny/pkg/strings.equalFold
+== /home/gx/Desktop/______/tiny/pkg/strings.fields
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdrF site=new FRAME_OWN
+  FREE hdrF [unknown]
 == /home/gx/Desktop/______/tiny/pkg/strings.formatBool
-  obj[0] _p34 site=null_init ESCAPED
-  obj[1] _p35 site=null_init ESCAPED
-  obj[2] _p36 site=null_init ESCAPED
-  obj[3] _p37 site=null_init ESCAPED
-  obj[4] _p38 site=null_init ESCAPED
-  obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
-  obj[6] _p39 site=null_init ESCAPED
-  obj[7] _p40 site=null_init ESCAPED
-  obj[8] _p41 site=null_init ESCAPED
-  obj[9] _p42 site=null_init ESCAPED
-  obj[10] _p43 site=null_init ESCAPED
-  obj[11] _p44 site=null_init ESCAPED
-  obj[12]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.fromI64
 == /home/gx/Desktop/______/tiny/pkg/strings.hasPrefix
-  obj[0] s site=param:s ESCAPED
-  obj[1] prefix site=param:prefix ESCAPED
-  obj[2] _p31 site=null_init ESCAPED
-  obj[3] _p32 site=null_init ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.hasSuffix
-  obj[0] s site=param:s ESCAPED
-  obj[1] suffix site=param:suffix ESCAPED
-  obj[2] _p33 site=null_init ESCAPED
-  obj[3] _p34 site=null_init ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.hasSuffixAny
 == /home/gx/Desktop/______/tiny/pkg/strings.index
-  obj[0] s site=param:s ESCAPED
-  obj[1] substr site=param:substr ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.indexAny
 == /home/gx/Desktop/______/tiny/pkg/strings.indexByte
 == /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
 == /home/gx/Desktop/______/tiny/pkg/strings.isSpace
 == /home/gx/Desktop/______/tiny/pkg/strings.itoa
-  obj[0]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.toString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.join
   obj[0] sep site=param:sep ESCAPED
   obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
@@ -85,8 +164,6 @@
   obj[3] _p54 site=null_init ESCAPED
   obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.repeatN
-  obj[0] s site=param:s ESCAPED
-  obj[1]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.repeat ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.replace
   obj[0] s site=param:s ESCAPED
   obj[1] old site=param:old ESCAPED
@@ -100,11 +177,25 @@
   obj[9] _p61 site=null_init ESCAPED
   obj[10]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.reverse
+== /home/gx/Desktop/______/tiny/pkg/strings.split
   obj[0] s site=param:s ESCAPED
-  obj[1] _p54 site=null_init ESCAPED
-  obj[2] _p55 site=null_init ESCAPED
-  obj[3] _p56 site=null_init ESCAPED
-  obj[4]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  obj[1] sep site=param:sep ESCAPED
+== /home/gx/Desktop/______/tiny/pkg/strings.splitFree
+  obj[0] hdr2 site=new FRAME_OWN
+  FREE hdr2 [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.splitGet
+  obj[0] hdr site=new FRAME_OWN
+  obj[1] cell site=new ESCAPED
+  obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
+  FREE hdr [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.splitLen
+  obj[0] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== /home/gx/Desktop/______/tiny/pkg/strings.splitN
+  obj[0] s site=param:s ESCAPED
+  obj[1] sep site=param:sep ESCAPED
+  obj[2] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
 == /home/gx/Desktop/______/tiny/pkg/strings.strcmp
 == /home/gx/Desktop/______/tiny/pkg/strings.strcpy
 == /home/gx/Desktop/______/tiny/pkg/strings.strlen
@@ -128,14 +219,6 @@
   obj[1] cutset site=param:cutset ESCAPED
   obj[2]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.trimRight ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
-  obj[0] s site=param:s ESCAPED
-  obj[1] cutset site=param:cutset ESCAPED
-  obj[2] _p1 site=null_init ESCAPED
-  obj[3] _p2 site=null_init ESCAPED
-  obj[4] _p3 site=null_init ESCAPED
-  obj[5] _p4 site=null_init ESCAPED
-  obj[6] _p5 site=null_init ESCAPED
-  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
   obj[0] s site=param:s ESCAPED
   obj[1] prefix site=param:prefix ESCAPED
@@ -144,14 +227,6 @@
   obj[4] _p48 site=null_init ESCAPED
   obj[5]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimRight
-  obj[0] s site=param:s ESCAPED
-  obj[1] cutset site=param:cutset ESCAPED
-  obj[2] _p6 site=null_init ESCAPED
-  obj[3] _p7 site=null_init ESCAPED
-  obj[4] _p8 site=null_init ESCAPED
-  obj[5] _p9 site=null_init ESCAPED
-  obj[6] _p10 site=null_init ESCAPED
-  obj[7]  site=call:/home/gx/Desktop/______/tiny/pkg/strings.makeString ESCAPED
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
   obj[0] s site=param:s ESCAPED
   obj[1] _p41 site=null_init ESCAPED
@@ -174,6 +249,14 @@
 == /home/gx/Desktop/______/tiny/pkg/syscall.getcwd
 == /home/gx/Desktop/______/tiny/pkg/syscall.getdents
 == /home/gx/Desktop/______/tiny/pkg/syscall.getenv
+  obj[0] path site=null_init ESCAPED
+  obj[1] sp0 site=null_init ESCAPED
+  obj[2] sv site=new FRAME_OWN
+  obj[3] _p4 site=null_init ESCAPED
+  obj[4] _p5 site=null_init ESCAPED
+  obj[5] _p6 site=null_init ESCAPED
+  obj[6] _p7 site=null_init ESCAPED
+  FREE sv [unknown]
 == /home/gx/Desktop/______/tiny/pkg/syscall.getenvName_eq
 == /home/gx/Desktop/______/tiny/pkg/syscall.lseek
 == /home/gx/Desktop/______/tiny/pkg/syscall.mkdir
@@ -188,17 +271,150 @@
 == /home/gx/Desktop/______/tiny/pkg/syscall.unlink
 == /home/gx/Desktop/______/tiny/pkg/syscall.write
 == _elemPtr
+  obj[0] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
 == cap
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== cat
+  obj[0] a site=param:a ESCAPED
+  obj[1] b site=param:b ESCAPED
+  obj[2] aHdr site=new FRAME_OWN
+  obj[3] bHdr site=new FRAME_OWN
+  obj[4] dstHdr site=new FRAME_OWN
+  FREE aHdr [unknown]
+  FREE bHdr [unknown]
+  FREE dstHdr [unknown]
+== clear
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== clone
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] dstHdr site=new FRAME_OWN
+  obj[3] sp site=new FRAME_OWN
+  obj[4] dp site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE dstHdr [unknown]
+  FREE sp [unknown] scope=1
+  FREE dp [unknown] scope=1
+== compact
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2]  site=new FRAME_OWN
+  obj[3] pi site=new FRAME_OWN
+  obj[4] pw site=new ESCAPED
+  FREE hdr [unknown]
+  FREE pi [unknown] scope=1
+== contains
+  obj[0] s site=param:s ESCAPED
+== copy
+  obj[0] dst site=param:dst ESCAPED
+  obj[1] src site=param:src ESCAPED
+  obj[2] dHdr site=new FRAME_OWN
+  obj[3] sHdr site=new FRAME_OWN
+  FREE dHdr [unknown]
+  FREE sHdr [unknown]
 == copyOut
+  obj[0] s site=param:s ESCAPED
+  obj[1] out site=param:out ESCAPED
+  obj[2] elemPtr site=new FRAME_OWN
+  FREE elemPtr [unknown]
+== deleteRange
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== equal
+  obj[0] a site=param:a ESCAPED
+  obj[1] b site=param:b ESCAPED
+  obj[2] aHdr site=new FRAME_OWN
+  obj[3] bHdr site=new FRAME_OWN
+  obj[4] p site=new FRAME_OWN
+  obj[5] q site=new FRAME_OWN
+  FREE aHdr [unknown]
+  FREE bHdr [unknown]
+  FREE p [unknown] scope=1
+  FREE q [unknown] scope=1
+== find
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] p site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE p [unknown] scope=1
 == free
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
 == getPtr
+  obj[0] s site=param:s ESCAPED
+== grow
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== index
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] p site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE p [unknown] scope=1
+== insert
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] vp site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE vp [unknown]
+== join
+  obj[0] a site=param:a ESCAPED
+  obj[1] sep site=param:sep ESCAPED
+  obj[2] b site=param:b ESCAPED
+  obj[3] aHdr site=new FRAME_OWN
+  obj[4] sHdr site=new FRAME_OWN
+  obj[5] bHdr site=new FRAME_OWN
+  obj[6] dstHdr site=new FRAME_OWN
+  FREE aHdr [unknown]
+  FREE sHdr [unknown]
+  FREE bHdr [unknown]
+  FREE dstHdr [unknown]
 == len
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
 == loadInt
 == loadPtr
-== memmove
-== new
+== make
+  obj[0] hdr site=new FRAME_OWN
+  FREE hdr [unknown]
+== pop
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] outPtr site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE outPtr [unknown]
 == push
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] valPtr site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE valPtr [unknown]
 == remove
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] outPtr site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE outPtr [unknown]
+== reverse
+  obj[0] s site=param:s ESCAPED
+  obj[1] hdr site=new FRAME_OWN
+  obj[2] a site=new FRAME_OWN
+  obj[3] b site=new FRAME_OWN
+  FREE hdr [unknown]
+  FREE a [unknown] scope=1
+  FREE b [unknown] scope=1
 == set
+  obj[0] s site=param:s ESCAPED
+  obj[1] valPtr site=new FRAME_OWN
+  FREE valPtr [unknown]
 == storeInt
 == storePtr

@@ -82,6 +82,7 @@ go build -o cuteify2 .
 
 ## Agent Execution Rules
 **每次启动时必须执行：**
+0. 读取 `PROJECT.md` —— **用户钦定强制项（2026-10-31）**：所有子代理/新会话开工第一件事。已浓缩全部命令/基线/缺陷台账/路径/纪律，**严禁自行重新探索项目结构与已知信息**（两轮两批 SubAgent 因侦察耗尽免费额度的实证教训）。快照与现实不符时：先更新 PROJECT.md 再继续任务。
 1. 读取 `PLAN_rcDebug.md` — 当前活跃的修复计划
 2. 读取 `TODO_rcDebug.md` — 当前活跃的任务列表
 3. 按 TODO 中的 Phase 顺序逐步执行

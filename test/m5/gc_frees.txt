@@ -1,3 +1,0 @@
-== main (2 vars)
-  head [unknown] site=expr off=-1
-  np [unknown] site=call:mkNode off=-1
