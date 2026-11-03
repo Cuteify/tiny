@@ -79,15 +79,16 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 - **deref-store 右值调用静默丢弃**（预存，未修）——farm 同 import slices/sort（间接带 `slices.len[T]`/`cap[T]`）时 `*p = unsafe.cast[ptr](strings.len/cap(...))` 的调用从 asm 消失、落 stale RAX；x64 sortStrOnly 输出多 2B / x86 COMPILE_FAIL:2（nil Type 链）；w7 同现象
 - **`pkg/sort/test` 陈旧测试**（预存，未修）——引用已删除的 `sort.isSortedInts/searchInts/sortInts`（仅存 `str_sort.cute.bak3`），w7/w11 同 rc=1；不在 22 项矩阵
 - 缺陷⑰病理详细档案=/tmp/opencode/wave_st_progress.md L212 段
-- R3 = monomorphize 缓存量（泛型组合爆炸）观测面；R2 = timsort↔RC 释放路径——✅ 2026-11-02 esccheck 红项 0
+- R3 = monomorphize 缓存量（泛型组合爆炸）观测面；R2 = timsort↔RC 释放路径——✅ 2026-11-04 esccheck 泄漏/提前释放 0（红项 9=历史不可解析目录）
 
 ## 5. 关键资源
-- bin：`/tmp/opencode/bin/`（w13=Wave I 终态编译器；w12=Wave I 收口；w11=Wave Mp/T/F 收口；esccheck=逃逸检查器）
+- bin：`/tmp/opencode/bin/`（w14c=GC 收口现行；w14b=条件清理修复前对拍；w13=Wave I 终态；w12=Wave I 收口；w11=Wave Mp/T/F 收口；esccheck=逃逸检查器）
 - asm 留档：`/tmp/opencode/asm86_sprobe.asm`、`/tmp/opencode/asm64_sprobe.asm`（x86/x64 修后对照）、`/tmp/opencode/x64tmp/_main.asm`（x64 base 正确形状真值）
 - esccheck：`/tmp/opencode/bin/esccheck`（验收=红项全 0；complexTest 基线=对象 3/释放 2/转移 1 逐位；全语料脚本=`/tmp/opencode/esccheck_all.sh`，W2 口径见 PROGRESS.md 待办池）
 - 矩阵脚本：`/tmp/opencode/matrix.sh <bin> <arch> <runs>`；Wave I 验证日志
   `matrix_x64_I1.log`/`matrix_x86_I1.log`（w11，json 仍消费）、`matrix_x64_I2.log`/`matrix_x86_I2.log`（w12，json 通道关闭）、
-  `matrix_x64_I3.log`/`matrix_x86_I3.log`（w13，`json:"-"` 终态）
+  `matrix_x64_I3.log`/`matrix_x86_I3.log`（w13，`json:"-"` 终态）、
+  `matrix_x64_w14c.txt`/`matrix_x86_w14c.txt`（w14c，GC 收口 22 项对拍）
 - SSOT：`docs/stdplan/PLAN.md`（计划）/ `docs/stdplan/PROGRESS.md`（执行日志+哨兵基线全表）
 - Wave St 假想攻坚台账：`/tmp/opencode/wave_st_progress.md`
 
