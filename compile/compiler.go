@@ -399,6 +399,9 @@ func (c *Compiler) compileIfBlock(n *parser.Node) string {
 		trueLabel := c.nextCondLabel("cond_true_")
 		code += c.compileCondition(ifBlock.Condition, falseLabel, trueLabel)
 		c.releaseScratchFrees(condPlan)
+		// 比较/单表达式条件真路径是直落，需跳过紧随其后的 false 清理块；
+		// || 链的真跳转直接落到 trueLabel，不受影响。
+		code += utils.Format("jmp " + trueLabel)
 		code += utils.Format(falseLabel + ":")
 		code += condPlan.code
 		if ifBlock.Else {
@@ -899,6 +902,8 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 		falseLabel := c.nextCondLabel("for_cond_false_")
 		code += c.Ctx.Arch.ForBeginCond(forBlock, falseLabel, trueLabel)
 		c.releaseScratchFrees(condPlan)
+		// 条件真路径直落，跳过 false 清理块后再进循环体。
+		code += utils.Format("jmp " + trueLabel)
 		code += utils.Format(falseLabel + ":")
 		code += condPlan.code
 		code += utils.Format("jmp for_" + strconv.Itoa(forBlock.Offset) + "_end; for条件假路径")
