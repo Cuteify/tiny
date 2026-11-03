@@ -8,13 +8,13 @@
 ## 0. 仓库与编译器
 - repo=`/home/gx/Desktop/代码/tiny`（module `cuteify`，Go 1.25；**编译器入口=仓库根 `main.go`**；语言=CUTE）
 - build：`cd /home/gx/Desktop/代码/tiny && TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/<name> .`（仓库根=main 包）
-  - **2026-11-03 现行**：收口二进制=`/tmp/opencode/bin/w13`（Wave I 终态：文件级 import 全量迁移 +
-    json imports 通道弃用 + `Info.Imports` 加 `json:"-"` 彻底忽略 + autoImport 删除；
-    含 Wave Mp/T/F 全部修复）；
+  - **2026-11-04 现行**：收口二进制=`/tmp/opencode/bin/w14c`（GC 分析修复收口：条件/增量临时
+    `COND_FREE`/`INCR_FREE`、`HasGlobalOwnStore` 保守门槛、ret/块/覆盖释放；
+    含 Wave I/Mp/T/F 全部修复）；
     e2e=`/tmp/opencode/run_one.sh <bin> <repo相对dir> <arch>`（绝对目录用 `run_dir.sh <bin> <dir> <arch>`）；
     esccheck=`/tmp/opencode/bin/esccheck`（全语料脚本 `/tmp/opencode/esccheck_all.sh`，红项判据=泄漏/提前释放 0）
-  - 上一收口二进制=`/tmp/opencode/bin/w12`（Wave I 收口：json 通道解码后置 nil）；
-    `w11`=Wave Mp/T/F 收口树（json imports 仍消费）。
+  - 上一收口二进制=`/tmp/opencode/bin/w13`（Wave I 终态）；`w14b`=GC 改动前已验证编译器
+    （条件清理修复前，仅用于对拍）。
     旧 `main_s01/main_s02/main_s02f` 与 `run_e2e*.sh` 已随 /tmp 清理失存；
     HEAD 干净对拍=`/tmp/opencode/base_I0`（HEAD=`1306ddb` 树副本，`run_base.sh` 跑）
   - ast_html/ast 系文件=运行副产物，非资产；farm 跑完可能 M 态（不 commit）
@@ -23,24 +23,29 @@
 ## 1. e2e（唯一验证方式，恒 flock）
 ```bash
 # x86_64（<dir> = 仓库相对目录）
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w13 <dir> x86_64"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c <dir> x86_64"
 # x86
-flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w13 <dir> x86"
+flock /tmp/opencode/lock -c "cd /tmp/opencode && bash /tmp/opencode/run_one.sh /tmp/opencode/bin/w14c <dir> x86"
 # 绝对目录探针（/tmp 下）
-flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w13 <绝对dir> x86_64"
+flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14c <绝对dir> x86_64"
 ```
-- farm 期望 rc（PROGRESS.md 基线，**2026-11-03 Wave I 终态（w13）实测，与 Wave Mp/T/F v2 基线逐位一致**）：
+- farm 期望 rc（**2026-11-04 GC 收口（w14c）双 arch 22 项矩阵逐项对拍 w13 基线，无漂移**）：
   `test/complexTest=17` ｜ `test/rctest=60` ｜ `test/sliceTest=0` ｜
   `pkg/slices/test=230`（断言 pass*10+fail 公式）｜ `pkg/strings/test=42` ｜
   排序面全 0（sortMinimal/2/Quick/IntOnly/StrOnly，**x64**）｜ `sortTest=x64 110（11 pass/0 fail，Wave T 收口）` ｜ `slice_test=x64 0` ｜ `negIdx=48（x64；x86=32 分 arch UB 值）` ｜ `derefTest=7（缺陷⑪补录后复活）` ｜ `rcSimple=12` ｜ `gcfree=60` ｜ `gcfree2=0` ｜ `m5=7`（struct 审计 7 项）｜ `map_test=0`（builtin map 语法探针）｜ **`mp_min=80`｜`mp_map=330`（进程 rc 取模=74，Wave Mp 双 arch 三连）**
+  - GC 收口新增回归（双 arch，期望 0）：`test/gcCondTemp=0`（if true/false、if/else、`||`
+    短路、for 条件临时释放）｜`test/gcRetFree=0`｜`test/gcBlocks=0`｜`test/gcOverwrite=0`。
+    条件清理的真路径是直落，false 清理块前必须 `jmp trueLabel`（已修）。
+  - `strings.makeString` 是包装外部 ptr 的非分配函数：LLR 可见对象但不生成
+    `COND_FREE`/`RET_FREE`；`_checkStrSorted` 参数指向数组元素缓冲，误释放=UAF。
   - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，预存 deref-store/泛型 len 碰撞面，见 §4）；sprobe01 farm 目录缺失已剔出矩阵
 - farm 跑 rc 要**三连稳定**才可判绿；异 rc 先 re-run。
 - 看生成 asm：`cd /tmp/opencode/run && CUTE_ROOT=/home/gx/Desktop/代码/tiny CUTE_ARCH=x86|x86_64 <bin> -S <dir>`（run 目录=repo 符号 symlink）
-- 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "w1[0123] -S"`——**必须字符类**（直写二进制名= pkill 自杀实证）
+- 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "w1[01234] -S"`——**必须字符类**（直写二进制名= pkill 自杀实证）
 - SIG 现场 gdb 尸检：先 `ulimit -Sc 0`，完整后恢复 `ulimit -Sc unlimited`
 
 ## 2. 提交与文件纪律
-- **禁改红线**：`parser/*`、`compile/gc/*`、`type/struct.go`（用户授权范围外）；Go 改动只许明确授权的最小 diff
+- **禁改红线**：`parser/*`、`type/struct.go`（`compile/gc/*` 经用户授权用于本轮 GC 收口）；Go 改动只许明确授权的最小 diff
 - .cute 域无红线但 commit 域用**显式路径**逐域 add（不 `git add -A`）
 - commit：`flock /tmp/opencode/lock git add <路径> && flock /tmp/opencode/lock git commit -m '一行简短中文带模块前缀'`；**不 push**
 - **不碰 docs/stdplan**（主会话收口时统一补账）；子代理战报写 `/tmp/opencode/subreport_<tag>.md`（verdict / diff 摘要 / farm rc 表 / 未竟项）
