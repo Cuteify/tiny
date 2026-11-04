@@ -1,7 +1,6 @@
 package packageSys
 
 import (
-	"cuteify/gcfe"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
@@ -176,12 +175,6 @@ func fixExpNamePaths(exp *parser.Expression, pkg *packageFmt.Info) {
 }
 
 func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
-	// 一次新的根包编译开始：清空上一轮的 GC 对象表。
-	// 不能等到 SimulateRC 再清 —— 对象是在 Check 期间 claim 出来的。
-	// 导入包的递归调用 isRoot=false，必须保留根调用已收集的对象。
-	if isRoot {
-		parser.ResetObjects()
-	}
 	// 列出目录下所有文件
 	files, err := os.ReadDir(packagePath)
 	if err != nil {
@@ -364,25 +357,11 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		}
 		fixParser(rootNode)
 
-		// Check 跑到收敛。GC 前端要读"事实的最终形态"（Life.Obj / Object.Names /
-		// FreeScope），而一轮 Check 里后写的会覆盖先写的：一个变量的定义可能
-		// 在使用点之后才解析出来，跨包引用要等包合并才有别名。
-		//
-		// 不收敛就调 SimulateRC 的话，读到的是某一轮的中间形态 —— 表现为
-		// 泄漏（漏释放）或提前释放（FreeScope 还没算对）。
-		//
-		// 上限 50 是防"两条语句互相触发"时无限循环：Check 会置 Checked，
-		// 正常情况下第二轮就全 false。
 		for round := 0; round < 50; round++ {
 			if !rootNode.Check() {
 				break
 			}
 		}
-
-		// GC 分析的唯一调用点。必须在包合并与 Check 收敛之后：
-		// 逃逸判定要跨包看得到全局，释放点要基于最终的绑定名集合。
-		// 驱动与释放点算法在 gcfe；事实收集与数据模型仍留在 parser。
-		gcfe.SimulateRC(rootNode)
 	}
 
 	return packageInfo, nil

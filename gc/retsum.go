@@ -56,6 +56,14 @@ func (a *analysis) retSourceOf(fb *parser.FuncBlock) ReturnKind {
 	return a.retKindOf(fb)
 }
 
+// RetSourceOf 前端返回值来源摘要（需先 Analyze / CollectFront）。
+func RetSourceOf(fb *parser.FuncBlock) ReturnKind {
+	if front == nil {
+		return ReturnUnknown
+	}
+	return front.retSourceOf(fb)
+}
+
 func (a *analysis) retKindOf(fb *parser.FuncBlock) ReturnKind {
 	if fb == nil || len(fb.Return) == 0 {
 		return ReturnNone

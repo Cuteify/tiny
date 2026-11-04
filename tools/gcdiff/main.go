@@ -1,4 +1,4 @@
-// gcdiff — Phase 1 只读对拍工具：前端 gcfe 计划 vs 后端 compile/gc LLR。
+// gcdiff — Phase 1 只读对拍工具：前端 gc 计划 vs 后端 compile/gc LLR。
 //
 // 它只分析、不编译、不改代码生成。输出三份文件到 -o 目录：
 //
@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"cuteify/gc"
-	"cuteify/gcfe"
 	packageSys "cuteify/package"
 	"cuteify/parser"
 )
@@ -80,8 +79,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	plan := gcfe.BuildPlan(root)
-	gc.Build(root)
+	gc.Analyze(root)
+	plan := gc.BuildPlan(root)
 
 	outDir := *out
 	if outDir == "" {
@@ -144,7 +143,7 @@ func writeJSON(path string, v any) error {
 }
 
 // buildReport 逐函数并排，并按“谁有释放能力”归类。
-func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (string, map[string]int) {
+func buildReport(dir string, plan gc.Plan, be map[string]*gc.LLRResult) (string, map[string]int) {
 	fe := map[string]*feFn{}
 	for _, o := range plan.Objects {
 		f := fe[o.Function]
@@ -285,7 +284,7 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# GC 计划对拍\n\n目录: %s\n\n", dir)
 	fmt.Fprintf(&sb, "## 汇总\n\n")
-	fmt.Fprintf(&sb, "前端 gcfe: 对象=%d 作用域=%d RC=%d 转移=%d 就地对象=%d 语句=%d 字段=%d Borrow=%d 真泄漏=%d HolderBad=%d\n",
+	fmt.Fprintf(&sb, "前端 gc: 对象=%d 作用域=%d RC=%d 转移=%d 就地对象=%d 语句=%d 字段=%d Borrow=%d 真泄漏=%d HolderBad=%d\n",
 		plan.Summary.Objects, plan.Summary.Scope, plan.Summary.RC,
 		plan.Summary.Transfer, plan.Summary.InplaceObj, plan.Summary.Inplace,
 		plan.Summary.Field, plan.Summary.Borrow, plan.Summary.Leak, plan.Summary.HolderBad)

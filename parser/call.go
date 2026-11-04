@@ -183,7 +183,6 @@ func (c *CallBlock) Check(p *Parser) bool {
 		arg.Offset = defArg.Offset
 	}
 
-	markArgs(c) // GC 前端：实参是否升级逃逸问被调摘要；同时给参数链记一笔
 	return true
 }
 

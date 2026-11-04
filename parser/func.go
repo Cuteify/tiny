@@ -15,7 +15,6 @@ type FuncBlock struct {
 	Name            Name                    // 函数名
 	BuildFlags      []*Build                // 编译标志
 	Useful          bool                    // 是否有用（用于优化）
-	ReturnsOwned    bool                    // 过程摘要：返回值含本帧分配、所有权转移给调用者的对象
 	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
@@ -99,15 +98,10 @@ type ArgBlock struct {
 	Value      *Expression  // 参数实际传入的值
 	Offset     int          // 参数在栈中的偏移量（用于代码生成）
 	IsVariadic bool         // 是否为变参参数
-	// Life 归属与逃逸信息。同 VarBlock.Life 为何具名而不内嵌。
-	// 参数由调用者持有 → Check 里置 Escapes = true。
-	Life Life
 }
 
 // Check 检查参数的有效性
 func (f *ArgBlock) Check(p *Parser) bool {
-	// 参数由调用者持有：本帧永远不自动释放（与 gc_model.go 的 Life 约定一致）
-	f.Life.Escapes = true
 	if f.Type == nil {
 		return false
 	}
@@ -229,9 +223,6 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 		// 进入函数作用域
 		p.ThisBlock = nodeTmp
-		// GC 返回值摘要：函数体从这里开始逐句解析；AddChild 会立即 Check，
-		// 自递归调用可能在前缀体上查询本函数摘要，必须标记为未完成。
-		markFuncOpen(f)
 	}
 
 	// TODO: 处理编译标志

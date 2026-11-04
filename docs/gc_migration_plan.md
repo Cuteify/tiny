@@ -259,6 +259,9 @@ walkNode(n):
 go run ./tools/gcfactdiff -o /tmp/gcfactdiff ./test/<dir>
 ```
 
+> 该工具只服务于 Stage 2 双轨期：Stage 3 删除 parser 钩子后已一并删除，
+> 对拍结论保留在附录 B。
+
 对拍内容：
 
 - 对象数、五态分布、`FreeScope` / `Holder` / `Inplace` / `FieldOwner`；
@@ -301,7 +304,7 @@ go run ./tools/gcfactdiff -o /tmp/gcfactdiff ./test/<dir>
   改为读旁挂表；
 - `gc.CollectFactsAST(root)` 只做收集，不碰 `parser.Life`；
 - `gc.Analyze` 暂时仍可委托旧 `gcfe`（或提供 `gc.AnalyzeLegacy`）；
-- 新增 `tools/gcfactdiff`，并跑 §5.4 的全语料对拍；
+- 新增临时对拍工具 `tools/gcfactdiff`（Stage 3 删除），并跑 §5.4 的全语料对拍；
 - 保持 `package.GetPackage` / `gcfe` / parser 钩子原样。
 
 **验收**：对拍全绿；`go test ./...` 不变；代码生成路径完全未变。
@@ -327,7 +330,7 @@ go run ./tools/gcfactdiff -o /tmp/gcfactdiff ./test/<dir>
 **验收**：
 
 - `go build ./...`、`go vet ./...`；
-- 全语料 `gc.Plan` 与 Stage 0 基线逐位一致（`gcfactdiff` 已先行验证）；
+- 全语料 `gc.Plan` 与 Stage 0 基线逐位一致（Stage 2 的临时 `gcfactdiff` 已先行验证）；
 - 重点目录 `_main.asm` 与 Stage 0 逐字节一致（后端 GC 未变）；
 - `泄漏=0 / 提前释放=0 / HolderBad=0`。
 
@@ -386,7 +389,7 @@ for d in test/*/; do go run ./tools/esccheck "$d"; done
 
 ### 7.3 计划对拍
 
-- Stage 2：`tools/gcfactdiff` 新旧计划逐位一致；
+- Stage 2：临时工具 `tools/gcfactdiff`（Stage 3 已删除）验证新旧计划逐位一致；
 - Stage 4：`gc.Plan` 与 Stage 0 的前端计划 JSON 深度相等（对象 ID 可重排，
   但按 owner/函数/处置归一后必须一致）。
 
@@ -489,7 +492,7 @@ Phase 1 对拍（`tools/gcdiff`，106 个成功目录）：
 
 ## 附录 B：Stage 2 双轨对拍验收（2026-11-05）
 
-对拍命令（逐目录）：
+对拍命令（逐目录；该工具为 Stage 2 临时件，Stage 3 已删除）：
 
 ```bash
 go run ./tools/gcfactdiff ./test/<dir>

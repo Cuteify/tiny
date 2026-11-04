@@ -1,4 +1,4 @@
-// retsumcheck — 返回值来源摘要对拍：前端 parser.RetSourceOf vs 后端 gc.Table.RetKind。
+// retsumcheck — 返回值来源摘要对拍：前端 gc.RetSourceOf vs 后端 gc.Table.RetKind。
 //
 // 用途：守住“前端 Fresh 必须是后端 Fresh 的严格子集”这条不变量。前端比后端
 // 更保守（Unknown 多于 Fresh）是允许的；反过来（前端 Fresh、后端非 Fresh）
@@ -38,7 +38,7 @@ func main() {
 		os.Exit(2)
 	}
 	root := pkg.AST.(*parser.Node)
-	gc.Build(root)
+	gc.Analyze(root)
 
 	type row struct{ name, front, back string }
 	var rows []row
@@ -48,15 +48,15 @@ func main() {
 		if !ok || fb == nil {
 			return
 		}
-		front := parser.RetSourceOf(fb)
+		front := gc.RetSourceOf(fb)
 		back := "?"
 		if fs := gc.Table[fb.Name.String()]; fs != nil {
 			back = fs.RetKind.String()
 		} else if fs := gc.Table[fb.MangledName()]; fs != nil {
 			back = fs.RetKind.String()
 		}
-		if front != parser.ReturnNone || back != "None" {
-			if front == parser.ReturnFresh && back != "Fresh" {
+		if front != gc.ReturnNone || back != "None" {
+			if front == gc.ReturnFresh && back != "Fresh" {
 				mismatch++
 			}
 			rows = append(rows, row{fb.Name.String(), front.String(), back})

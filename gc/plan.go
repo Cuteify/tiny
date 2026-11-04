@@ -1,16 +1,14 @@
-// gcfe/plan.go — 前端 GC 计划的只读快照。
+// gc/plan.go — 前端 GC 计划的只读快照。
 //
 // 用途是 Phase 1 对拍：把“每个对象在哪释放、读哪个槽、哪条赋值就地释放”
-// 落成稳定 JSON，与 compile/gc 的 LLRResults 并排比较。它不参与代码生成，
-// 也不改变 SimulateRC 的任何判定。
+// 落成稳定 JSON，与 compile 的后端 LLRResults 并排比较。它不参与代码生成，
+// 也不改变 Analyze 的任何判定。
 //
-// 调用前提：package.GetPackage 已完成 Check 收敛并跑过 gcfe.SimulateRC。
-// BuildPlan 只读 parser.Objects() 与 AST，不重跑分析。
-//
-// 对象编号只在本次分析内稳定；后端 LLR 的对象编号是另一套（按函数内分配
-// 顺序重排），两者不能按 ID 对齐，只能按函数 + 释放类别比较。
+// 调用前提：Analyze / CollectFront 已跑完。BuildPlan 只读 front 与 AST，
+// 不重跑分析。对象编号只在本次分析内稳定；后端 LLR 的对象编号是另一套，
+// 两者不能按 ID 对齐，只能按函数 + 释放类别比较。
 
-package gcfe
+package gc
 
 import (
 	"fmt"
@@ -26,7 +24,7 @@ type Plan struct {
 	Inplace []InplacePlan `json:"inplace"`
 }
 
-// PlanSummary 聚合数字，与 tools/esccheck 的口径一致。
+// PlanSummary 聚合数字，与 Stats 的口径一致。
 type PlanSummary struct {
 	Objects     int            `json:"objects"`
 	Scope       int            `json:"scope"`      // FreeScope != nil
@@ -86,14 +84,17 @@ type blockInfo struct {
 	fn   string
 }
 
-// BuildPlan 生成只读计划快照。必须在 gcfe.SimulateRC 之后调用。
+// BuildPlan 生成只读计划快照。必须在 Analyze / CollectFront 之后调用。
 // 对象的处置按 DisposalOf 的五态判定归类：Inplace / Field / Transfer / RC / Scope。
 func BuildPlan(root *parser.Node) Plan {
 	idx := indexBlocks(root)
 	p := Plan{Summary: PlanSummary{ByScopeKind: map[string]int{}}}
+	if front == nil {
+		return p
+	}
 
-	for _, o := range parser.Objects() {
-		d := parser.DisposalOf(o)
+	for _, o := range front.objects {
+		d := DisposalOf(o)
 		op := ObjectPlan{
 			ID:          o.ID,
 			Function:    objectFunction(o, idx),
@@ -113,22 +114,22 @@ func BuildPlan(root *parser.Node) Plan {
 		p.Objects = append(p.Objects, op)
 
 		switch d {
-		case parser.DisposalScope:
+		case DisposalScope:
 			p.Summary.Scope++
 			p.Summary.ByScopeKind[idx.kindOf(o.FreeScope)]++
-			if !holderValid(o) {
+			if !front.holderValid(o) {
 				p.Summary.HolderBad++
 			}
-		case parser.DisposalRC:
+		case DisposalRC:
 			p.Summary.RC++
-		case parser.DisposalInplace:
+		case DisposalInplace:
 			p.Summary.InplaceObj++
-		case parser.DisposalField:
+		case DisposalField:
 			p.Summary.Field++
-			if !fieldPlanValid(o) {
+			if !front.fieldPlanValid(o) {
 				p.Summary.HolderBad++
 			}
-		case parser.DisposalBorrow:
+		case DisposalBorrow:
 			if o.Transferred {
 				p.Summary.Transfer++
 			} else {
@@ -194,37 +195,9 @@ func indexBlocks(root *parser.Node) blockIndex {
 	return bi
 }
 
-// holderValid 释放点读的槽必须仍持有 o，且活得至少和 FreeScope 一样久。
-// 否则函数出口读内层块槽可能读到已被复用的栈位（free 错对象）。
-func holderValid(o *parser.Object) bool {
-	if o.Holder == nil || o.FreeScope == nil || !containsName(o.Names, o.Holder) {
-		return false
-	}
-	return holderLivesTo(o.Holder, o.FreeScope)
-}
-
-// fieldPlanValid 字段释放的容器链必须落在有效的作用域释放点上，
-// 且读槽仍持有最顶端容器、不早于释放点失效。
-func fieldPlanValid(o *parser.Object) bool {
-	if o.FieldOwner == nil || o.FieldName == "" {
-		return false
-	}
-	root := o
-	for n := 0; root.FieldOwner != nil; n++ {
-		if n > len(parser.Objects()) {
-			return false // 成环
-		}
-		root = root.FieldOwner
-	}
-	if root == o || root.Inplace || root.FreeScope == nil {
-		return false
-	}
-	return holderValid(root)
-}
-
 // objectFunction 对象所属函数：优先看释放点，其次创建作用域。
 // 字段释放的对象没有自己的 FreeScope，跟容器走。
-func objectFunction(o *parser.Object, idx blockIndex) string {
+func objectFunction(o *Object, idx blockIndex) string {
 	if o.FieldOwner != nil {
 		return objectFunction(o.FieldOwner, idx)
 	}
@@ -240,22 +213,22 @@ func objectFunction(o *parser.Object, idx blockIndex) string {
 	return "<global>"
 }
 
-func disposalName(d parser.Disposal) string {
+func disposalName(d Disposal) string {
 	switch d {
-	case parser.DisposalScope:
+	case DisposalScope:
 		return "scope"
-	case parser.DisposalRC:
+	case DisposalRC:
 		return "rc"
-	case parser.DisposalInplace:
+	case DisposalInplace:
 		return "inplace"
-	case parser.DisposalField:
+	case DisposalField:
 		return "field"
 	default:
 		return "borrow"
 	}
 }
 
-func objectID(o *parser.Object) int {
+func objectID(o *Object) int {
 	if o == nil {
 		return 0
 	}
@@ -276,7 +249,7 @@ func varKind(v *parser.VarBlock) string {
 	return v.Type.Kind()
 }
 
-func objectNames(o *parser.Object) []string {
+func objectNames(o *Object) []string {
 	out := make([]string, 0, len(o.Names))
 	for _, n := range o.Names {
 		if n != nil && n.Name != nil {
@@ -287,7 +260,7 @@ func objectNames(o *parser.Object) []string {
 	return out
 }
 
-func objectFields(o *parser.Object) []FieldPlan {
+func objectFields(o *Object) []FieldPlan {
 	if len(o.FieldVals) == 0 {
 		return nil
 	}
@@ -319,12 +292,14 @@ func collectInplace(root *parser.Node, idx blockIndex) []InplacePlan {
 		if fb, ok := n.Value.(*parser.FuncBlock); ok {
 			fn = fb.Name.String()
 		}
-		if v, ok := n.Value.(*parser.VarBlock); ok && v.Life.ReleasesOld {
-			ip := InplacePlan{Function: fn, Variable: varName(v)}
-			if v.Life.OldObj != nil {
-				ip.OldObject = v.Life.OldObj.ID
+		if v, ok := n.Value.(*parser.VarBlock); ok {
+			if rel, old := StatementFlags(v); rel {
+				ip := InplacePlan{Function: fn, Variable: varName(v)}
+				if old != nil {
+					ip.OldObject = old.ID
+				}
+				out = append(out, ip)
 			}
-			out = append(out, ip)
 		}
 		parser.EachSubNode(n, func(c *parser.Node) { walk(c, fn) })
 	}

@@ -30,9 +30,17 @@ type analyzer struct {
 	calleeView map[string]*FnSummary
 }
 
-// Build 遍历根 AST，构建全程序函数摘要（不动点迭代后写入 Table）。
-// 必须在 package 合并与 rootNode.Check() 之后调用。
+// Build 只做后端全程序摘要 + LLR，不跑前端对象级分析。
+// Stage 3 保留给尚未切到 Analyze 的调用方；Stage 4 接线后删除。
 func Build(root *parser.Node) {
+	analyzeBackend(root)
+}
+
+// analyzeBackend 遍历根 AST，构建全程序函数摘要（不动点迭代后写入 Table）。
+// 必须在 package 合并与 rootNode.Check() 之后调用。
+func analyzeBackend(root *parser.Node) {
+	Table = map[string]*FnSummary{}
+	LLRResults = map[string]*LLRResult{}
 	a := &analyzer{
 		fns:        map[string]*parser.FuncBlock{},
 		nodes:      map[string]*parser.Node{},

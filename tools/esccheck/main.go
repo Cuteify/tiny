@@ -1,15 +1,14 @@
-// 临时调试工具：打印逃逸分析的最终判定（不属于交付物，验证完即删）
+// esccheck — 前端 GC 五态基线检查。
 //
 // 用法：esccheck ./test/xxx
-// 改动 parser/gc_*.go 或 gcfe/*.go 之后基线必须是：对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0
-// （list 纳入 owning 判据后的口径，数字来源与分布见 docs/gc_frontend_design.md §5）。
+// 基线：泄漏=0  提前释放=0  HolderBad=0；五态计数见 docs/gc_migration_plan.md。
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"cuteify/gcfe"
+	"cuteify/gc"
 	packageSys "cuteify/package"
 	"cuteify/parser"
 )
@@ -19,46 +18,27 @@ func main() {
 	if len(os.Args) > 1 {
 		path = os.Args[1]
 	}
-	_, err := packageSys.GetPackage(path, true)
+	pkg, err := packageSys.GetPackage(path, true)
 	if err != nil {
 		panic(err)
 	}
+	root := pkg.AST.(*parser.Node)
+	gc.Analyze(root)
 
-	objs := parser.Objects()
-	sent, taken, orphan, _ := gcfe.TransferReport()
-
-	// 口径：对象出路 —— 就地释放（Inplace）/ 字段释放（FieldOwner）/
-	// 作用域释放（FreeScope）/ 转移给调用方（Transferred）/ 退回引用计数（Escapes）。
-	// 五者都不沾的才是**真泄漏**：没人会 free 它，也没人会管它。
-	// 就地、字段、作用域三种释放点互斥。
-	scope, xfer, rcn, inplace, field, leak := 0, 0, 0, 0, 0, 0
-	for _, o := range objs {
-		switch {
-		case o.Inplace:
-			inplace++
-		case o.FieldOwner != nil:
-			field++
-		case o.Transferred:
-			xfer++
-		case o.FreeScope != nil:
-			scope++
-		case o.Escapes:
-			rcn++
-		default:
-			leak++
-		}
-	}
+	st := gc.Stats()
+	sent, taken, orphan, _ := gc.TransferReport()
+	prem, detail := gc.Premature()
 
 	fmt.Printf("对象=%d  RC/泄漏释放=%d  泄漏=%d  提前释放=%d  就地释放=%d  字段释放=%d\n",
-		len(objs), rcn, leak, gcfe.Premature, inplace, field)
-	fmt.Printf("  作用域释放=%d  转移=%d  RC=%d  真泄漏=%d  (转移报告 交出=%d 接管=%d 无人接管=%d)\n",
-		scope, xfer, rcn, leak, sent, taken, orphan)
-	for _, o := range objs {
+		st.Objects, st.RC, st.Leak, prem, st.InplaceObj, st.Field)
+	fmt.Printf("  作用域释放=%d  转移=%d  RC=%d  真泄漏=%d  HolderBad=%d  (转移报告 交出=%d 接管=%d 无人接管=%d)\n",
+		st.Scope, st.Transfer, st.RC, st.Leak, st.HolderBad, sent, taken, orphan)
+	for _, o := range gc.Objects() {
 		if !o.Inplace && o.FieldOwner == nil && !o.Transferred && o.FreeScope == nil && !o.Escapes {
 			fmt.Printf("  真泄漏 #%d owner=%v\n", o.ID, o.Owner.Name)
 		}
 	}
-	for _, d := range gcfe.PrematureDetail {
+	for _, d := range detail {
 		fmt.Println("  提前释放: " + d)
 	}
 }

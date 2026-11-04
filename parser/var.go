@@ -29,13 +29,6 @@ type VarBlock struct {
 	MultiTypes    []typeSys.Type // 多返回值类型列表
 	MultiIndex    int            // 多返回值索引
 	Unresolved    bool           // 解析期未找到定义（跨文件前向引用），留待合并后重查
-	// Life 归属与逃逸信息（Obj/Scope/Escapes/WroteTo…，见 escape.go）。
-	//
-	// 具名字段而非匿名内嵌：内嵌会把 Obj/Scope/Escapes 提升成 VarBlock 自己的字段，
-	// 于是 v.Obj 和 v.Life.Obj 两种写法都成立，读代码时分不清"这是变量的属性"
-	// 还是"这是生命周期记录的属性"。具名之后只有一种写法，也不会意外让
-	// VarBlock 继承 Life 的方法。
-	Life Life
 }
 
 func (p *Parser) parseTypeAnnotation() typeSys.Type {
@@ -570,9 +563,6 @@ func (v *VarBlock) Check(p *Parser) bool {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
 		}
-		// 无初始值的声明（var result: *Node）也要登记：它同样属于某个作用域，
-		// 后面被赋值时要按"绑定名里最外层的作用域"算释放点。
-		v.Life.markVar(v)
 	} else {
 		// 使用分支：x = 5（使用已定义的变量）
 		if v.Define.Value == nil {
@@ -605,9 +595,6 @@ func (v *VarBlock) Check(p *Parser) bool {
 			if !typeSys.AutoType(v.Value.Type, v.Type, v.Value.IsConst()) {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
-		}
-		if l := LifeOf(v); l != nil {
-			l.markVar(v)
 		}
 	}
 	return true

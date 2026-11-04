@@ -51,17 +51,6 @@ func (n *Node) Check() bool {
 
 	}
 
-	// 只有真正圈出作用域的块才更新 curScope：逃逸分析据此登记变量属于哪个块，
-	// 释放点 = 绑定名里最外层的作用域（escape.go）。
-	// 必须在递归子节点**之前**进入 —— 语句自己的 Check 依赖 curScope 才知道
-	// 自己属于哪个块。普通语句（VarBlock/CallBlock/...）不更新，
-	// 否则记下的是"这条语句自己"而不是它所属的块。
-	if isScopeBlock(n.Value) {
-		prev := curScope
-		curScope = n.Value
-		defer func() { curScope = prev }()
-	}
-
 	ok := true
 	for _, child := range n.Children {
 		if !child.Check() {
@@ -133,18 +122,6 @@ func RebuildBlockIndex(root *Node) {
 	walk(root)
 }
 
-// scopeOf 节点所处的最内层作用域：从 n 向上找第一个圈作用域的祖先。
-// 解析期 AddChild 直接检查子树时用它补上 curScope，否则字段基对象认不出来
-// （Node.Check 那条路径是自己进入作用域的，不需要它）。
-func scopeOf(n *Node) Block {
-	for ; n != nil; n = n.Father {
-		if n.Value != nil && isScopeBlock(n.Value) {
-			return n.Value
-		}
-	}
-	return nil
-}
-
 // AddChild 向当前节点添加子节点并建立父子关系
 func (n *Node) AddChild(node *Node) {
 	n.Children = append(n.Children, node)
@@ -159,13 +136,7 @@ func (n *Node) AddChild(node *Node) {
 		}
 	}
 	if checker, ok := node.Value.(Checker); ok {
-		// 解析期插入即检查：作用域从父链上取（Node.Check 自己进作用域，不走这里）
-		prev := curScope
-		if sc := scopeOf(n); sc != nil {
-			curScope = sc
-		}
 		checker.Check(node.Parser)
-		curScope = prev
 	}
 	// 跨文件变量前向引用在解析期不可见（同包其它文件尚未合并），
 	// 与下面的跨包调用一样保持未检查状态，留给 rootNode.Check() 重试
