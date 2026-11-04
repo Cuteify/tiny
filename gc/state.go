@@ -72,9 +72,6 @@ type analysis struct {
 	retLocalBusy map[*parser.FuncBlock]map[string]bool
 	retAddrMemo  map[*parser.FuncBlock]map[string]bool
 
-	// 返回值含本帧分配（原 FuncBlock.ReturnsOwned）；后端目前不读，留作诊断。
-	owns map[*parser.FuncBlock]bool
-
 	// 诊断：提前释放（应恒为 0）
 	premature       int
 	prematureDetail []string
@@ -82,6 +79,9 @@ type analysis struct {
 
 // front 当前前端分析。CollectFront 之前为 nil；仅供诊断工具读取。
 var front *analysis
+
+// gcDebug 打开逃逸决策的 stderr 输出（仅排查用，进程内只读一次）。
+var gcDebug = os.Getenv("GC_DEBUG") != ""
 
 func newAnalysis() *analysis {
 	return &analysis{
@@ -94,7 +94,6 @@ func newAnalysis() *analysis {
 		retSumBusy:   map[*parser.FuncBlock]bool{},
 		retLocalBusy: map[*parser.FuncBlock]map[string]bool{},
 		retAddrMemo:  map[*parser.FuncBlock]map[string]bool{},
-		owns:         map[*parser.FuncBlock]bool{},
 	}
 }
 
@@ -176,24 +175,12 @@ func Objects() []*Object {
 	return front.objects
 }
 
-// StatementFlags 语句节点上的就地释放记录。仅供诊断工具对拍。
-func StatementFlags(v *parser.VarBlock) (releasesOld bool, oldObj *Object) {
-	if front == nil || v == nil {
-		return false, nil
-	}
-	b, ok := front.vars[v]
-	if !ok {
-		return false, nil
-	}
-	return b.releasesOld, b.oldObj
-}
-
 // markEscapes 只增不减。帧外可达退回 RC，不是泄漏。
 func (a *analysis) markEscapes(b *binding) {
 	if b == nil {
 		return
 	}
-	if os.Getenv("GC_DEBUG") != "" {
+	if gcDebug {
 		name := "<nil>"
 		if b.owner != nil {
 			name = b.owner.Name.String()
@@ -232,7 +219,6 @@ func (a *analysis) claim(b *binding, stmt *parser.VarBlock) {
 	o := st.alloc
 	if o == nil {
 		o = a.newObject(b.owner, b.scope)
-		o.allocSite = stmt
 		st.alloc = o
 	} else {
 		o.Owner, o.Scope = b.owner, b.scope
@@ -254,9 +240,4 @@ func (a *analysis) bindField(container *parser.VarBlock, field string, val *pars
 		return
 	}
 	b.obj.FieldVals = append(b.obj.FieldVals, FieldBinding{Field: field, Val: val, Obj: a.state(val).obj})
-}
-
-// isRep 我是否拥有这个对象（分配就发生在我这个栈槽上）。
-func (b *binding) isRep() bool {
-	return b != nil && b.owner != nil && b.obj != nil && b.obj.Owner == b.owner
 }

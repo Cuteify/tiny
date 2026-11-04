@@ -34,15 +34,6 @@ type Object struct {
 	FieldName   string             // 持有本对象的字段名（FieldOwner 非 nil 时有效）
 	FieldVals   []FieldBinding     // 字段关系：同一字段只留最后一次写入
 
-	allocSite *parser.VarBlock // 分配语句（对拍/诊断用；不参与判定）
-}
-
-// AllocSite 分配语句节点。仅供诊断与双轨对拍使用。
-func (o *Object) AllocSite() *parser.VarBlock {
-	if o == nil {
-		return nil
-	}
-	return o.allocSite
 }
 
 // Disposal 一个对象怎么处置。后端只调这一个判据，不要自己拼条件。
@@ -82,20 +73,4 @@ func DisposalOf(o *Object) Disposal {
 		return DisposalBorrow
 	}
 	return DisposalScope
-}
-
-// String 诊断用：可读的五态名（Scope / Field / Inplace / RC / Borrow）。
-func (d Disposal) String() string {
-	switch d {
-	case DisposalScope:
-		return "Scope"
-	case DisposalRC:
-		return "RC"
-	case DisposalInplace:
-		return "Inplace"
-	case DisposalField:
-		return "Field"
-	default:
-		return "Borrow"
-	}
 }

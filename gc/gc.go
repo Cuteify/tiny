@@ -30,12 +30,3 @@ func Analyze(root *parser.Node) {
 
 	analyzedRoot = root
 }
-
-// Reset 清空前端与后端状态。测试 / 工具在重建 AST 后可显式调用；
-// Analyze 换根时会自动重置。
-func Reset() {
-	analyzedRoot = nil
-	front = nil
-	Table = map[string]*FnSummary{}
-	LLRResults = map[string]*LLRResult{}
-}

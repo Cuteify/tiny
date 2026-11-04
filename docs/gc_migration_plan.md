@@ -336,6 +336,20 @@ go run ./tools/gcfactdiff -o /tmp/gcfactdiff ./test/<dir>
 
 **回滚**：该提交整体 revert；Stage 2 的新收集器保留，可回退到双轨状态。
 
+### Stage 3.5：gc 内聚简化（0.5 天，2026-11-05）
+
+入口切换后、接线前做一次行为不变的清理：
+
+- 删除只写字段与死导出（`analysis.owns`、`Object.allocSite`、
+  `CalleeKnown`、`DumpSummary`、`DumpFrees`、`isRep` 等）；
+- `isOwning` → `owningType`、`isRCAlloc` → `isRCExpr`，判据只留一份；
+- `Stats` 与 `Plan.Summary` 共用 `PlanSummary.countObject`；`BuildPlan`
+  的块编号与就地释放收集合并为一次 AST 遍历；
+- 删除无调用方的 `gc.Reset`（`Analyze` 换根时自动重置）。
+
+**验收**：五态基线 `160/111/6/1/30/12`，泄漏 / 提前释放 / HolderBad 全 0；
+106 个成功目录的 `gcfe_plan.json` 与 Stage 3 逐位一致。
+
 ### Stage 4：接线与工具（0.5 天）
 
 - `compile.Compiler.Compile` 顶层调用 `gc.Analyze(node)`；
@@ -379,10 +393,10 @@ go test ./...
 for d in test/*/; do go run ./tools/esccheck "$d"; done
 ```
 
-目标：
+目标（Stage 3 切换后的新链基线）：
 
 ```
-对象=160  作用域=114  就地=7  字段=1  转移=30  RC=8
+对象=160  作用域=111  就地=6  字段=1  转移=30  RC=12
 泄漏=0    提前释放=0  HolderBad=0
 106 成功 / 9 既有失败
 ```

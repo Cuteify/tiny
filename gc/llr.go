@@ -56,7 +56,6 @@ type llrState struct {
 type fieldOrphan struct {
 	varName   string // 父 struct 变量名
 	fieldName string // 字段名
-	parentObj ObjID  // 父对象 ID
 }
 
 // LLRResult 单函数的 LLR 计算结果。
@@ -128,11 +127,6 @@ type LLRFieldFree struct {
 	Type      string `json:"type"`      // 字段类型 kind（如 "struct"、"list"）
 }
 
-// llrVars 函数参数中的拥有指针（不可重绑，调用者管理生命周期）。
-type llrVars struct {
-	params map[string]bool // 参数名集合（拥有类型）
-}
-
 // ComputeLLR 对单个函数做 LLR 分析，返回结果。
 // body 为函数体节点，fs 为该函数的摘要。
 func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.Node) *LLRResult {
@@ -176,7 +170,7 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 	// 参数中的拥有指针：绑定为 param 对象（调用者管理，不自动释放）
 	paramNames := map[string]bool{}
 	for _, ag := range fb.Args {
-		if ag.Type != nil && isOwning(ag.Type) && ag.Name != nil {
+		if ag.Type != nil && owningType(ag.Type) && ag.Name != nil {
 			n := ag.Name.First()
 			id := st.newObj("param:" + n)
 			st.bindings[n] = id
@@ -604,7 +598,7 @@ func collectStructFieldFrees(fb *parser.FuncBlock, body *parser.Node, frees []LL
 			if field.Type == nil {
 				continue
 			}
-			if isOwning(field.Type) {
+			if owningType(field.Type) {
 				key := varName + "." + field.Name
 				if !seen[key] {
 					seen[key] = true
@@ -643,7 +637,7 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			}
 			markExprCallArgs(v.Right, st)
 		case *parser.ReturnBlock:
-			retOwns := len(fb.Return) > 0 && isOwning(fb.Return[0])
+			retOwns := len(fb.Return) > 0 && owningType(fb.Return[0])
 			if retOwns {
 				markAllReferencedObjs(v, st, fb)
 			}
@@ -904,7 +898,7 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 
 	// 定义 + 无值 + owning 类型 → null_init 绑定（var x: *T）
 	// 例如 var result: *Node —— 需要绑定以便后续 result = n 追踪
-	if v.IsDefine && v.Value == nil && v.Type != nil && isOwning(v.Type) {
+	if v.IsDefine && v.Value == nil && v.Type != nil && owningType(v.Type) {
 		id := st.newObj("null_init")
 		st.bindings[name] = id
 		st.varBlockID[name] = st.currentBlockID
@@ -933,7 +927,6 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 						st.fieldOrphans = append(st.fieldOrphans, fieldOrphan{
 							varName:   name,
 							fieldName: fieldName,
-							parentObj: parentObj,
 						})
 					}
 				}
@@ -944,7 +937,7 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 
 	if v.IsDefine {
 		// 新定义必须有类型且类型为 owning
-		if v.Type == nil || !isOwning(v.Type) {
+		if v.Type == nil || !owningType(v.Type) {
 			return
 		}
 		st.varBlockID[name] = st.currentBlockID
@@ -953,7 +946,7 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 			site := allocSiteDesc(v.Value)
 			id := st.newObj(site)
 			st.bindings[name] = id
-			if isRCAlloc(v.Value) {
+			if isRCExpr(v.Value) {
 				st.objRCAlloc[id] = true // newRC() 分配，由手动 rcDec 管理
 			}
 		} else if refObj := getRefObj(v.Value, st); refObj != NilObj {
@@ -1009,7 +1002,7 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 		site := allocSiteDesc(v.Value)
 		newID := st.newObj(site)
 		st.bindings[name] = newID
-		if isRCAlloc(v.Value) {
+		if isRCExpr(v.Value) {
 			st.objRCAlloc[newID] = true // newRC() 分配，由手动 rcDec 管理
 		}
 		// 旧对象不再由此名持有；已覆盖释放的不再记孤儿（孤儿机制当前不会
@@ -1243,49 +1236,6 @@ func markExprCallArgs(e *parser.Expression, st *llrState) {
 	}
 }
 
-// markCallArgObjExpr 处理表达式中的嵌套调用参数逃逸（如 ret makeNode(val)）。
-func markCallArgObjExpr(e *parser.Expression, st *llrState, fb *parser.FuncBlock) {
-	if e == nil || e.Call == nil || e.Call.Func == nil {
-		return
-	}
-	calleeKey := callKey(e.Call)
-	if len(calleeKey) > 2 && calleeKey[:2] == "__" &&
-		len(calleeKey) > 7 && calleeKey[2:7] != "globa" {
-		return
-	}
-	for idx, ag := range e.Call.Args {
-		if ag == nil || ag.Value == nil {
-			continue
-		}
-		esc := ParamEscapes(calleeKey, idx)
-		if esc == EscNone {
-			continue
-		}
-		var rec func(ex *parser.Expression)
-		rec = func(ex *parser.Expression) {
-			if ex == nil {
-				return
-			}
-			if ex.Var != nil && ex.Var.Name != nil {
-				n := ex.Var.Name.First()
-				if id, ok := st.bindings[n]; ok {
-					if esc > EscNone {
-						st.objEscaped[id] = true
-					}
-				}
-			}
-			rec(ex.Left)
-			rec(ex.Right)
-			if ex.Call != nil {
-				for _, a := range ex.Call.Args {
-					rec(a.Value)
-				}
-			}
-		}
-		rec(ag.Value)
-	}
-}
-
 // DumpLLR 输出 LLR 结果（调试辅助）。
 func DumpLLR(res *LLRResult) string {
 	out := fmt.Sprintf("== %s\n", res.Fn)
@@ -1354,42 +1304,6 @@ func allocSiteDesc(e *parser.Expression) string {
 		return "string-concat"
 	}
 	return "expr"
-}
-
-// DumpFrees 输出全部释放计划（调试辅助）。
-func DumpFrees() string {
-	keys := make([]string, 0, len(LLRResults))
-	for k, res := range LLRResults {
-		if res.BlockFreesMap != nil && len(res.BlockFreesMap) > 0 {
-			hasFrees := false
-			for _, frees := range res.BlockFreesMap {
-				if len(frees) > 0 {
-					hasFrees = true
-					break
-				}
-			}
-			if hasFrees {
-				keys = append(keys, k)
-			}
-		}
-	}
-	sort.Strings(keys)
-
-	out := ""
-	for _, k := range keys {
-		res := LLRResults[k]
-		out += fmt.Sprintf("== %s\n", k)
-		for _, frees := range res.BlockFreesMap {
-			for _, f := range frees {
-				tag := ""
-				if f.ScopeDepth > 0 {
-					tag = fmt.Sprintf(" scope=%d", f.ScopeDepth)
-				}
-				out += fmt.Sprintf("  %s [%s]%s\n", f.VarName, f.Type, tag)
-			}
-		}
-	}
-	return out
 }
 
 // itoa 简写

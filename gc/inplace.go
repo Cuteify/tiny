@@ -18,8 +18,7 @@ import "cuteify/parser"
 
 // rcScope 模拟中的一层作用域，记录本层声明的局部变量。
 type rcScope struct {
-	block parser.Block
-	vars  []*parser.VarBlock
+	vars []*parser.VarBlock
 }
 
 // rcSim 跟踪“此刻哪些槽位 / 字段还指着哪个对象”。
@@ -37,7 +36,7 @@ func (s *rcSim) walk(n *parser.Node) {
 		return
 	}
 	if parser.IsScopeBlock(n.Value) {
-		sc := &rcScope{block: n.Value}
+		sc := &rcScope{}
 		s.stack = append(s.stack, sc)
 		parser.EachSubNode(n, s.walk)
 		s.stack = s.stack[:len(s.stack)-1]

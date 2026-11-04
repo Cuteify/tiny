@@ -1,7 +1,6 @@
 package gc
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -56,14 +55,14 @@ func analyzeBackend(root *parser.Node) {
 	for key, fb := range a.fns {
 		fs := &FnSummary{Name: key}
 		for i, ag := range fb.Args {
-			if isOwning(ag.Type) {
+			if owningType(ag.Type) {
 				ps := fs.EnsureParam(i)
 				ps.Index = i
 				ps.Mode = ModeRead
 				ps.Escape = EscNone
 			}
 		}
-		if len(fb.Return) > 0 && isOwning(fb.Return[0]) {
+		if len(fb.Return) > 0 && owningType(fb.Return[0]) {
 			fs.RetOwned = true
 			fs.RetEscape = EscCaller
 			// 拥有型返回值先按 Unknown 处理；analyzeBody 在不动点迭代中
@@ -225,7 +224,7 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 		case *parser.ReturnBlock:
 			// 仅当返回类型本身是拥有指针时，返回表达式引用参数才算逃逸
 			// （如 print 返回 i32 只是消费参数，不构成逃逸）
-			retOwns := len(fb.Return) > 0 && isOwning(fb.Return[0])
+			retOwns := len(fb.Return) > 0 && owningType(fb.Return[0])
 			for _, rv := range v.Value {
 				if rv == nil {
 					continue
@@ -275,7 +274,7 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 				// 全局赋值右值是拥有类型（新分配或参数别名）时，函数体内存在
 				// 全局拥有存储；本函数禁用自动释放优化。不要把这个函数级标志
 				// 传播给调用方——调用方仍按 ParamEscapes 的逐参数摘要处理。
-				if v.Value.Type != nil && isOwning(v.Value.Type) && !fs.HasGlobalOwnStore {
+				if v.Value.Type != nil && owningType(v.Value.Type) && !fs.HasGlobalOwnStore {
 					fs.HasGlobalOwnStore = true
 					a.changed = true
 				}
@@ -323,7 +322,7 @@ type retOwnInfo struct {
 
 // updateRetSummary 重新计算函数返回值摘要（不动点迭代内调用）。
 func (a *analyzer) updateRetSummary(fs *FnSummary, fb *parser.FuncBlock, body *parser.Node) {
-	if fs == nil || fb == nil || len(fb.Return) == 0 || !isOwning(fb.Return[0]) {
+	if fs == nil || fb == nil || len(fb.Return) == 0 || !owningType(fb.Return[0]) {
 		if fs != nil {
 			fs.RetKind = RetNone
 			fs.RetAliasMask = 0
@@ -440,7 +439,7 @@ func (a *analyzer) exprOwnership(e *parser.Expression, fb *parser.FuncBlock, bod
 			key := callKey(cb)
 			cs := a.calleeSummary(key)
 			if cs == nil {
-				if len(cb.Func.Return) > 0 && isOwning(cb.Func.Return[0]) {
+				if len(cb.Func.Return) > 0 && owningType(cb.Func.Return[0]) {
 					out.unknown = true
 				}
 			} else {
@@ -544,7 +543,7 @@ func (a *analyzer) localOwnership(name string, fb *parser.FuncBlock, body *parse
 		}
 		if vb, ok := n.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.Name != nil &&
 			len(vb.Name) == 1 && vb.Name.First() == name {
-			owning := isOwning(vb.Type) || (vb.Value != nil && isOwning(vb.Value.Type))
+			owning := owningType(vb.Type) || (vb.Value != nil && owningType(vb.Value.Type))
 			if owning {
 				found = true
 				if vb.Value != nil {
@@ -628,7 +627,7 @@ func paramIndexByName(fb *parser.FuncBlock, name string) (int, bool) {
 		return 0, false
 	}
 	for i, ag := range fb.Args {
-		if ag != nil && isOwning(ag.Type) && ag.Name != nil && ag.Name.First() == name {
+		if ag != nil && owningType(ag.Type) && ag.Name != nil && ag.Name.First() == name {
 			return i, true
 		}
 	}
@@ -804,23 +803,6 @@ func walkExprCalls(e *parser.Expression, fn func(*parser.CallBlock)) {
 	}
 }
 
-// isOwning 类型是否携带堆缓冲（string/list/结构体指针 *T 视为拥有指针载体；
-// 裸 ptr 为借用/手动管理，不跟踪——与 GC_PLAN §3 一致）。
-func isOwning(t typeSys.Type) bool {
-	if t == nil {
-		return false
-	}
-	k := t.Kind()
-	if k == "string" || k == "list" {
-		return true
-	}
-	// *T（结构体指针）默认 owns（&local 除外，由调用方标记）
-	if t.IsPointer() {
-		return true
-	}
-	return false
-}
-
 // appendUnique 去重追加。
 func appendUnique(xs []string, v string) []string {
 	for _, x := range xs {
@@ -888,14 +870,6 @@ func exprAllocates(e *parser.Expression) bool {
 		}
 	}
 	return false
-}
-
-// isRCAlloc 判断表达式是否是 newRC() 分配（带 RC 头，由手动 rcDec 管理，LLR 不自动释放）。
-func isRCAlloc(e *parser.Expression) bool {
-	if e == nil || e.Call == nil {
-		return false
-	}
-	return e.Call.IsRC
 }
 
 // ParamEscapes 查询被调函数第 idx 个参数的逃逸层级。
@@ -991,22 +965,4 @@ func pureBuiltinEscapes(name string) (Escape, bool) {
 		return EscNone, true
 	}
 	return EscNone, false
-}
-
-// CalleeKnown 被调函数是否已有摘要。
-func CalleeKnown(calleeKey string) bool {
-	_, ok := Table[calleeKey]
-	return ok
-}
-
-// DumpSummary 打印单函数摘要（调试辅助）。
-func DumpSummary(fs *FnSummary) string {
-	s := fmt.Sprintf("%s retOwned=%v retEsc=%s", fs.Name, fs.RetOwned, fs.RetEscape)
-	for _, p := range fs.Params {
-		s += fmt.Sprintf("\n  param[%d] mode=%s esc=%s", p.Index, p.Mode, p.Escape)
-	}
-	for _, c := range fs.CallsAny {
-		s += fmt.Sprintf("\n  any-call: %s", c)
-	}
-	return s
 }

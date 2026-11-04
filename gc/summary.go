@@ -29,40 +29,6 @@ const (
 	EscAny                   // 未知（无摘要的外部调用等）
 )
 
-// modeNames 模式的可读名称表
-var modeNames = map[Mode]string{
-	ModeRead:        "Read",
-	ModeWrite:       "Write",
-	ModeDeepCopy:    "DeepCopy",
-	ModeShallowCopy: "ShallowCopy",
-	ModeOtherRef:    "OtherRef",
-}
-
-// String 返回模式的可读名称，未知值返回 "Unknown"
-func (m Mode) String() string {
-	if n, ok := modeNames[m]; ok {
-		return n
-	}
-	return "Unknown"
-}
-
-// escNames 逃逸层级的可读名称表
-var escNames = map[Escape]string{
-	EscNone:    "None",
-	EscCaller:  "Caller",
-	EscHeapObj: "HeapObj",
-	EscGlobal:  "Global",
-	EscAny:     "Any",
-}
-
-// String 返回逃逸层级的可读名称，未知值返回 "Any"
-func (e Escape) String() string {
-	if n, ok := escNames[e]; ok {
-		return n
-	}
-	return "Any"
-}
-
 // modeRank 模式强度序查表（越大越强）：OtherRef > ShallowCopy > DeepCopy > Write > Read；未知值视为最弱占位
 var modeRank = [8]int{
 	int(ModeRead):        1,
@@ -154,8 +120,6 @@ type FnSummary struct {
 	// HasHeapAllocs 函数体内存在堆分配（RetOwned 调用 / 字符串拼接 / new / make）。
 	// 无堆分配的函数可直接跳过 LLR 分析和出口释放计划。
 	HasHeapAllocs bool `json:"hasHeapAllocs,omitempty"`
-
-	Sorted bool `json:"-"` // Params 是否已按 Index 排序
 }
 
 // Table 全程序摘要表（键 = 函数全路径名）
@@ -179,11 +143,10 @@ func DumpLLRs() string {
 }
 
 // EnsureParam 确保 Params 包含序号为 idx 的条目且整体按 Index 升序排列，返回该条目的指针；
-// 缺失时插入零值并保持有序（每次直接重新排序，不依赖 Sorted 标志）
+// 缺失时插入零值并保持有序（每次直接重新排序）
 func (f *FnSummary) EnsureParam(idx int) *ParamSummary {
 	for i := range f.Params {
 		if f.Params[i].Index == idx {
-			f.Sorted = true
 			return &f.Params[i]
 		}
 	}
@@ -191,7 +154,6 @@ func (f *FnSummary) EnsureParam(idx int) *ParamSummary {
 	sort.Slice(f.Params, func(i, j int) bool {
 		return f.Params[i].Index < f.Params[j].Index
 	})
-	f.Sorted = true
 	for i := range f.Params {
 		if f.Params[i].Index == idx {
 			return &f.Params[i]

@@ -42,7 +42,6 @@ const (
 
 	// --- 返回点（collectRet）---
 	mkTransferObj // m.o.Transferred = true：交给调用者，callee 侧不再释放
-	mkFuncOwns    // m.fb.ReturnsOwned = true：返回值里有本帧分配的对象
 
 	// --- 逃逸（多数站点都可能发）---
 	mkEscape // m.l.markEscapes()：变量 / 对象 / 参数链 三级级联
@@ -58,8 +57,7 @@ type mark struct {
 	v   *parser.VarBlock // 语句块：清空的 owner、claim 的宿主、记 oldObj 的宿主
 
 	// 返回点用
-	o  *Object           // 被转移所有权的那块
-	fb *parser.FuncBlock // 归属函数（声明“返回值里有本帧分配的对象”）
+	o *Object // 被转移所有权的那块
 
 	// 字段写站点用
 	name string // 字段名
@@ -101,8 +99,6 @@ func (a *analysis) applyMark(m mark) {
 		m.l.out = append(m.l.out, paramOut{cb: m.cb, i: m.i})
 	case mkTransferObj:
 		m.o.Transferred = true
-	case mkFuncOwns:
-		a.owns[m.fb] = true
 	case mkEscape:
 		a.markEscapes(m.l)
 	default: // 新 flag 忘写 case 的症状是“对象凭空消失” —— 必须炸出来
@@ -418,7 +414,7 @@ func (a *analysis) markRets(r *parser.ReturnBlock) {
 		if i >= len(fb.Return) || !owningType(fb.Return[i]) {
 			continue
 		}
-		a.applyMarks(a.collectRet(fb, e))
+		a.applyMarks(a.collectRet(e))
 	}
 }
 
@@ -429,7 +425,7 @@ func (a *analysis) markRets(r *parser.ReturnBlock) {
 //	                   （两个持有者，只能退 RC）
 //	new(T)            → 转移（当场新建是本帧所有）
 //	字段读 / 调用结果 → 保守当真逃逸：无法确定那是谁的块
-func (a *analysis) collectRet(fb *parser.FuncBlock, e *parser.Expression) []mark {
+func (a *analysis) collectRet(e *parser.Expression) []mark {
 	if e == nil {
 		return nil
 	}
@@ -439,18 +435,15 @@ func (a *analysis) collectRet(fb *parser.FuncBlock, e *parser.Expression) []mark
 		if l.owner == nil || l.owner.IsGlobal {
 			return nil // 参数 / 全局：调用者或全局本来就有，不转移
 		}
-		var m []mark
 		if o := l.obj; o != nil && !o.Escapes {
-			m = append(m,
-				mark{flag: mkTransferObj, o: o},
-				mark{flag: mkFuncOwns, fb: fb})
+			return []mark{{flag: mkTransferObj, o: o}}
 		}
-		return m
+		return nil
 	}
 
 	// 处理 new(T) 调用
 	if e.Call != nil && e.Call.IsBuiltinNewAlloc() {
-		m := []mark{{flag: mkFuncOwns, fb: fb}}
+		var m []mark
 		if l := a.lifeOf(e.Call.ThisVar); l != nil {
 			if o := l.obj; o != nil && !o.Escapes {
 				m = append(m, mark{flag: mkTransferObj, o: o})
@@ -459,15 +452,7 @@ func (a *analysis) collectRet(fb *parser.FuncBlock, e *parser.Expression) []mark
 		return m
 	}
 
-	// 调用结果：实参照常按逃逸传播；被调返回来源为 Fresh 时，本函数把
-	// 所有权继续转交给调用者，owns 也应为真（摘要本身不依赖它）。
-	if e.Call != nil {
-		m := a.collectExpr(nil, e, true)
-		if !e.Call.IsRC && e.Call.Func != nil && a.retSourceOf(e.Call.Func) == ReturnFresh {
-			m = append(m, mark{flag: mkFuncOwns, fb: fb})
-		}
-		return m
-	}
+	// 调用结果 / 其它表达式：实参照常按逃逸传播。
 	return a.collectExpr(nil, e, true)
 }
 

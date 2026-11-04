@@ -6,8 +6,6 @@ package gc
 
 import (
 	"fmt"
-
-	"cuteify/parser"
 )
 
 // checkPremature 遍历所有对象校验释放点不早于任何一个绑定名的作用域。
@@ -52,59 +50,49 @@ func (a *analysis) transferReport() (sent, taken, orphan int, detail []string) {
 	return
 }
 
-// FrontStats 前端五态计数。口径与 tools/esccheck / gcfe.PlanSummary 一致。
-type FrontStats struct {
-	Objects     int
-	Scope       int
-	RC          int
-	Transfer    int
-	Field       int
-	Borrow      int
-	Leak        int
-	Inplace     int // ReleasesOld 语句数
-	InplaceObj  int
-	HolderBad   int
-	ByScopeKind map[string]int
-}
-
 // Stats 当前前端分析的聚合计数。front 未就绪时返回零值。
-func Stats() FrontStats {
-	st := FrontStats{ByScopeKind: map[string]int{}}
+func Stats() PlanSummary {
+	st := PlanSummary{ByScopeKind: map[string]int{}}
 	if front == nil {
 		return st
 	}
 	for _, o := range front.objects {
-		d := DisposalOf(o)
-		st.Objects++
-		switch d {
-		case DisposalScope:
-			st.Scope++
-			st.ByScopeKind[scopeKindOf(o.FreeScope)]++
-			if !front.holderValid(o) {
-				st.HolderBad++
-			}
-		case DisposalRC:
-			st.RC++
-		case DisposalInplace:
-			st.InplaceObj++
-		case DisposalField:
-			st.Field++
-			if !front.fieldPlanValid(o) {
-				st.HolderBad++
-			}
-		case DisposalBorrow:
-			if o.Transferred {
-				st.Transfer++
-			} else {
-				st.Borrow++
-				if o.FreeScope == nil && !o.Escapes {
-					st.Leak++
-				}
-			}
-		}
+		st.countObject(front, o)
 	}
 	st.Inplace = front.inplaceCount()
 	return st
+}
+
+// countObject 把一个对象计入五态。Stats 与 Plan 共用，避免两套口径漂移。
+func (st *PlanSummary) countObject(a *analysis, o *Object) {
+	d := DisposalOf(o)
+	st.Objects++
+	switch d {
+	case DisposalScope:
+		st.Scope++
+		st.ByScopeKind[scopeKindOf(o.FreeScope)]++
+		if !a.holderValid(o) {
+			st.HolderBad++
+		}
+	case DisposalRC:
+		st.RC++
+	case DisposalInplace:
+		st.InplaceObj++
+	case DisposalField:
+		st.Field++
+		if !a.fieldPlanValid(o) {
+			st.HolderBad++
+		}
+	case DisposalBorrow:
+		if o.Transferred {
+			st.Transfer++
+		} else {
+			st.Borrow++
+			if o.FreeScope == nil && !o.Escapes {
+				st.Leak++
+			}
+		}
+	}
 }
 
 // Premature 提前释放的对象数与明细（应恒为 0）。
@@ -161,6 +149,3 @@ func (a *analysis) inplaceCount() int {
 	}
 	return n
 }
-
-// ObjectNames 对象当前绑定名（按树序，可能有重复）；诊断用。
-func (a *analysis) objectNames(o *Object) []*parser.VarBlock { return o.Names }

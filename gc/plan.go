@@ -73,9 +73,11 @@ type InplacePlan struct {
 	OldObject int    `json:"oldObject"` // 被顶掉的旧对象 ID
 }
 
-// blockIndex 作用域块的稳定编号与归属函数。只在本 Plan 内有效。
+// blockIndex 作用域块的稳定编号、归属函数，以及同一次遍历收集的就地释放。
+// 只在本 Plan 内有效。
 type blockIndex struct {
-	info map[parser.Block]blockInfo
+	info    map[parser.Block]blockInfo
+	inplace []InplacePlan
 }
 
 type blockInfo struct {
@@ -87,21 +89,22 @@ type blockInfo struct {
 // BuildPlan 生成只读计划快照。必须在 Analyze / CollectFront 之后调用。
 // 对象的处置按 DisposalOf 的五态判定归类：Inplace / Field / Transfer / RC / Scope。
 func BuildPlan(root *parser.Node) Plan {
-	idx := indexBlocks(root)
-	p := Plan{Summary: PlanSummary{ByScopeKind: map[string]int{}}}
 	if front == nil {
-		return p
+		return Plan{Summary: PlanSummary{ByScopeKind: map[string]int{}}}
 	}
-
+	idx := indexBlocks(root)
+	p := Plan{
+		Summary: PlanSummary{ByScopeKind: map[string]int{}},
+		Inplace: idx.inplace,
+	}
 	for _, o := range front.objects {
-		d := DisposalOf(o)
-		op := ObjectPlan{
+		p.Objects = append(p.Objects, ObjectPlan{
 			ID:          o.ID,
 			Function:    objectFunction(o, idx),
 			Owner:       varName(o.Owner),
 			OwnerType:   varKind(o.Owner),
 			Scope:       idx.describe(o.Scope),
-			Disposal:    disposalName(d),
+			Disposal:    disposalName(DisposalOf(o)),
 			FreeScope:   idx.describe(o.FreeScope),
 			Holder:      varName(o.Holder),
 			FieldOwner:  objectID(o.FieldOwner),
@@ -110,39 +113,9 @@ func BuildPlan(root *parser.Node) Plan {
 			Transferred: o.Transferred,
 			Names:       objectNames(o),
 			Fields:      objectFields(o),
-		}
-		p.Objects = append(p.Objects, op)
-
-		switch d {
-		case DisposalScope:
-			p.Summary.Scope++
-			p.Summary.ByScopeKind[idx.kindOf(o.FreeScope)]++
-			if !front.holderValid(o) {
-				p.Summary.HolderBad++
-			}
-		case DisposalRC:
-			p.Summary.RC++
-		case DisposalInplace:
-			p.Summary.InplaceObj++
-		case DisposalField:
-			p.Summary.Field++
-			if !front.fieldPlanValid(o) {
-				p.Summary.HolderBad++
-			}
-		case DisposalBorrow:
-			if o.Transferred {
-				p.Summary.Transfer++
-			} else {
-				p.Summary.Borrow++
-				if o.FreeScope == nil && !o.Escapes {
-					p.Summary.Leak++
-				}
-			}
-		}
+		})
+		p.Summary.countObject(front, o)
 	}
-	p.Summary.Objects = len(p.Objects)
-
-	p.Inplace = collectInplace(root, idx)
 	p.Summary.Inplace = len(p.Inplace)
 	return p
 }
@@ -158,18 +131,8 @@ func (bi blockIndex) describe(b parser.Block) string {
 	return scopeKindOf(b) + "#?"
 }
 
-func (bi blockIndex) kindOf(b parser.Block) string {
-	if b == nil {
-		return ""
-	}
-	if info, ok := bi.info[b]; ok {
-		return info.kind
-	}
-	return scopeKindOf(b)
-}
-
-// indexBlocks 前序遍历 AST，给每个作用域块编号。编号只用于诊断输出；
-// 不用源码位置，因为 Block 不携带游标。
+// indexBlocks 前序遍历 AST：给每个作用域块编号，并顺带收集就地释放语句。
+// 编号只用于诊断输出；不用源码位置，因为 Block 不携带游标。
 func indexBlocks(root *parser.Node) blockIndex {
 	bi := blockIndex{info: map[parser.Block]blockInfo{}}
 	var walk func(n *parser.Node, fn string)
@@ -179,6 +142,15 @@ func indexBlocks(root *parser.Node) blockIndex {
 		}
 		if fb, ok := n.Value.(*parser.FuncBlock); ok {
 			fn = fb.Name.String()
+		}
+		if v, ok := n.Value.(*parser.VarBlock); ok {
+			if b, ok := front.vars[v]; ok && b.releasesOld {
+				ip := InplacePlan{Function: fn, Variable: varName(v)}
+				if b.oldObj != nil {
+					ip.OldObject = b.oldObj.ID
+				}
+				bi.inplace = append(bi.inplace, ip)
+			}
 		}
 		if parser.IsScopeBlock(n.Value) {
 			if _, dup := bi.info[n.Value]; !dup {
@@ -278,31 +250,5 @@ func objectFields(o *Object) []FieldPlan {
 		}
 		return out[i].ObjectID < out[j].ObjectID
 	})
-	return out
-}
-
-// collectInplace 收集所有 ReleasesOld 语句。逐节点遍历，顺序与 AST 一致。
-func collectInplace(root *parser.Node, idx blockIndex) []InplacePlan {
-	var out []InplacePlan
-	var walk func(n *parser.Node, fn string)
-	walk = func(n *parser.Node, fn string) {
-		if n == nil {
-			return
-		}
-		if fb, ok := n.Value.(*parser.FuncBlock); ok {
-			fn = fb.Name.String()
-		}
-		if v, ok := n.Value.(*parser.VarBlock); ok {
-			if rel, old := StatementFlags(v); rel {
-				ip := InplacePlan{Function: fn, Variable: varName(v)}
-				if old != nil {
-					ip.OldObject = old.ID
-				}
-				out = append(out, ip)
-			}
-		}
-		parser.EachSubNode(n, func(c *parser.Node) { walk(c, fn) })
-	}
-	walk(root, "")
 	return out
 }
