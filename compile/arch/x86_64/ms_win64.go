@@ -67,7 +67,7 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 
 	// 编译期 16 字节对齐：call 压返回地址(-8) + push rbp(-8) + 7 callee-save(-56) = -72
 	// RSP = RBP - 56 - StackSize，需 StackSize ≡ 8 (mod 16) 使 RSP ≡ 0 (mod 16)
-	totalPushed := 8 + 8 + 8*len(csRegs) // return addr + rbp + 7 callee-saves = 72
+	totalPushed := 8 + 8 + 8*len(csRegs)   // return addr + rbp + 7 callee-saves = 72
 	need := (16 - (totalPushed % 16)) % 16 // = 8
 	if a.ctx.StackSize%16 != need {
 		a.ctx.StackSize += (need - a.ctx.StackSize%16 + 16) % 16
@@ -98,9 +98,20 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 }
 
 // Epilogue 函数后序代码(公共返回点)
-func (a *Win64) Epilogue(fn *parser.FuncBlock) string {
+func (a *Win64) Epilogue(fn *parser.FuncBlock, cleanup string) string {
 	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
+
+	// 出口释放位置与寄存器保护：见 Arch 接口注释。Win64 返回值在 RAX；
+	// RDX 一并保存（多返回值 / 调用约定扩展），push 两个寄存器共 16 字节，
+	// 保持 16 字节栈对齐。
+	if cleanup != "" {
+		code += utils.Format("push rax; 保存返回值")
+		code += utils.Format("push rdx; 保存返回值(第二槽)")
+		code += cleanup
+		code += utils.Format("pop rdx; 恢复返回值(第二槽)")
+		code += utils.Format("pop rax; 恢复返回值")
+	}
 
 	// 清理局部变量栈空间
 	if a.ctx.StackSize > 0 {

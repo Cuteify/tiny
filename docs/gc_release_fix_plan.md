@@ -1,8 +1,9 @@
 # 前端 GC 释放点修复计划（当前批次）
 
-> 状态：2026-11-04 · 分支 `main` · 基线提交 `0a176cf`
-> 目标：在**不接代码生成**的前提下，让前端 `gcfe` 的释放计划满足
-> “一个对象至多一个释放点”，并把字段 cascade 缺口补到不再产生假泄漏。
+> 状态：2026-11-05 · 分支 `main` · 前端基线 `0a176cf` · 后端批次基线 `6841680`
+> 目标：在**不切换代码生成权威**的前提下，让前端 `gcfe` 的释放计划满足
+> “一个对象至多一个释放点”，把字段 cascade 缺口补到不再产生假泄漏，
+> 并修掉后端 §9.1 的出口释放可达性问题。
 > 验收口径：`泄漏=0`、`提前释放=0`、`HolderBad=0`，全语料逐目录对拍。
 
 ---
@@ -71,6 +72,23 @@ Phase 1 对拍发现两个真实问题：
 - [x] `docs/GC_MEMORY_MANAGEMENT.md` 更新“一个对象至多一个释放点”的表述
 - [x] `gcfe/plan.go` 的 `Disposal` / `FieldPlan` 注释同步五态
 
+### 1.5 后端 §9.1：出口释放挂到公共跳板（Batch D）
+
+- [x] `Arch.Epilogue(fn, cleanup)` 接管出口释放序列，四个架构同步：
+      `linux_sysv`、`ms_win64`、x86 `cdecl`、x86 `stdcall`
+- [x] `funcHandle` 把 `emitGCFrees` 结果传入 `Epilogue`；`main` 与 link alias
+      的跳过条件与入口清零共用 `hasExitCleanup`
+- [x] `resolveExitSlots` 统一解析“变量名 + 栈偏移”；`emitGCFrees` 与
+      `emitGCZeroExitSlots` 共用，避免清一个槽、释放另一个槽
+- [x] `emitGCZeroExitSlots` 在 `Prologue` 之后、函数体之前把出口计划涉及的
+      局部槽清零，覆盖“变量初始化前早退 `ret`”
+- [x] `Epilogue` 在 cleanup 前后成对保存/恢复返回值寄存器
+      （x86_64：`RAX`/`RDX`；x86：`EAX`/`EDX`）
+- [x] `compile/gc/llr.go` 的 `FieldFrees` 只在容器自身属于 `res.Frees` 时生成，
+      容器已 `ret` 给调用方时不再拆字段（避免 UAF）
+- [x] 修 x86 字段释放路径重复 `add esp, 4`：`Arch.Call` 已清理它看到的实参，
+      重复清栈会让返回值寄存器读到错位槽
+
 ---
 
 ## 2. 验收步骤与结果
@@ -110,9 +128,39 @@ e2e GC 矩阵（字段 cascade 不改变代码生成，先只做解析/计划验
 - `test/gc_loop`：就地释放后 `HolderBad=0`，`RC=5` 保持不变；
 - `test/gcBlocks` / `gcCondTemp` / `gcRetFree`：数字不回归。
 
+### 2.2 Batch D 实测（2026-11-05）
+
+| 项 | 结果 |
+|---|---|
+| `gcOwnership` x86_64 / x86 | 各 9/9，连续 5 轮（共 10 次） |
+| `gcCondTemp` / `gcRetFree` / `gcBlocks` / `gcOverwrite` | 双架构 `exit=0` |
+| 早退 `ret` + 出口计划（临时用例，未入库） | 双架构 `exit=0`，汇编含 `gc: zero exit slot` |
+| 全语料 112 目录 × 2 架构 | RC 与基线一致；仅既有失败、计时、非确定性输出差异 |
+| `esccheck` 前端基线 | `对象=132 RC=8 泄漏=0 提前=0 作用域=92 转移=24 就地=7 字段=1 HolderBad=0` |
+| `go test ./...` | 仅既有 3 个 fixture 路径失败（`TestFullSyntaxParse` / `TestFullSyntaxCompile` / `TestListParseAndCompile`） |
+
+`gcOwnership` 的 `testNestedAlloc` 在修复后的汇编形态：
+
+```asm
+jmp func_end_testNestedAlloc
+func_end_testNestedAlloc:
+push rax                     ; 保存返回值
+push rdx
+; gc: free field a.child
+...
+; gc: free a
+lea RDI, [rbp-48]
+call std_memory_freeSlot
+pop rdx                      ; 恢复返回值
+pop rax
+add rsp, 104
+```
+
+返回值寄存器在 cleanup 前保存、之后恢复，因此释放调用不会破坏 `ret` 的返回值。
+
 ---
 
-## 3. 后续批次（不在本批次提交）
+## 3. 后续批次（Batch D 之外，尚未实施）
 
 ### Batch B：表达式临时对象
 
@@ -126,10 +174,15 @@ e2e GC 矩阵（字段 cascade 不改变代码生成，先只做解析/计划验
 - [ ] 泛型矩阵：`test/generics`、`test/iface_generic`、`test/gc_nested`
 - 验收：克隆体无双重释放、无漏释放
 
-### Batch D：§9.1 出口释放位置
+### Batch D：§9.1 出口释放位置（已完成）
 
-- [ ] 把函数出口释放移到每条 `ret` 之前（或统一跳板），保证显式 `ret` 不跳过
-- 验收：`gcRetFree` 双架构 e2e
+- [x] `Epilogue(fn, cleanup)` 统一跳板：显式 `ret` 的 `jmp func_end_*`
+      不再跳过释放。实际采用公共 `func_end` 跳板，而不是在每条 `ret` 前
+      复制释放序列，避免代码膨胀。
+- [x] 入口清零出口槽，覆盖“变量初始化前早退”
+- [x] `FieldFrees` 增加容器宿主约束，容器已返回时不拆字段
+- [x] 验收：`gcOwnership` 双架构 9/9 × 5；`gcRetFree` 等双架构 `exit=0`；
+      全语料 RC 与基线一致
 
 ### Batch E：嵌套调用保守逃逸
 
@@ -146,11 +199,14 @@ e2e GC 矩阵（字段 cascade 不改变代码生成，先只做解析/计划验
 
 ## 4. 当前阻塞与不做的事
 
-- 本批次**不**改 `compile/`，代码生成权威仍是 `compile/gc`；
+- 本批次只改 `compile/` 的**出口释放可达性、入口清零、字段 cascade 宿主
+  约束与 x86 调用栈**；代码生成权威仍是 `compile/gc`，前端尚未接管生成；
 - `Holder` 只保证“是该对象的绑定名且活到释放点”，不保证“释放那一刻槽里
   一定是它”（分支合流是合法场景）；接生成器时必须用清槽语义 `freeSlot`，
   并在 Phase 3 用汇编检查钉住；
-- 字段 cascade 只处理“作用域释放容器”的字段；容器就地释放时的字段
-  释放顺序留到 Batch B/D（届时需要释放语句位置）；
+- 字段 cascade 仍只在函数出口执行；容器就地释放时的字段释放顺序留到后续
+  批次（出口 cleanup 位置已经具备，块尾/循环出口尚未接）；
 - 单态化克隆体仍共享 `Names`/`Holder`，切换代码生成前必须修（Batch C）；
-- `ast.html` 等运行产物不提交。
+- Win64 的 GC 释放调用仍硬编码 SysV `RDI`，未按 Win64 使用 `RCX` + shadow
+  space（见 `docs/GC_MEMORY_MANAGEMENT.md` §9.8）；
+- `ast.html`、`gc_llr.txt`、`gc_summary.json`、`_main.asm` 等运行产物不提交。

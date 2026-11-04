@@ -214,9 +214,21 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 }
 
 // Epilogue 函数后序代码(公共返回点)
-func (a *SysV) Epilogue(fn *parser.FuncBlock) string {
+func (a *SysV) Epilogue(fn *parser.FuncBlock, cleanup string) string {
 	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
+
+	// 出口释放必须在标签之后（显式 ret 会跳到这里）、清栈之前（释放调用
+	// 需要完整的局部槽）。释放会调用 free/freeSlot，按 ABI 可能破坏
+	// caller-save 的返回值寄存器；RAX 是返回值、RDX 可能承载第二个返回值，
+	// 成对 push/pop 共 16 字节，不破坏 call 点的 16 字节栈对齐。
+	if cleanup != "" {
+		code += utils.Format("push rax; 保存返回值")
+		code += utils.Format("push rdx; 保存返回值(第二槽)")
+		code += cleanup
+		code += utils.Format("pop rdx; 恢复返回值(第二槽)")
+		code += utils.Format("pop rax; 恢复返回值")
+	}
 
 	// 清理局部变量 + 对齐 padding（StackSize 已含编译期对齐）
 	if a.ctx.StackSize > 0 {

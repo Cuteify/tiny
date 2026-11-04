@@ -35,10 +35,11 @@
    块尾、循环出口、覆盖赋值、`ret`/条件/增量临时释放仍会生成。这是有意为之：
    进程退出由 OS 回收；链接包装器可能被外部调用，帧边界不成立。
 
-6. **当前有两个已核对的活性缺口**（详见 §9）：
-   - 函数出口释放代码被放在 `func_end_<name>:` 标签之前，显式 `ret` 的
-     `jmp func_end_<name>` 会跳过它；
-   - 直接调用 `new` 会进入 `CallsAny`，导致该函数 LLR 直接返回空结果。
+6. **函数出口释放位置缺口（§9.1）已修复**：释放序列由 `Epilogue(cleanup)`
+   插在 `func_end_<name>:` 标签之后、清栈之前，显式 `ret` 不再跳过；函数入口
+   会把计划读到的槽清零，早退 `ret` 不会 free 未初始化栈垃圾。
+   当前仍有一个已核对的活性缺口（§9.2）：直接调用 `new` 会进入 `CallsAny`，
+   导致该函数 LLR 直接返回空结果。
 
 ---
 
@@ -67,10 +68,10 @@ main.go
   ├─ 打印/落盘 gc_summary.json、gc_llr.txt
   └─ compile.Compiler.Compile(ast)
         ├─ 泛型单态化时对克隆体重算 LLR
-        ├─ funcHandle：按 LLR 预留 scratch、生成 Prologue/函数体
+        ├─ funcHandle：按 LLR 预留 scratch、生成 Prologue → 清零出口槽 → 函数体
         ├─ 语句级：块尾、循环出口、覆盖赋值、ret/条件/增量临时释放
-        ├─ 函数体后：emitGCFrees（出口释放）
-        └─ Epilogue
+        ├─ 函数出口：emitGCFrees 生成 cleanup，交给 Epilogue 在返回标签后发出
+        └─ Epilogue：func_end 标签 → 保存返回值 → cleanup → 恢复返回值 → 清栈
               │
               ▼
         _main.asm → nasm/ld → 可执行文件
@@ -228,7 +229,7 @@ main.go
 
 | 释放点 | 触发 | 生成调用 | 安全条件 |
 |---|---|---|---|
-| 函数出口 | 函数体结束/汇合到出口 | `freeSlot(&x)`、字段先 `free(p)` | 帧内拥有、未逃逸、未共享、非参数、非 RC |
+| 函数出口 | 函数体结束/汇合到出口 | `freeSlot(&x)`、字段先 `free(p)` | 帧内拥有、未逃逸、未共享、非参数、非 RC；字段级联还要求容器自身在 `Frees` 中 |
 | 块尾 | `if/else` 体、`for` 体等块结束 | `freeSlot(&x)` | 变量声明在该块内，且仍绑定 |
 | 循环出口 | `for_end` 之后 | `freeSlot(&x)` | 循环体内声明的变量；覆盖 `break` 跳过块尾的路径 |
 | 覆盖赋值前 | `x = ...` 写入新值前 | `freeSlot(&x)` | 旧对象唯一绑定、未共享、未逃逸、右值不引用 `x` |
@@ -236,6 +237,13 @@ main.go
 | 条件临时 | 条件 true/false 两条路径 | `freeSlot(scratch)` | 条件中的 owning call 满足 Fresh/mask 0/被调确有堆分配 |
 | 增量临时 | `for` 增量求值后 | `freeSlot(scratch)` | 同上 |
 | 手动 RC | 用户代码 | `rcDec`/`freeRC` | 用户保证配对与单线程 |
+
+函数出口释放还有两条与“可达性”相关的实现约束：
+
+- 释放序列必须在 `func_end_<name>:` 之后发出，否则显式 `ret` 的
+  `jmp` 会跳过；
+- 函数入口先把出口计划涉及的局部槽清零，保证“变量尚未初始化就 `ret`”的
+  路径上 `freeSlot` 读到 0 而不是栈垃圾。
 
 ---
 
@@ -538,15 +546,22 @@ func IncrFreesForNode(fnKey string, n *parser.Node) []LLRCondFree
 // compile/compiler.go（简化）
 c.Ctx.RetScratchCap = gc.LLRResults[c.currentFuncKey].RetScratchSlots
 code += c.Ctx.Arch.Prologue(funcBlock)
-code += c.Compile(c.Ctx.Now)
-if funcBlock.Name.String() != "main" && alias == "" {
-    code += c.emitGCFrees(funcBlock, node) // 出口释放
+hasExitCleanup := funcBlock.Name.String() != "main" && alias == ""
+if hasExitCleanup {
+    code += c.emitGCZeroExitSlots(funcBlock, node) // 入口清零出口计划槽
 }
-code += c.Ctx.Arch.Epilogue(funcBlock)
+code += c.Compile(c.Ctx.Now)
+cleanup := ""
+if hasExitCleanup {
+    cleanup = c.emitGCFrees(funcBlock, node) // 只生成文本，不决定位置
+}
+code += c.Ctx.Arch.Epilogue(funcBlock, cleanup)
 ```
 
-`Prologue` 按 `RetScratchCap` 预留并清零 scratch 槽；`Epilogue` 的第一行才是
-`func_end_<name>:` 标签。这个顺序造成了 §9.1 的出口释放缺口。
+`Prologue` 按 `RetScratchCap` 预留并清零 scratch 槽；`Epilogue` 先发
+`func_end_<name>:` 标签，再保存返回值寄存器、执行 `cleanup`、恢复返回值，
+最后才清栈。`main` 和 `build link` 别名只跳过**出口**释放，块尾/循环出口等
+释放点仍照常生成。
 
 ### 5.2 释放点与生成代码形状
 
@@ -563,23 +578,38 @@ code += c.Ctx.Arch.Epilogue(funcBlock)
 
 ### 5.3 函数出口释放
 
-`emitGCFrees` 的顺序是：
+`emitGCFrees` 只负责生成文本，位置由 `Epilogue(cleanup)` 决定：在
+`func_end_<name>:` 之后、清栈之前。顺序是：
 
-1. **先字段，后父对象**：`FieldFrees` 逐条释放 `var.field`，避免父块先释放后
+1. **入口清零**：`emitGCZeroExitSlots` 在函数体之前把 `Frees` 解析到的每个
+   局部槽置 0。显式 `ret` 可能发生在变量初始化之前，`freeSlot` 见 0 直接跳过；
+2. **先字段，后父对象**：`FieldFrees` 逐条释放 `var.field`，避免父块先释放后
    再去读字段；
-2. **再变量**：`Frees` 逐条 `freeSlot(&var)`；
-3. 变量槽找不到（未分配/被豁免）就跳过；
-4. `Type == "heap-ptr"` 的孤儿条目把 `fr.VarName`（实际存的是分配 site）
+3. **再变量**：`Frees` 逐条 `freeSlot(&var)`；
+4. 变量槽找不到（未分配/被豁免）就跳过；
+5. `Type == "heap-ptr"` 的孤儿条目把 `fr.VarName`（实际存的是分配 site）
    与 `Objects` 中同 `Site` 且 `Name != ""` 的帧内对象匹配，用该对象名当变量名；
    匹配不到就跳过（当前孤儿机制基本不会真正释放，见 §9.3）。
+
+字段级 cascade 有额外前置条件：**容器自身必须在 `res.Frees` 中**。如果容器
+通过 `ret` 交给调用方（如 `buildTree` 返回整棵树），在出口拆它的字段就是
+use-after-free；这类条目现在直接不生成。`emitGCFrees` 与
+`emitGCZeroExitSlots` 共用 `resolveExitSlots`，保证“清哪个槽”和“释放哪个槽”
+始终一致。
 
 `main` 和 `build link` 别名只跳过**出口**释放，其余释放点不受影响：
 
 ```go
+cleanup := ""
 if funcBlock.Name.String() != "main" && alias == "" {
-    code += c.emitGCFrees(funcBlock, node)
+    cleanup = c.emitGCFrees(funcBlock, node)
 }
+code += c.Ctx.Arch.Epilogue(funcBlock, cleanup)
 ```
+
+各架构的 `Epilogue` 负责保护返回值：x86_64 SysV/Win64 成对保存 `RAX`/`RDX`
+（16 字节，保持 16 字节栈对齐），x86 cdecl/stdcall 成对保存 `EAX`/`EDX`
+（8 字节）；cleanup 执行完再恢复，然后才清栈。
 
 ### 5.4 块尾与循环出口
 
@@ -714,6 +744,9 @@ x86 cdecl：
 ```asm
 ; return值存入RAX
 jmp func_end_testNestedAlloc
+func_end_testNestedAlloc:
+push rax; 保存返回值
+push rdx; 保存返回值(第二槽)
 ; gc: free field a.child
 mov RAX, QWORD [rbp-48]
 test RAX, RAX
@@ -726,13 +759,15 @@ gc_field_skip1:
 ; gc: free a
 lea RDI, [rbp-48]
 call std_memory_freeSlot
-func_end_testNestedAlloc:
+pop rdx; 恢复返回值(第二槽)
+pop rax; 恢复返回值
 add rsp, 104
 ...
 ```
 
-这段同时展示了字段释放先于父对象、`freeSlot(&var)` 的形态，以及 §9.1 的
-“`jmp func_end` 在释放代码之前”问题。
+这段展示了 §9.1 修复后的形态：显式 `ret` 先跳到 `func_end_<name>:`，
+`Epilogue` 保存返回值寄存器，再执行字段释放（先于父对象）和
+`freeSlot(&var)`，最后恢复返回值并清栈。
 
 ---
 
@@ -1092,15 +1127,18 @@ for_1_end:
     ...
 ; return值存入RAX
     jmp func_end_runBuild
-    ; gc: free field tmp.next
-    ...
+func_end_runBuild:
+    push rax; 保存返回值
+    push rdx; 保存返回值(第二槽)
+    ; gc: free field ...
     ; gc: free a
     lea RDI, [rbp-72]
     call std_memory_freeSlot
     ; gc: free b
     lea RDI, [rbp-80]
     call std_memory_freeSlot
-    func_end_runBuild:
+    pop rdx; 恢复返回值(第二槽)
+    pop rax; 恢复返回值
     add rsp, 120
     ...
 ```
@@ -1113,15 +1151,17 @@ for_1_end:
 4. 循环体尾 `block free tmp` → `freeSlot(&tmp)` 释放当前迭代的 Node；
 5. `for_end` 的 `loop exit free tmp` 看到槽已清 0，安全跳过（覆盖 `break` 的
    路径则在这里释放）；
-6. `ret` 语句先 `jmp func_end_runBuild`，因此后面的 `free a/b` 和
-   `FIELD_FREE` **不会执行**（§9.1）；
+6. `ret` 语句 `jmp func_end_runBuild`，出口释放现在在标签**之后**执行；
+   释放调用会破坏返回值寄存器，所以 `Epilogue` 先保存 `RAX`/`RDX`，再执行
+   `gc: free ...`，最后恢复并清栈；
 7. `main` 只跳过函数出口释放；块尾/循环出口等释放点仍会生成（另一个示例
    函数的 `main` 中可见 `gc: block free` / `gc: loop exit free`）。
 
 ### 8.5 这个例子说明了什么
 
-- 块尾释放和循环出口释放是**可达且生效**的；
-- 函数出口释放代码目前是**不可达**的（显式 `ret` 跳过）；
+- 块尾释放、循环出口释放和函数出口释放都是**可达且生效**的；
+- 函数出口释放的槽在入口已经清零；`tmp` 在循环体尾释放后，出口
+  `freeSlot` 看到 0 会安全跳过；
 - `makeNode` 的 `new` 让它自己的 LLR 为空，但返回值所有权仍然正确；
 - `RetFresh` 是“调用方能接管”的关键摘要；没有它，`runBuild` 不会把
   `tmp/a/b` 当作帧内拥有对象。
@@ -1130,11 +1170,11 @@ for_1_end:
 
 ## 9. 安全边界与已知缺口
 
-### 9.1 缺口一：函数出口释放被 `ret` 跳过
+### 9.1 已修：函数出口释放被 `ret` 跳过
 
-**现象**：`funcHandle` 先拼 `emitGCFrees`，再拼 `Epilogue`；`Epilogue` 的第一行
-才发 `func_end_<name>:`。而 `compileReturnBlock` 的显式 `ret` 会生成
-`jmp func_end_<name>`。因此：
+**原现象**：`funcHandle` 先拼 `emitGCFrees`，再拼 `Epilogue`，而
+`Epilogue` 的第一行才发 `func_end_<name>:`。显式 `ret` 生成
+`jmp func_end_<name>`，于是跳过了紧随其后的释放代码：
 
 ```
 jmp func_end_runBuild       ; ret 直接跳走
@@ -1144,19 +1184,35 @@ jmp func_end_runBuild       ; ret 直接跳走
 func_end_runBuild:          ; 标签在释放代码之后
 ```
 
-`Frees` / `FieldFrees` 只有在函数体**自然直落**到出口（无显式 `ret`）时才执行。
-所有以 `ret` 结束的函数，其函数出口释放计划都是死代码。
+`Frees` / `FieldFrees` 只有在函数体**自然直落**到出口时才执行；所有以
+`ret` 结束的函数，其出口释放计划都是死代码。
 
-**影响**：依赖出口释放的命名对象不会被回收；块尾/循环出口/覆盖赋值/ret 临时/
-条件临时释放不受影响。`main` 本来就不生成出口释放。
+**修复**：
 
-**核对方式**：`test/gcOwnership` 的 `testNestedAlloc`、示例 `runBuild` 的
-`_main.asm` 都能看到 `jmp func_end_*` 在 `gc: free` 之前。
+1. `Arch.Epilogue(fn, cleanup)` 接管 cleanup，在 `func_end_<name>:` 标签
+   之后、清栈之前发出；
+2. 四个架构的 `Epilogue` 在 cleanup 前后成对保存/恢复返回值寄存器
+   （x86_64：`RAX`/`RDX`；x86：`EAX`/`EDX`）；
+3. `emitGCZeroExitSlots` 在函数入口把出口计划涉及的局部槽清零，覆盖
+   “变量初始化前就 `ret`”的路径；
+4. `FieldFrees` 增加容器宿主条件：只有容器自身在 `res.Frees` 中才生成字段
+   级联，避免把已经 `ret` 给调用方的容器拆掉。
 
-**修复方向**（未实施）：把出口释放代码插到 `func_end_<name>:` 标签之后、
-栈帧清理之前；或让 `Epilogue` 接受一段“出口清理”代码并在标签后发出。修复后
-必须重新审计字段级 cascade 与共享别名（见 §9.4），因为当前不可达的代码一旦
-可达，可能会释放被字段/别名共用的对象。
+**实测（2026-11-04）**：
+
+| 用例 | x86_64 | x86 |
+|---|---|---|
+| `gcOwnership`（含 `testNestedAlloc` 出口释放） | 9/9，连续 5 次 | 9/9，连续 5 次 |
+| `gcCondTemp` / `gcRetFree` / `gcBlocks` / `gcOverwrite` | exit=0 | exit=0 |
+| 早退 `ret` + 出口计划（临时构造，未入库） | exit=0 | exit=0 |
+| 全语料 112 目录 × 2 架构对拍基线 | 仅既有失败/计时差异 | 同左 |
+
+`esccheck` 前端基线保持不变：`对象=132 RC=8 泄漏=0 提前=0 作用域=92
+转移=24 就地=7 字段=1 HolderBad=0`。
+
+**遗留**：`FieldFrees` 的宿主条件只解决“容器已返回/逃逸”的 UAF；字段值来自
+别名、参数或共享对象时，`objShared` 仍不保护字段 cascade（§9.4）。Win64 的
+释放调用实参约定也未跟进（§9.8）。
 
 ### 9.2 缺口二：`new` 进入 `CallsAny`，整个函数 LLR 被禁用
 
@@ -1195,10 +1251,10 @@ fs.CallsAny = appendUnique(fs.CallsAny, name)
 - `collectStructFieldFrees` 只枚举**直接** owning 字段（`*T`、`string`、`list`）；
   内联 struct 值里的嵌套 owning 字段不会递归展开。
 - 字段级释放只出现在函数出口（`FieldFrees`），块尾/循环出口没有字段 cascade。
-- 当前出口释放不可达（§9.1），所以字段 cascade 实际不执行；一旦修复 §9.1，
-  需要重新审计“字段值来自别名/参数/共享对象”的情况，避免父对象释放字段时
-  把仍被其它名字持有的对象提前释放。`objShared` 目前主要保护覆盖释放，不保护
-  字段 cascade。
+- §9.1 修复后出口释放可达。已加的安全条件：`FieldFrees` 只在容器自身属于
+  `res.Frees` 时生成；容器通过 `ret` 交给调用方或已逃逸时不会拆它的字段。
+- 仍未覆盖：字段值来自别名、参数或共享对象时，`objShared` 目前主要保护覆盖
+  释放，不保护字段 cascade；同一字段被多处共享时也可能被父容器释放掉。
 
 ### 9.5 `realloc` 不支持 RC 块
 
@@ -1228,7 +1284,15 @@ memory.rcDec(p)
 - `malloc` 可能返回 0，调用方必须检查；
 - `realloc` 不缩小、可能搬移；旧指针在成功搬移后失效。
 
-### 9.8 设计性保守（不是 bug）
+### 9.8 Win64 的释放调用实参约定未跟进
+
+`emitGCFrees`、`emitBlockFrees`、覆盖赋值/循环出口等 GC 释放点，在 64 位路径
+直接生成 `mov RDI, ...; call std_memory_free*`，这是 System V 的实参寄存器；
+Win64 需要 `RCX`，且调用前需要 32 字节 shadow space。当前 Linux 的
+`x86_64`/`x86_64.sysv` 不受影响，但 `x86_64.win64` 的 GC 释放路径未经 e2e
+验证；启用该目标前必须统一改走架构层的调用生成，或在 Win64 下单独生成。
+
+### 9.9 设计性保守（不是 bug）
 
 - 未知调用 → 整个函数不释放；
 - 全局拥有存储 → 整个函数不释放；
@@ -1312,22 +1376,25 @@ grep -n "gc: free\|func_end_" _main.asm
 |---|---|---|
 | `tools/esccheck` | parser 作用域模型的对象归属 | 后端实际是否发出 `free`、是否可达 |
 | 四个 GC 回归 | 后端块尾/循环/覆盖/ret/条件释放的可执行行为 | 未覆盖语法形态、运行时大块滞留 |
-| `gc_llr.txt` | LLR 计划是否生成 | 计划是否可达（如 §9.1） |
+| `gc_llr.txt` | LLR 计划是否生成 | 运行时是否可达（§9.1 修复后由 `func_end` 跳板保证，仍要看汇编确认） |
 | `_main.asm` | 实际生成的释放代码与位置 | 运行时是否真的走到 |
 
 ### 10.4 排查清单
 
 1. **没有 FREE**：先看 `gc_summary.json` 的 `callsAny` 是否非空（`new` 是常见
    元凶）、`hasGlobalOwnStore` 是否为 true、`hasHeapAllocs` 是否为 false。
-2. **有 FREE 但没执行**：看 `_main.asm` 中 `jmp func_end_*` 是否在 `gc: free`
-   之前（§9.1）。
-3. **释放错对象**：检查 `objShared`/别名、字段赋值、参数来源；LLR 对共享对象
+2. **有 FREE 但没执行**：确认 `func_end_*:` 标签后先是保存返回值的
+   `push`，再是 `gc: free`；若释放序列仍出现在标签之前、或 `jmp` 直接跳到
+   标签之后，见 §9.1。
+3. **释放后返回值损坏**：检查 `Epilogue` 是否在 cleanup 前后成对保存/恢复
+   `RAX`/`RDX`（x86 为 `EAX`/`EDX`）。
+4. **释放错对象**：检查 `objShared`/别名、字段赋值、参数来源；LLR 对共享对象
    应放弃提前释放。
-4. **运行时 SIGSEGV**：确认 `freeSlot` 的槽首字确实是堆指针；string/list 头
+5. **运行时 SIGSEGV**：确认 `freeSlot` 的槽首字确实是堆指针；string/list 头
    不能直接 `free`；RC 指针不能传给 `realloc`。
-5. **RC 泄漏**：`reportLeaks` 只统计 `mallocRC`；确认 `rcInc/rcDec` 配对，
+6. **RC 泄漏**：`reportLeaks` 只统计 `mallocRC`；确认 `rcInc/rcDec` 配对，
    避免混用 `freeRC` 与 `free`。
-6. **LARGE/HUGE 不释放**：`freeAt` 只在堆顶回缩；`freeSlot` 返回 false 时槽
+7. **LARGE/HUGE 不释放**：`freeAt` 只在堆顶回缩；`freeSlot` 返回 false 时槽
    未清，属预期行为。
 
 ---

@@ -40,8 +40,8 @@ func (a *Cdecl) Prologue(fn *parser.FuncBlock) string {
 }
 
 // Epilogue 函数后序代码(公共返回点)
-func (a *Cdecl) Epilogue(fn *parser.FuncBlock) string {
-	return a.epilogue(fn, false)
+func (a *Cdecl) Epilogue(fn *parser.FuncBlock, cleanup string) string {
+	return a.epilogue(fn, cleanup, false)
 }
 
 // Call 函数调用（cdecl：调用者清理参数）

@@ -244,9 +244,19 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 		res.Frees = append(res.Frees, LLRFree{VarName: site, Type: "heap-ptr", ScopeDepth: st.objScope[id]})
 	}
 
-	// 字段级孤儿：字段赋值时旧值需要在函数出口释放
+	// 字段级孤儿：字段赋值时旧值需要在函数出口释放。
+	// 前置条件：容器自身必须在出口被释放（res.Frees 里有它）。若容器逃逸
+	// （如 ret root 把整棵树交给调用者），在出口拆它的字段就是 use-after-free
+	// ——调用方拿到的容器已被掏空。satisfied 时旧字段值留在容器里，宁可漏放。
+	freedContainers := map[string]bool{}
+	for _, fr := range res.Frees {
+		freedContainers[fr.VarName] = true
+	}
 	fieldSeen := map[string]bool{}
 	for _, fo := range st.fieldOrphans {
+		if !freedContainers[fo.varName] {
+			continue // 容器不归本帧出口释放，字段级联无宿主
+		}
 		key := fo.varName + "." + fo.fieldName
 		if fieldSeen[key] {
 			continue // 同一字段只需释放一次（最后一次赋值的旧值）

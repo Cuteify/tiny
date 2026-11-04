@@ -1379,18 +1379,26 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	// callee-save 固定全部保存，栈布局可在函数体编译前确定，避免依赖分配器运行结果
 	code += c.Ctx.Arch.Prologue(funcBlock)
 
+	// GC 出口释放计划涉及局部槽：与 cleanup 用同一套跳过条件，入口先清零。
+	// 早退 ret 可能在变量初始化之前就跳到 func_end，必须先让出口释放看到 0。
+	hasExitCleanup := funcBlock.Name.String() != "main" && alias == ""
+	if hasExitCleanup {
+		code += c.emitGCZeroExitSlots(funcBlock, node)
+	}
+
 	// 编译函数体（此时参数/变量偏移已正确设置）
 	code += c.Compile(c.Ctx.Now)
 
-	// GC 出口释放（Phase 3）：所有 return 都 jmp 到 func_end（由 Epilogue 发出），
-	// fallthrough 也汇合于此，故在 body 之后、epilogue 之前拼接一次释放序列
-	// 即可覆盖全部出口。main 无需 GC；build link 别名是链接符号包装器，跳过。
-	if funcBlock.Name.String() != "main" && alias == "" {
-		code += c.emitGCFrees(funcBlock, node)
+	// GC 出口释放（Phase 3）：序列交给 Epilogue，由它在 func_end_<name>:
+	// 标签之后、清栈之前插入——显式 ret 的 jmp 会跳到标签，提前放置会被
+	// 跳过。main 无需 GC；build link 别名是链接符号包装器，跳过。
+	cleanup := ""
+	if hasExitCleanup {
+		cleanup = c.emitGCFrees(funcBlock, node)
 	}
 
 	// 生成 epilogue（清理栈、恢复寄存器、返回）
-	code += c.Ctx.Arch.Epilogue(funcBlock)
+	code += c.Ctx.Arch.Epilogue(funcBlock, cleanup)
 
 	// 恢复 Ctx.Now
 	c.Ctx.Now = savedNow
@@ -1415,9 +1423,73 @@ func pr(block *parser.Node, tabnum int) {
 	}
 }
 
+// exitSlot 函数出口释放计划里一个可落地的局部槽。
+type exitSlot struct {
+	name string
+	off  int
+}
+
+// resolveExitSlots 把 LLR 的出口释放条目解析成“变量名 + 栈偏移”。
+// heap-ptr 孤儿用 site 匹配绑定名；找不到槽的条目跳过（未分配/被豁免）。
+// 出口释放与入口清零必须用同一份解析，否则会清一个槽、释放另一个槽。
+func (c *Compiler) resolveExitSlots(llr *gc.LLRResult, node *parser.Node) []exitSlot {
+	var slots []exitSlot
+	for _, fr := range llr.Frees {
+		name := fr.VarName
+		if fr.Type == "heap-ptr" {
+			found := false
+			for _, obj := range llr.Objects {
+				if obj.FrameOwn && obj.Site == fr.VarName && obj.Name != "" {
+					name = obj.Name
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		off := findLocalVarOffset(node, name)
+		if off == -1 {
+			continue
+		}
+		slots = append(slots, exitSlot{name: name, off: off})
+	}
+	return slots
+}
+
+// emitGCZeroExitSlots 在函数入口把出口释放计划读到的槽清零。
+// 显式 ret 可能发生在变量初始化之前（if c { ret 0 }; var x = new(T)），
+// 出口释放若读到未初始化的栈垃圾就会 free 野指针。入口清零是廉价的
+// 全路径保险：freeSlot 见 0 直接跳过。
+func (c *Compiler) emitGCZeroExitSlots(funcBlock *parser.FuncBlock, node *parser.Node) string {
+	llr := gc.LLRResults[funcBlock.Name.String()]
+	if llr == nil || len(llr.Frees) == 0 {
+		return ""
+	}
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	slot := "QWORD"
+	base := "rbp"
+	if !is64 {
+		slot = "DWORD"
+		base = "ebp"
+	}
+	var code string
+	seen := map[int]bool{}
+	for _, s := range c.resolveExitSlots(llr, node) {
+		if seen[s.off] {
+			continue
+		}
+		seen[s.off] = true
+		code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(s.off) + "], 0; gc: zero exit slot " + s.name)
+	}
+	return code
+}
+
 // emitGCFrees 生成函数出口的 GC 释放序列（Phase 3 代码生成）。
 // 查询 gc.LLRResults 中该函数的 LLR 分析结果，把每个帧内拥有变量的栈槽
 // 指针交给 memory.free 释放。无结果时跳过。
+// 调用方必须把它放在 func_end_<name>: 之后、清栈之前（见 Arch.Epilogue）。
 func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) string {
 	llr := gc.LLRResults[funcBlock.Name.String()]
 	if llr == nil || len(llr.Frees) == 0 && len(llr.FieldFrees) == 0 {
@@ -1484,40 +1556,24 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 			code += utils.Format("mov RDI, " + tmpReg)
 			code += utils.Format("call " + freeFunc.MangledName())
 		} else {
+			// Call 负责按 cdecl 清理它看到的这一个实参；这里手工压入的
+			// 正是该实参，不能再额外 add esp——否则会多弹 4 字节，
+			// 随后恢复返回值寄存器时读到错位栈槽。
 			code += utils.Format("push " + tmpReg)
 			code += c.Ctx.Arch.Call(freeCall)
-			code += utils.Format("add esp, 4")
 		}
 		code += utils.Format(skipLabel + ":")
 	}
 
 	// 顶层变量释放：统一用 freeSlot(&slot)，成功后清槽。块尾已释放的
 	// 变量在函数出口自然变成 nil，freeSlot 幂等跳过，不再需要静态跳过表。
-	for _, fr := range llr.Frees {
-		if fr.Type == "heap-ptr" {
-			// 孤儿对象：用 site 名匹配局部变量（通过 ObjSite 找到绑定名）
-			found := false
-			for _, obj := range llr.Objects {
-				if obj.FrameOwn && obj.Site == fr.VarName && obj.Name != "" {
-					fr.VarName = obj.Name
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		off := findLocalVarOffset(node, fr.VarName)
-		if off == -1 {
-			continue // 栈槽未找到（未分配/被豁免），跳过该变量
-		}
-		code += utils.Format("; gc: free " + fr.VarName)
+	for _, s := range c.resolveExitSlots(llr, node) {
+		code += utils.Format("; gc: free " + s.name)
 		if is64 {
-			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("lea RDI, [" + base + strconv.Itoa(s.off) + "]")
 			code += utils.Format("call " + slotFunc.MangledName())
 		} else {
-			code += utils.Format("lea eax, [" + base + strconv.Itoa(off) + "]")
+			code += utils.Format("lea eax, [" + base + strconv.Itoa(s.off) + "]")
 			code += utils.Format("push eax")
 			code += c.Ctx.Arch.Call(slotCall)
 		}

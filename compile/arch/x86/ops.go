@@ -789,9 +789,19 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 }
 
 // epilogue 生成函数后序公共返回点
-func (a *x86Ops) epilogue(fn *parser.FuncBlock, stdcallCleanup bool) string {
+func (a *x86Ops) epilogue(fn *parser.FuncBlock, cleanup string, stdcallCleanup bool) string {
 	funcName := formatFuncName(fn)
 	code := utils.Format("func_end_" + funcName + ":")
+
+	// 出口释放必须在标签之后、清栈之前；EAX 是返回值、EDX 可能承载
+	// 64 位返回的高半部，释放调用会破坏它们，成对保存恢复（8 字节）。
+	if cleanup != "" {
+		code += utils.Format("push eax; 保存返回值")
+		code += utils.Format("push edx; 保存返回值(高半部)")
+		code += cleanup
+		code += utils.Format("pop edx; 恢复返回值(高半部)")
+		code += utils.Format("pop eax; 恢复返回值")
+	}
 
 	// 清理局部变量栈空间
 	if a.ctx.StackSize > 0 {

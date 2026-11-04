@@ -14,7 +14,11 @@ type Arch interface {
 	// ---- 函数生命周期 ----
 	SetArgsOffset(fn *parser.FuncBlock) // 将参数偏移从调用者帧位置刷新为 callee-local 位置
 	Prologue(fn *parser.FuncBlock) string
-	Epilogue(fn *parser.FuncBlock) string
+	// Epilogue 生成公共返回点。cleanup 是出口 GC 释放序列（可为空），
+	// 必须插在 func_end_<name>: 之后、清理栈帧之前：显式 ret 会 jmp 到该
+	// 标签，提前放置会被跳过；提前清栈则释放调用会覆写已归还的局部槽。
+	// 实现负责保存/恢复返回值寄存器，释放调用不得破坏返回值。
+	Epilogue(fn *parser.FuncBlock, cleanup string) string
 
 	// ---- 函数调用 ----
 	Call(call *parser.CallBlock) string

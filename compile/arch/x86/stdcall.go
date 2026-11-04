@@ -37,8 +37,8 @@ func (a *Stdcall) Prologue(fn *parser.FuncBlock) string {
 }
 
 // Epilogue 函数后序代码(公共返回点，stdcall: ret N 被调者清理参数)
-func (a *Stdcall) Epilogue(fn *parser.FuncBlock) string {
-	return a.epilogue(fn, true)
+func (a *Stdcall) Epilogue(fn *parser.FuncBlock, cleanup string) string {
+	return a.epilogue(fn, cleanup, true)
 }
 
 // Call 函数调用（stdcall：被调者清理参数）
