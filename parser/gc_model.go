@@ -95,7 +95,12 @@ const (
 
 // Disposal 有任何一个绑定名逃出本帧就不能作用域释放（悬垂），退回 RC。
 func (l *Life) Disposal() Disposal {
-	o := l.Obj
+	return DisposalOf(l.Obj)
+}
+
+// DisposalOf 对象级处置判定。(*Life).Disposal 是它的变量视角包装；
+// 包外驱动（gcfe 的计划导出）手里只有 *Object，也需要同一份三态判据。
+func DisposalOf(o *Object) Disposal {
 	if o == nil {
 		return DisposalBorrow
 	}

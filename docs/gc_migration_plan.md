@@ -1,7 +1,8 @@
 # 前端 GC 对比与接入计划
 
 > 状态（2026-11-04）：前端 GC 已从 `parser` 中拆出 Check 后的驱动层
-> （`gcfe`），并修复 `[]T` 的 owning 判据。**代码生成权威仍是 `compile/gc`**；
+> （`gcfe`），修复 `[]T` 的 owning 判据，并完成 Phase 1 只读对拍
+> （`gcfe.BuildPlan` + `tools/gcdiff`）。**代码生成权威仍是 `compile/gc`**；
 > 本文给出两套模型的实测差异、切换阻塞项和建议的 rollout 顺序。
 >
 > 相关文档：`gc_frontend_design.md`（前端模型设计）、`gc_api.md`（API）、
@@ -71,6 +72,32 @@ main.go
 - `[]T` 修复前是 `117 / 6`；修复后对象 +15、RC +2，泄漏与提前释放仍为 0。
 - `RC=8` 分布：`gc_loop` 5、`heap_new` 1、`gcprobe` 1、`sliceprobe2` 1。
 - 9 个失败目录是既有解析失败，不是本轮引入。
+
+### 2.2 Phase 1 对拍基线（`tools/gcdiff`，106 个成功目录）
+
+```bash
+go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
+```
+
+每个目录输出三份文件：`gcfe_plan.json`（对象级计划）、`gc_llr.json`（后端
+`gc.LLRResults`）、`gc_diff.txt`（逐函数并排 + 差异归类）。全语料累计：
+
+| 侧 | 指标 |
+|---|---|
+| 前端 `gcfe` | 对象 132；作用域 100；RC 8；转移 24；就地释放 7；真泄漏 0 |
+| 后端 `compile/gc` | 有释放计划的函数实例 133；出口 204；块尾 67；循环出口 53；覆盖 3；字段 96；临时 48 |
+
+逐函数归类按目录累计（同一函数在多个目录中会重复计数）：
+
+| 归类 | 次数 | 典型函数 |
+|---|---:|---|
+| 前端独有 | 20 | `testLocalAlloc` / `testLoopAlloc` / `testFieldOrphan` 各 2；`overwriteLoop`、`selfRef`、`fieldAlias`、`listBuild`、`nilDrop` |
+| 后端独有 | 109 | `main` 9；`useTemp` / `buildTree` 各 2；`forCond`、`ifBoth`、`ifOr`、`ifTrue`、`oneTemp`、`twoTemps`、`deepClone`；另有标准库 `strings.trim` 的 ret 临时 |
+| 两边都有 | 24 | `gcBlocks` 的块函数、`stringConcat`、`testNestedAlloc` 等 |
+
+这与 §3 的能力表一致：前端独有集中在“直接 `new` / 覆盖赋值 / 循环分配”，
+后端独有集中在“表达式临时（ret/cond/incr）、字段 cascade、嵌套调用”。
+对拍只统计数据，不改变生成代码。
 
 ---
 
@@ -177,12 +204,14 @@ main.go
 - 修复 `ListType.IsOwning`，重建基线 `132 / 8 / 0 / 0`；
 - 全量 esccheck 逐目录对比，抽取前后逐位一致。
 
-### Phase 1：只读对拍，不接代码生成
+### Phase 1（已完成）：只读对拍，不接代码生成
 
-- 新增 `gcfe` 的计划导出（对象 → FreeScope/Holder/ReleasesOld），与
-  `gc.LLRResults` 并排落盘；
-- 对 `test/gc*` + 全语料做差异报告：哪些对象只在前端/只后端/两边都有；
-- 目标：把“临时对象、字段 cascade、单态化”缺口量化，不改变生成代码。
+- `gcfe.BuildPlan(root)` 导出对象级计划（`FreeScope` / `Holder` /
+  `ReleasesOld` / 字段绑定），JSON 稳定可 diff；
+- `tools/gcdiff` 把前端计划与 `gc.LLRResults` 并排落盘，逐函数归类为
+  “前端独有 / 后端独有 / 两边都有”；
+- 全语料结果见 §2.2；9 个既有失败目录与 `esccheck` 口径一致；
+- 不改生成代码，`泄漏=0`、`提前释放=0` 保持不变。
 
 ### Phase 2：补齐前端能力
 

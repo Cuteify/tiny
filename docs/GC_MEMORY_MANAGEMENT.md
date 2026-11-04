@@ -1432,6 +1432,8 @@ fn resetLeakTracker()
 
 - `docs/gc_frontend_design.md`：前端模型（`gcfe.SimulateRC` + parser 侧模型）的设计论证；
   该模型目前只服务诊断，代码生成权威仍是 `compile/gc`。
+- `docs/gc_migration_plan.md`：两套 GC 的实测差异、Phase 1 对拍基线
+  （`gcfe.BuildPlan` / `tools/gcdiff`）与分阶段切换计划。
 - `docs/gc_api.md`：旧前端模型的调用流程与 API。
 - `docs/backend.md`：后端总体结构、架构抽象、调用约定。
 - `PROJECT.md`：当前验收基线、farm 矩阵、提交纪律。

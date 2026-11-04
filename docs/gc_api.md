@@ -3,7 +3,7 @@
 > 与 `gc_frontend_design.md` 的分工：设计文档讲"为什么"（原理、公式推导、取舍论证）；
 > 本文档讲"谁调用谁、谁提供什么"，是接入与排查用的事实参考。
 > 符号分布在 `parser/gc_*.go`（模型 + Check 期事实收集，六个文件）与
-> `gcfe/*.go`（Check 后的驱动 + 计划构建，五个文件）。
+> `gcfe/*.go`（Check 后的驱动、计划构建与导出，六个文件）。
 > 当前代码生成权威仍是 `compile/gc`，本文模型只服务 `tools/esccheck` 诊断。
 >
 > 当前基线：`test/ 106/115 · 对象=132 · RC=8 · 泄漏=0 · 提前释放=0`（§5）。
@@ -161,6 +161,7 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 | 符号 | 语义 |
 |---|---|
 | `func parser.Objects() []*Object` | 全部对象，只读快照（单线程，线性追加） |
+| `func gcfe.BuildPlan(root *parser.Node) Plan` | Phase 1 只读计划导出：对象 → `FreeScope` / `Holder` / 字段绑定，语句 → `ReleasesOld`。不参与代码生成；必须在 `SimulateRC` 之后调用 |
 | `func gcfe.TransferReport() (sent, taken, orphan int, detail []string)` | 转移统计：`sent`=Transferred 对象数；`taken`/`orphan` 按当前流程恒为 0 / 恒=sent（转移块不设 FreeScope，结构使然）——**真泄漏不看它**，看 Objects 三态收口 |
 | `var gcfe.Premature int`、`gcfe.PrematureDetail []string` | 提前释放计数与明细（发布期第 4 步填） |
 
@@ -172,6 +173,7 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 | 方法 | 语义 | 后端动作对应 |
 |---|---|---|
 | `func (l *Life) Disposal() Disposal` | 三态判定，**唯一入口，不要自己拼条件** | Borrow 不做事；Scope 在 ReleaseScope() free；RC 走计数 |
+| `func parser.DisposalOf(o *Object) Disposal` | 对象级三态判定；`(*Life).Disposal()` 是它的变量视角包装，包外计划导出用 | 同左 |
 | `func (d Disposal) String()` | `"Scope" / "RC" / "Borrow"`，诊断用 | — |
 | `func (l *Life) ReleaseScope() Block` | 释放点作用域（nil = 不释放） | 每逢离开该作用域 free 一次 |
 | `func (l *Life) Holder() *VarBlock` | free 时哪个栈槽（创建者被改绑时指向别的绑定名） | 释放指令的地址来源 |
@@ -476,7 +478,7 @@ Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可�
 ## 7. 现状备注
 
 - 前端分析分两层：`parser/gc_*.go` 六个文件承载模型与 Check 期事实收集，
-  `gcfe/*.go` 五个文件承载 Check 后的驱动与计划构建；`compile/gc*` 是当前
+  `gcfe/*.go` 六个文件承载 Check 后的驱动、计划构建与导出；`compile/gc*` 是当前
   代码生成权威（用户手动重构域）。
   旧 `docs/frontend_gc_contract.md` 已丢失，契约以 `gc_frontend_design.md`
   §8 为准，本档 §3.4 / §6 是它的展开。

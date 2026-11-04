@@ -1,7 +1,7 @@
 # GC 前端分析设计
 
 > 对象：`parser/gc_*.go` 六个文件（数据模型 + Check 期事实收集，约 1130 行）
-> + `gcfe/*.go` 五个文件（Check 后的驱动与计划构建，约 440 行）。
+> + `gcfe/*.go` 六个文件（Check 后的驱动、计划构建与导出，约 710 行）。
 > 唯一公开入口：`gcfe.SimulateRC(root)`，调用点在 `package/package.go`。
 >
 > 当前代码生成的权威分析仍是 `compile/gc`；本模型只由 `tools/esccheck` 消费。
@@ -258,6 +258,7 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 | 文件 | 行 | 职责 |
 |---|---|---|
 | `gcfe/gcfe.go` | 30 | `SimulateRC` 唯一入口：按顺序驱动四步 |
+| `gcfe/plan.go` | 271 | Phase 1 只读计划导出：对象级 `FreeScope` / `Holder` / 字段绑定，语句级 `ReleasesOld` |
 | `gcfe/inplace.go` | 223 | **就地释放**：槽位表模拟 `rcSim` |
 | `gcfe/release.go` | 59 | **释放点**：`scopeRelease` |
 | `gcfe/diag.go` | 57 | 诊断：`checkPremature` / `TransferReport` |
