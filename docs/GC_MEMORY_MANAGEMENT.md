@@ -98,8 +98,15 @@ main.go
 | 调用点 | `package/package.go` | `main.go` |
 | 核心数据结构 | `parser.Object`、`Life`、`FreeScope` | `FnSummary`、`LLRResult` |
 | 释放依据 | 变量绑定名的最外层作用域 + 槽位模拟 | 调用摘要 + 返回值来源 + 别名/借用 mask + 语句级 LLR |
-| 产物消费者 | `tools/esccheck`（诊断） | `compile.Compiler`（真正生成释放代码） |
-| 当前状态 | 诊断/历史模型 | 权威链路 |
+| 产物消费者 | `tools/esccheck` / `tools/gcdiff`（诊断） | `compile.Compiler`（真正生成释放代码） |
+| 释放点状态 | 五态互斥：Inplace / Field / Scope / Transfer / RC | 七类语句级释放点，依赖生成顺序 |
+| 当前状态 | 诊断/历史模型，Phase 1 只读对拍中 | 权威链路 |
+
+`gcfe` 这一代已经把“一个对象至多一个释放点”落成显式不变量：覆盖赋值点
+就地释放（`Object.Inplace`）、容器字段释放（`FieldOwner`/`FieldName`）、
+作用域释放（`FreeScope`）三者互斥，`DisposalOf` 按固定序只返回一个。
+`compile/gc` 目前靠语句生成顺序保证同一件事，没有对象级的互斥位；接前端
+计划时必须保持这条不变量，不能把五态对象再生成一遍出口释放。
 
 `docs/gc_frontend_design.md` 开头“后端只读 `parser.Object` 与
 `(*Life).Disposal()`”是旧描述，与当前代码不一致。**排查释放代码时以
@@ -1290,11 +1297,12 @@ grep -n "gc: free\|func_end_" _main.asm
   双架构均为 `RC:0`；
 - `test/sortTest` x64=`110`、x86=`COMPILE_FAIL:2`（与基线一致，非 GC 回归）；
 - 全 `test/` 目录聚合的 `tools/esccheck`：可解析 106 个、不可解析 9 个、
-  对象 132、`RC/泄漏释放=8`、`泄漏=0`、`提前释放=0`；
+  对象 132、作用域 92、就地 7、字段 1、转移 24、RC 8、`泄漏=0`、
+  `提前释放=0`、`HolderBad=0`；
 - 9 个 FAIL 是既有不可解析目录，不是本轮引入。
 
-对象数会随源码和语料变化；验收时以“**泄漏=0、提前释放=0、四个 GC 回归
-双架构 0**”为准，不要死记对象数。
+对象数会随源码和语料变化；验收时以“**泄漏=0、提前释放=0、HolderBad=0、
+四个 GC 回归双架构 0**”为准，不要死记对象数。
 
 `tools/esccheck` 是诊断工具，读的是 `gcfe.SimulateRC`（模型仍在 parser）链，不是
 `compile/gc`；它的“泄漏=0”不能证明后端生成代码没有泄漏，反之亦然。两者要

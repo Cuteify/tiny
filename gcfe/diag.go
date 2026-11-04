@@ -18,7 +18,7 @@ var PrematureDetail []string
 func checkPremature() {
 	Premature, PrematureDetail = 0, nil
 	for _, o := range parser.Objects() {
-		if o.Escapes || o.Transferred || o.FreeScope == nil || len(o.Names) == 0 {
+		if o.Inplace || o.FieldOwner != nil || o.Escapes || o.Transferred || o.FreeScope == nil || len(o.Names) == 0 {
 			continue
 		}
 		dRel := scopeDepth(o.FreeScope)

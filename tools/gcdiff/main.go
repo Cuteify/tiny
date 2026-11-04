@@ -37,10 +37,11 @@ type feFn struct {
 	Borrow   int
 	Leak     int
 	Inplace  int
+	Field    int
 	ByKind   map[string]int
 }
 
-func (f *feFn) releases() int { return f.Scope + f.Inplace }
+func (f *feFn) releases() int { return f.Scope + f.Inplace + f.Field }
 
 type beFn struct {
 	Objects  int
@@ -115,9 +116,10 @@ func main() {
 	}
 
 	fmt.Printf("目录: %s\n", dir)
-	fmt.Printf("前端: 对象=%d 作用域=%d RC=%d 转移=%d 就地=%d 真泄漏=%d\n",
+	fmt.Printf("前端: 对象=%d 作用域=%d RC=%d 转移=%d 就地=%d 就地对象=%d 字段=%d 真泄漏=%d HolderBad=%d\n",
 		plan.Summary.Objects, plan.Summary.Scope, plan.Summary.RC,
-		plan.Summary.Transfer, plan.Summary.Inplace, plan.Summary.Leak)
+		plan.Summary.Transfer, plan.Summary.Inplace, plan.Summary.InplaceObj,
+		plan.Summary.Field, plan.Summary.Leak, plan.Summary.HolderBad)
 	fmt.Printf("差异: 前端独有=%d  后端独有=%d  两边都有=%d\n",
 		counts["fe-only"], counts["be-only"], counts["both"])
 	fmt.Printf("输出: %s\n      %s\n      %s\n", fePath, bePath, diffPath)
@@ -125,7 +127,10 @@ func main() {
 		fmt.Println("警告: 存在“后端有释放、前端无计划”的函数，直接切换会退化为漏释放（详见报告）。")
 	}
 	if plan.Summary.Leak > 0 {
-		fmt.Println("警告: 前端存在三态都不沾的对象（真泄漏）。")
+		fmt.Println("警告: 前端存在五态都不沾的对象（真泄漏）。")
+	}
+	if plan.Summary.HolderBad > 0 {
+		fmt.Println("警告: 存在 Holder 无效的释放计划（槽已改绑或活不到释放点）。")
 	}
 }
 
@@ -156,6 +161,10 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 			}
 		case "rc":
 			f.RC++
+		case "inplace":
+			// 对象级就地释放；语句级已由 plan.Inplace 计入 f.Inplace。
+		case "field":
+			f.Field++
 		case "transfer":
 			f.Transfer++
 		default:
@@ -250,8 +259,8 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 		if class == "—" && f.Objects == 0 && b.releases() == 0 && b.FrameOwn == 0 {
 			continue
 		}
-		rows = append(rows, fmt.Sprintf("%-40s %6d %6d %6d %6d %6d %6d %6d %6d %6d  %s",
-			name, f.Objects, f.Scope, f.Inplace, b.Objects, b.Exit, b.Block, b.Assign, b.Field,
+		rows = append(rows, fmt.Sprintf("%-40s %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d  %s",
+			name, f.Objects, f.Scope, f.Inplace, f.Field, b.Objects, b.Exit, b.Block, b.Assign, b.Field,
 			b.Ret+b.Cond+b.Incr, class))
 	}
 
@@ -276,9 +285,10 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# GC 计划对拍\n\n目录: %s\n\n", dir)
 	fmt.Fprintf(&sb, "## 汇总\n\n")
-	fmt.Fprintf(&sb, "前端 gcfe: 对象=%d 作用域=%d RC=%d 转移=%d Borrow=%d 真泄漏=%d 就地=%d\n",
+	fmt.Fprintf(&sb, "前端 gcfe: 对象=%d 作用域=%d RC=%d 转移=%d 就地对象=%d 语句=%d 字段=%d Borrow=%d 真泄漏=%d HolderBad=%d\n",
 		plan.Summary.Objects, plan.Summary.Scope, plan.Summary.RC,
-		plan.Summary.Transfer, plan.Summary.Borrow, plan.Summary.Leak, plan.Summary.Inplace)
+		plan.Summary.Transfer, plan.Summary.InplaceObj, plan.Summary.Inplace,
+		plan.Summary.Field, plan.Summary.Borrow, plan.Summary.Leak, plan.Summary.HolderBad)
 	kinds := make([]string, 0, len(plan.Summary.ByScopeKind))
 	for k := range plan.Summary.ByScopeKind {
 		kinds = append(kinds, k)
@@ -296,8 +306,8 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 	fmt.Fprintf(&sb, "      “循环”是“块尾”在 for 节点上的副本，不计入释放总数。\n\n")
 
 	fmt.Fprintf(&sb, "## 逐函数并排\n\n")
-	fmt.Fprintf(&sb, "%-40s %6s %6s %6s %6s %6s %6s %6s %6s %6s  %s\n",
-		"函数", "FE对象", "FE作用", "FE就地", "BE对象", "BE出口", "BE块尾", "BE覆盖", "BE字段", "BE临时", "判定")
+	fmt.Fprintf(&sb, "%-40s %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s  %s\n",
+		"函数", "FE对象", "FE作用", "FE就地", "FE字段", "BE对象", "BE出口", "BE块尾", "BE覆盖", "BE字段", "BE临时", "判定")
 	for _, row := range rows {
 		sb.WriteString(row)
 		sb.WriteByte('\n')
@@ -317,8 +327,8 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 			if b == nil {
 				b = &beFn{}
 			}
-			fmt.Fprintf(&sb, "  %-40s FE: 作用域=%d 就地=%d RC=%d 转移=%d 泄漏=%d | BE: 出口=%d 块尾=%d 覆盖=%d 字段=%d 临时=%d\n",
-				n, f.Scope, f.Inplace, f.RC, f.Transfer, f.Leak,
+			fmt.Fprintf(&sb, "  %-40s FE: 作用域=%d 就地=%d 字段=%d RC=%d 转移=%d 泄漏=%d | BE: 出口=%d 块尾=%d 覆盖=%d 字段=%d 临时=%d\n",
+				n, f.Scope, f.Inplace, f.Field, f.RC, f.Transfer, f.Leak,
 				b.Exit, b.Block, b.Assign, b.Field, b.Ret+b.Cond+b.Incr)
 		}
 	}
@@ -330,6 +340,9 @@ func buildReport(dir string, plan gcfe.Plan, be map[string]*gc.LLRResult) (strin
 	for _, o := range plan.Objects {
 		fmt.Fprintf(&sb, "  #%-3d %-32s %-8s owner=%-20s scope=%-12s free=%-12s holder=%s",
 			o.ID, o.Function, o.Disposal, o.Owner, o.Scope, o.FreeScope, o.Holder)
+		if o.FieldOwner != 0 {
+			fmt.Fprintf(&sb, " field=%s@#%d", o.FieldName, o.FieldOwner)
+		}
 		if len(o.Names) > 0 {
 			fmt.Fprintf(&sb, " names=%s", strings.Join(o.Names, ","))
 		}

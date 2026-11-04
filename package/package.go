@@ -176,6 +176,12 @@ func fixExpNamePaths(exp *parser.Expression, pkg *packageFmt.Info) {
 }
 
 func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
+	// 一次新的根包编译开始：清空上一轮的 GC 对象表。
+	// 不能等到 SimulateRC 再清 —— 对象是在 Check 期间 claim 出来的。
+	// 导入包的递归调用 isRoot=false，必须保留根调用已收集的对象。
+	if isRoot {
+		parser.ResetObjects()
+	}
 	// 列出目录下所有文件
 	files, err := os.ReadDir(packagePath)
 	if err != nil {

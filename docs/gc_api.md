@@ -6,7 +6,7 @@
 > `gcfe/*.go`（Check 后的驱动、计划构建与导出，六个文件）。
 > 当前代码生成权威仍是 `compile/gc`，本文模型只服务 `tools/esccheck` 诊断。
 >
-> 当前基线：`test/ 106/115 · 对象=132 · RC=8 · 泄漏=0 · 提前释放=0`（§5）。
+> 当前基线：`test/ 106/115 · 对象=132 · 作用域=92 · 就地=7 · 字段=1 · 转移=24 · RC=8 · 泄漏=0 · 提前释放=0 · HolderBad=0`（§5）。
 
 ---
 
@@ -53,7 +53,7 @@ package/package.go（Check 收敛之后） → gcfe.SimulateRC(root)
 
 | 步骤 | 输入 | 产出 | 要点 |
 |---|---|---|---|
-| collectNames | Life 正向事实 | `Object.Names`、对象级 `Escapes`、FieldVals 收敛 | WroteTo 记在右值：顺序覆盖也算持有（释放点偏外=安全）；同一字段留最后一次，槽已改绑的丢弃 |
+| collectNames | Life 正向事实 | `Object.Names`、对象级 `Escapes`、FieldVals 收敛 | WroteTo 记在右值：顺序覆盖也算持有（释放点偏外=安全）；同一字段留最后一次，值槽已改绑的只标 `Stale`，字段绑定保留 |
 | rcSim.walk | 语句序 | `Life.ReleasesOld` / `OldObj` | 旧值再无别的引用（其它槽位 / 字段）才就地释放；有引用 → 交给步骤 3 的作用域规则。调用点不处理——"实参被被调存下"由 Check 期摘要判逃逸，逃逸对象进不了槽位表 |
 | scopeRelease | Names / Scope | `Object.FreeScope`、`Holder` | 公式：全部绑定名里最外层的作用域；算不出兜底到所属函数出口 + 创建者槽；`Escapes` / `Transferred` 的跳过 |
 | checkPremature | 全对象 | `Premature`（必须 0） | FreeScope 深度不得早于任一绑定名的作用域 |
@@ -161,20 +161,24 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 | 符号 | 语义 |
 |---|---|
 | `func parser.Objects() []*Object` | 全部对象，只读快照（单线程，线性追加） |
-| `func gcfe.BuildPlan(root *parser.Node) Plan` | Phase 1 只读计划导出：对象 → `FreeScope` / `Holder` / 字段绑定，语句 → `ReleasesOld`。不参与代码生成；必须在 `SimulateRC` 之后调用 |
-| `func gcfe.TransferReport() (sent, taken, orphan int, detail []string)` | 转移统计：`sent`=Transferred 对象数；`taken`/`orphan` 按当前流程恒为 0 / 恒=sent（转移块不设 FreeScope，结构使然）——**真泄漏不看它**，看 Objects 三态收口 |
+| `func gcfe.BuildPlan(root *parser.Node) Plan` | Phase 1 只读计划导出：对象 → `Inplace` / `FieldOwner` / `FreeScope` / `Holder` / 字段绑定，语句 → `ReleasesOld`。不参与代码生成；必须在 `SimulateRC` 之后调用 |
+| `func gcfe.TransferReport() (sent, taken, orphan int, detail []string)` | 转移统计：`sent`=Transferred 对象数；`taken`/`orphan` 按当前流程恒为 0 / 恒=sent（转移块不设 FreeScope，结构使然）——**真泄漏不看它**，看 Objects 五态收口 |
 | `var gcfe.Premature int`、`gcfe.PrematureDetail []string` | 提前释放计数与明细（发布期第 4 步填） |
 
-三态收口（esccheck 口径）：对象只有三条出路 —— `FreeScope`（作用域释放）/
-`Transferred`（转移给调用方）/ `Escapes`（退 RC）；三者都不沾才是真泄漏。
+五态收口（esccheck 口径，判定序与 `DisposalOf` 一致）：对象只有五条出路 ——
+`Inplace`（覆盖赋值点就地释放）/ `FieldOwner`（随容器字段释放）/
+`FreeScope`（作用域释放）/ `Transferred`（转移给调用方）/
+`Escapes`（退 RC）；五者都不沾才是真泄漏。**前三种释放点互斥**，同一对象只允许
+一个释放点。`HolderBad` 单独校验作用域释放的读槽：槽必须是该对象的绑定名，
+且活到释放点。
 
 ### 3.4 后端契约面（代码生成对 Life 的唯一读法）
 
 | 方法 | 语义 | 后端动作对应 |
 |---|---|---|
-| `func (l *Life) Disposal() Disposal` | 三态判定，**唯一入口，不要自己拼条件** | Borrow 不做事；Scope 在 ReleaseScope() free；RC 走计数 |
-| `func parser.DisposalOf(o *Object) Disposal` | 对象级三态判定；`(*Life).Disposal()` 是它的变量视角包装，包外计划导出用 | 同左 |
-| `func (d Disposal) String()` | `"Scope" / "RC" / "Borrow"`，诊断用 | — |
+| `func (l *Life) Disposal() Disposal` | 五态判定，**唯一入口，不要自己拼条件** | Inplace 不重复释放；Field 随容器；Scope 在 ReleaseScope() free；RC 走计数 |
+| `func parser.DisposalOf(o *Object) Disposal` | 对象级五态判定；`(*Life).Disposal()` 是它的变量视角包装，包外计划导出用 | 同左 |
+| `func (d Disposal) String()` | `"Scope" / "Field" / "Inplace" / "RC" / "Borrow"`，诊断用 | — |
 | `func (l *Life) ReleaseScope() Block` | 释放点作用域（nil = 不释放） | 每逢离开该作用域 free 一次 |
 | `func (l *Life) Holder() *VarBlock` | free 时哪个栈槽（创建者被改绑时指向别的绑定名） | 释放指令的地址来源 |
 | `func (l *Life) IsRep() bool` | 我是否拥有这个对象（分配就发生在我的槽位上） | 区分创建者与普通绑定名 |
@@ -184,12 +188,18 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 Disposal 判定序（一个方法写死，读语义按这个序理解）：
 
 ```
-Obj == nil                         → Borrow（参数 / 字段读 / 调用结果 / newRC）
+Inplace                             → Inplace（覆盖赋值点已释放，出口不得重复）
 Transferred                         → Borrow（所有权已交给调用者，本帧不碰）
+FieldOwner != nil                   → Field（随容器释放点先 free 容器.字段）
+Obj == nil                          → Borrow（参数 / 字段读 / 调用结果 / newRC）
 Escapes（自身或任一绑定名逃逸）      → RC
 FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都算不出的极少数）
 其余                                → Scope
 ```
+
+判定序不能改：`Inplace` 必须最前（否则出口重复释放）；`Field` 与 `Escapes`
+的先后不影响当前基线，但字段 cascade 的不变量是“字段对象不逃逸”（逃逸对象
+一律走 RC）。
 
 ### 3.5 特殊调用面
 
@@ -286,7 +296,7 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | 函数 | 作用 |
 |---|---|
 | `checkPremature()` | 发布期第 4 步：逐对象校验释放点不早于任一绑定名的作用域，违例 → `gcfe.Premature`++（基线必须恒 0） |
-| `TransferReport()` | 转移统计；真泄漏不看它，看 `parser.Objects()` 三态收口 |
+| `TransferReport()` | 转移统计；真泄漏不看它，看 `parser.Objects()` 五态收口 |
 
 ### 3.7 内嵌分段（闭包级辅助）与外部设施
 
@@ -382,7 +392,10 @@ node.go 树基建。
 | `Names []*VarBlock` | collectNames（反转 + WroteTo 补边） | FreeScope 取最外层 / Holder 核对 |
 | `FreeScope Block` | scopeRelease（或兜底函数出口） | **free 点**；nil = 不释放 |
 | `Holder *VarBlock` | scopeRelease（或兜底创建者） | free 读哪个栈槽 |
-| `FieldVals []FieldBinding` | bindField + collectNames 收敛 | **仅排序**（字段值先于容器），不决定是否释放 |
+| `Inplace bool` | rcSim.releasesOld（旧值已就地释放） | Disposal → Inplace，出口不得重复 free |
+| `FieldOwner *Object` | fieldRelease（最小安全版字段 cascade） | Disposal → Field；随容器释放点 free 容器.字段 |
+| `FieldName string` | fieldRelease | 字段名（容器上的哪一个槽） |
+| `FieldVals []FieldBinding` | bindField + collectNames 收敛 | 仅用于字段 cascade 与排序，不单独决定释放 |
 
 ### 4.4 markFact 全集（13 个 flag；applyMark 的 case 序即全集）
 
@@ -426,12 +439,13 @@ go build -o /tmp/esc ./tools/esccheck
 全量跑法是 `for d in test/*/ pkg/*/` 逐目录执行（报错目录跳过），首两行聚合：
 
 ```
-对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0
-  作用域释放=100  转移=24  RC=8  真泄漏=0  (转移报告 交出=24 接管=0 无人接管=24)
+对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0  就地释放=7  字段释放=1
+  作用域释放=92  转移=24  RC=8  真泄漏=0  (转移报告 交出=24 接管=0 无人接管=24)
 ```
 
-- 基线：通过 106/115 · 对象=132 · RC=8 · 泄漏=0 · 提前=0。改动 `parser/gc_*.go`
-  或 `gcfe/*.go` 之后必须钉住这组数字（基线变更史见 `gc_frontend_design.md` §5）。
+- 基线：通过 106/115 · 对象=132 · 作用域=92 · 就地=7 · 字段=1 · 转移=24 ·
+  RC=8 · 泄漏=0 · 提前=0 · HolderBad=0。改动 `parser/gc_*.go` 或 `gcfe/*.go`
+  之后必须钉住这组数字（基线变更史见 `gc_frontend_design.md` §5）。
 - `RC=8` 来自 markArgs 挂接恢复（prepend 存字段类实参，方向=多标）以及
   `[]T` 纳入 owning 判据后新暴露的 list 分配（gcprobe / sliceprobe2 各 1）。
 - `提前释放` 必须恒 0——它挂在 checkPremature 的自检上。
@@ -444,15 +458,22 @@ go build -o /tmp/esc ./tools/esccheck
 **总顺序**：`Check` 收敛 → `gcfe.SimulateRC(root)` → 按下面清单消费。
 Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可能还没收敛）。
 
-1. **遍历 `parser.Objects()`**，按每块对象的三态分派（三态与 `Life.Disposal()`
-   的判定序一一对应，§3.4）：
+1. **遍历 `parser.Objects()`**，按每块对象的五态分派（判定序与 `Life.Disposal()`
+   一一对应，§3.4）：
 
    | 对象状态 | 后端动作 |
    |---|---|
+   | `Inplace` | 什么都不做——覆盖赋值点已经 free，出口再 free 就是 double free |
    | `Transferred` | 什么都不做——调用方已经接管 |
-   | `FreeScope != nil`（非 Transferred / 非 Escapes） | Scope 释放：在 `FreeScope` 对应作用域出口 free 一次；读 `Holder()` 槽；`FieldVals` 里的字段值块排在容器之前释放（**FieldVals 只用于排序**，绝不据此判是否释放） |
+   | `FieldOwner != nil` | 字段释放：在容器释放点先 free `容器.FieldName`，再 free 容器；不得给字段对象单独设出口释放 |
+   | `FreeScope != nil`（非 Transferred / 非 Escapes） | Scope 释放：在 `FreeScope` 对应作用域出口 free 一次；读 `Holder()` 槽 |
    | `FreeScope == nil` 且 `Escapes` | RC 释放：分配带 RC 头、rcInc / rcDec；全局属此类 |
-   | 三态全空 | 真泄漏——基线上不允许出现，出现即报 |
+   | 五态全空 | 真泄漏——基线上不允许出现，出现即报 |
+
+   三种释放点（Inplace / Field / Scope）互斥。`Holder` 只保证“是该对象的绑定名
+   且活到释放点”，同一槽在同一释放点可能对应分支合流的不同对象：释放必须走
+   **清槽语义**（`freeSlot`，free 后槽置 0），不能生成裸 `free(槽值)`；
+   否则第二个对象会重复释放同一个块。
 
 2. **就地释放**：写左值前读右值侧 `Life.ReleasesOld`（+ `OldObj`），为 true
    则先 free 旧块再写——"多个引用时改一个槽位要不要 free"的答案在这里。
@@ -467,9 +488,9 @@ Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可�
 
 5. **禁忌**：
 
-   - 不要绕开 `Disposal()` 自己拼三态条件（判定序一变就悬垂）；
+   - 不要绕开 `Disposal()` 自己拼五态条件（判定序一变就悬垂）；
    - 不要读 Check 中间轮次；不要在 SimulateRC 之前读 FreeScope / Names；
-   - 不要为 `FieldVals` 单独建释放逻辑；
+   - 不要给 `Inplace` / `FieldOwner` 对象再设独立的出口释放；
    - 不要假设 `TransferReport.taken` > 0（结构上恒 0，§3.3）；
    - `newRC` 块与全局初始化路径不进清单第 1 条，按手工 RC 语义管。
 

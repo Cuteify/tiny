@@ -29,12 +29,15 @@ type Plan struct {
 // PlanSummary 聚合数字，与 tools/esccheck 的口径一致。
 type PlanSummary struct {
 	Objects     int            `json:"objects"`
-	Scope       int            `json:"scope"`    // FreeScope != nil
-	RC          int            `json:"rc"`       // Escapes（退回引用计数）
-	Transfer    int            `json:"transfer"` // Transferred（所有权交给调用方）
-	Borrow      int            `json:"borrow"`   // 参数 / 字段读 / 无绑定名
-	Leak        int            `json:"leak"`     // 三态都不沾
-	Inplace     int            `json:"inplace"`  // ReleasesOld 语句数
+	Scope       int            `json:"scope"`      // FreeScope != nil
+	RC          int            `json:"rc"`         // Escapes（退回引用计数）
+	Transfer    int            `json:"transfer"`   // Transferred（所有权交给调用方）
+	Field       int            `json:"field"`      // 只被容器字段持有，随容器释放
+	Borrow      int            `json:"borrow"`     // 参数 / 字段读 / 无绑定名
+	Leak        int            `json:"leak"`       // 五态都不沾（真泄漏）
+	Inplace     int            `json:"inplace"`    // ReleasesOld 语句数
+	InplaceObj  int            `json:"inplaceObj"` // 已就地释放的对象数
+	HolderBad   int            `json:"holderBad"`  // 释放点读的槽已不持有该对象 / 活不到释放点
 	ByScopeKind map[string]int `json:"byScopeKind"`
 }
 
@@ -42,24 +45,27 @@ type PlanSummary struct {
 type ObjectPlan struct {
 	ID          int         `json:"id"`
 	Function    string      `json:"function"`
-	Owner       string      `json:"owner"`     // 初始持有者（创建处栈槽）
-	OwnerType   string      `json:"ownerType"` // 创建处栈槽类型 Kind
-	Scope       string      `json:"scope"`     // 创建作用域（kind#id）
-	Disposal    string      `json:"disposal"`  // scope / rc / transfer / borrow
-	FreeScope   string      `json:"freeScope"` // 释放作用域（kind#id）；空 = 无
-	Holder      string      `json:"holder"`    // 释放时读哪个栈槽
+	Owner       string      `json:"owner"`                // 初始持有者（创建处栈槽）
+	OwnerType   string      `json:"ownerType"`            // 创建处栈槽类型 Kind
+	Scope       string      `json:"scope"`                // 创建作用域（kind#id）
+	Disposal    string      `json:"disposal"`             // scope / rc / inplace / field / transfer / borrow
+	FreeScope   string      `json:"freeScope"`            // 释放作用域（kind#id）；空 = 无
+	Holder      string      `json:"holder"`               // 释放时读哪个栈槽
+	FieldOwner  int         `json:"fieldOwner,omitempty"` // 通过哪个容器对象的字段持有（ID）
+	FieldName   string      `json:"fieldName,omitempty"`  // 容器字段名
 	Escapes     bool        `json:"escapes"`
 	Transferred bool        `json:"transferred"`
 	Names       []string    `json:"names"`
 	Fields      []FieldPlan `json:"fields,omitempty"`
 }
 
-// FieldPlan 容器字段与子对象的绑定关系。仅记录 FieldVals 的最终快照，
-// 不表示字段 cascade 已实现（见 docs/gc_migration_plan.md §4.3）。
+// FieldPlan 容器字段与子对象的绑定关系。record 是 FieldVals 的最终快照；
+// 对象是否随字段释放由 Object.FieldOwner 决定（最小安全版字段 cascade）。
 type FieldPlan struct {
 	Field    string `json:"field"`
 	Value    string `json:"value"`
 	ObjectID int    `json:"objectId"`
+	Stale    bool   `json:"stale,omitempty"` // 值变量已改绑；释放读容器字段，不读 Value 槽
 }
 
 // InplacePlan 一条覆盖赋值上的就地释放判定。
@@ -81,6 +87,7 @@ type blockInfo struct {
 }
 
 // BuildPlan 生成只读计划快照。必须在 gcfe.SimulateRC 之后调用。
+// 对象的处置按 DisposalOf 的五态判定归类：Inplace / Field / Transfer / RC / Scope。
 func BuildPlan(root *parser.Node) Plan {
 	idx := indexBlocks(root)
 	p := Plan{Summary: PlanSummary{ByScopeKind: map[string]int{}}}
@@ -96,6 +103,8 @@ func BuildPlan(root *parser.Node) Plan {
 			Disposal:    disposalName(d),
 			FreeScope:   idx.describe(o.FreeScope),
 			Holder:      varName(o.Holder),
+			FieldOwner:  objectID(o.FieldOwner),
+			FieldName:   o.FieldName,
 			Escapes:     o.Escapes,
 			Transferred: o.Transferred,
 			Names:       objectNames(o),
@@ -107,8 +116,18 @@ func BuildPlan(root *parser.Node) Plan {
 		case parser.DisposalScope:
 			p.Summary.Scope++
 			p.Summary.ByScopeKind[idx.kindOf(o.FreeScope)]++
+			if !holderValid(o) {
+				p.Summary.HolderBad++
+			}
 		case parser.DisposalRC:
 			p.Summary.RC++
+		case parser.DisposalInplace:
+			p.Summary.InplaceObj++
+		case parser.DisposalField:
+			p.Summary.Field++
+			if !fieldPlanValid(o) {
+				p.Summary.HolderBad++
+			}
 		case parser.DisposalBorrow:
 			if o.Transferred {
 				p.Summary.Transfer++
@@ -175,8 +194,40 @@ func indexBlocks(root *parser.Node) blockIndex {
 	return bi
 }
 
+// holderValid 释放点读的槽必须仍持有 o，且活得至少和 FreeScope 一样久。
+// 否则函数出口读内层块槽可能读到已被复用的栈位（free 错对象）。
+func holderValid(o *parser.Object) bool {
+	if o.Holder == nil || o.FreeScope == nil || !containsName(o.Names, o.Holder) {
+		return false
+	}
+	return holderLivesTo(o.Holder, o.FreeScope)
+}
+
+// fieldPlanValid 字段释放的容器链必须落在有效的作用域释放点上，
+// 且读槽仍持有最顶端容器、不早于释放点失效。
+func fieldPlanValid(o *parser.Object) bool {
+	if o.FieldOwner == nil || o.FieldName == "" {
+		return false
+	}
+	root := o
+	for n := 0; root.FieldOwner != nil; n++ {
+		if n > len(parser.Objects()) {
+			return false // 成环
+		}
+		root = root.FieldOwner
+	}
+	if root == o || root.Inplace || root.FreeScope == nil {
+		return false
+	}
+	return holderValid(root)
+}
+
 // objectFunction 对象所属函数：优先看释放点，其次创建作用域。
+// 字段释放的对象没有自己的 FreeScope，跟容器走。
 func objectFunction(o *parser.Object, idx blockIndex) string {
+	if o.FieldOwner != nil {
+		return objectFunction(o.FieldOwner, idx)
+	}
 	if info, ok := idx.info[o.FreeScope]; ok {
 		return info.fn
 	}
@@ -195,9 +246,20 @@ func disposalName(d parser.Disposal) string {
 		return "scope"
 	case parser.DisposalRC:
 		return "rc"
+	case parser.DisposalInplace:
+		return "inplace"
+	case parser.DisposalField:
+		return "field"
 	default:
 		return "borrow"
 	}
+}
+
+func objectID(o *parser.Object) int {
+	if o == nil {
+		return 0
+	}
+	return o.ID
 }
 
 func varName(v *parser.VarBlock) string {
@@ -231,7 +293,7 @@ func objectFields(o *parser.Object) []FieldPlan {
 	}
 	out := make([]FieldPlan, 0, len(o.FieldVals))
 	for _, fb := range o.FieldVals {
-		fp := FieldPlan{Field: fb.Field, Value: varName(fb.Val)}
+		fp := FieldPlan{Field: fb.Field, Value: varName(fb.Val), Stale: fb.Stale}
 		if fb.Obj != nil {
 			fp.ObjectID = fb.Obj.ID
 		}

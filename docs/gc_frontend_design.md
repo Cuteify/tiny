@@ -1,7 +1,7 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 六个文件（数据模型 + Check 期事实收集，约 1130 行）
-> + `gcfe/*.go` 六个文件（Check 后的驱动、计划构建与导出，约 710 行）。
+> 对象：`parser/gc_*.go` 六个文件（数据模型 + Check 期事实收集，约 1160 行）
+> + `gcfe/*.go` 六个文件（Check 后的驱动、计划构建与导出，约 890 行）。
 > 唯一公开入口：`gcfe.SimulateRC(root)`，调用点在 `package/package.go`。
 >
 > 当前代码生成的权威分析仍是 `compile/gc`；本模型只由 `tools/esccheck` 消费。
@@ -17,7 +17,7 @@
 
 | # | 问题 | 答案由谁给 |
 |---|---|---|
-| A | 这块内存归谁管？ | `Disposal()` 三态判定 |
+| A | 这块内存归谁管？ | `Disposal()` 五态判定 |
 | B | **最终**在哪释放？ | 纯作用域规则 |
 | C | 这条赋值能不能**提前**释放？ | 槽位表存在性扫描 |
 
@@ -61,7 +61,9 @@ n := new(); head = n; for { ... }
 // 否则循环里的 head.next 会指向已经 free 掉的块
 ```
 
-算不出绑定名（没有名字 / 只被字段读引用）就**兜底到所属函数出口** —— 宁可晚释放（浪费）也不早释放（崩溃）。
+算不出绑定名（没有名字 / 只被字段读引用）：先尝试字段 cascade（只被容器
+字段持有 → 随容器释放）；仍算不出才兜底到所属函数出口 —— 宁可晚释放（浪费）
+也不早释放（崩溃），连安全兜底都不成立时宁可不释放。
 
 ### 2.3 为什么不做引用计数
 
@@ -74,9 +76,12 @@ head = prepend(head, 4)
 // 旧 head 的变量名没了，但 prepend 里新建的节点 .next 还指着它
 ```
 
-只看作用域会漏，漏了就是 use-after-free。所以这一步必须扫字段。
+只看作用域会漏，漏了就是 use-after-free。所以这一步必须扫字段：
+`rcSim` 用字段表判断旧对象是否还有人指着；`fieldRelease` 负责把“只被容器
+字段持有、没有变量名”的对象挂到容器释放点。
 
-结论：**作用域规则定"最终在哪"，存在性扫描定"能不能提前"。** 两个问题两种判据，不要指望一个公式全包。
+结论：**作用域规则定"最终在哪"，存在性扫描 / 字段 cascade 定"能不能提前、
+怎么级联"。** 两个问题两种判据，不要指望一个公式全包。
 
 ### 2.4 失败方向只有一边
 
@@ -138,16 +143,18 @@ slot   map[*VarBlock]*Object            // 局部变量当前持有哪个对象
 fields map[*VarBlock]map[string]*Object // 容器各字段当前持有哪个对象
 ```
 
-覆盖一条语句时：先从表里摘掉旧槽位，再问 `referenced(old)` —— 还有没有任何槽位或字段指着它。没有就地释放，有就不释放。
+覆盖一条语句时：先从表里摘掉旧槽位，再问 `referenced(old)` —— 还有没有任何槽位或字段指着它。没有就地释放，有就不释放。就地释放要回写 `Object.Inplace`，
+`scopeRelease` 与 `checkPremature` 都跳过它——否则同一对象会有两个释放点。
 
 顺序敏感，但**与迭代次数无关**：生成的代码（覆盖前先释放旧值）本来就是这个语义。
 
-### 3.5 三态判定（后端的唯一入口）
+### 3.5 五态判定（后端的唯一入口）
 
 ```go
 func (l *Life) Disposal() Disposal {
-    if l.Obj == nil              { return DisposalBorrow }  // 不是本帧分配的块
+    if l.Obj.Inplace             { return DisposalInplace } // 覆盖点已释放
     if l.Obj.Transferred         { return DisposalBorrow }  // 交给调用者了
+    if l.Obj.FieldOwner != nil   { return DisposalField }   // 随容器字段释放
     if l.Obj.Escapes             { return DisposalRC }      // 帧外可达
     for _, n := range o.Names {                              // 任何绑定名逃出本帧
         if n.Life.Escapes       { return DisposalRC }
@@ -158,6 +165,15 @@ func (l *Life) Disposal() Disposal {
 ```
 
 `DisposalScope` 时在 `ReleaseScope()` 处 free，读 `Holder()` 那个槽。
+`DisposalField` 时在容器释放点先 free `容器.FieldName`，再 free 容器。
+
+三种释放点互斥：`Inplace` / `Field` / `Scope` 一个对象只能占一个。`Holder`
+只保证“是该对象的绑定名且活到释放点”，分支合流时同一槽可能对应不同对象，
+所以释放必须走清槽语义（`freeSlot`），不能裸 free 槽值。
+
+字段 cascade 只覆盖最小安全集：对象没有变量名、恰好一个字段引用、容器已按
+作用域释放、容器读槽唯一且确定持有它。任何一条不满足就不挂字段释放（宁可
+漏释放，也绝不 free 错块）。
 
 ### 3.6 跨函数摘要
 
@@ -246,9 +262,9 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 | 文件 | 行 | 职责 |
 |---|---|---|
-| `gc_model.go` | 283 | 数据模型：`Life` / `Object` / `Disposal` 三态；包外只读访问器 |
+| `gc_model.go` | 311 | 数据模型：`Life` / `Object` / `Disposal` 五态；包外只读访问器 |
 | `gc_write.go` | 260 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
-| `gc_names.go` | 109 | `CollectNames` 绑定名反转 + `walkSubNodes` |
+| `gc_names.go` | 107 | `CollectNames` 绑定名反转 + `walkSubNodes` |
 | `gc_pred.go` | 120 | 判据：类型形态、表达式形态（含包外导出版） |
 | `gc_summary.go` | 244 | 跨函数入参摘要 |
 | `gc_mark.go` | 115 | 唯一施加点：`applyMark` |
@@ -258,9 +274,9 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 | 文件 | 行 | 职责 |
 |---|---|---|
 | `gcfe/gcfe.go` | 30 | `SimulateRC` 唯一入口：按顺序驱动四步 |
-| `gcfe/plan.go` | 271 | Phase 1 只读计划导出：对象级 `FreeScope` / `Holder` / 字段绑定，语句级 `ReleasesOld` |
-| `gcfe/inplace.go` | 223 | **就地释放**：槽位表模拟 `rcSim` |
-| `gcfe/release.go` | 59 | **释放点**：`scopeRelease` |
+| `gcfe/plan.go` | 333 | Phase 1 只读计划导出：对象级五态 / `FreeScope` / `Holder` / 字段绑定，语句级 `ReleasesOld` |
+| `gcfe/inplace.go` | 224 | **就地释放**：槽位表模拟 `rcSim` |
+| `gcfe/release.go` | 172 | **释放点**：`scopeRelease` + 最小字段 cascade `fieldRelease` |
 | `gcfe/diag.go` | 57 | 诊断：`checkPremature` / `TransferReport` |
 | `gcfe/scope.go` | 70 | 作用域工具：深度 / 外层 / 可读身份 / 所属函数 |
 
@@ -276,12 +292,15 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 `checkPremature` 用最终快照校验：对象 O 的释放点 S 不能比任何绑定名的作用域更内层。抓的是"数据已对但释放点算早"，抓不到"某条路径上曾持有过"那类（那要路径分析）。
 
 ```
-test/ 106/115      对象=132  RC=8  泄漏=0  提前释放=0
+test/ 106/115      对象=132  作用域=92  就地=7  字段=1  转移=24  RC=8
+                   泄漏=0    提前释放=0  HolderBad=0
 ```
 
 - **`提前释放=0`** 是关键不变量 —— 有 use-after-free 就是错
 - **`泄漏=0`** 是无真泄漏
-- 对象分布：作用域释放 100（76%）、转移给调用方 24（18%）、退回 RC 8（6%）
+- **`HolderBad=0`**：作用域释放读的槽必须是该对象的绑定名且活到释放点
+- 对象分布：作用域释放 92（70%）、转移给调用方 24（18%）、RC 8（6%）、
+  就地释放 7（5%）、字段释放 1（1%）；五种出路互斥
 - **`RC=8`** 的来源：`test/gc_loop` 5、`test/heap_new` 1、`test/gcprobe` 1、
   `test/sliceprobe2` 1（按被调参数摘要判逃逸，prepend 存字段类模式，方向是多标）
 - **list 判据修复**：`[]T` 的 `IsOwning` 曾被内嵌 `RType` 的提升方法吃成 false，
@@ -473,14 +492,16 @@ return nil"——判别式探针 394/394 全数 StructField，钩子 var.go:609 
 后端只做两件事：
 
 1. 遍历 `parser.Objects()`
-2. 对每个对象看 `(*Life).Disposal()`，三态分别处理
+2. 对每个对象看 `(*Life).Disposal()`，五态分别处理
 
 不参与任何判断。所有判定在 `parser` 侧已经做完。
 
 ```go
-DisposalScope  →  在 (*Life).ReleaseScope() 处 free，读 (*Life).Holder() 那个槽
-DisposalRC     →  退回引用计数（rcInc / rcDec）
-DisposalBorrow →  本帧什么都不做
+DisposalScope   →  在 (*Life).ReleaseScope() 处 free，读 (*Life).Holder() 那个槽
+DisposalField   →  在容器释放点先 free 容器.FieldName，再 free 容器
+DisposalInplace →  覆盖赋值点已经 free，出口不得重复
+DisposalRC      →  退回引用计数（rcInc / rcDec）
+DisposalBorrow  →  本帧什么都不做
 ```
 
 只写不读、按设计如此的前端字段（后端要读的）：

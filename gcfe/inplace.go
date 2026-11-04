@@ -59,10 +59,11 @@ func (s *rcSim) leaveScope(sc *rcScope) {
 // releasesOld 能就地释放 = 写完之后没有任何栈槽或字段指着它。
 // 字段引用必须一起看：head = prepend(head, 4) 漏了就是 use-after-free。
 func (s *rcSim) releasesOld(old *parser.Object, at *parser.VarBlock) {
-	if at == nil || old == nil || old.Escapes || s.referenced(old) {
+	if at == nil || old == nil || old.Inplace || old.Escapes || old.Transferred || s.referenced(old) {
 		return
 	}
 	at.Life.ReleasesOld = true
+	old.Inplace = true // 与作用域释放互斥；scopeRelease 会跳过它
 }
 
 // referenced 此刻是否还有任何栈位或字段指着 o。

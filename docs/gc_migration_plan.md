@@ -65,11 +65,13 @@ main.go
 ### 2.1 全量基线（`test/` 115 个目录，106 成功、9 个既有失败）
 
 ```
-对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0
-作用域释放=100  转移=24  RC=8  真泄漏=0
+对象=132  作用域=92  就地=7  字段=1  转移=24  RC=8
+泄漏=0    提前释放=0  HolderBad=0
 ```
 
 - `[]T` 修复前是 `117 / 6`；修复后对象 +15、RC +2，泄漏与提前释放仍为 0。
+- 五态互斥：作用域（92）/ 就地（7）/ 字段（1）/ 转移（24）/ RC（8），
+  合计 132；真泄漏 0。
 - `RC=8` 分布：`gc_loop` 5、`heap_new` 1、`gcprobe` 1、`sliceprobe2` 1。
 - 9 个失败目录是既有解析失败，不是本轮引入。
 
@@ -84,7 +86,7 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 
 | 侧 | 指标 |
 |---|---|
-| 前端 `gcfe` | 对象 132；作用域 100；RC 8；转移 24；就地释放 7；真泄漏 0 |
+| 前端 `gcfe` | 对象 132；作用域 92；就地 7；字段 1；转移 24；RC 8；真泄漏 0；HolderBad 0 |
 | 后端 `compile/gc` | 有释放计划的函数实例 133；出口 204；块尾 67；循环出口 53；覆盖 3；字段 96；临时 48 |
 
 逐函数归类按目录累计（同一函数在多个目录中会重复计数）：
@@ -112,11 +114,12 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 | `if` / `for` 条件临时 | ❌ | ✅ `CondFrees` | **前端缺口** |
 | `for` 增量临时 | ❌ | ✅ `IncrFrees` | **前端缺口** |
 | `obj.f = new(T)` 字段新对象 | ❌ | ✅ `RetFrees`/字段路径 | **前端缺口** |
-| 容器字段 cascade | ❌ `FieldVals` 只排序 | ✅ `FieldFrees` | **前端缺口，会漏释放** |
+| 容器字段 cascade | 🟡 最小安全版：只处理“无变量名、唯一字段引用、容器作用域释放” | ✅ `FieldFrees` | 已覆盖 `fieldAlias`；`makeNode(...)` 字段值仍缺对象（Batch B） |
 | 函数出口释放 | ✅ `FreeScope=FuncBlock` | ⚠️ §9.1 在 `ret` 路径不可达 | 前端可修掉 §9.1，但需先验证 `Holder` |
 | 块尾 / 循环出口 | ✅ `FreeScope=块` | ✅ | 结构不同，可对齐 |
 | 泛型单态化克隆 | ❌ 共享原对象 | ✅ 克隆体重算 LLR | **最大阻塞项** |
-| 多目录同进程复用 | ❌ `objects` 全局不重置 | ✅ `Build` 重置 `LLRResults` | 测试/多包场景会串对象 |
+| 释放点互斥 | ✅ Inplace / Field / Scope 互斥 | ⚠️ 依赖生成顺序 | 前端计划已满足；接代码生成时按五态分派 |
+| 多目录同进程复用 | ✅ `ResetObjects()` 在 `GetPackage` 开头 | ✅ `Build` 重置 `LLRResults` | 单根编译前提成立 |
 
 ---
 
@@ -148,25 +151,41 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 循环结束点、scratch 槽需求。按当前设计，这需要新的 `Object` 类别或新计划表，
 不能只靠 `FreeScope`。
 
-### 4.3 字段 cascade
+### 4.3 字段 cascade（最小安全版已落地）
 
-前端 `FieldVals` 明确只用于排序，不决定释放。若容器对象在作用域出口 free，
-其字段指向的子对象不会自动释放；后端有 `FieldFrees`。
+已实现 `fieldRelease`：对象没有变量名、在对象表里**恰好一个**字段引用、容器
+已经按作用域释放（或递归只被字段持有）、容器读槽唯一且确定持有它 → 设
+`FieldOwner` / `FieldName`，随容器释放点先 free 字段再 free 容器。任何一条
+不满足就不挂（宁可漏释放，不 free 错块）。`gcOverwrite` 的 `fieldAlias`
+已从“真泄漏”变为字段释放。
 
-**必须做**：决定字段所有权语义（容器是否拥有字段？字段是否可能别名到外部？），
-然后增加字段级释放计划；在此之前切换会漏释放字段对象。
+仍在的缺口：
 
-### 4.4 `Holder` 在函数出口的有效性
+- `obj.f = new(T)` / `obj.f = makeNode(...)` 的右值没有 `Object`（Batch B
+  的表达式临时对象）；`gcStructFree` 的 `FieldFrees` 目前无法与前端计划对齐；
+- 容器本身就地释放时，字段释放需要语句级位置（跟随覆盖赋值），当前只支持
+  作用域释放的容器；
+- 字段别名到容器外（同一子对象被多个字段 / 变量引用）一律放弃 cascade；
+- 字段值先于容器释放的**顺序**必须由代码生成保证（不能只按对象表顺序）。
 
-`scopeRelease` 的兜底是 `FreeScope=FuncBlock`、`Holder=Owner`；但正常路径下
-`Holder=firstLiveName(o)` 可能是内层块变量。若代码生成在函数出口读该槽：
+**切换前必须**：把 Batch B 的字段右值对象补齐，并让生成器消费
+`FieldOwner` 时按“字段 → 容器”排序。
 
-- 槽位可能已被编译器复用/覆盖；
-- 内层块的栈槽在出口是否仍然有效，取决于 `SetupVarOffsets` 的分配策略。
+### 4.4 `Holder` 在函数出口的有效性（已加不变量）
 
-**必须做**：加一条不变量/自检：`Holder` 的作用域必须包含 `FreeScope`，否则
-选择外层仍存活的绑定名；或把释放点收紧到 `Holder` 的作用域出口（但会改变
-对象释放时机，需要重新验证别名安全）。
+当前规则（`gcfe/release.go` / `gcfe/plan.go`）：
+
+- 作用域释放的 `Holder` 必须是 `Object.Names` 里的一个绑定名，且
+  `Holder.Life.Scope` 不早于 `FreeScope` 失效（`holderLivesTo`）；
+- 兜底只认“创建后从未改绑、作用域正好是所在函数”的创建者槽，否则不设
+  `FreeScope`；
+- `HolderBad` 统计违反上述规则的释放计划，全语料为 0。
+
+**残留风险**：`Holder` 只证明“这个槽曾是它的绑定名且活到释放点”，不证明
+“释放那一刻槽里一定是它”。分支合流（`result` 在两个分支指向不同对象）是
+合法场景；同一槽在释放点可能对应多个对象。因此生成器必须使用**清槽语义**
+（`freeSlot`，free 后槽置 0），并对同一释放点同一槽的多次清理保持幂等；
+不能生成裸 `free(槽值)`。这一条要在 Phase 3 的开关对拍里用汇编级检查钉住。
 
 ### 4.5 函数出口代码位置（§9.1）
 
@@ -177,13 +196,12 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 后端代码生成修复，和选哪套 GC 无关。修完要重新审计字段 cascade 与共享别名
 （`GC_MEMORY_MANAGEMENT.md` §9.4）。
 
-### 4.6 `objects` 全局状态不可重置
+### 4.6 `objects` 全局状态（已加重置）
 
-`parser.objects` 是包级 slice；`gcfe.SimulateRC` 只追加，不重置。单进程只编译
-一个目录时没问题，但测试框架/多包/多次 `GetPackage` 会串对象。
-
-**必须做**：提供显式的分析上下文（`Analyzer` 持有 objects），或至少在
-`gcfe` 入口重置并保证旧 AST 不再被消费。后者只能在“一次编译一个根”前提下成立。
+`gcfe.SimulateRC` 仍在包级 `objects` 上追加；`parser.ResetObjects()` 已在
+`GetPackage` 开头调用，保证同一进程内多次 `GetPackage` 不串对象。当前只在
+“一次编译一个根、旧 AST 不再被消费”的前提下成立；如果将来并行编译多个根，
+需要把 `objects` 收进显式 `Analyzer` 上下文。
 
 ### 4.7 嵌套调用的传出边（安全缺口）
 
@@ -215,16 +233,19 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 
 ### Phase 2：补齐前端能力
 
-按 §4.2 → §4.3 → §4.1 → §4.4 的顺序做：
+按 §4.2 → §4.3 → §4.1 → §4.4 → §4.5 的顺序做：
 
-1. 临时对象（ret / 条件 / 增量 / 字段 new）；
-2. 字段 cascade；
-3. 单态化克隆体的对象/计划重算；
-4. Holder 作用域不变量；
-5. 嵌套调用保守逃逸。
+1. 表达式临时对象（ret / 条件 / 增量 / 字段 new）——Batch B；
+2. 字段 cascade 扩展到 owning call / 字段右值对象——Batch B；
+3. 单态化克隆体的对象/计划重算——Batch C；
+4. §9.1 出口释放位置修正（代码生成）——Batch D；
+5. 嵌套调用保守逃逸——Batch E。
 
-每步都用“泄漏=0、提前释放=0”和 e2e GC 矩阵（gcCondTemp / gcRetFree /
-gcBlocks / gcOverwrite 双架构）验收。
+字段 cascade 最小版与 `Holder` 不变量已完成（当前批次）；`-gc` 开关等
+Batch F 的前置项清完再开。
+
+每步都用“泄漏=0、提前释放=0、HolderBad=0”和 e2e GC 矩阵（gcCondTemp /
+gcRetFree / gcBlocks / gcOverwrite 双架构）验收。
 
 ### Phase 3：并行生成 + 开关
 
@@ -245,7 +266,8 @@ gcBlocks / gcOverwrite 双架构）验收。
 ## 6. 不建议现在直接替换的理由
 
 1. `gcRetFree`、`gcCondTemp` 会从“有释放”退化为“漏释放”；
-2. `gcStructFree` 的 4 个字段释放会丢失；
+2. `gcStructFree` 的字段释放仍不完整（前端最小 cascade 只覆盖 `fieldAlias`，
+   `makeNode(...)` 字段值还没有对象）；
 3. 泛型特化可能双重释放（比漏释放更危险）；
 4. §9.1 未修，前端大量 `FuncBlock` 出口释放会成为死代码；
 5. 嵌套调用逃逸缺口可能产生跨帧 use-after-free，现有自检抓不到。

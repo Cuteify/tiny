@@ -13,13 +13,14 @@ import typeSys "cuteify/type"
 type FieldBinding struct {
 	Field string    // 字段名
 	Val   *VarBlock // 字段值的代表定义
-	Obj   *Object   // 字段值对象；字段收敛时用它核对 Val 的栈槽是否仍持有该对象
+	Obj   *Object   // 字段值对象；绑定时的快照，字段释放读容器 + 字段名，不读 Val 槽
+	Stale bool      // Val 槽之后被改绑；仅表示不能拿 Val 当读槽，不影响字段关系
 }
 
 // Object 一次分配产生的堆块。一个对象至多一个释放点：身份全程唯一，
 // "在哪释放、读哪个槽"就唯一 —— 所以这里是两个标量，不是 map。
-// FieldVals 仅用于排序（字段值先于容器自身），不决定是否释放：
-// 字段值通常自己也有 FreeScope，按并集释放会双重释放。
+// FieldVals 记录容器字段的绑定关系，供字段 cascade 释放只被容器持有的对象；
+// 有变量名持有的字段值仍由自己的 FreeScope 释放，避免双重释放。
 type Object struct {
 	ID          int            // 标号：第几次分配（调试、诊断、后端表索引用）
 	Owner       *VarBlock      // 初始持有者（创建处的栈槽；可能已被改绑）
@@ -29,11 +30,18 @@ type Object struct {
 	Names       []*VarBlock    // 当前指向它的全部名字（collectNames 反转得出）
 	FreeScope   Block          // 作用域释放点；nil = 不按作用域释放
 	Holder      *VarBlock      // 释放时读哪个栈槽（创建者被改绑时指向另一个绑定名）
-	FieldVals   []FieldBinding // 字段关系：仅用于排序，同一字段只留最后一次写入
+	Inplace     bool           // 已在覆盖赋值点就地释放；此时 FreeScope/Holder 不再生效
+	FieldOwner  *Object        // 只被该容器的字段持有；释放 = free FieldOwner.FieldName
+	FieldName   string         // 持有本对象的字段名（FieldOwner 非 nil 时有效）
+	FieldVals   []FieldBinding // 字段关系：同一字段只留最后一次写入
 }
 
 // objects 本次编译分配出的全部对象（单线程解析期，线性追加）。
 var objects []*Object
+
+// ResetObjects 清空对象表。必须在一次新的根包解析/Check 之前调用；
+// 不能在 SimulateRC 里清，否则会抹掉本次 Check 期间创建的对象。
+func ResetObjects() { objects = nil }
 
 func newObject(owner *VarBlock, scope Block) *Object {
 	o := &Object{ID: len(objects) + 1, Owner: owner, Scope: scope}
@@ -91,6 +99,11 @@ const (
 	DisposalScope
 	// DisposalRC 帧外可达（返回 / 存全局 / 传给摘要未知的函数），退回引用计数。全局属此类。
 	DisposalRC
+	// DisposalInplace 已在覆盖赋值点就地释放。就地释放与作用域释放互斥：
+	// 同一对象只能有一个释放点，后端不得再在 FreeScope 处 free 一次。
+	DisposalInplace
+	// DisposalField 只被容器的字段持有；在容器释放点先 free 容器.字段。
+	DisposalField
 )
 
 // Disposal 有任何一个绑定名逃出本帧就不能作用域释放（悬垂），退回 RC。
@@ -99,13 +112,19 @@ func (l *Life) Disposal() Disposal {
 }
 
 // DisposalOf 对象级处置判定。(*Life).Disposal 是它的变量视角包装；
-// 包外驱动（gcfe 的计划导出）手里只有 *Object，也需要同一份三态判据。
+// 包外驱动（gcfe 的计划导出）手里只有 *Object，也需要同一份五态判据。
 func DisposalOf(o *Object) Disposal {
 	if o == nil {
 		return DisposalBorrow
 	}
+	if o.Inplace {
+		return DisposalInplace // 覆盖赋值点已经释放，作用域出口不得重复释放
+	}
 	if o.Transferred {
 		return DisposalBorrow // 所有权已交给调用者，本帧不碰
+	}
+	if o.FieldOwner != nil {
+		return DisposalField // 字段 cascade：随容器释放点一起处理
 	}
 	if o.Escapes {
 		return DisposalRC
@@ -121,13 +140,17 @@ func DisposalOf(o *Object) Disposal {
 	return DisposalScope
 }
 
-// String 诊断用：可读的三态名（Scope / RC / Borrow）。
+// String 诊断用：可读的五态名（Scope / Field / Inplace / RC / Borrow）。
 func (d Disposal) String() string {
 	switch d {
 	case DisposalScope:
 		return "Scope"
 	case DisposalRC:
 		return "RC"
+	case DisposalInplace:
+		return "Inplace"
+	case DisposalField:
+		return "Field"
 	default:
 		return "Borrow"
 	}

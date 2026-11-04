@@ -1,8 +1,9 @@
 // gcfe/release.go — 释放点：在哪 free
 //
 // 一行公式，没有例外：释放点 = 全部绑定名里最外层的作用域。
-// 纯作用域规则，不看引用计数；算不出（无绑定名 / 只被字段读引用）就兜底到
-// 所属函数出口，保证绝不泄漏。
+// 纯作用域规则，不看引用计数。没有绑定名时按顺序退：
+// 字段 cascade（只被容器字段持有）→ 创建者兜底（从未改绑且活到函数出口）
+// → 放弃释放。宁可漏释放，绝不 free 错块。
 
 package gcfe
 
@@ -13,7 +14,7 @@ import "cuteify/parser"
 // 多个引用时改其中一个要不要 free，作用域规则答不了。
 func scopeRelease() {
 	for _, o := range parser.Objects() {
-		if o.Escapes || o.Transferred {
+		if o.Inplace || o.FieldOwner != nil || o.Escapes || o.Transferred {
 			continue
 		}
 		// 释放点 = 全部绑定名里最外层的作用域。
@@ -27,16 +28,121 @@ func scopeRelease() {
 		if widest != nil {
 			o.FreeScope = widest
 			// 读槽：创建者被改绑时换成仍持它的名字，否则 free 错块。
-			if o.Holder == nil || !containsName(o.Names, o.Holder) {
-				o.Holder = firstLiveName(o)
+			// 还必须活到释放点：分支里声明的名字在函数出口已经失效。
+			if o.Holder == nil || !containsName(o.Names, o.Holder) || !holderLivesTo(o.Holder, widest) {
+				o.Holder = firstLiveName(o, widest)
+			}
+			if o.Holder == nil {
+				// 没有任何名字活到释放点：放弃释放，避免读错槽。
+				o.FreeScope = nil
 			}
 			continue
 		}
-		// 兜底：函数出口 + 读创建者的槽。改绑过也只会漏释放，不会 free 错块。
-		if fb := funcOfBlock(o.Scope); fb != nil && o.Owner != nil {
+		// 兜底只认“创建后从未改绑、且活到函数出口”的创建者槽。
+		// 改绑过的槽此刻可能指向别的对象；函数内层声明的槽在出口已失效。
+		// 两种情况都宁可不设释放点（漏释放），也绝不 free 错块。
+		fb := funcOfBlock(o.Scope)
+		if fb == nil || o.Owner == nil {
+			continue
+		}
+		if o.Owner.Life.Obj == o && o.Owner.Life.Scope == fb {
 			o.FreeScope, o.Holder = fb, o.Owner
 		}
 	}
+	fieldRelease()
+}
+
+// fieldRelease 字段 cascade：只被容器字段持有、没有任何变量名的对象，
+// 在容器释放点先 free 容器.字段。必须在 scopeRelease 之后跑：容器自己
+// 先有确定的释放点，字段值才有地方挂。
+//
+// 保守约束（任何一条不满足就不挂，宁可漏释放）：
+//   - 只认恰好一个字段引用；
+//   - 容器必须已经有释放点（作用域，或递归地只被字段持有）；
+//   - 容器读槽必须有效；
+//   - 不形成 FieldOwner 环。
+func fieldRelease() {
+	type fieldRef struct {
+		container *parser.Object
+		field     string
+	}
+	refs := map[*parser.Object][]fieldRef{}
+	for _, c := range parser.Objects() {
+		for _, fb := range c.FieldVals {
+			if fb.Obj == nil || fb.Obj == c {
+				continue
+			}
+			refs[fb.Obj] = append(refs[fb.Obj], fieldRef{container: c, field: fb.Field})
+		}
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for _, o := range parser.Objects() {
+			if o.Inplace || o.Escapes || o.Transferred || o.FreeScope != nil || o.FieldOwner != nil || len(o.Names) > 0 {
+				continue
+			}
+			rs := refs[o]
+			if len(rs) != 1 {
+				continue
+			}
+			c := rs[0].container
+			if fieldRoot(c) == nil {
+				continue
+			}
+			if fieldChainContains(c, o) {
+				continue // 字段关系成环，放弃
+			}
+			o.FieldOwner = c
+			o.FieldName = rs[0].field
+			changed = true
+		}
+	}
+}
+
+// fieldRoot 字段链最顶端的容器：必须已经按作用域释放，且读槽仍持有它。
+func fieldRoot(o *parser.Object) *parser.Object {
+	seen := 0
+	for o != nil && o.FieldOwner != nil {
+		o = o.FieldOwner
+		if seen++; seen > len(parser.Objects()) {
+			return nil
+		}
+	}
+	if o == nil || o.Inplace || o.FreeScope == nil {
+		return nil
+	}
+	// 字段 cascade 读的是“容器.字段”，必须证明这个槽在释放点确定还持有
+	// 该容器：Holder 就是它、且没有第二个名字（分支合流/别名会让同一个
+	// 槽在不同路径指向不同容器，盲读字段会 free 错对象）。
+	if o.Holder == nil || o.Holder.Life.Obj != o || uniqueNameCount(o) != 1 {
+		return nil
+	}
+	return o
+}
+
+// uniqueNameCount 绑定名去重计数（WroteTo 可能重复追加同一个左值）。
+func uniqueNameCount(o *parser.Object) int {
+	seen := map[*parser.VarBlock]bool{}
+	n := 0
+	for _, name := range o.Names {
+		if name != nil && !seen[name] {
+			seen[name] = true
+			n++
+		}
+	}
+	return n
+}
+
+// fieldChainContains 从 o 沿 FieldOwner 向上找 target，防止字段关系成环。
+func fieldChainContains(o, target *parser.Object) bool {
+	for n := 0; o != nil && n <= len(parser.Objects()); n++ {
+		if o == target {
+			return true
+		}
+		o = o.FieldOwner
+	}
+	return false
 }
 
 func containsName(ns []*parser.VarBlock, v *parser.VarBlock) bool {
@@ -48,12 +154,20 @@ func containsName(ns []*parser.VarBlock, v *parser.VarBlock) bool {
 	return false
 }
 
-// firstLiveName 挑一个仍持有该对象的绑定名当释放时的读槽来源。
-func firstLiveName(o *parser.Object) *parser.VarBlock {
+// firstLiveName 挑一个仍持有该对象、且活到释放点的绑定名当读槽来源。
+func firstLiveName(o *parser.Object, scope parser.Block) *parser.VarBlock {
 	for _, n := range o.Names {
-		if n != nil && !n.Life.Escapes {
+		if n != nil && !n.Life.Escapes && holderLivesTo(n, scope) {
 			return n
 		}
 	}
 	return nil
+}
+
+// holderLivesTo v 的作用域是否不早于释放点失效（深度越小活得越久）。
+func holderLivesTo(v *parser.VarBlock, scope parser.Block) bool {
+	if v == nil || v.Life.Scope == nil || scope == nil {
+		return false
+	}
+	return scopeDepth(v.Life.Scope) <= scopeDepth(scope)
 }

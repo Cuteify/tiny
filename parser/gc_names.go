@@ -83,8 +83,9 @@ func CollectNames(root *Node) {
 		}
 	}
 
-	// 字段关系收敛：同一字段只留最后一次写入；栈槽已改绑的跳过
-	//（宁可漏释放，不能读错槽位）。
+	// 字段关系收敛：同一字段只留最后一次写入。值变量改绑不再丢弃绑定：
+	// 字段释放读的是“容器.字段”，不是 Val 的栈槽；只把 Val 标记为 Stale，
+	// 提醒后续消费者不要拿它当读槽（读它可能 free 错对象）。
 	for _, o := range objects {
 		if len(o.FieldVals) == 0 {
 			continue
@@ -98,9 +99,7 @@ func CollectNames(root *Node) {
 			if last[fb.Field] != i {
 				continue // 这个字段后来被覆盖了
 			}
-			if fb.Obj != nil && fb.Val.Life.Obj != fb.Obj {
-				continue // 栈槽已被改绑，读它会 free 错对象
-			}
+			fb.Stale = fb.Val == nil || fb.Val.Life.Obj != fb.Obj
 			out = append(out, fb)
 		}
 		o.FieldVals = out
