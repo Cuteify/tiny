@@ -1,8 +1,11 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 九个文件，约 1490 行。
-> 唯一公开入口：`parser.SimulateRC(root)`，调用点在 `package/package.go`。
-> 后端只读 `parser.Object` 与 `(*Life).Disposal()`，不参与任何判断。
+> 对象：`parser/gc_*.go` 六个文件（数据模型 + Check 期事实收集，约 1130 行）
+> + `gcfe/*.go` 五个文件（Check 后的驱动与计划构建，约 440 行）。
+> 唯一公开入口：`gcfe.SimulateRC(root)`，调用点在 `package/package.go`。
+>
+> 当前代码生成的权威分析仍是 `compile/gc`；本模型只由 `tools/esccheck` 消费。
+> 本文描述该模型的内部设计，不表示它已接入代码生成。
 
 ---
 
@@ -84,7 +87,7 @@ head = prepend(head, 4)
 | 分支赋值 | 两个绑定名都算持有 | 释放点偏外 |
 | 字段读 / 索引 / 普通调用 | 借用（不认领新对象） | 不凭空多出内存 |
 
-**全都不导向"提前释放"。** 这条纪律贯穿九个文件：每个 `return false` / `return nil` / `continue` 都要能回答"这是往安全侧倒吗"。
+**全都不导向"提前释放"。** 这条纪律贯穿前端分析的全部文件：每个 `return false` / `return nil` / `continue` 都要能回答"这是往安全侧倒吗"。
 
 ---
 
@@ -97,18 +100,18 @@ head = prepend(head, 4)
   └─ Check 多轮 ──────────────► 每轮为每个写站点记事实（gc_write.go）
 GetPackage 返回前
   └─ Check 跑到收敛（≤50 轮）  ──► 事实稳定
-  └─ parser.SimulateRC(root)  ──► 唯一入口
-       ├─ collectNames(root)   ① 反转绑定名：对象 → 当前指向它的全部名字
-       ├─ rcSim.walk(root)     ② 按语句顺序走，维护槽位表，就地释放判定
-       ├─ scopeRelease()        ③ 定释放点（纯作用域规则）
-       └─ checkPremature()      ④ 自检：释放点早于任何绑定名 → UAF
+  └─ gcfe.SimulateRC(root)     ──► 唯一入口（gcfe/gcfe.go）
+       ├─ parser.CollectNames(root) ① 反转绑定名：对象 → 当前指向它的全部名字
+       ├─ rcSim.walk(root)          ② 按语句顺序走，维护槽位表，就地释放判定
+       ├─ scopeRelease()            ③ 定释放点（纯作用域规则）
+       └─ checkPremature()          ④ 自检：释放点早于任何绑定名 → UAF
 ```
 
 ### 3.2 为什么 Check 要跑到收敛
 
 GC 要读**事实的最终形态**，而一轮 Check 里后写的会覆盖先写的：一个变量的定义可能在使用点之后才解析出来，跨包引用要等包合并才有别名。
 
-不收敛就调 `SimulateRC`，读到的是某一轮的中间形态，表现为泄漏或提前释放。上限 50 轮是防"两条语句互相触发"死循环；正常第二轮就全 `false`。
+不收敛就调 `gcfe.SimulateRC`，读到的是某一轮的中间形态，表现为泄漏或提前释放。上限 50 轮是防"两条语句互相触发"死循环；正常第二轮就全 `false`。
 
 ### 3.3 为什么 `collectNames` 要反转
 
@@ -239,19 +242,31 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ### 4.9 文件分工
 
+**parser 侧（数据模型 + Check 期事实收集，必须留在 parser）**
+
 | 文件 | 行 | 职责 |
 |---|---|---|
-| `gc_model.go` | 233 | 数据模型：`Life` / `Object` / `Disposal` 三态 |
-| `gc_write.go` | 275 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
-| `gc_names.go` | 124 | 绑定名反转 + 作用域工具 |
-| `gc_pred.go` | 120 | 判据：类型形态、表达式形态 |
-| `gc_release.go` | 99 | **释放点**：`SimulateRC` 入口 + `scopeRelease` |
-| `gc_inplace.go` | 228 | **就地释放**：槽位表模拟 |
-| `gc_summary.go` | 248 | 跨函数入参摘要 |
-| `gc_diag.go` | 53 | 诊断：`checkPremature` / `TransferReport` |
-| `gc_mark.go` | 105 | 唯一施加点：`applyMark` |
+| `gc_model.go` | 283 | 数据模型：`Life` / `Object` / `Disposal` 三态；包外只读访问器 |
+| `gc_write.go` | 260 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
+| `gc_names.go` | 109 | `CollectNames` 绑定名反转 + `walkSubNodes` |
+| `gc_pred.go` | 120 | 判据：类型形态、表达式形态（含包外导出版） |
+| `gc_summary.go` | 244 | 跨函数入参摘要 |
+| `gc_mark.go` | 115 | 唯一施加点：`applyMark` |
 
-同包不同文件，不建子包 —— 它们重度耦合 `VarBlock` / `Block` / `curScope` / Check 状态。
+**gcfe 侧（Check 后驱动与计划构建，单向 import parser）**
+
+| 文件 | 行 | 职责 |
+|---|---|---|
+| `gcfe/gcfe.go` | 30 | `SimulateRC` 唯一入口：按顺序驱动四步 |
+| `gcfe/inplace.go` | 223 | **就地释放**：槽位表模拟 `rcSim` |
+| `gcfe/release.go` | 59 | **释放点**：`scopeRelease` |
+| `gcfe/diag.go` | 57 | 诊断：`checkPremature` / `TransferReport` |
+| `gcfe/scope.go` | 70 | 作用域工具：深度 / 外层 / 可读身份 / 所属函数 |
+
+拆分边界：`Life` 的 `owner` / `alloc` 是解析器内部账本，Check 期钩子直接写
+`VarBlock.Life`，无法无成本外置；因此模型与事实收集留在 parser，只有
+“Check 之后怎么走树、怎么定释放点”进入 `gcfe`。parser 不 import gcfe，
+不会形成循环依赖。
 
 ---
 
@@ -260,13 +275,18 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 `checkPremature` 用最终快照校验：对象 O 的释放点 S 不能比任何绑定名的作用域更内层。抓的是"数据已对但释放点算早"，抓不到"某条路径上曾持有过"那类（那要路径分析）。
 
 ```
-语料 107/140      对象=114  RC=6  泄漏=0  提前释放=0
+test/ 106/115      对象=132  RC=8  泄漏=0  提前释放=0
 ```
 
 - **`提前释放=0`** 是关键不变量 —— 有 use-after-free 就是错
 - **`泄漏=0`** 是无真泄漏
-- 对象分布：作用域释放 86（75%）、转移给调用方 22（19%）、退回 RC 6（5%）
-- **`RC=6`** 的来源：恢复 `CallBlock.Check` 对 `markArgs` 的挂接（call.go）。此前"调用点实参升级逃逸"整条保护缺失，RC=0 是"什么都没标"的缺口证据；挂接后 6 块按被调参数摘要判逃逸（test/gc_loop 5、test/heap_new 1，prepend 存字段类模式），方向是多标
+- 对象分布：作用域释放 100（76%）、转移给调用方 24（18%）、退回 RC 8（6%）
+- **`RC=8`** 的来源：`test/gc_loop` 5、`test/heap_new` 1、`test/gcprobe` 1、
+  `test/sliceprobe2` 1（按被调参数摘要判逃逸，prepend 存字段类模式，方向是多标）
+- **list 判据修复**：`[]T` 的 `IsOwning` 曾被内嵌 `RType` 的提升方法吃成 false，
+  导致所有 list 分配不进前端 GC。`type/list.go` 显式实现后，对象 117→132、
+  RC 6→8，`泄漏=0` / `提前释放=0` 仍成立。旧基线 114/6 是修复前且语料口径不同，
+  不再作为验收数字。
 
 改动这套分析后基线必须是这个。`esccheck` 是验证手段（`go build -o /tmp/esc ./tools/esccheck`）。
 
@@ -423,7 +443,7 @@ return nil"——判别式探针 394/394 全数 StructField，钩子 var.go:609 
 解析链无容器块 = 跨包前向，维持跳过）、两跳以上 23 条入闸门、baseNil=26
 （全是参数容器）、escapeFired=**4**（参数容器字段写首次真打上"值存查不出的
 容器"逃逸）、bindFired=48（FieldVals 首次进料）。基线总数逐位不变：
-对象=114 · RC/泄漏释放=6 · 泄漏=0 · 提前释放=0 · 作用域释放=86 · 转移=22
+对象=114 · RC/泄漏释放=6 · 泄漏=0 · 提前释放=0 · 作用域释放=86 · 转移=22（当时口径）
 ——FieldVals 只动排序不动归属判定，"仅用于排序"契约兑现。
 
 ---
@@ -445,6 +465,9 @@ return nil"——判别式探针 394/394 全数 StructField，钩子 var.go:609 
 ---
 
 ## 8. 后端契约
+
+> 注意：这是前端模型的**目标契约**。当前 `compile/gc` 不读这些字段；在
+> `docs/gc_migration_plan.md` 的 Phase 2/3 完成前，代码生成仍以 LLR 为准。
 
 后端只做两件事：
 

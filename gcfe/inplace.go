@@ -1,6 +1,6 @@
-// parser/gc_inplace.go — 就地释放：这条赋值能不能提前 free
+// gcfe/inplace.go — 就地释放：这条赋值能不能提前 free
 //
-// 释放点（gc_release.go）答"最终在哪释放"，这里答"能不能提前"：等作用域
+// 释放点（release.go）答"最终在哪释放"，这里答"能不能提前"：等作用域
 // 出口是对的但不及时。判定 = 写完之后旧对象还有没有任何槽位 / 字段指着
 // —— 是非题，扫一遍答完。必须连字段一起看：
 //
@@ -12,39 +12,41 @@
 //
 // 前提：只处理帧内对象；帧外可达的由 Disposal 判 RC，不参与本模拟。
 
-package parser
+package gcfe
+
+import "cuteify/parser"
 
 // rcScope 模拟中的一层作用域，记录本层声明的局部变量。
 type rcScope struct {
-	block Block
-	vars  []*VarBlock
+	block parser.Block
+	vars  []*parser.VarBlock
 }
 
 // rcSim 跟踪"此刻哪些槽位 / 字段还指着哪个对象"。
 type rcSim struct {
-	slot   map[*VarBlock]*Object            // 局部变量当前持有哪个对象
-	fields map[*VarBlock]map[string]*Object // 容器各字段当前持有哪个对象
-	stack  []*rcScope                       // 作用域栈（出口时清掉本层槽位）
+	slot   map[*parser.VarBlock]*parser.Object            // 局部变量当前持有哪个对象
+	fields map[*parser.VarBlock]map[string]*parser.Object // 容器各字段当前持有哪个对象
+	stack  []*rcScope                                     // 作用域栈（出口时清掉本层槽位）
 }
 
 // walk 按语句顺序走一遍（顺序敏感，与迭代次数无关）。调用点不处理："实参被
 // 被调方存下"由跨函数摘要判逃逸（Check 期），逃逸对象本来进不了槽位表。
-func (s *rcSim) walk(n *Node) {
+func (s *rcSim) walk(n *parser.Node) {
 	if n == nil {
 		return
 	}
-	if isScopeBlock(n.Value) {
+	if parser.IsScopeBlock(n.Value) {
 		sc := &rcScope{block: n.Value}
 		s.stack = append(s.stack, sc)
-		eachSubNode(n, s.walk)
+		parser.EachSubNode(n, s.walk)
 		s.stack = s.stack[:len(s.stack)-1]
 		s.leaveScope(sc) // 出作用域：本层槽位失效
 		return
 	}
-	if v, ok := n.Value.(*VarBlock); ok {
+	if v, ok := n.Value.(*parser.VarBlock); ok {
 		s.stmt(v)
 	}
-	eachSubNode(n, s.walk)
+	parser.EachSubNode(n, s.walk)
 }
 
 // leaveScope 退出作用域：本层变量逐个失效，槽位删除。
@@ -56,7 +58,7 @@ func (s *rcSim) leaveScope(sc *rcScope) {
 
 // releasesOld 能就地释放 = 写完之后没有任何栈槽或字段指着它。
 // 字段引用必须一起看：head = prepend(head, 4) 漏了就是 use-after-free。
-func (s *rcSim) releasesOld(old *Object, at *VarBlock) {
+func (s *rcSim) releasesOld(old *parser.Object, at *parser.VarBlock) {
 	if at == nil || old == nil || old.Escapes || s.referenced(old) {
 		return
 	}
@@ -64,7 +66,7 @@ func (s *rcSim) releasesOld(old *Object, at *VarBlock) {
 }
 
 // referenced 此刻是否还有任何栈位或字段指着 o。
-func (s *rcSim) referenced(o *Object) bool {
+func (s *rcSim) referenced(o *parser.Object) bool {
 	for _, v := range s.slot {
 		if v == o {
 			return true
@@ -81,18 +83,18 @@ func (s *rcSim) referenced(o *Object) bool {
 }
 
 // slotOf 变量当前持有的对象；未初始化过则回退到 Life.Obj。
-func (s *rcSim) slotOf(v *VarBlock) *Object {
+func (s *rcSim) slotOf(v *parser.VarBlock) *parser.Object {
 	if o, ok := s.slot[v]; ok {
 		return o
 	}
-	if l := LifeOf(v); l != nil {
+	if l := parser.LifeOf(v); l != nil {
 		return l.Obj
 	}
 	return nil
 }
 
 // fieldVal 容器某字段当前持有的对象。
-func (s *rcSim) fieldVal(base *VarBlock, field string) *Object {
+func (s *rcSim) fieldVal(base *parser.VarBlock, field string) *parser.Object {
 	m := s.fields[base]
 	if m == nil {
 		return nil
@@ -100,26 +102,18 @@ func (s *rcSim) fieldVal(base *VarBlock, field string) *Object {
 	return m[field]
 }
 
-func (s *rcSim) setField(base *VarBlock, field string, o *Object) {
+func (s *rcSim) setField(base *parser.VarBlock, field string, o *parser.Object) {
 	m := s.fields[base]
 	if m == nil {
-		m = map[string]*Object{}
+		m = map[string]*parser.Object{}
 		s.fields[base] = m
 	}
 	m[field] = o
 }
 
-// hostOf 变量绑定的宿主：赋值语句归到它的定义上，槽位按宿主唯一。
-func hostOf(v *VarBlock) *VarBlock {
-	if l := LifeOf(v); l != nil && l.owner != nil {
-		return l.owner
-	}
-	return v
-}
-
 // stmt 一条变量语句：定义 / 赋值 / 字段写入。
-func (s *rcSim) stmt(v *VarBlock) {
-	if v.Type != nil && !owningType(v.Type) {
+func (s *rcSim) stmt(v *parser.VarBlock) {
+	if v.Type != nil && !parser.OwningType(v.Type) {
 		return
 	}
 	if v.IsGlobal {
@@ -129,7 +123,7 @@ func (s *rcSim) stmt(v *VarBlock) {
 		s.fieldWrite(v)
 		return
 	}
-	host := hostOf(v)
+	host := parser.HostOf(v)
 	if !s.tracked(v, host) {
 		return
 	}
@@ -149,15 +143,15 @@ func (s *rcSim) stmt(v *VarBlock) {
 
 	// 取新值
 	switch {
-	case freshAllocExpr(v.Value):
+	case parser.FreshAllocExpr(v.Value):
 		// 这条分配语句自己的对象（多处 new 是不同对象）；Transferred 同 Escapes
 		// 一样不进本系统：所有权已交调用者，本帧不释放也不参与计数
-		o := v.Life.alloc
+		o := v.Life.Alloc()
 		if o == nil || o.Escapes || o.Transferred {
 			return
 		}
 		s.slot[host] = o
-	case isRCExpr(v.Value):
+	case parser.IsRCExpr(v.Value):
 		return // newRC：手动 rcDec 管生命周期，不进本系统
 	default:
 		if o := s.evalCopy(v.Value); o != nil { // 裸变量 → 复制一份指针
@@ -167,12 +161,12 @@ func (s *rcSim) stmt(v *VarBlock) {
 }
 
 // tracked 这条语句涉及的对象是否参与模拟（参数与 newRC 不参与）。
-// host 由 stmt 算好传入，这里不重算 hostOf（它永不返回 nil）。
-func (s *rcSim) tracked(v, host *VarBlock) bool {
-	if isRCExpr(v.Value) {
+// host 已由 stmt 算好传入，这里不重算（它永不返回 nil）。
+func (s *rcSim) tracked(v, host *parser.VarBlock) bool {
+	if parser.IsRCExpr(v.Value) {
 		return false
 	}
-	if l := LifeOf(host); l != nil && l.owner == nil {
+	if l := parser.LifeOf(host); l != nil && l.Host() == nil {
 		return false // 参数
 	}
 	return true
@@ -181,12 +175,12 @@ func (s *rcSim) tracked(v, host *VarBlock) bool {
 // evalCopy 求值出一个新引用（只认裸变量），判据必须与 bareRef 一致：
 // 字段读 / 索引 / 调用结果指向的是**基对象**，算成裸引用会把引用记到基对象
 // 头上 → 引用虚高 → 释放点推后 → 泄漏。
-func (s *rcSim) evalCopy(e *Expression) *Object {
-	l := bareRef(e)
+func (s *rcSim) evalCopy(e *parser.Expression) *parser.Object {
+	l := parser.BareRef(e)
 	if l == nil {
 		return nil
 	}
-	o := s.slotOf(hostOf(l.owner))
+	o := s.slotOf(parser.HostOf(l.Host()))
 	if o != nil && o.Escapes {
 		return nil // 逃逸对象的引用不参与模拟
 	}
@@ -194,14 +188,14 @@ func (s *rcSim) evalCopy(e *Expression) *Object {
 }
 
 // fieldWrite p.f = y：字段旧值失去引用，新的接管。
-func (s *rcSim) fieldWrite(v *VarBlock) {
+func (s *rcSim) fieldWrite(v *parser.VarBlock) {
 	field := v.Name.Last()
 
 	// 解析字段写入的基对象（p.f 中的 p）：从解析期 Path 里取首个非全局
 	// *VarBlock；全局容器 / 参数容器认不出，模拟直接跳过（多标方向）。
-	var base *VarBlock
+	var base *parser.VarBlock
 	for _, p := range v.Define.Path {
-		if vb, ok := p.(*VarBlock); ok && !vb.IsGlobal {
+		if vb, ok := p.(*parser.VarBlock); ok && !vb.IsGlobal {
 			base = vb
 			break
 		}
@@ -209,7 +203,7 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 	if base == nil {
 		return
 	}
-	host := hostOf(base) // hostOf 永不返回 nil，直接用
+	host := parser.HostOf(base) // HostOf 永不返回 nil，直接用
 	if old := s.fieldVal(host, field); old != nil {
 		s.setField(host, field, nil) // 先摘掉这个字段
 		s.releasesOld(old, v)
@@ -220,7 +214,7 @@ func (s *rcSim) fieldWrite(v *VarBlock) {
 }
 
 // declare 把变量登记到当前作用域层，出口时对它失效。
-func (s *rcSim) declare(v *VarBlock) {
+func (s *rcSim) declare(v *parser.VarBlock) {
 	if len(s.stack) == 0 {
 		return
 	}

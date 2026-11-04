@@ -2,9 +2,11 @@
 
 > 与 `gc_frontend_design.md` 的分工：设计文档讲"为什么"（原理、公式推导、取舍论证）；
 > 本文档讲"谁调用谁、谁提供什么"，是接入与排查用的事实参考。
-> 符号均在 `parser/gc_*.go`（九个文件）。
+> 符号分布在 `parser/gc_*.go`（模型 + Check 期事实收集，六个文件）与
+> `gcfe/*.go`（Check 后的驱动 + 计划构建，五个文件）。
+> 当前代码生成权威仍是 `compile/gc`，本文模型只服务 `tools/esccheck` 诊断。
 >
-> 当前基线：`语料 107/140 · 对象=114 · RC=6 · 泄漏=0 · 提前释放=0`（§5）。
+> 当前基线：`test/ 106/115 · 对象=132 · RC=8 · 泄漏=0 · 提前释放=0`（§5）。
 
 ---
 
@@ -42,11 +44,11 @@ package.GetPackage ── Check 多轮收敛（package/package.go，直到稳定
 ### 1.2 发布期：SimulateRC 四步（唯一公开入口）
 
 ```
-package/package.go（Check 收敛之后） → parser.SimulateRC(root)
- 1. collectNames(root)   gc_names.go   反转绑定名 → Object.Names
- 2. s.walk(root)         gc_inplace.go 槽位表模拟 → 就地释放判定
- 3. scopeRelease()       gc_release.go 释放点计算 → Object.FreeScope / Holder
- 4. checkPremature()     gc_diag.go    自检，提前释放数必须为 0
+package/package.go（Check 收敛之后） → gcfe.SimulateRC(root)
+ 1. parser.CollectNames(root)  parser/gc_names.go 反转绑定名 → Object.Names
+ 2. s.walk(root)               gcfe/inplace.go    槽位表模拟 → 就地释放判定
+ 3. scopeRelease()             gcfe/release.go    释放点计算 → Object.FreeScope / Holder
+ 4. checkPremature()           gcfe/diag.go       自检，提前释放数必须为 0
 ```
 
 | 步骤 | 输入 | 产出 | 要点 |
@@ -149,7 +151,7 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 
 | 签名 | 时机 |
 |---|---|
-| `func SimulateRC(root *Node)` | 必须在 **Check 全部轮次收敛之后**（先知道谁逃逸，才能算释放点）。全编译只调一次（package/package.go） |
+| `func gcfe.SimulateRC(root *parser.Node)` | 必须在 **Check 全部轮次收敛之后**（先知道谁逃逸，才能算释放点）。全编译只调一次（package/package.go） |
 
 发布期读取的是 Life 的最终形态（`Obj / Scope / Escapes / WroteTo`）——这就是
 不能在未收敛轮次调它的原因。
@@ -158,9 +160,9 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 
 | 符号 | 语义 |
 |---|---|
-| `func Objects() []*Object` | 全部对象，只读快照（单线程，线性追加） |
-| `func TransferReport() (sent, taken, orphan int, detail []string)` | 转移统计：`sent`=Transferred 对象数；`taken`/`orphan` 按当前流程恒为 0 / 恒=sent（转移块不设 FreeScope，结构使然）——**真泄漏不看它**，看 Objects 三态收口 |
-| `var Premature int`、`PrematureDetail []string` | 提前释放计数与明细（发布期第 4 步填） |
+| `func parser.Objects() []*Object` | 全部对象，只读快照（单线程，线性追加） |
+| `func gcfe.TransferReport() (sent, taken, orphan int, detail []string)` | 转移统计：`sent`=Transferred 对象数；`taken`/`orphan` 按当前流程恒为 0 / 恒=sent（转移块不设 FreeScope，结构使然）——**真泄漏不看它**，看 Objects 三态收口 |
+| `var gcfe.Premature int`、`gcfe.PrematureDetail []string` | 提前释放计数与明细（发布期第 4 步填） |
 
 三态收口（esccheck 口径）：对象只有三条出路 —— `FreeScope`（作用域释放）/
 `Transferred`（转移给调用方）/ `Escapes`（退 RC）；三者都不沾才是真泄漏。
@@ -244,13 +246,13 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 
 | 函数 | 作用 |
 |---|---|
-| `collectNames(root)` | 反转建 `Object.Names`（直挂 + WroteTo 补分支写边）+ 名字级 Escapes 收口到对象 + FieldVals 收敛；顺带补 blockNode |
+| `parser.CollectNames(root)` | 反转建 `Object.Names`（直挂 + WroteTo 补分支写边）+ 名字级 Escapes 收口到对象 + FieldVals 收敛；顺带补 blockNode |
 | `walkSubNodes(root, fn)` | 子树深度全遍历（反转 / 摘要 / 模拟共用通道） |
-| `outerScope(a, b)` | 两作用域取更外层（释放点 = 最外层绑定作用域） |
-| `scopeDepth(b)` | 作用域嵌套深度：函数体最浅，块体依次加深（outerScope 的比较基准） |
-| `outerParent(b)` | 块沿树向上找最近作用域父（跳过不圈作用域的普通语句节点） |
 
-**gc_inplace.go —— 槽位表模拟（就地释放）**（状态：`slot` 槽位表 + `fields` 字段表 + `stack` 作用域栈）
+作用域工具（`outerScope` / `scopeDepth` / `outerParent` / `funcOfBlock`）
+已随发布期代码迁至 `gcfe/scope.go`。
+
+**gcfe/inplace.go —— 槽位表模拟（就地释放）**（状态：`slot` 槽位表 + `fields` 字段表 + `stack` 作用域栈）
 
 | 函数 | 作用 |
 |---|---|
@@ -265,23 +267,24 @@ FreeScope == nil（无绑定名指向）     → Borrow（孤儿；连兜底都�
 | `rcSim.fieldVal / setField` | 字段表读 / 写（fields[容器][字段] → 对象） |
 | `rcSim.fieldWrite(v)` | `p.f = y`：摘旧字段判 ReleasesOld，新值入字段表（基变量认不出直接跳过） |
 | `rcSim.evalCopy(e)` | 右值求当前对象：只认裸引用（判据同 bareRef）；逃逸对象返回 nil 不入模拟 |
-| `hostOf(v)` | 语句归到定义宿主（赋值 / 字段写都记宿主那份），槽位按宿主唯一 |
+| `parser.HostOf(v)` | 语句归到定义宿主（赋值 / 字段写都记宿主那份），槽位按宿主唯一 |
 
-**gc_release.go —— 发布期第 3 步**
+**gcfe/release.go —— 发布期第 3 步**
 
 | 函数 | 作用 |
 |---|---|
 | `scopeRelease()` | 逐对象按 Names 取最外层作用域定 FreeScope；Holder 被改绑时换仍持有的名字；兜不住 → 函数出口 + 创建者（方向只往"漏释放"偏，不 free 错块） |
-| `scopeKindOf(b)` | 作用域块的可读身份（诊断输出用） |
+| `scopeKindOf(b)` | 作用域块的可读身份（诊断输出用；在 `gcfe/scope.go`） |
 | `containsName(ns, v)` | v 是否在该绑定名集合中（Holder 核对） |
 | `firstLiveName(o)` | 挑一个未逃逸的绑定名当 free 读槽来源 |
-| `funcOfBlock(b)` | 块所属 FuncBlock（兜底 FreeScope = 函数出口）；全局返回 nil |
+| `funcOfBlock(b)` | 块所属 FuncBlock（兜底 FreeScope = 函数出口）；全局返回 nil（在 `gcfe/scope.go`） |
 
-**gc_diag.go —— 自检**
+**gcfe/diag.go —— 自检**
 
 | 函数 | 作用 |
 |---|---|
-| `checkPremature()` | 发布期第 4 步：逐对象校验释放点不早于任一绑定名的作用域，违例 → `Premature`++（基线必须恒 0） |
+| `checkPremature()` | 发布期第 4 步：逐对象校验释放点不早于任一绑定名的作用域，违例 → `gcfe.Premature`++（基线必须恒 0） |
+| `TransferReport()` | 转移统计；真泄漏不看它，看 `parser.Objects()` 三态收口 |
 
 ### 3.7 内嵌分段（闭包级辅助）与外部设施
 
@@ -421,13 +424,14 @@ go build -o /tmp/esc ./tools/esccheck
 全量跑法是 `for d in test/*/ pkg/*/` 逐目录执行（报错目录跳过），首两行聚合：
 
 ```
-对象=114  RC/泄漏释放=6  泄漏=0  提前释放=0
-  作用域释放=86  转移=22  RC=6  真泄漏=0  (转移报告 交出=22 接管=0 无人接管=22)
+对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0
+  作用域释放=100  转移=24  RC=8  真泄漏=0  (转移报告 交出=24 接管=0 无人接管=24)
 ```
 
-- 基线：通过 107/140 · 对象=114 · RC=6 · 泄漏=0 · 提前=0。改动 `gc_*.go`
-  之后必须钉住这组数字（基线变更史见 `gc_frontend_design.md` §5）。
-- `RC=6` 来自 markArgs 挂接恢复（prepend 存字段类实参，方向=多标）。
+- 基线：通过 106/115 · 对象=132 · RC=8 · 泄漏=0 · 提前=0。改动 `parser/gc_*.go`
+  或 `gcfe/*.go` 之后必须钉住这组数字（基线变更史见 `gc_frontend_design.md` §5）。
+- `RC=8` 来自 markArgs 挂接恢复（prepend 存字段类实参，方向=多标）以及
+  `[]T` 纳入 owning 判据后新暴露的 list 分配（gcprobe / sliceprobe2 各 1）。
 - `提前释放` 必须恒 0——它挂在 checkPremature 的自检上。
 - 工具本身是临时调器件（"验证完即删"），不属交付物。
 
@@ -435,7 +439,7 @@ go build -o /tmp/esc ./tools/esccheck
 
 ## 6. 后端接入清单（谁在何时读什么）
 
-**总顺序**：`Check` 收敛 → `parser.SimulateRC(root)` → 按下面清单消费。
+**总顺序**：`Check` 收敛 → `gcfe.SimulateRC(root)` → 按下面清单消费。
 Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可能还没收敛）。
 
 1. **遍历 `parser.Objects()`**，按每块对象的三态分派（三态与 `Life.Disposal()`
@@ -471,7 +475,9 @@ Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可�
 
 ## 7. 现状备注
 
-- 九个 `parser/gc_*.go` 是前端全部；`compile/gc*` 是后端（用户手动重构域）。
+- 前端分析分两层：`parser/gc_*.go` 六个文件承载模型与 Check 期事实收集，
+  `gcfe/*.go` 五个文件承载 Check 后的驱动与计划构建；`compile/gc*` 是当前
+  代码生成权威（用户手动重构域）。
   旧 `docs/frontend_gc_contract.md` 已丢失，契约以 `gc_frontend_design.md`
   §8 为准，本档 §3.4 / §6 是它的展开。
 - 基线跳过口径：140 个目录中 33 个不可跑（10 远端缺文件、9 语料语法错、

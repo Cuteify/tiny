@@ -88,6 +88,22 @@ func bareRef(e *Expression) *Life {
 	return LifeOf(l)
 }
 
+// --- 包外 GC 驱动（gcfe）使用的只读判据导出版 ---
+//
+// 这些判据的语义与实现只应有一份；gcfe 不能复制，否则两边会漂移。
+
+// OwningType 导出版：nil 安全的 IsOwning 包装。
+func OwningType(t typeSys.Type) bool { return owningType(t) }
+
+// FreshAllocExpr 导出版：表达式是否确定在本帧产生新块。
+func FreshAllocExpr(e *Expression) bool { return freshAllocExpr(e) }
+
+// IsRCExpr 导出版：表达式是否 newRC() 分配。
+func IsRCExpr(e *Expression) bool { return isRCExpr(e) }
+
+// BareRef 导出版：表达式若是裸变量引用，返回它指向的定义。
+func BareRef(e *Expression) *Life { return bareRef(e) }
+
 // bareVar 同 bareRef，但给 VarBlock 而不是 Life —— 摘要的预扫描在 Check
 // 之前跑，Life.owner 还没填，只有 VarBlock 能当键（localOf 就拿它当键）。
 func bareVar(e *Expression) *VarBlock {

@@ -13,10 +13,10 @@
 
 ## 0. 先看结论
 
-1. **生成释放代码的权威分析是 `compile/gc`**，不是 `parser.SimulateRC`。
+1. **生成释放代码的权威分析是 `compile/gc`**，不是 `gcfe.SimulateRC`。
    - `gc.Build` 产出全程序函数摘要 `gc.Table` 和逐函数释放计划 `gc.LLRResults`；
    - 后端 `compile.Compiler` 只查这两张表生成释放代码；
-   - `parser.SimulateRC` / `parser.Object` / `Life.FreeScope` 是另一代前端模型，
+   - `gcfe.SimulateRC` / `parser.Object` / `Life.FreeScope` 是另一代前端模型，
      目前只服务于 `tools/esccheck` 诊断，不参与代码生成。
 
 2. **释放的前提是“可证明的独占所有权”**：
@@ -58,7 +58,7 @@
 ```
 package.GetPackage(path)
   ├─ 解析 .cute，合并包，Check 跑到收敛（最多 50 轮）
-  ├─ parser.SimulateRC(root)          // 旧前端模型，诊断用
+  ├─ gcfe.SimulateRC(root)          // 旧前端模型，诊断用
   └─ 返回 packageInfo
         │
         ▼
@@ -81,7 +81,7 @@ main.go
 
 关键顺序点：
 
-- `parser.SimulateRC` 在 `package.GetPackage` 内、Check 收敛之后调用；
+- `gcfe.SimulateRC` 在 `package.GetPackage` 内、Check 收敛之后调用；
 - `gc.Build` 在 `main.go` 内、`GetPackage` 返回之后调用；
 - `gc.Build` 必须在单态化之前跑完，因为摘要按泛型原树建立；
 - 泛型克隆体在 `MonomorphizeIfNeeded` 里用原函数摘要重算一份 LLR，
@@ -92,9 +92,9 @@ main.go
 
 仓库里同时存在两条“GC”链路，必须分清：
 
-| 项目 | `parser.SimulateRC` 链 | `compile/gc` 链 |
+| 项目 | `gcfe.SimulateRC` 链 | `compile/gc` 链 |
 |---|---|---|
-| 入口 | `parser.SimulateRC(root)` | `gc.Build(root)` |
+| 入口 | `gcfe.SimulateRC(root)` | `gc.Build(root)` |
 | 调用点 | `package/package.go` | `main.go` |
 | 核心数据结构 | `parser.Object`、`Life`、`FreeScope` | `FnSummary`、`LLRResult` |
 | 释放依据 | 变量绑定名的最外层作用域 + 槽位模拟 | 调用摘要 + 返回值来源 + 别名/借用 mask + 语句级 LLR |
@@ -1290,13 +1290,13 @@ grep -n "gc: free\|func_end_" _main.asm
   双架构均为 `RC:0`；
 - `test/sortTest` x64=`110`、x86=`COMPILE_FAIL:2`（与基线一致，非 GC 回归）；
 - 全 `test/` 目录聚合的 `tools/esccheck`：可解析 106 个、不可解析 9 个、
-  对象 117、`RC/泄漏释放=6`、`泄漏=0`、`提前释放=0`；
+  对象 132、`RC/泄漏释放=8`、`泄漏=0`、`提前释放=0`；
 - 9 个 FAIL 是既有不可解析目录，不是本轮引入。
 
 对象数会随源码和语料变化；验收时以“**泄漏=0、提前释放=0、四个 GC 回归
 双架构 0**”为准，不要死记对象数。
 
-`tools/esccheck` 是诊断工具，读的是 `parser.SimulateRC` 模型，不是
+`tools/esccheck` 是诊断工具，读的是 `gcfe.SimulateRC`（模型仍在 parser）链，不是
 `compile/gc`；它的“泄漏=0”不能证明后端生成代码没有泄漏，反之亦然。两者要
 分开看：
 
@@ -1430,8 +1430,8 @@ fn resetLeakTracker()
 
 ## 附录 C：相关文档
 
-- `docs/gc_frontend_design.md`：旧前端模型（`parser.SimulateRC`）的设计论证；
-  注意其“后端只读 parser.Object”的描述已过时。
+- `docs/gc_frontend_design.md`：前端模型（`gcfe.SimulateRC` + parser 侧模型）的设计论证；
+  该模型目前只服务诊断，代码生成权威仍是 `compile/gc`。
 - `docs/gc_api.md`：旧前端模型的调用流程与 API。
 - `docs/backend.md`：后端总体结构、架构抽象、调用约定。
 - `PROJECT.md`：当前验收基线、farm 矩阵、提交纪律。

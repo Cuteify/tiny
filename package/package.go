@@ -1,6 +1,7 @@
 package packageSys
 
 import (
+	"cuteify/gcfe"
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
@@ -374,7 +375,8 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 
 		// GC 分析的唯一调用点。必须在包合并与 Check 收敛之后：
 		// 逃逸判定要跨包看得到全局，释放点要基于最终的绑定名集合。
-		parser.SimulateRC(rootNode)
+		// 驱动与释放点算法在 gcfe；事实收集与数据模型仍留在 parser。
+		gcfe.SimulateRC(rootNode)
 	}
 
 	return packageInfo, nil

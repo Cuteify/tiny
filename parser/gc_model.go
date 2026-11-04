@@ -128,6 +128,31 @@ func (d Disposal) String() string {
 	}
 }
 
+// Host 宿主变量（登记时写入）；参数为 nil。
+// 包外 GC 驱动（gcfe）需要读这个字段，故提供只读访问器。
+func (l *Life) Host() *VarBlock {
+	if l == nil {
+		return nil
+	}
+	return l.owner
+}
+
+// Alloc 若本语句是分配点，返回挂在它上面的对象；多轮 Check 复用同一个。
+func (l *Life) Alloc() *Object {
+	if l == nil {
+		return nil
+	}
+	return l.alloc
+}
+
+// HostOf 变量绑定的宿主：赋值语句归到它的定义上，槽位按宿主唯一。
+func HostOf(v *VarBlock) *VarBlock {
+	if l := LifeOf(v); l != nil && l.owner != nil {
+		return l.owner
+	}
+	return v
+}
+
 // IsRep 我是否拥有这个对象（分配就发生在我这个栈槽上）。
 func (l *Life) IsRep() bool {
 	return l.owner != nil && l.Obj != nil && l.Obj.Owner == l.owner

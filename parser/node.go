@@ -91,6 +91,10 @@ func isScopeBlock(b Block) bool {
 	return false
 }
 
+// IsScopeBlock 导出版：判断块是否圈定一个作用域。
+// gcfe 的释放点与就地释放模拟需要与 parser 使用同一份判据。
+func IsScopeBlock(b Block) bool { return isScopeBlock(b) }
+
 // eachSubNode 按顺序遍历 n 的全部子节点：Children，以及挂在字段上的 else 体。
 //
 // IfBlock.ElseBlock 是结构体字段而非 Children（只有条件是编译期常量时才会被

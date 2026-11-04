@@ -31,9 +31,12 @@ func walkSubNodes(root *Node, fn func(n *Node)) {
 	}
 }
 
-// collectNames 反转"变量 → 对象"，得到 Object.Names。Check 期因此不需要
+// CollectNames 反转"变量 → 对象"，得到 Object.Names。Check 期因此不需要
 // 撤销逻辑：重绑只是覆盖，反向表建一次不增量维护。
-func collectNames(root *Node) {
+//
+// 必须在 Check 收敛后、gcfe 的就地释放模拟之前调用。它同时补全 blockNode
+// 反向索引，故不能搬到 parser 包外。
+func CollectNames(root *Node) {
 	// 建反向索引 + 反转绑定名。顺带补全 blockNode（建树有几处绕过 AddChild）。
 	names := map[*Object][]*VarBlock{} // 对象 → 当前指向它的全部名字
 	var lives []*VarBlock              // 参与反转的 Life 宿主，按树序
@@ -102,38 +105,4 @@ func collectNames(root *Node) {
 		}
 		o.FieldVals = out
 	}
-}
-
-// outerScope 取更外层的作用域（nil 表示未知）。深度按块的祖先链算，
-// 靠 blockNode 索引反查节点。
-func outerScope(a, b Block) Block {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	if scopeDepth(a) <= scopeDepth(b) {
-		return a
-	}
-	return b
-}
-
-// scopeDepth 作用域的嵌套深度：函数体最浅，块体依次加深。
-func scopeDepth(b Block) int {
-	d := 0
-	for ; b != nil; b = outerParent(b) {
-		d++
-	}
-	return d
-}
-
-// outerParent 直接外层的作用域块（跳过不圈作用域的节点，如普通语句）。
-func outerParent(b Block) Block {
-	for n := BlockNode(b); n != nil && n.Father != nil; n = n.Father {
-		if n.Father.Value != nil && isScopeBlock(n.Father.Value) {
-			return n.Father.Value
-		}
-	}
-	return nil
 }

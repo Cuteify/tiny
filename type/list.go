@@ -54,3 +54,11 @@ func (l *ListType) Elem() Type {
 func (l *ListType) Kind() string {
 	return "list"
 }
+
+// IsOwning []T 的值携带 data 堆指针，需要引用管理。
+//
+// 必须在这里显式实现：ListType 内嵌 RType，若走提升的 RType.IsOwning，
+// 接收者是内嵌的 *RType，r.Kind() 只会看到 "unknown"，list 会被漏掉。
+func (l *ListType) IsOwning() bool {
+	return l != nil
+}
