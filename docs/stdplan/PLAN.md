@@ -1,6 +1,6 @@
 # stdlib 重构规划 v2（参照 Go 设计）
 
-> 状态：**v2.4**（2026-11-02）。v1 → v2 变更：① 用户架构铁律固化（依赖方向 / 结构体表示 / build 对齐控制）；
+> 状态：**v2.5**（2026-11-05）。v1 → v2 变更：① 用户架构铁律固化（依赖方向 / 结构体表示 / build 对齐控制）；
 > ② 内存管理器结构审阅结论并入（§2）；③ 三个决策点拍板（波次顺序 / W5 随手清 / hashmap 删包）。
 > v2.1 变更：④ 波次顺序微调 + import 五形态定案。
 > v2.2 变更：⑤ **切片头布局改 Go 序**（v2.1 的 len@0/cap@8/data@16 撤销——user 定案「slice 参考 Go，真的
@@ -12,6 +12,8 @@
 > imports 迁移为文件级 `import`，随后**弃用 json imports 通道**（详见 §4.7）。
 > v2.4 变更（2026-11-02）：⑩ **Wave I 收口 ✅**——144 个 package.json imports 全量迁移，
 > json imports 通道与 autoImport 兜底删除；哨兵双 arch 逐位零回归（详见 §4.7 收口结果）。
+> v2.5 变更（2026-11-05）：⑪ **外围 stdlib 分批立项**——核心 Wave 全部收口后，按
+> `docs/STDLIB_STATUS.md` 的 P0–P4 缺口分 Batch 0–5 实施（详见 §4.8）。
 > SSOT：本文件 = 规划；`PROGRESS.md` = 实时执行日志。
 > 上游决策：用户 2026-10-29 指示「好好规划和实现 memory、slice、string、map 等，参考 go」（v1 起点）；
 > 同日追加：「string 和 slice 单向依赖 memory，反过来说没有依赖的，map 也同理；各种数据结构尽量使用
@@ -371,6 +373,39 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 
 **支线（不入波次，插空）**：`||`/`&&` 链缺陷（recursion 53→51，参数 vs 字面量判别探针×4）、
 139 簇其余（rcTracking/stringsUtils/sliceTest 栈耗尽定性）、structMethod=45、console.println 输出链（R1）。
+
+### 4.8 外围 stdlib 分批（2026-11-05 基线；Batch 0 ✅）
+
+> 前置：核心 Wave M/S/St/Mp/T+F/I 全部收口（§4.1–§4.7），GC 迁移收口于 `1bdfe29`。
+> 事实 SSOT 仍是 `docs/STDLIB_STATUS.md`；本节只定义实施顺序、验收与回滚，不重复其缺口清单。
+
+**基线（HEAD `1bdfe29` 现场构建）**
+
+- x64 测试矩阵 22 项：绿 3（`slices=230`、`strings=42`、`uuid=42`）；运行失败 3
+  （`io=4`、`time=3`、`mime=124`）；NASM 失败 6（`console/container/heap/container/list/log/sort/unicode`，
+  均为缺陷⑪ `std_strings_count`）；编译失败 10（`bytes`、`compress/flate`、`flag`、`hash/crc32`、`html`、
+  `math/bits`、`math`、`os`、`path`、`unicode/utf8`）。
+- x86 测试矩阵 22 项：绿 2（`slices=230`、`strings=42`）；`io=12`、`time=3`，其余为编译/NASM/panic 红面
+  （其中多数是 `cdecl.go:120` nil-Type panic）。
+- x64 源码探针 58 包：31 OK / 27 FAIL，与 `STDLIB_STATUS.md` §1.2 逐项一致。
+- 当前数字被三类非语言红项压低：缺陷⑪（10 个测试缺显式 `import "std:strings"`）、P0 源码 bug
+  （`strings.eq`/`mime`/`html`）、调用实参内 `//` 注释。Batch 1 先清这些。
+
+| 批次 | 范围 | 主要动作 | 验收 / 回滚 |
+|---|---|---|---|
+| **0 基线** ✅ | 脚本 + 文档 | 固化本节与 PROGRESS；`scripts/stdlib_matrix.sh`（测试目录复制到临时目录再编译）、`scripts/stdlib_sources.sh`；`.gitignore` 增 `pkg/**/test/gc_*` | 两脚本复跑与本节基线一致、工作区无运行产物；文档/脚本独立 commit，`git revert` |
+| **1 P0 源码语义** | 静默错误 + 非语言红项 | `strings.eq/ne` 改内容比较（x64/x86）并补构造字符串用例；`mime` 两处循环指针重算；重写 `html.unescape`；`os.errnoOf` 形参改名；调用实参内 `//` 移到右括号后（`flag`/`path`/`compress/*`/`encoding/ascii85`/`os/signal`/`text/tabwriter`/`image*`）；10 个测试补 `import "std:strings"`；重写 `sort/test` 陈旧 API；`bytes`/`compress/*` 内部 `*T` 形参改 `ptr` 或 `unsafe.cast[ptr](r)` | 对应单测 + 22×2 矩阵 + 58 x64 探针；目标 `io=42`、`mime=42`、`html` 编译不再 panic、缺陷⑪ 面清零；按包分 commit，逐包 revert |
+| **2 P1 语言/源码解锁** | 27 个源码探针 FAIL | 先探针定性，源码可改写优先：十六进制/科学计数法/字符字面量、`unicode/utf8` 多返回值签名、`math/bits` 泛型算术、`image/color` 复合字面量、`math/big` 类型注解；确需语言面再动 lexer/parser，最小 diff | 27 FAIL 逐包下降；每项能力 ≥1 最小 repro + ≥1 受影响包转 OK；GC 语料基线不变；编译器改动单独 commit |
+| **3 存根与功能** | P4 | `encoding/asn1` unmarshal、`image/png`、`compress/bzip2`、`image/gif|jpeg`、`math/big`、`runtime/debug`、`hash` 接口壳 | 每包「编译 + 至少一个行为断言」；未实现项必须显式文档化，禁止误导性 API；按包 revert |
+| **4 x86 后端** | P3 | `compile/arch/x86/cdecl.go:120` nil-Type panic；x86 NASM `operation size not specified`；`io` x86 剩余真实失败 | x86 探针 FAIL 降到与 x64 同量级；x86 矩阵红项逐包归因；后端 commit 独立 + GC/汇编回归 |
+| **5 覆盖与收口** | P2 + 文档 | `maps`/`memory`/`syscall`/`thread` 包级测试；22×2 三连；58×2 探针表；更新 `STDLIB_STATUS.md` 与本文 | 三连稳定、未修项全部有台账；文档 commit |
+
+**纪律**
+
+1. 每批先落 PLAN/PROGRESS 条目再动代码；每批结束回填基线数字与未修项。
+2. 提交单行中文、模块前缀；显式路径 `git add`；不 push；不提交 `ast.html`、`gc_*`、`_main.asm`。
+3. 编译器/后端改动附 `scripts/gc_corpus_check.sh` 与受影响目录汇编对拍；纯包源码改动至少跑包级测试 + 双架构矩阵。
+4. 矩阵/汇编/探针需串行时统一 `flock /tmp/opencode/lock`。
 
 ---
 

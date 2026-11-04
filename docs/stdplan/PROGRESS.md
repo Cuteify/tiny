@@ -1,6 +1,26 @@
 # stdplan 执行日志（实时）
 
-> SSOT：`docs/stdplan/PLAN.md`（现为 **v2.3**）。本文件逐日记录实施与验证事实。
+> SSOT：`docs/stdplan/PLAN.md`（现为 **v2.5**）。本文件逐日记录实施与验证事实。
+
+## 2026-11-05（外围 stdlib 基线 + Batch 0）
+
+- **前置**：GC Stage 1–5 全部收口（HEAD `1bdfe29`，未 push）；核心 Wave M/S/St/Mp/T+F/I 均已收口。
+- **基线**（HEAD 现场构建）：
+  - x64 测试矩阵 22 项：绿 3（`slices=230`、`strings=42`、`uuid=42`）；运行失败 `io=4`、`time=3`、
+    `mime=124`；NASM 失败 6（`console`/`container/heap`/`container/list`/`log`/`sort`/`unicode`，
+    均 `std_strings_count` = 缺陷⑪）；编译失败 10（`bytes`、`compress/flate`、`flag`、`hash/crc32`、
+    `html`、`math/bits`、`math`、`os`、`path`、`unicode/utf8`）。
+  - x86 测试矩阵 22 项：绿 2（`slices=230`、`strings=42`）；`io=12`、`time=3`；其余为编译/NASM/panic
+    红面（多数共同根因 `cdecl.go:120` nil-Type）。
+  - x64 源码探针 58 包：31 OK / 27 FAIL，与 `docs/STDLIB_STATUS.md` §1.2 逐项一致。
+- **计划落盘**：`PLAN.md` §4.8 新增 Batch 0–5（范围、验收、回滚、纪律），状态升 v2.5。
+- **Batch 0 完成**：
+  - 新增 `scripts/stdlib_matrix.sh`：22 个 `pkg/**/test` 先复制到临时目录再编译，避免
+    `gc_summary.json`/`gc_llr.txt` 写回工作区；输出 `<dir>|<状态>|详情`。
+  - 新增 `scripts/stdlib_sources.sh`：58 个非测试包的 `-S` 源码探针。
+  - `.gitignore` 增 `pkg/**/test/gc_summary.json`、`gc_llr.txt`、`gc_frees.txt`。
+- **下一步**：Batch 1（P0 源码语义）——`strings.eq/ne`、`mime`、`html`、`os.errnoOf`、实参内 `//`、
+  10 个测试补显式 import、`sort/test` 陈旧 API、`bytes`/`compress/*` 指针形参。
 
 ## 2026-10-29（Wave L 实施完成）
 
