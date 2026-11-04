@@ -1,14 +1,15 @@
 # GC 一级模块重构计划
 
-> 状态：2026-11-05 立项
+> 状态：2026-11-05 完成（Stage 1–5 已落地；本文保留各阶段记录与差异归因）
 >
 > 目标：把 GC 从 `parser/gc_*.go`、`gcfe/*.go`、`compile/gc/*.go` 三处收拢为
 > 顶层 `gc` 包。parser 只负责解析与类型检查；`gc` 作为前端（parser/type check）
 > 与后端（codegen）之间的独立编译环节；只有后端 `compile` 调用它。
 >
-> 行为验收：基线不退化 —— `泄漏=0`、`提前释放=0`、`HolderBad=0`，全语料
-> 五态计数尽量逐位一致（`对象=160 · 作用域=114 · 就地=7 · 字段=1 · 转移=30 ·
-> RC=8`）；允许的差异只能朝"更保守 / 更少释放"方向，且必须逐项归因。
+> 行为验收：基线不退化 —— `泄漏=0`、`提前释放=0`、`HolderBad=0`。迁移前
+> 五态为 `对象=160 · 作用域=114 · 就地=7 · 字段=1 · 转移=30 · RC=8`；
+> 切换后为 `160 · 111 · 6 · 1 · 30 · 12`（差异见附录 B，已逐项归因）。
+> 允许的差异只能朝“更保守 / 更少释放”方向。
 
 ---
 
@@ -350,25 +351,30 @@ go run ./tools/gcfactdiff -o /tmp/gcfactdiff ./test/<dir>
 **验收**：五态基线 `160/111/6/1/30/12`，泄漏 / 提前释放 / HolderBad 全 0；
 106 个成功目录的 `gcfe_plan.json` 与 Stage 3 逐位一致。
 
-### Stage 4：接线与工具（0.5 天）
+### Stage 4：接线与工具（0.5 天，2026-11-05）
 
 - `compile.Compiler.Compile` 顶层调用 `gc.Analyze(node)`；
 - `main.go` 显式调用 `gc.Analyze` 以便 dump，随后 `Compile` 命中幂等缓存；
-- `tools/gcdiff` 改用 `gc.Analyze` + `gc.Plan`；
-- `tools/retsumcheck` 改用 `gc.RetSourceOf`；
-- `tools/esccheck` 改用 `gc.Objects` / `gc.TransferReport`；
-- 删除 `gc.Build`（或保留为 `Analyze` 的薄别名，二选一，优先删除）。
+- `tools/gcdiff` / `tools/retsumcheck` / `tools/esccheck` 已改用 `gc` 导出面；
+- 删除 `gc.Build`（后端分析只剩 `analyzeBackend`，由 `Analyze` 驱动）。
 
-**验收**：
+**落地验收**：
 
-- 直接调用 `co.Compile` 的测试现在也会跑 GC；`go test ./...` 通过；
-- `go run . ./test/<dir>` 两种架构均能编译/链接/运行；
-- 全语料基线不变。
+- 直接调用 `co.Compile` 的临时程序在 `test/gcBlocks` 上通过，且
+  `gc.Stats().Objects=9`、`LLRResults` 已填充；
+- `go build ./...` 通过；`go vet ./...` 仅 3 条既有告警；`go test ./...`
+  仍只有 3 个既有 fixture 缺失失败；
+- 全语料基线 `160/111/6/1/30/12`，泄漏 / 提前释放 / HolderBad 全 0；
+- 重点 8 目录 x86_64 汇编归一化后全部 SAME；x86 12 个可编译组合 SAME，
+  4 个既有 panic 目录两边一致失败；
+- `gc.Analyze` 换根自动重置，`main.go` 与 `Compile` 不重复分析。
 
-### Stage 5：收尾（0.5 天）
+### Stage 5：收尾（0.5 天，2026-11-05）
 
 - 更新 `docs/gc_api.md`、`docs/gc_frontend_design.md`、
-  `docs/GC_MEMORY_MANAGEMENT.md` 的入口与符号位置；
+  `docs/GC_MEMORY_MANAGEMENT.md` 的入口、文件分工与符号位置；
+- 把长期验证脚本固化到 `scripts/`（`gc_corpus_check.sh` /
+  `gc_asm_diff.sh` / `normasm.py`），并写入迁移记录；
 - 清理运行产物（`ast.html` 恢复，不提交 `gc_llr.txt` / `gc_summary.json` /
   `_main.asm` 的新改动）；
 - 提交（不 push）。
@@ -404,7 +410,7 @@ for d in test/*/; do go run ./tools/esccheck "$d"; done
 ### 7.3 计划对拍
 
 - Stage 2：临时工具 `tools/gcfactdiff`（Stage 3 已删除）验证新旧计划逐位一致；
-- Stage 4：`gc.Plan` 与 Stage 0 的前端计划 JSON 深度相等（对象 ID 可重排，
+- Stage 4：`gc.BuildPlan` 与 Stage 3 的前端计划 JSON 深度相等（对象 ID 可重排，
   但按 owner/函数/处置归一后必须一致）。
 
 ### 7.4 代码生成与运行

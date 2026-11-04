@@ -1,11 +1,14 @@
 # GC 前端分析设计
 
-> 对象：`parser/gc_*.go` 六个文件（数据模型 + Check 期事实收集，约 1160 行）
-> + `gcfe/*.go` 六个文件（Check 后的驱动、计划构建与导出，约 890 行）。
-> 唯一公开入口：`gcfe.SimulateRC(root)`，调用点在 `package/package.go`。
+> 对象：顶层 `gc` 包里的对象级前端分析（`front.go`、`facts.go`、`state.go`、
+> `names.go`、`inplace.go`、`release.go`、`scope.go`、`paramsum.go`、
+> `retsum.go`、`pred.go`）。
+> 唯一公开入口：`gc.Analyze(root)`；前端子链也可单独用 `gc.CollectFront(root)`
+> 跑（诊断 / 计划导出）。
 >
-> 当前代码生成的权威分析仍是 `compile/gc`；本模型只由 `tools/esccheck` 消费。
-> 本文描述该模型的内部设计，不表示它已接入代码生成。
+> 代码生成仍以语句级 LLR（`gc.LLRResults`）为准；本文描述的对象级模型
+> 由 `tools/esccheck` / `tools/gcdiff` 消费，用来验证对象归属与五态计划。
+> 旧的 `parser/gc_*.go` 钩子与 `gcfe/` 已删除，本文不再保留旧路径。
 
 ---
 
@@ -13,63 +16,58 @@
 
 编译器要知道：每个 `new(T)` 产生的堆块，**在哪一行 free**。
 
-这件事有三个独立的难点，混在一起看会以为是"一个逃逸分析"，其实是三个问题：
+这件事有三个独立难点，混在一起看会以为是“一个逃逸分析”，其实是三个问题：
 
 | # | 问题 | 答案由谁给 |
 |---|---|---|
-| A | 这块内存归谁管？ | `Disposal()` 五态判定 |
+| A | 这块内存归谁管？ | `DisposalOf` 五态判定 |
 | B | **最终**在哪释放？ | 纯作用域规则 |
 | C | 这条赋值能不能**提前**释放？ | 槽位表存在性扫描 |
 
-外加一个横切的问题：**跨函数**时，被调方会不会把入参存到别处（决定实参还算不算帧内可达）。
+外加一个横切问题：**跨函数**时，被调方会不会把入参存到别处（决定实参
+还算不算帧内可达）。
 
 ---
 
 ## 2. 为什么这个方案可行
 
-### 2.1 变量是槽位，对象是内存 —— 分开是全部前提
+### 2.1 变量是槽位，对象是内存
 
 ```
-Life   挂在 VarBlock 上   变量视角：我指向谁、我的绑定在哪个作用域
-Object 挂在每次分配上     内存视角：谁指向它、在哪释放、读哪个槽
+binding  挂在 VarBlock / ArgBlock 旁    变量视角：我指向谁、我的绑定在哪个作用域
+Object   每次分配一个                   内存视角：谁指向它、在哪释放、读哪个槽
 ```
 
-关键性质：**对象身份与变量无关**。同一变量连续两次 `new()` 是两个对象。
+关键性质：**对象身份与变量无关**。同一变量连续两次 `new()` 是两个对象，
+所以“这条赋值顶掉的是哪一块”可判定。若按变量建模，覆盖时就说不清旧内存
+是谁的了。
 
-```go
-n = new(T)   // Object #1
-n = new(T)   // Object #2   ← 分得清，所以"这条赋值顶掉的是哪一块"可判定
+### 2.2 释放点 = 最外层绑定作用域
+
 ```
-
-如果按变量建模（"变量 n 拥有内存"），`n` 被覆盖时就说不清旧内存是谁的了。
-
-### 2.2 释放点 = 最外层绑定作用域（一行公式，无例外）
-
-```go
 释放点 = 全部绑定名里最外层的作用域
 ```
 
-推论：对象活到它**最后一个绑定名所在作用域的出口**。
-
-为什么这条公式是对的：块只能被"还活着的栈槽"读。栈槽的作用域退出，槽就没了，没人能再读到那块内存 —— 此时释放一定安全。反过来，任何更早的释放都可能被某个还活着的槽读到。
+推论：对象活到它**最后一个绑定名所在作用域的出口**。块只能被还活着的
+栈槽读；作用域退出后槽就没了，此时释放一定安全。反过来，任何更早的释放
+都可能被某个还活着的槽读到。
 
 **只向外放**：分支里的局部变量名会把释放点推到外层，而不是反过来。
 
 ```go
 n := new(); head = n; for { ... }
-// n 的绑定名是 {n(循环体), head(函数体)} → 最外层是函数体 → 在函数出口释放
+// n 的绑定名是 {n(循环体), head(函数体)} → 函数出口释放
 // 否则循环里的 head.next 会指向已经 free 掉的块
 ```
 
 算不出绑定名（没有名字 / 只被字段读引用）：先尝试字段 cascade（只被容器
-字段持有 → 随容器释放）；仍算不出才兜底到所属函数出口 —— 宁可晚释放（浪费）
-也不早释放（崩溃），连安全兜底都不成立时宁可不释放。
+字段持有 → 随容器释放）；仍算不出才兜底到所属函数出口——宁可晚释放，
+也不早释放；连安全兜底都不成立时宁可不释放。
 
 ### 2.3 为什么不做引用计数
 
-引用计数要维护一张表、一套 inc/dec、还要在作用域出口回退。它唯一多回答的问题是："改其中一个引用时，旧对象还有没有人指着？"
-
-而这个问题**不是作用域规则能答的**：
+引用计数唯一多回答的问题是：“改其中一个引用时，旧对象还有没有人指着？”
+这个问题**不是作用域规则能答的**：
 
 ```go
 head = prepend(head, 4)
@@ -77,11 +75,11 @@ head = prepend(head, 4)
 ```
 
 只看作用域会漏，漏了就是 use-after-free。所以这一步必须扫字段：
-`rcSim` 用字段表判断旧对象是否还有人指着；`fieldRelease` 负责把“只被容器
+`rcSim` 用字段表判断旧对象是否还有人指着；`fieldRelease` 把“只被容器
 字段持有、没有变量名”的对象挂到容器释放点。
 
-结论：**作用域规则定"最终在哪"，存在性扫描 / 字段 cascade 定"能不能提前、
-怎么级联"。** 两个问题两种判据，不要指望一个公式全包。
+结论：**作用域规则定“最终在哪”，存在性扫描 / 字段 cascade 定“能不能
+提前、怎么级联”。** 两个问题两种判据，不要指望一个公式全包。
 
 ### 2.4 失败方向只有一边
 
@@ -92,7 +90,8 @@ head = prepend(head, 4)
 | 分支赋值 | 两个绑定名都算持有 | 释放点偏外 |
 | 字段读 / 索引 / 普通调用 | 借用（不认领新对象） | 不凭空多出内存 |
 
-**全都不导向"提前释放"。** 这条纪律贯穿前端分析的全部文件：每个 `return false` / `return nil` / `continue` 都要能回答"这是往安全侧倒吗"。
+**全都不导向“提前释放”。** 这条纪律贯穿全部判据：每个 `return false` /
+`return nil` / `continue` 都要能回答“这是往安全侧倒吗”。
 
 ---
 
@@ -102,86 +101,89 @@ head = prepend(head, 4)
 
 ```
 包解析（每包递归）
-  └─ Check 多轮 ──────────────► 每轮为每个写站点记事实（gc_write.go）
-GetPackage 返回前
-  └─ Check 跑到收敛（≤50 轮）  ──► 事实稳定
-  └─ gcfe.SimulateRC(root)     ──► 唯一入口（gcfe/gcfe.go）
-       ├─ parser.CollectNames(root) ① 反转绑定名：对象 → 当前指向它的全部名字
-       ├─ rcSim.walk(root)          ② 按语句顺序走，维护槽位表，就地释放判定
-       ├─ scopeRelease()            ③ 定释放点（纯作用域规则）
-       └─ checkPremature()          ④ 自检：释放点早于任何绑定名 → UAF
+  └─ Check 多轮 ──────────────► 类型 / 解析全部收敛
+GetPackage 返回
+  └─ compile.Compiler.Compile(root)
+       └─ gc.Analyze(root)                 ← 唯一入口，按根幂等
+            ├─ CollectFront(root)
+            │    ├─ RebuildBlockIndex      补 Block → Node 反向索引
+            │    ├─ collectFacts           后置一次遍历，复刻旧 Check 钩子
+            │    ├─ collectNames           反转绑定名
+            │    ├─ rcSim.walk             槽位 / 字段模拟
+            │    ├─ scopeRelease           作用域释放点
+            │    └─ checkPremature         自检：UAF 必须 0
+            └─ analyzeBackend(root)         摘要 + LLR（代码生成消费）
 ```
 
-### 3.2 为什么 Check 要跑到收敛
+### 3.2 为什么必须在 Check 收敛之后
 
-GC 要读**事实的最终形态**，而一轮 Check 里后写的会覆盖先写的：一个变量的定义可能在使用点之后才解析出来，跨包引用要等包合并才有别名。
-
-不收敛就调 `gcfe.SimulateRC`，读到的是某一轮的中间形态，表现为泄漏或提前释放。上限 50 轮是防"两条语句互相触发"死循环；正常第二轮就全 `false`。
+GC 要读**事实的最终形态**。Check 中途的绑定名集合、类型、跨包别名都
+可能还没稳定；在中间轮次分析的后果是泄漏或提前释放。`Analyze` 的契约是
+“`GetPackage` 返回之后调用”，`Compile` 顶层已自动保证。
 
 ### 3.3 为什么 `collectNames` 要反转
 
-Check 期只写**正向事实**：每个变量指向哪个对象。"某个对象当前被哪些名字指着"是反过来的关系，算一遍就行，不必增量维护。
+事实收集只写**正向事实**：每个变量指向哪个对象。“某个对象当前被哪些
+名字指着”是反过来的关系，算一遍就行，不必增量维护。
 
-反转要补一类边 —— `WroteTo`，**记在右值上**：
+反转要补一类边 —— `wroteTo`，**记在右值上**：
 
 ```go
 if c { result = n1 } else { result = n2 }
 ```
 
-`n1` 记着"我被写进过 result"，`n2` 也记着。两个都算持有者，**不需要猜这次赋值是分支还是顺序覆盖**。
-
-代价：顺序覆盖也算持有（`head = n; head = m` 之后 head 仍算 n 的名字），释放点偏外。**偏外是安全方向。**
-
-如果记在左值上，一个槽只能存一个对象，后写的把先写的挤掉，就得引入路径签名来区分分支与顺序 —— 那套东西已经被删掉了（`structuralRelease` 的时代）。
+`n1` 记着“我被写进过 result”，`n2` 也记着。两个都算持有者，**不需要猜
+这次赋值是分支还是顺序覆盖**。代价：顺序覆盖也算持有（`head = n;
+head = m` 之后 head 仍算 n 的名字），释放点偏外。**偏外是安全方向。**
 
 ### 3.4 槽位表模拟（就地释放）
 
 `rcSim` 按源码顺序走一遍树，维护两张表：
 
 ```go
-slot   map[*VarBlock]*Object            // 局部变量当前持有哪个对象
-fields map[*VarBlock]map[string]*Object // 容器各字段当前持有哪个对象
+slot   map[*VarBlock]*Object             // 局部变量当前持有哪个对象
+fields map[*VarBlock]map[string]*Object  // 容器各字段当前持有哪个对象
 ```
 
-覆盖一条语句时：先从表里摘掉旧槽位，再问 `referenced(old)` —— 还有没有任何槽位或字段指着它。没有就地释放，有就不释放。就地释放要回写 `Object.Inplace`，
-`scopeRelease` 与 `checkPremature` 都跳过它——否则同一对象会有两个释放点。
+覆盖一条语句时：先从表里摘掉旧槽位，再问 `referenced(old)` —— 还有没有
+任何槽位或字段指着它。没有就地释放，有就不释放。就地释放回写
+`binding.releasesOld` / `oldObj`，`scopeRelease` 与 `checkPremature` 都跳过
+它——否则同一对象会有两个释放点。
 
-顺序敏感，但**与迭代次数无关**：生成的代码（覆盖前先释放旧值）本来就是这个语义。
+顺序敏感，但**与迭代次数无关**：生成的代码（覆盖前先释放旧值）本来就是
+这个语义。
 
-### 3.5 五态判定（后端的唯一入口）
+### 3.5 五态判定
 
 ```go
-func (l *Life) Disposal() Disposal {
-    if l.Obj.Inplace             { return DisposalInplace } // 覆盖点已释放
-    if l.Obj.Transferred         { return DisposalBorrow }  // 交给调用者了
-    if l.Obj.FieldOwner != nil   { return DisposalField }   // 随容器字段释放
-    if l.Obj.Escapes             { return DisposalRC }      // 帧外可达
-    for _, n := range o.Names {                              // 任何绑定名逃出本帧
-        if n.Life.Escapes       { return DisposalRC }
-    }
-    if o.FreeScope == nil        { return DisposalBorrow }  // 孤儿
+func DisposalOf(o *Object) Disposal {
+    if o.Inplace             { return DisposalInplace } // 覆盖点已释放
+    if o.Transferred         { return DisposalBorrow }  // 交给调用者了
+    if o.FieldOwner != nil   { return DisposalField }   // 随容器字段释放
+    if o.Escapes             { return DisposalRC }      // 帧外可达
+    if o.FreeScope == nil    { return DisposalBorrow }  // 孤儿
     return DisposalScope
 }
 ```
 
-`DisposalScope` 时在 `ReleaseScope()` 处 free，读 `Holder()` 那个槽。
+`DisposalScope` 时在 `FreeScope` 处 free，读 `Holder` 那个槽。
 `DisposalField` 时在容器释放点先 free `容器.FieldName`，再 free 容器。
 
 三种释放点互斥：`Inplace` / `Field` / `Scope` 一个对象只能占一个。`Holder`
 只保证“是该对象的绑定名且活到释放点”，分支合流时同一槽可能对应不同对象，
-所以释放必须走清槽语义（`freeSlot`），不能裸 free 槽值。
+所以后端释放必须走清槽语义（`freeSlot`），不能裸 free 槽值。
 
 字段 cascade 只覆盖最小安全集：对象没有变量名、恰好一个字段引用、容器已按
-作用域释放、容器读槽唯一且确定持有它。任何一条不满足就不挂字段释放（宁可
-漏释放，也绝不 free 错块）。
+作用域释放、容器读槽唯一且确定持有它。任何一条不满足就不挂字段释放
+（宁可漏释放，也绝不 free 错块）。
 
 ### 3.6 跨函数摘要
 
 调用点不必读被调函数体，只查一张表：
 
 ```go
-ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按作用域释放
-                             true  → 被调方可能存到别处，退回 RC
+argEscapeOf(call, idx) == false   → 实参“只读不存”，调用方继续按作用域释放
+                            true  → 被调方可能存到别处，退回 RC
 ```
 
 **判定规则**（sound 的 may 分析）：
@@ -190,23 +192,26 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 参数逃逸 ⟸ 存进全局
 参数逃逸 ⟸ 装箱进接口或结构体值
 参数逃逸 ⟸ 写进结构体字段
-参数逃逸 ⟸ 作为第 j 个实参传出，且被调函数的第 j 号参数也逃逸
+参数逃逸 ⟸ 作为第 j 个实参传出，且被调第 j 号参数也逃逸
 参数逃逸 ⟸ 被调函数认不出来（泛型未解析 / 不在合并树里）
 
 不算逃逸：读取、只在本帧局部之间倒手、作为返回值传出
 ```
 
-**用最小定点，不用最大定点。** may 分析的结论应是"存在一条推导链能证明逃逸"：
+**用最小定点，不用最大定点。** may 分析的结论应是“存在一条推导链能证明
+逃逸”：
 
 ```
 逃逸[f][i] = 地面事实[i]  ∨  ∃j: 作为第 j 实参传给 callee 且 逃逸[callee][j]
 ```
 
-最大定点（从全逃逸往回收缩）会把纯递归锁死：`quickSortInts(s)` 递归传自己，那条边自己依赖自己，收缩不掉 → 整个函数判逃逸 → 摘要白做。最小定点下，没有地面事实的递归环推不出逃逸，判不逃逸 —— 这是对的，环里没有一条真的把指针存到了外面。
+最大定点（从全逃逸往回收缩）会把纯递归锁死：`quickSortInts(s)` 递归传
+自己，那条边自己依赖自己，收缩不掉 → 整个函数判逃逸 → 摘要白做。最小定点
+下，没有地面事实的递归环推不出逃逸，判不逃逸——这是对的，环里没有一条
+真的把指针存到了外面。
 
-**懒算，不全局预扫描。** `GetPackage` 是递归的：依赖包的 Check 在外层建表**之前**就跑完了。表是包级全局，预扫描的结果会被内层 Check 读走（拿到空表 → 全判逃逸），而 `Escapes` 单调递增，这个保守值会**永久留下**。懒算把顺序彻底解耦：谁问谁算，只算那棵子树。
-
-**局部别名表也要解不动点。** `a = p; b = a; g = b` 这种链条，单趟扫会漏后半段 —— 漏一条别名 = 后面"存进全局"认不出来 = 漏判逃逸。
+**懒算，不全局预扫描。** 一次分析里按需算被调闭包，只算那棵子树；局部
+别名表也要解不动点，否则 `a = p; b = a; g = b` 会漏掉后半段的逃逸。
 
 ### 3.7 所有权转移
 
@@ -218,309 +223,150 @@ ArgEscapeOf(call, idx) == false   → 实参"只读不存"，调用方继续按�
 
 ---
 
-## 4. 如何实现：收集器 + 唯一处理器
+## 4. 如何实现：后置收集器 + 唯一处理器
 
 ### 4.1 两段式
 
 ```
-收集器（gc_write.go）  只探测，不写任何状态
-                       读类型 / 读作用域 / 查跨函数摘要 → []mark
-处理器（gc_mark.go）    applyMark：mark → 具体字段写，不判任何条件
+收集器（facts.go）  只探测，不写任何状态
+                    读类型 / 读作用域 / 查跨函数摘要 → []mark
+处理器（facts.go）  applyMark：mark → 具体字段写，不判任何条件
 ```
 
 `applyMark` 的 case 列表就是**事实全集**，每个 case 注明由哪个收集器发出。
+与旧链的区别：事实收集不再挂在 `VarBlock.Check` / `CallBlock.Check` /
+`ReturnBlock.Check` 上，而是 Check 收敛后跑一次完整后序遍历。这样没有
+多轮中间态，也不需要“每轮 Init 清账”；`binding` 从零开始，只建一次。
 
-### 4.2 为什么不能"全量收集完再统一施加"
+遍历顺序复刻 `Node.Check`：进入作用域 → Children → 自身 Check；`IfBlock`
+的 else 在 Children 之后；`ForBlock` 的 init/cond/incr 在循环体之后；
+`FuncBlock` 的参数在函数体之后。
 
-多轮 Check。`markVar` 每轮定义点 `Init` 把这个变量的 `Life` 整个清掉，而 Check 跑到收敛。跨语句攒起来施加会把不同轮次的事实混成一锅。
+### 4.2 为什么不能“先全收集再统一施加”
 
-**能落地的粒度就是每个站点收集完立刻施加完** —— 这是事实集成的边界。
+后置 pass 虽然只跑一次，但事实之间有顺序依赖：定义点必须先 `mkInit` /
+`mkScope` 再 `claim`，覆盖点必须 `mkOldObj` 先于 `mkObj*`（claim 会覆盖
+obj）。**能落地的粒度就是每个站点收集完立刻施加完**——这是事实集成的
+边界，也是 `mkInit` 清账语义能保持简单的原因。
 
 ### 4.3 写站点怎么分类
 
-`collectWrite`（gc_write.go）内部一条优先序链，从语句形态直接产出事实 ——
-原 `writeForm` bitflag 中间层已并入这条链：
+`collectVar` 内部一条优先序链，从语句形态直接产出事实：
 
 | 优先级 | 判据 | 产生的事实 |
 |---|---|---|
 | 1 | 左值不是 owning 类型 | 无（连右值都不看） |
 | 2 | 写全局 | 逃逸 + 记边 + 右值里所有变量逃逸 |
-| 3 | 右边是 `newRC` | `Obj = nil`（生命周期归调用者 `rcDec`） |
+| 3 | 右边是 `newRC` | `obj = nil`（生命周期归调用者 `rcDec`） |
 | 4 | 右边是当场新建 | `claim`：这个变量拥有新对象 |
 | 5 | 右边是裸变量引用 | 别名（抄身份 + 记边 + 记参数来源） |
-| 6 | 字段读 / 索引 / 调用结果 | `Obj = nil`（借用） |
+| 6 | 字段读 / 索引 / 调用结果 | `obj = nil`（借用） |
 
-**优先序本身就是语义，写在一处（collectWrite 头注释）**：
+**优先序本身就是语义，写在一处**：
 
-- 非 owning 类型最高 —— 与 GC 无关，连右值都不必看；顺带避开 `bareRef` 经 `LifeOf` 给参数打"天然归调用方"基线的副作用
-- `isRCExpr` 必须先于 `freshAllocExpr` —— `newRC` 的 `Call` 同时带 `NewType` 和 `IsRC`，先判 fresh 会把 RC 块当普通新分配 claim 掉，调用方再 `rcDec` 就是双重释放
-- 全局与 newRC 在记旧对象之前就 return —— 记了会让就地释放去 free 一个全局的 / 手工 `rcDec` 管的块（这条约束现在由控制流结构保证，不再靠注释）
+- 非 owning 类型最高——与 GC 无关，连右值都不必看；
+- `isRCExpr` 必须先于 `freshAllocExpr` —— `newRC` 的 `Call` 同时带
+  `NewType` 和 `IsRC`，先判 fresh 会把 RC 块当普通新分配 claim 掉，调用方
+  再 `rcDec` 就是双重释放；
+- 全局与 newRC 在记旧对象之前就 return —— 记了会让就地释放去 free 一个
+  全局的 / 手工 `rcDec` 管的块。
 
-### 4.9 文件分工
+### 4.4 文件分工
 
-**parser 侧（数据模型 + Check 期事实收集，必须留在 parser）**
+| 文件 | 职责 |
+|---|---|
+| `front.go` | `CollectFront` 五步编排 |
+| `facts.go` | 事实收集 + `mark` / `applyMark` |
+| `state.go` | `binding` / `analysis` / `Objects` |
+| `model.go` | `Object` / `FieldBinding` / `Disposal` |
+| `names.go` | 绑定名反转 + `walkSubNodes` |
+| `inplace.go` | 槽位表模拟 `rcSim` |
+| `release.go` | `scopeRelease` + 字段 cascade `fieldRelease` |
+| `scope.go` | 深度 / 外层 / 可读身份 / 所属函数 |
+| `pred.go` | 类型 / 表达式判据 |
+| `paramsum.go` | 入参逃逸摘要 |
+| `retsum.go` | 返回值来源摘要 |
+| `plan.go` | 只读计划快照 |
+| `diag.go` | 自检与五态统计 |
 
-| 文件 | 行 | 职责 |
-|---|---|---|
-| `gc_model.go` | 311 | 数据模型：`Life` / `Object` / `Disposal` 五态；包外只读访问器 |
-| `gc_write.go` | 260 | Check 期收集器：赋值（含形态分类链） / 字段 / 调用 / 返回 |
-| `gc_names.go` | 107 | `CollectNames` 绑定名反转 + `walkSubNodes` |
-| `gc_pred.go` | 120 | 判据：类型形态、表达式形态（含包外导出版） |
-| `gc_summary.go` | 244 | 跨函数入参摘要 |
-| `gc_mark.go` | 115 | 唯一施加点：`applyMark` |
-
-**gcfe 侧（Check 后驱动与计划构建，单向 import parser）**
-
-| 文件 | 行 | 职责 |
-|---|---|---|
-| `gcfe/gcfe.go` | 30 | `SimulateRC` 唯一入口：按顺序驱动四步 |
-| `gcfe/plan.go` | 333 | Phase 1 只读计划导出：对象级五态 / `FreeScope` / `Holder` / 字段绑定，语句级 `ReleasesOld` |
-| `gcfe/inplace.go` | 224 | **就地释放**：槽位表模拟 `rcSim` |
-| `gcfe/release.go` | 172 | **释放点**：`scopeRelease` + 最小字段 cascade `fieldRelease` |
-| `gcfe/diag.go` | 57 | 诊断：`checkPremature` / `TransferReport` |
-| `gcfe/scope.go` | 70 | 作用域工具：深度 / 外层 / 可读身份 / 所属函数 |
-
-拆分边界：`Life` 的 `owner` / `alloc` 是解析器内部账本，Check 期钩子直接写
-`VarBlock.Life`，无法无成本外置；因此模型与事实收集留在 parser，只有
-“Check 之后怎么走树、怎么定释放点”进入 `gcfe`。parser 不 import gcfe，
-不会形成循环依赖。
+`gc` 单向依赖 `parser` / `type`；`parser` 不再有 GC 字段或钩子，不会形成
+循环依赖。
 
 ---
 
 ## 5. 自检与基线
 
-`checkPremature` 用最终快照校验：对象 O 的释放点 S 不能比任何绑定名的作用域更内层。抓的是"数据已对但释放点算早"，抓不到"某条路径上曾持有过"那类（那要路径分析）。
+`checkPremature` 用最终快照校验：对象 O 的释放点 S 不能比任何绑定名的
+作用域更内层。抓的是“数据已对但释放点算早”，抓不到“某条路径上曾持有过”
+那类（那要路径分析）。
 
 ```
-test/ 106/115      对象=160  作用域=114  就地=7  字段=1  转移=30  RC=8
+test/ 106/115      对象=160  作用域=111  就地=6  字段=1  转移=30  RC=12
                    泄漏=0    提前释放=0  HolderBad=0
 ```
 
-- **`提前释放=0`** 是关键不变量 —— 有 use-after-free 就是错
-- **`泄漏=0`** 是无真泄漏
-- **`HolderBad=0`**：作用域释放读的槽必须是该对象的绑定名且活到释放点
-- 对象分布：作用域释放 114（71%）、转移给调用方 30（19%）、RC 8（5%）、
-  就地释放 7（4%）、字段释放 1（1%）；五种出路互斥
-- **返回值摘要（Batch B）**：`freshAllocExpr` 改为消费 `RetSourceOf(fb)` 的
-  严格 Fresh 摘要，替换原来的 `FuncBlock.ReturnsOwned`。旧标记由 `mkFuncOwns`
-  在 `collectRet` 设置，依赖局部变量**已经**有 `Life.Obj`；`level1 → level2 →
-  …` 这类纯传递链在下游函数先 Check 时拿不到对象，链被截断，对象数停在 132。
-  语法摘要不读 `Life`，正确识别后对象 132→160、转移 24→30、作用域 92→114。
-- **严格 Fresh 方向保守**：只有**全部**返回路径都是新分配 / nil / 空串才判
-  `ReturnFresh`；任一分支是参数别名、字段借用或未知调用，整函数记
-  `ReturnUnknown`，不保留“带 mask 的 Fresh”。全语料 38 个 `Fresh` 函数已逐个
-  核对源码；与后端 `RetKind` 对拍 `front=Fresh && back!=Fresh` 为 0，另有
-  1615 处 `front=Unknown / back=Fresh` 的保守漏判（`newRC` 返回、`&local`
-  取地址后写字段、参数别名等）。曾出现 163 的中间值，是 `newRC` 返回值被
-  误判 Fresh；降为 Unknown 后回到 160。
-- **`RC=8`** 的来源：`test/gc_loop` 5、`test/heap_new` 1、`test/gcprobe` 1、
-  `test/sliceprobe2` 1（按被调参数摘要判逃逸，prepend 存字段类模式，方向是多标）
-- **list 判据修复**：`[]T` 的 `IsOwning` 曾被内嵌 `RType` 的提升方法吃成 false，
-  导致所有 list 分配不进前端 GC。`type/list.go` 显式实现后，对象 117→132、
-  RC 6→8；随后的返回值摘要再把 132 推到 160。两轮都保持
-  `泄漏=0` / `提前释放=0`。旧基线 114/6 是修复前且语料口径不同，不再作为
-  验收数字。
+- **`提前释放=0`** 是关键不变量——有 use-after-free 就是错；
+- **`泄漏=0`** 是五态都不沾的对象为 0；
+- **`HolderBad=0`**：释放读的槽必须是该对象的绑定名且活到释放点；
+- 对象分布：作用域释放 111、转移 30、RC 12、就地 6、字段 1；五态互斥。
 
-改动这套分析后基线必须是这个。`esccheck` 是验证手段（`go build -o /tmp/esc ./tools/esccheck`）。
+基线变更必须先逐条归因，再更新 `scripts/gc_corpus_check.sh` 的 `EXPECT_*`
+默认值。旧基线 160/114/7/1/30/8 属于 Check 期钩子链；迁移到后置 pass 后
+有两处更保守差异（`gc_loop`、`gc_complex`，prepend/linkPrepend 的字段事实
+可见性），因此作用域/就地下降、RC 上升，属可接受方向。
 
 ---
 
-## 6. 可以简化的部分
-
-按"收益 / 风险"排序。6.1–6.5 已全部实施（净 −100 行，基线不变）。
-
-### 6.1 `gc_summary.go` 有两份几乎相同的文件头（**已做**，−30 行）
-
-文件第 1–63 行与第 67–96 行讲的是同一件事：判定规则、最小定点的理由、懒算的理由。正文只讲一遍就够，另一份删掉。
-
-**收益**：−30 行。**风险**：无（纯注释）。
-
-### 6.2 `mark` 闭包遮蔽了 `mark` 类型（**已做**，真实地雷）
-
-`gc_summary.go` 的 `scanFuncFacts` 里有 `mark := func(p *ArgBlock){...}`，而 `gc_mark.go` 定义了 `type mark struct`。同名局部变量把类型遮住了 —— **在同一函数里任何一次 `mark{flag:...}` 都会编译失败**：
-
-```
-parser/gc_summary.go:283:13: mark (local variable) is not a type
-```
-
-（已实测。）改名 `markGround`。
-
-**收益**：消除一个必然踩的坑。**风险**：无。
-
-### 6.3 同一事实两个施加点（**已做**）
-
-两路都经 `applyMark` 发 `mkParamOut`，同一事实同一施加点；写入按 `(cb,i)` 判重 —— 参数无 define，`Init` 清不到账，Check 每轮会重发同批边。
-
-传出边本体不能删（`passedToEscaping` 读它）。形态已从 `PassedTo + passedAt` 两片平行数组并成 `out []paramOut` 一片（`gc_model.go`），zip 对应关系由结构保证，不再靠手工对齐与越界守卫。
-
-**收益**：事实写入点从 2 处降到 1 处。**风险**：低，已跑基线确认。
-
-### 6.4 `collectWrite` 里 18 处 `mark{flag: X, l: l}` 的重复字段（**已做**）
-
-`l` / `v` / `src` 在这个收集器里恒定，只有 flag 在变。局部构造器收掉了重复：
-
-```go
-fact := func(flag markFlag, src *Life) mark {
-    return mark{flag: flag, l: l, v: v, src: src}
-}
-```
-
-`switch` 里现在只剩"这条语句产生哪几条事实"。flag 与载荷的对应关系在
-`gc_mark.go` 的 case 注释里仍可逐条核对 —— 可审计性没有降。
-
-**收益**：−10 行。**风险**：低（已跑基线）。
-
-### 6.5 三层塌成两层（**已做**，方向 = 并进生成侧）
-
-原状：一条 `x = new(T)` 要穿过三层 —— `writeFormOf` 算形态 bitflag →
-`collectWrite` 再按形态收事实 → `applyMark` 施加。中间那层是在把 6 个形态
-**重新映射**成 6 条事实，同一组 6 选 1 分派做了两遍。
-
-塌掉的方向有两个：
-
-- **并进施加点**（原草案）：`applyMark` 直接 switch `writeForm`。**弃用** ——
-  分类和施加混进同一个函数，违背"生成 / 处理分开"的硬边界，且 `applyMark`
-  的 case 列表不再是事实全集。
-- **并进生成侧**（已实施）：`writeFormOf` + `collectWrite` 塌成一条优先序链，
-  从语句形态直接产出事实。`applyMark` 一字未动，仍是最纯的字段写表。
-
-```
-collectWrite  →  []mark     分类 + 收事实（一条链）
-applyMark     →  字段写     施加（不变）
-```
-
-**收益**：`writeForm` 类型 + 6 主形态 + 2 修饰位 + `formKind` + `writeFormOf`
-+ `coverOld` 约 72 行中间表示整个消失（净 −55 行）。更大的收益是两条优先序
-约束从"注释警告"变成"控制流结构"——全局 / newRC 在记旧对象之前就 return，
-想记也到不了。**风险**：低（已跑基线）。
-
-### 6.6 `arg + fromParam` 并成一个字段（**查过，撤回**）
-
-别名路径对任何裸引用右值都发 `mkFromParam`，不看左值是不是参数 —— 参数改绑
-（`q = p`）会把 `fromParam` 写到参数 Life 上。两字段靠 `paramRoot()` 的 arg
-优先屏蔽序区分"参数自指"与"借来自参数"；并成一片，屏蔽序无处安放（能区分就
-得加回 bool，字段数打平还更绕）。屏蔽序一丢，`q = p; var c = q; g(c)` 链的
-传出边会落到错误的形参槽 —— 升级算到别的槽头上，本槽漏算，方向是提前释放。
-
-**结论**：两字段 + `paramRoot()` 保持原样。Life 能安全合并的只有传出边
-并片（见 6.3）。
-
-### 6.7 `fieldBaseOf` 直读 `v.Define`（**已做**，lookupInFunc 退役）
-
-字段写基对象原本靠平扫当前函数体找同名定义（lookupInFunc：唯一才敢用，
-第二个同名 refuse → 值逃逸）。实际解析期 `Find` 早已把容器实例落进
-`v.Define`（`Path[0]` = 容器本体，最内层优先即词法正确，Node/Path 结构见
-finder.go:198-206、var.go:410-497）——旧注释"Define 指向 StructField，
-拿不到基对象"只看到 `Value`（类型端字段），漏了 Path 携带实例。
-`fieldBaseOf` 改为直读：`Path[0].(*VarBlock)` 且非全局 → 用之；参数容器
-（`*ArgBlock`）与全局容器 FieldVals 语义未设计，维持"值逃逸"兜底。
-lookupInFunc（含其递归段 walk）与 rcSim.cur（其唯一调用者是 fieldBaseOf
-的 scope 参数）一并退役。语义净变化只有一处：函数体内有多个同名定义时，
-旧版一律 refuse（值逃逸），新版取解析期内层命中 —— 向精确方向收，
-行为示例见 gc_api §3.6。
-
-### 6.8 `fieldBaseOf` 消失进两处站点、`structOf` 收编 type 包（**已做**，纯内联）
-
-事后清理：不带 scope 折叠的死参数已无，`fieldBaseOf` 整个内联——基定位
-逻辑"扫 `v.Define.Path` 取首个非全局 `*VarBlock`"原地落在两个使用者
-里：`collectField` 与 `rcSim.fieldWrite`（同法抄写，两处保持逐字一致）。
-Path 中间层全是 `typeSys.Type`（finder.go 的 findPath 只 append 解引用
-层/字段类型），不存在第二个 `*VarBlock` 可命中，内联扫描 ≡ 取 `Path[0]`。
-同场：GC 侧 `structOf` 搬进 type 包（`typeSys.StructOf`，逐字同体），
-`copiesFields` / `fieldTypeOwning` 改走导出名；四个文件 gofmt 收整
-（收折叠空行、typeparam 方法对齐）。语义零变化，基线逐位不变。
-
-### 6.9 `collectExpr` 的 Call 分支退役，`collectArgs` 追加式统一两路（**已做**）
-
-收集点原本双份，是复制品不是分层：`CallBlock.Check` 尾部 markArgs →
-collectArgs 已对每个完成类型检查的调用块施加全语义事实（守卫 + 传出边 +
-ThisVar），collectExpr 递归碰到同一调用块又手抄一遍**简化版**——缺缺参
-默认值守卫、缺 mkParamOut。统一：`collectArgs` 改追加式
-`out []mark`（契合同 collectExpr 的"递归共用 out 不额外分配"），Call 分支
-三段循环删成一行 `out = collectArgs(out, cb)`。
-关键实据：默认值参数 Value 同设（call.go:154-159
-`ArgBlock{Value: Default, Defind: 参数声明}`）——`Value == nil` 不是区分
-器，`Defind != nil` 才是；第二遍缺此守卫时，被调方默认值表达式会被当调用
-方实参、按本调用点摘要误判逃逸，语料未触发但结构是漏。语义净变化只两条：
-第二遍补守卫（方向 = 少误判逃逸）、第二遍补传出边（第一遍已记，79d9d3b
-的跨轮查重兜住重复；escape 置位幂等）。基线逐位不变。
-
-### 6.10 字段写钩子接线：LifeOf 第三形态，collectField 首次真正上岗（**已做**）
-
-死路时刻定位：字段写的 Find 终产物是 `StructField`（checker var.go:462 同款
-断言），LifeOf 只枚了变量 / 参数两种定义形态，字段写整体折进"解析不出
-return nil"——判别式探针 394/394 全数 StructField，钩子 var.go:609 逢字段写
-必短路，collectField 0 次执行，FieldVals 永久空表，"字段值先于容器自身释放"
-的排序规则从来没执行过一条，全部走"兜底到所属函数出口"。期间 collectField
-的多轮手改（含 51c6796 卷入的重写）都作用在死路上；重写的
-`StructOf(v.Value.Type).Field(fname).Type` 反查还埋着 nil 解引用 panic 链
-（字段名不在右值类型的 struct 上 → Field 得 nil → `.Type` 直炸）。
-
-接线三件：
-
-- LifeOf 补 `case *typeSys.StructField`：账本挂容器——沿 `Define.Path` 取
-  首个块，`*VarBlock` **含全局不滤**（全局容器字段写必须送进来给兜底喂粮）、
-  `*ArgBlock` 参数容器也给路（collectField 的 base 循环认不出参数 → 正好落
-  base==nil 兜底）；链上无块（跨包前向）维持 nil。
-- collectField 终形：字段类型 `v.Type` 一次直读（checker 强制字段写语句
-  Type 非空，var.go:600），反查链整条退役；base==nil → `mkEscape` 打在
-  **右值** Life（死码把这处写成了接收者——方向错误随接线一并修掉）；
-  `mkFieldBind` 的 src 同取右值 Life；两跳以上 return nil（§7）；src 限
-  普通名引用（`Name.Length()==1`）——字段读右值（`q.f2`）没有自己的对象，
-  第三形态后 bareRef 会给它容器 Life，绑上即错对象，旧语义"自然得 nil"成
-  文为闸。
-- markVar 注释补接收者口径（字段写 l = 容器 Life）；gc_write.go 的
-  typeSys import 退役。
-
-探针实况（接线后一轮，语料 107 目录，跑完即还原）：fires=374/394（剩 20 条
-解析链无容器块 = 跨包前向，维持跳过）、两跳以上 23 条入闸门、baseNil=26
-（全是参数容器）、escapeFired=**4**（参数容器字段写首次真打上"值存查不出的
-容器"逃逸）、bindFired=48（FieldVals 首次进料）。基线总数逐位不变：
-对象=114 · RC/泄漏释放=6 · 泄漏=0 · 提前释放=0 · 作用域释放=86 · 转移=22（当时口径）
-——FieldVals 只动排序不动归属判定，"仅用于排序"契约兑现。
-
----
-
-## 7. 已知边界
+## 6. 已知边界
 
 | 边界 | 说明 |
 |---|---|
 | `for` 嵌套 `if` | 暂不处理 |
-| 路径敏感 | 不做。"某条路径上曾持有过"判不出来，`checkPremature` 也抓不到 |
-| 字段值排序 | `FieldVals` 只用于排序（字段值先于容器自身），不决定是否释放 —— 字段值通常自己也有 `FreeScope`，按并集释放会双重释放 |
-| 容器复制 | `var sh: Iface = d` 会把 d 的字段指针带走，去向不可追 → 保守把 d 当逃逸。正确做法是把源的存活期延到副本作用域，未实现 |
-| `obj.f = new(T)` | 对象**压根没建**（`bareRef` 返回 nil 就 return）。循环里反复覆盖同一字段会漏 N 个块。补法是字段版 `ReleasesOld`，约十几行，不需要引用计数 |
-| 跨文件子包 | `pkg/hash:fnv` 这类 `a:b` 形式的子包路径尚未解析 |
-| 字段读引用 | `q = p.f` 逃逸语境下，LifeOf 第三形态让字段读拿到**容器** Life → collectExpr 对容器打逃逸（多标方向，安全）；字段内容对象的身份归右值变量自己的别名链管 |
-| 字段写未接线尾差 | 解析链上无容器块的字段写（跨包前向等，语料 20 条/轮）维持钩子跳过 = 少标，随"跨文件子包"边界解决 |
-| 表达式内嵌调用的传出边 | 表达式里的调用不建树节点（`exp.Call` 只挂 Expression），`scanFuncFacts` 扫描域只覆盖独立成句的调用 → 嵌套边只能在 Check 期记，而 `paramMemo` 首查即固化、永不再算：嵌套边是否进定点取决于语句顺序。缺口方向 = 升级不足（提前释放），esccheck 查不出跨帧悬垂；基线语料未触发 |
+| 路径敏感 | 不做。“某条路径上曾持有过”判不出来，`checkPremature` 也抓不到 |
+| 字段值排序 | `FieldVals` 只用于排序，不决定是否释放——字段值通常自己也有 `FreeScope`，按并集释放会双重释放 |
+| 容器复制 | `var sh: Iface = d` 会把 d 的字段指针带走，去向不可追 → 保守把 d 当逃逸 |
+| `obj.f = new(T)` | 对象压根没建（`bareRef` 返回 nil 就 return）；循环里反复覆盖同一字段会漏块 |
+| 跨文件子包 | `pkg/hash:fnv` 这类 `a:b` 形式尚未解析 |
+| 字段读引用 | `q = p.f` 逃逸语境下，字段读拿到**容器** binding → 对容器打逃逸（多标方向，安全） |
+| 表达式内嵌调用的传出边 | 表达式里的调用不建树节点，参数摘要的闭包扫描只覆盖独立成句的调用；缺口方向 = 升级不足，基线语料未触发 |
+| 单态化克隆体 | 前端五态不覆盖克隆体；后端 LLR 在 `compile/monomorphize.go` 单独重算 |
 
 ---
 
-## 8. 后端契约
+## 7. 后端契约
 
-> 注意：这是前端模型的**目标契约**。当前 `compile/gc` 不读这些字段；在
-> `docs/gc_migration_plan.md` 的 Phase 2/3 完成前，代码生成仍以 LLR 为准。
+> 对象级模型是**诊断 / 对拍契约**，不是当前代码生成输入。
+> 代码生成读 `gc.Table` + `gc.LLRResults`；若要接入对象级计划，必须保持
+> 五态互斥，不能把同一对象再生成一遍出口释放。
 
-后端只做两件事：
+若按对象级计划生成释放代码，只做两件事：
 
-1. 遍历 `parser.Objects()`
-2. 对每个对象看 `(*Life).Disposal()`，五态分别处理
-
-不参与任何判断。所有判定在 `parser` 侧已经做完。
+1. 遍历 `gc.Objects()`；
+2. 对每个对象看 `DisposalOf(o)`，五态分别处理。
 
 ```go
-DisposalScope   →  在 (*Life).ReleaseScope() 处 free，读 (*Life).Holder() 那个槽
+DisposalScope   →  在 FreeScope 处 free，读 Holder 那个槽
 DisposalField   →  在容器释放点先 free 容器.FieldName，再 free 容器
 DisposalInplace →  覆盖赋值点已经 free，出口不得重复
 DisposalRC      →  退回引用计数（rcInc / rcDec）
 DisposalBorrow  →  本帧什么都不做
 ```
 
-只写不读、按设计如此的前端字段（后端要读的）：
+释放必须走清槽语义（`freeSlot`），不能裸 free 槽值——分支合流时同一槽
+可能对应不同对象。
 
-```
-Life.ReleasesOld / Life.OldObj   就地释放的依据
-Life.ReleaseScope / Holder       释放点与读哪个槽的取值面
-Life.IsRep                       判断这个槽是不是分配点
-```
+---
+
+## 8. 已实施的设计简化
+
+迁移到后置 pass 与统一 `gc` 包时落地，行为不变或更保守：
+
+- 判据只留一份：`owningType` / `isRCExpr`，不再有 `isOwning` / `isRCAlloc`
+  两个名字；
+- `Stats` 与 `Plan.Summary` 共用 `PlanSummary.countObject`，统计口径只写
+  一次；
+- `BuildPlan` 的块编号与就地释放收集合并为一次 AST 遍历；
+- 事实收集与 LLR 共享同一棵 AST 的节点键，不再有跨包的 `blockNode` 补建
+  分叉；
+- `binding.arg + fromParam` 保持两个字段：`paramRoot()` 的“参数自指优先”
+  屏蔽序需要它；并成一片会把传出边算到错误形参，方向是提前释放。

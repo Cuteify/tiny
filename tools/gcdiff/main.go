@@ -1,4 +1,4 @@
-// gcdiff — Phase 1 只读对拍工具：前端 gc 计划 vs 后端 compile/gc LLR。
+// gcdiff — 只读对拍工具：前端对象级 gc 计划 vs 后端 gc LLR。
 //
 // 它只分析、不编译、不改代码生成。输出三份文件到 -o 目录：
 //
@@ -298,7 +298,7 @@ func buildReport(dir string, plan gc.Plan, be map[string]*gc.LLRResult) (string,
 		kp = append(kp, fmt.Sprintf("%s=%d", k, plan.Summary.ByScopeKind[k]))
 	}
 	fmt.Fprintf(&sb, "  作用域分布: %s\n", strings.Join(kp, " "))
-	fmt.Fprintf(&sb, "后端 compile/gc: 函数=%d 有释函数=%d 对象=%d frameOwn=%d 出口=%d 块尾=%d 循环=%d 覆盖=%d 字段=%d 临时=%d (ret=%d cond=%d incr=%d)\n\n",
+	fmt.Fprintf(&sb, "后端 gc LLR: 函数=%d 有释函数=%d 对象=%d frameOwn=%d 出口=%d 块尾=%d 循环=%d 覆盖=%d 字段=%d 临时=%d (ret=%d cond=%d incr=%d)\n\n",
 		len(be), beFns, beObjs, beFrame, beExit, beBlock, beLoop, beAssign, beField,
 		beRet+beCond+beIncr, beRet, beCond, beIncr)
 	fmt.Fprintf(&sb, "口径: FE 对象编号与 BE 对象编号互不相通，只能按函数 + 释放类别比较；\n")

@@ -16,8 +16,8 @@ package gc
 import "cuteify/parser"
 
 // CollectFront 跑完整条前端分析链，结果保存在包级 front，供诊断工具 /
-// 计划的只读导出使用。不能与后端 LLR 的 Build 混用：LLR 是语句级模型，
-// 这里是一次分配一个对象的对象级模型。
+// 计划的只读导出使用。Analyze 在它之后跑后端 LLR；两者是不同模型：
+// LLR 按语句规划释放，这里一次分配一个对象、只用于五态诊断。
 func CollectFront(root *parser.Node) {
 	if root == nil {
 		front = nil

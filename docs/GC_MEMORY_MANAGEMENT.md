@@ -1,6 +1,6 @@
 # Cute 编译器 GC 与内存管理
 
-> 适用源码：`compile/gc/`、`compile/compiler.go`、`compile/arch/`、`pkg/memory/`。
+> 适用源码：`gc/`、`compile/compiler.go`、`compile/arch/`、`pkg/memory/`。
 > 本文描述的是**当前实现**，不是目标设计；文中标注“已知缺口”的行为都已在
 > 生成汇编或源码中核对过。
 >
@@ -13,11 +13,12 @@
 
 ## 0. 先看结论
 
-1. **生成释放代码的权威分析是 `compile/gc`**，不是 `gcfe.SimulateRC`。
-   - `gc.Build` 产出全程序函数摘要 `gc.Table` 和逐函数释放计划 `gc.LLRResults`；
+1. **生成释放代码的权威分析是顶层 `gc` 包**。
+   - `gc.Analyze(root)` 是唯一入口，由 `compile.Compiler.Compile` 顶层自动调用；
+   - 它产出全程序函数摘要 `gc.Table` 和逐函数释放计划 `gc.LLRResults`；
    - 后端 `compile.Compiler` 只查这两张表生成释放代码；
-   - `gcfe.SimulateRC` / `parser.Object` / `Life.FreeScope` 是另一代前端模型，
-     目前只服务于 `tools/esccheck` 诊断，不参与代码生成。
+   - `gc` 内还有一套对象级五态模型（`gc.Objects()` / `DisposalOf` / `FreeScope`），
+     目前只服务于 `tools/esccheck` / `tools/gcdiff` 诊断，不参与代码生成。
 
 2. **释放的前提是“可证明的独占所有权”**：
    - 对象由本帧分配（或由已知 `RetFresh` 调用返回）；
@@ -49,8 +50,8 @@
 
 | 层 | 主要文件 | 输入 | 输出 | 职责 |
 |---|---|---|---|---|
-| 前端摘要 | `compile/gc/analyze.go`、`summary.go` | 包合并、Check 收敛后的 AST | `gc.Table`（`FnSummary`） | 全程序参数逃逸、返回值来源、堆分配/未知调用/全局存储摘要 |
-| 前端 LLR | `compile/gc/llr.go` | 单函数 AST + 该函数摘要 | `gc.LLRResults`（`LLRResult`） | 抽象对象、绑定、逃逸/共享、释放点计划 |
+| 前端摘要 | `gc/analyze.go`、`summary.go` | 包合并、Check 收敛后的 AST | `gc.Table`（`FnSummary`） | 全程序参数逃逸、返回值来源、堆分配/未知调用/全局存储摘要 |
+| 前端 LLR | `gc/llr.go` | 单函数 AST + 该函数摘要 | `gc.LLRResults`（`LLRResult`） | 抽象对象、绑定、逃逸/共享、释放点计划 |
 | 后端代码生成 | `compile/compiler.go`、`compile/arch/` | AST + 两张 GC 表 | `_main.asm` | 在语句/函数边界插入 `free/freeSlot`，管理 scratch 槽 |
 | 运行时 | `pkg/memory/` | 生成的调用 | 堆块/RC 块 | 分配、释放、RC、泄漏追踪 |
 
@@ -59,14 +60,14 @@
 ```
 package.GetPackage(path)
   ├─ 解析 .cute，合并包，Check 跑到收敛（最多 50 轮）
-  ├─ gcfe.SimulateRC(root)          // 旧前端模型，诊断用
   └─ 返回 packageInfo
         │
         ▼
 main.go
-  ├─ gc.Build(ast)                    // 全程序摘要 + LLR，权威分析
+  ├─ gc.Analyze(ast)                  // 显式分析，供打印/落盘
   ├─ 打印/落盘 gc_summary.json、gc_llr.txt
   └─ compile.Compiler.Compile(ast)
+        ├─ 顶层 gc.Analyze 命中缓存（换根时自动重算）
         ├─ 泛型单态化时对克隆体重算 LLR
         ├─ funcHandle：按 LLR 预留 scratch、生成 Prologue → 清零出口槽 → 函数体
         ├─ 语句级：块尾、循环出口、覆盖赋值、ret/条件/增量临时释放
@@ -82,36 +83,31 @@ main.go
 
 关键顺序点：
 
-- `gcfe.SimulateRC` 在 `package.GetPackage` 内、Check 收敛之后调用；
-- `gc.Build` 在 `main.go` 内、`GetPackage` 返回之后调用；
-- `gc.Build` 必须在单态化之前跑完，因为摘要按泛型原树建立；
+- `gc.Analyze` 必须在 Check 收敛之后调用；`Compile` 顶层自动保证；
+- `main.go` 的显式调用只为打印/落盘，随后 `Compile` 命中幂等缓存；
+- `gc.Analyze` 必须在单态化之前跑完，因为摘要按泛型原树建立；
 - 泛型克隆体在 `MonomorphizeIfNeeded` 里用原函数摘要重算一份 LLR，
   以克隆节点为键写入 `gc.LLRResults`（`compile/monomorphize.go` 的
   “单态化克隆体的 LLR 结果重算”段）。
 
-### 1.3 两代 GC 模型的关系
+### 1.3 两套模型的关系
 
-仓库里同时存在两条“GC”链路，必须分清：
+同一个 `gc` 包里有两套互补的分析，不要混为一谈：
 
-| 项目 | `gcfe.SimulateRC` 链 | `compile/gc` 链 |
+| 项目 | 对象级五态（前端） | 语句级 LLR（后端） |
 |---|---|---|
-| 入口 | `gcfe.SimulateRC(root)` | `gc.Build(root)` |
-| 调用点 | `package/package.go` | `main.go` |
-| 核心数据结构 | `parser.Object`、`Life`、`FreeScope` | `FnSummary`、`LLRResult` |
-| 释放依据 | 变量绑定名的最外层作用域 + 槽位模拟 | 调用摘要 + 返回值来源 + 别名/借用 mask + 语句级 LLR |
+| 入口 | `gc.CollectFront(root)`（`Analyze` 内先跑） | `analyzeBackend(root)`（`Analyze` 内后跑） |
+| 核心数据结构 | `Object`、`binding`、`FreeScope` | `FnSummary`、`LLRResult` |
+| 释放依据 | 变量绑定名的最外层作用域 + 槽位模拟 | 调用摘要 + 返回值来源 + 别名/借用 mask + 语句级扫描 |
 | 产物消费者 | `tools/esccheck` / `tools/gcdiff`（诊断） | `compile.Compiler`（真正生成释放代码） |
 | 释放点状态 | 五态互斥：Inplace / Field / Scope / Transfer / RC | 七类语句级释放点，依赖生成顺序 |
-| 当前状态 | 诊断/历史模型，Phase 1 只读对拍中 | 权威链路 |
+| 当前状态 | 诊断 / 对拍基线 | 权威链路 |
 
-`gcfe` 这一代已经把“一个对象至多一个释放点”落成显式不变量：覆盖赋值点
-就地释放（`Object.Inplace`）、容器字段释放（`FieldOwner`/`FieldName`）、
-作用域释放（`FreeScope`）三者互斥，`DisposalOf` 按固定序只返回一个。
-`compile/gc` 目前靠语句生成顺序保证同一件事，没有对象级的互斥位；接前端
-计划时必须保持这条不变量，不能把五态对象再生成一遍出口释放。
-
-`docs/gc_frontend_design.md` 开头“后端只读 `parser.Object` 与
-`(*Life).Disposal()`”是旧描述，与当前代码不一致。**排查释放代码时以
-`compile/gc` 为准**；`parser` 模型的统计只用于观察“如果按旧规则会在哪释放”。
+对象级模型已经把“一个对象至多一个释放点”落成显式不变量：覆盖赋值点就地
+释放（`Object.Inplace`）、容器字段释放（`FieldOwner`/`FieldName`）、作用域
+释放（`FreeScope`）三者互斥，`DisposalOf` 按固定序只返回一个。
+后端 LLR 靠语句生成顺序保证同一件事，没有对象级的互斥位；若将来接入
+对象级计划，必须保持这条不变量，不能把五态对象再生成一遍出口释放。
 
 ---
 
@@ -119,7 +115,7 @@ main.go
 
 ### 2.1 哪些类型算“拥有堆内存”
 
-`compile/gc/analyze.go` 的 `isOwning` 判定：
+`gc/pred.go` 的 `owningType` 判定：
 
 | 类型 | 是否 owning | 说明 |
 |---|---|---|
@@ -252,11 +248,12 @@ main.go
 ### 3.1 入口与阶段
 
 ```go
-// compile/gc/analyze.go
-func Build(root *parser.Node)
+// gc/gc.go + gc/analyze.go
+func Analyze(root *parser.Node)      // 唯一入口
+func analyzeBackend(root *parser.Node) // 摘要 + LLR
 ```
 
-`Build` 的阶段：
+`analyzeBackend` 的阶段：
 
 1. `collectFuncs`：递归收集所有 `FuncBlock`，键为 `fb.Name.String()`（包合并后
    是全路径名）；
@@ -275,8 +272,8 @@ var Table = map[string]*FnSummary{}      // 函数全路径名 → 摘要
 var LLRResults = map[string]*LLRResult{} // 函数全路径名 → LLR 结果
 ```
 
-`Build` 会重置 `LLRResults`，但**不会清空 `Table`**；正常编译器入口只调用一次
-`Build`。若在同一进程内对完全不同的 AST 重复调用，需要调用方自己保证表不串。
+`analyzeBackend` 每次重建 `Table` 与 `LLRResults`；`Analyze` 按根指针幂等，
+换根时整体重算，不对完全不同的 AST 复用旧表。
 
 ### 3.2 `FnSummary` 与 `ParamSummary`
 
@@ -333,12 +330,12 @@ None < Caller < HeapObj < Global < Any
 | API | 签名 | 说明 |
 |---|---|---|
 | `gc.ParamEscapes` | `func ParamEscapes(calleeKey string, idx int) Escape` | 查第 idx 个参数的逃逸层级；无摘要返回 `EscAny`，纯内建例外 |
-| `gc.CalleeKnown` | `func CalleeKnown(calleeKey string) bool` | 是否已有摘要 |
-| `gc.DumpSummary` | `func DumpSummary(fs *FnSummary) string` | 单函数可读摘要 |
+| `gc.Analyze` | `func Analyze(root *parser.Node)` | 唯一 GC 入口；幂等 |
 | `gc.DumpAll` | `func DumpAll(w io.Writer) error` | 按名字排序输出所有摘要（`== name` + JSON） |
 | `gc.DumpLLRs` | `func DumpLLRs() string` | 所有 LLR 结果的可读 dump |
 | `gc.DumpLLR` | `func DumpLLR(res *LLRResult) string` | 单函数 LLR dump |
-| `gc.DumpFrees` | `func DumpFrees() string` | 所有释放计划扁平 dump |
+| `gc.Stats` / `gc.BuildPlan` | `PlanSummary` / `Plan` | 对象级五态与只读计划（诊断） |
+| `gc.Premature` / `gc.TransferReport` | 自检 / 转移统计 | 基线必须为 0 |
 
 注意：`gc_summary.json` 实际是“多个 `== name` 分节 + 每节一段 JSON”的文本，
 不是单个合法 JSON 文档；`gc_llr.txt` 是纯文本，不要当机器格式解析。
@@ -433,7 +430,7 @@ type LLRResult struct {
 
 ```go
 for _, ag := range fb.Args {
-    if ag.Type != nil && isOwning(ag.Type) && ag.Name != nil {
+    if ag.Type != nil && owningType(ag.Type) && ag.Name != nil {
         id := st.newObj("param:" + name)
         st.bindings[name] = id
         st.objEscaped[id] = true  // 调用者管理
@@ -1005,7 +1002,7 @@ fn free(ptr: ptr) bool {
 ### 7.5 RC 与 LLR 的边界
 
 - `newRC` 对象在 LLR 中标记 `objRCAlloc`，不进入 `Frees`/`BlockFrees`；
-- `isRCAlloc` 只看 `Expression.Call.IsRC`；
+- `isRCExpr` 只看 `Expression.Call.IsRC`；
 - 用户必须自己配对 `rcInc/rcDec`；编译器不会在作用域结束自动插入 RC 操作；
 - `pkg/memory/gc/gc.cute` 是一个只有 `rcInc/rcDec/rcGet` 的轻量副本；
   排查/修改以 `pkg/memory/rc.cute` 为准。
@@ -1207,8 +1204,8 @@ func_end_runBuild:          ; 标签在释放代码之后
 | 早退 `ret` + 出口计划（临时构造，未入库） | exit=0 | exit=0 |
 | 全语料 112 目录 × 2 架构对拍基线 | 仅既有失败/计时差异 | 同左 |
 
-`esccheck` 前端基线保持不变：`对象=132 RC=8 泄漏=0 提前=0 作用域=92
-转移=24 就地=7 字段=1 HolderBad=0`。
+当时的 `esccheck` 前端基线保持不变：`对象=132 RC=8 泄漏=0 提前=0
+作用域=92 转移=24 就地=7 字段=1 HolderBad=0`（当前基线见 §10.3）。
 
 **遗留**：`FieldFrees` 的宿主条件只解决“容器已返回/逃逸”的 UAF；字段值来自
 别名、参数或共享对象时，`objShared` 仍不保护字段 cascade（§9.4）。Win64 的
@@ -1355,26 +1352,26 @@ grep -n "gc: free\|func_end_" _main.asm
 
 ### 10.3 当前验收基线
 
-截至 2026-11-04（`PROJECT.md` 的 GC 收口基线）：
+截至 2026-11-05（Stage 4 接线后基线）：
 
 - `test/gcCondTemp`、`test/gcRetFree`、`test/gcBlocks`、`test/gcOverwrite`
   双架构均为 `RC:0`；
 - `test/sortTest` x64=`110`、x86=`COMPILE_FAIL:2`（与基线一致，非 GC 回归）；
-- 全 `test/` 目录聚合的 `tools/esccheck`：可解析 106 个、不可解析 9 个、
-  对象 132、作用域 92、就地 7、字段 1、转移 24、RC 8、`泄漏=0`、
-  `提前释放=0`、`HolderBad=0`；
+- 全 `test/` 目录聚合（`scripts/gc_corpus_check.sh`）：可解析 106 个、
+  不可解析 9 个、对象 160、作用域 111、就地 6、字段 1、转移 30、RC 12、
+  `泄漏=0`、`提前释放=0`、`HolderBad=0`；
 - 9 个 FAIL 是既有不可解析目录，不是本轮引入。
 
 对象数会随源码和语料变化；验收时以“**泄漏=0、提前释放=0、HolderBad=0、
 四个 GC 回归双架构 0**”为准，不要死记对象数。
 
-`tools/esccheck` 是诊断工具，读的是 `gcfe.SimulateRC`（模型仍在 parser）链，不是
-`compile/gc`；它的“泄漏=0”不能证明后端生成代码没有泄漏，反之亦然。两者要
+`tools/esccheck` 是诊断工具，读的是 `gc` 包里的对象级五态链，不是后端
+`LLRResults`；它的“泄漏=0”不能证明后端生成代码没有泄漏，反之亦然。两者要
 分开看：
 
 | 检查 | 覆盖 | 不能覆盖 |
 |---|---|---|
-| `tools/esccheck` | parser 作用域模型的对象归属 | 后端实际是否发出 `free`、是否可达 |
+| `tools/esccheck` | 对象级五态 / 绑定名作用域归属 | 后端实际是否发出 `free`、是否可达 |
 | 四个 GC 回归 | 后端块尾/循环/覆盖/ret/条件释放的可执行行为 | 未覆盖语法形态、运行时大块滞留 |
 | `gc_llr.txt` | LLR 计划是否生成 | 运行时是否可达（§9.1 修复后由 `func_end` 跳板保证，仍要看汇编确认） |
 | `_main.asm` | 实际生成的释放代码与位置 | 运行时是否真的走到 |
@@ -1404,22 +1401,30 @@ grep -n "gc: free\|func_end_" _main.asm
 ### A.1 编译器侧（Go）
 
 ```go
-// 以下均为 package gc 的包级符号，调用方写 gc.Build、gc.Table 等。
+// 以下均为 package gc 的包级符号，调用方写 gc.Analyze、gc.Table 等。
 
-// 全程序分析
-func Build(root *parser.Node)
+// 唯一入口（顶层 Compile 自动调用）
+func Analyze(root *parser.Node)
+
+// 前端对象级链（诊断 / 计划用）
+func CollectFront(root *parser.Node)
+func Stats() PlanSummary
+func BuildPlan(root *parser.Node) Plan
+func Objects() []*Object
+func Premature() (int, []string)
+func TransferReport() (sent, taken, orphan int, detail []string)
 
 // 全局表
 var Table map[string]*FnSummary
 var LLRResults map[string]*LLRResult
 
-// 单函数 LLR（Build 内部调用；单态化克隆体会再次调用）
+// 单函数 LLR（analyzeBackend 内部调用；单态化克隆体会再次调用）
 func ComputeLLR(fnKey string, fb *parser.FuncBlock,
                 fs *FnSummary, body *parser.Node) *LLRResult
 
 // 摘要查询
 func ParamEscapes(calleeKey string, idx int) Escape
-func CalleeKnown(calleeKey string) bool
+func RetSourceOf(fb *parser.FuncBlock) ReturnKind
 
 // 节点级释放查询（必须传同一 AST 节点）
 func RetFreesForNode(fnKey string, n *parser.Node) []LLRRetFree
@@ -1427,11 +1432,9 @@ func CondFreesForNode(fnKey string, n *parser.Node) []LLRCondFree
 func IncrFreesForNode(fnKey string, n *parser.Node) []LLRCondFree
 
 // dump
-func DumpSummary(fs *FnSummary) string
 func DumpAll(w io.Writer) error
 func DumpLLRs() string
 func DumpLLR(res *LLRResult) string
-func DumpFrees() string
 ```
 
 ### A.2 后端内部函数（`compile/compiler.go`）
@@ -1505,11 +1508,10 @@ fn resetLeakTracker()
 
 ## 附录 C：相关文档
 
-- `docs/gc_frontend_design.md`：前端模型（`gcfe.SimulateRC` + parser 侧模型）的设计论证；
-  该模型目前只服务诊断，代码生成权威仍是 `compile/gc`。
-- `docs/gc_migration_plan.md`：两套 GC 的实测差异、Phase 1 对拍基线
-  （`gcfe.BuildPlan` / `tools/gcdiff`）与分阶段切换计划。
-- `docs/gc_api.md`：旧前端模型的调用流程与 API。
+- `docs/gc_frontend_design.md`：对象级五态模型的设计论证；
+  该模型目前只服务诊断，代码生成权威仍是语句级 LLR。
+- `docs/gc_migration_plan.md`：GC 收拢到 `gc` 包的迁移记录、各阶段基线与差异归因。
+- `docs/gc_api.md`：`gc.Analyze` 的调用流程与 API。
 - `docs/backend.md`：后端总体结构、架构抽象、调用约定。
 - `PROJECT.md`：当前验收基线、farm 矩阵、提交纪律。
 - `docs/stdplan/GC_REMEDIATION_DESIGN.md`、`GC_REMEDIATION_PLAN.md`：
