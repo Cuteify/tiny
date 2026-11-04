@@ -113,6 +113,26 @@ func eachSubNode(n *Node, fn func(*Node)) {
 // 工具与后端遍历 AST 时必须用它 —— 只走 Children 会漏掉整个 else 分支。
 func EachSubNode(n *Node, fn func(*Node)) { eachSubNode(n, fn) }
 
+// RebuildBlockIndex 重建 Block → Node 的反向索引。包合并时有一批节点是
+// 直接挂到根上的（绕过 AddChild），新建的 AST 也可能没有索引；GC 后置
+// 分析要在 parser 包外按 Block 反查祖先链，必须先整体重建一次。
+func RebuildBlockIndex(root *Node) {
+	if root == nil {
+		return
+	}
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if n.Value != nil {
+			blockNode[n.Value] = n
+		}
+		eachSubNode(n, walk)
+	}
+	walk(root)
+}
+
 // scopeOf 节点所处的最内层作用域：从 n 向上找第一个圈作用域的祖先。
 // 解析期 AddChild 直接检查子树时用它补上 curScope，否则字段基对象认不出来
 // （Node.Check 那条路径是自己进入作用域的，不需要它）。
