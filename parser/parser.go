@@ -598,6 +598,10 @@ func (p *Parser) Back(num int) error {
 		p.DontBack--
 		return p.Back(num - 1)
 	}
+	// 离开函数体：返回值摘要从“解析中”转为可缓存状态。
+	if fb, ok := p.ThisBlock.Value.(*FuncBlock); ok {
+		markFuncClosed(fb)
+	}
 	p.ThisBlock = p.ThisBlock.Father
 	if num < 0 {
 		num = -num

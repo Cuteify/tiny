@@ -100,7 +100,7 @@ go run ./tools/gcdiff -o /tmp/gcdiff/gcOverwrite ./test/gcOverwrite
 
 # 全语料（esccheck 口径）
 # 期望：test/ 106 成功目录
-# 对象=132  RC=8  转移=24  作用域=92  就地=7  字段=1  泄漏=0  提前=0
+# 对象=160  RC=8  转移=30  作用域=114  就地=7  字段=1  泄漏=0  提前=0
 # HolderBad=0
 
 # 构建与回归
@@ -136,7 +136,7 @@ e2e GC 矩阵（字段 cascade 不改变代码生成，先只做解析/计划验
 | `gcCondTemp` / `gcRetFree` / `gcBlocks` / `gcOverwrite` | 双架构 `exit=0` |
 | 早退 `ret` + 出口计划（临时用例，未入库） | 双架构 `exit=0`，汇编含 `gc: zero exit slot` |
 | 全语料 112 目录 × 2 架构 | RC 与基线一致；仅既有失败、计时、非确定性输出差异 |
-| `esccheck` 前端基线 | `对象=132 RC=8 泄漏=0 提前=0 作用域=92 转移=24 就地=7 字段=1 HolderBad=0` |
+| `esccheck` 前端基线（Batch D 时） | `对象=132 RC=8 泄漏=0 提前=0 作用域=92 转移=24 就地=7 字段=1 HolderBad=0`（Batch B 后为 160/114/30，见 §2.3） |
 | `go test ./...` | 仅既有 3 个 fixture 路径失败（`TestFullSyntaxParse` / `TestFullSyntaxCompile` / `TestListParseAndCompile`） |
 
 `gcOwnership` 的 `testNestedAlloc` 在修复后的汇编形态：
@@ -160,12 +160,35 @@ add rsp, 104
 
 ---
 
-## 3. 后续批次（Batch D 之外，尚未实施）
+### 2.3 Batch B 实测（2026-11-05，返回值摘要）
 
-### Batch B：表达式临时对象
+| 项 | 结果 |
+|---|---|
+| `parser/gc_retsum.go` | 新增 `ReturnKind`（None/Fresh/Alias/Borrow/Unknown）与 `RetSourceOf` |
+| `freshAllocExpr` | 消费方从 `ReturnsOwned` 切到严格 Fresh 摘要 |
+| 全语料前端基线 | `对象=160 作用域=114 就地=7 字段=1 转移=30 RC=8 泄漏=0 提前=0 HolderBad=0` |
+| 对象增量 | 132→160（纯传递返回链被识别）；中间值 163 是 `newRC` 误判 Fresh，已回落到 160 |
+| 与后端 `RetKind` 对拍 | `front=Fresh && back!=Fresh` 为 0；`front=Unknown / back=Fresh` 1615 处（保守） |
+| 38 个 `Fresh` 函数 | 逐个核对源码，全部满足“所有路径新分配 / nil / 空串” |
+| e2e | `gcCondTemp` / `gcRetFree` / `gcBlocks` / `gcOverwrite` 双架构 `exit=0`；`gcOwnership` 双架构 `exit=9` |
+| 解析期缓存 | `markFuncOpen` / `markFuncClosed` 修复自递归函数前缀体被缓存成 Fresh |
 
-- [ ] `ret f()` / 条件里的 owning call / `for` 增量临时 / `obj.f = new(T)`
-- [ ] 建对象、给临时释放点；与后端 `RetFrees` / `CondFrees` / `IncrFrees` 对拍
+**仍未完成**：表达式临时对象（`ret f()` 里的嵌套 owning call、`if`/`for`
+条件、`for` 增量、`obj.f = new(T)`）。`ret f()` 的对象传播已做，但表达式
+内嵌的分配点还没有临时对象模型。
+
+---
+
+## 3. 后续批次（Batch B 剩余 / C / E / F，尚未实施）
+
+### Batch B：返回值摘要（已完成）+ 表达式临时对象（未完成）
+
+- [x] 严格 Fresh 返回值摘要：混合来源一律 Unknown，不保留 mask Fresh
+- [x] `ret f()` 且被调 Fresh 时传播 `mkFuncOwns`；`freshAllocExpr` 消费摘要
+- [x] `markFuncOpen` / `markFuncClosed`：解析中的函数摘要不缓存
+- [x] `bodyTakesAddrOf`：`&local` 后字段写入的局部降为 Unknown
+- [ ] `ret f()` 中嵌套的 owning call / `if` 条件 / `for` 增量 / `obj.f = new(T)`
+- [ ] 临时对象建对象、给临时释放点；与后端 `RetFrees` / `CondFrees` / `IncrFrees` 对拍
 - 验收：`gcRetFree`、`gcCondTemp` 从“后端独有”变为“两边都有”
 
 ### Batch C：单态化克隆计划重算

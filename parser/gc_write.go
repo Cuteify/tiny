@@ -220,6 +220,16 @@ func collectRet(fb *FuncBlock, e *Expression) []mark {
 		}
 		return m
 	}
+
+	// 调用结果：实参照常按逃逸传播；被调返回来源为 Fresh 时，本函数把
+	// 所有权继续转交给调用者，ReturnsOwned 也应为真（摘要本身不依赖它）。
+	if e.Call != nil {
+		m := collectExpr(nil, e, true)
+		if !e.Call.IsRC && e.Call.Func != nil && RetSourceOf(e.Call.Func) == ReturnFresh {
+			m = append(m, mark{flag: mkFuncOwns, fb: fb})
+		}
+		return m
+	}
 	return collectExpr(nil, e, true)
 }
 

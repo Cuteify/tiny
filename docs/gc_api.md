@@ -6,7 +6,7 @@
 > `gcfe/*.go`（Check 后的驱动、计划构建与导出，六个文件）。
 > 当前代码生成权威仍是 `compile/gc`，本文模型只服务 `tools/esccheck` 诊断。
 >
-> 当前基线：`test/ 106/115 · 对象=132 · 作用域=92 · 就地=7 · 字段=1 · 转移=24 · RC=8 · 泄漏=0 · 提前释放=0 · HolderBad=0`（§5）。
+> 当前基线：`test/ 106/115 · 对象=160 · 作用域=114 · 就地=7 · 字段=1 · 转移=30 · RC=8 · 泄漏=0 · 提前释放=0 · HolderBad=0`（§5）。
 
 ---
 
@@ -86,6 +86,42 @@ collectArgs / collectExpr 的实参位
 - 摘要查询在三个消费面生效：`collectArgs` 的实参位、`collectVar` 全局
   分支与 `collectRet` 经 `collectExpr` 递归进表达式内层调用的实参位。
 
+### 1.4 返回值来源摘要：RetSourceOf（严格 Fresh）
+
+`freshAllocExpr` 不读 `FuncBlock.ReturnsOwned`，而是问语法摘要：
+
+```
+RetSourceOf(fb)  parser/gc_retsum.go
+   ├─ 返回类型非 owning / 无 return       → ReturnNone / ReturnUnknown
+   ├─ 函数体仍在解析（retOpen）           → ReturnUnknown，且不缓存
+   ├─ 逐 return 语句 exprRetKind
+   │    ├─ new(T) / new([]T, n)           → Fresh
+   │    ├─ nil / 空串字面量               → Fresh
+   │    ├─ ret f() 且 f 摘要 Fresh        → Fresh（递归，busy 环记 Unknown）
+   │    ├─ 参数本身                       → Alias
+   │    ├─ 参数对象的字段 / 索引          → Borrow
+   │    ├─ 局部变量 → 该名所有赋值来源求并集
+   │    └─ 字段读 / 未知调用 / 取地址局部 → Unknown
+   └─ 全部路径合并：只有全 Fresh 才是 Fresh；混合一律 Unknown
+```
+
+契约：
+
+- **严格**：`ReturnFresh` 是后端 `RetKind=Fresh` 的子集。任一返回路径是
+  alias / borrow / unknown，整个函数就是 `ReturnUnknown`，调用方不 claim、
+  不自动释放；方向永远是“少释放”，不会多释放。
+- **不读 `Life`**：摘要在 Check 期间就可能被 `freshAllocExpr` 懒查询，不能
+  依赖 `collectVar` 是否已经跑过。旧 `ReturnsOwned` 由 `mkFuncOwns` 在
+  `collectRet` 设置，依赖局部变量的 `Life.Obj`，会截断
+  `level1 → level2 → …` 这类纯传递链。
+- **解析期不缓存**：`markFuncOpen` / `markFuncClosed` 标记函数体边界。
+  `AddChild` 在解析期会立即 `Check`，自递归调用可能在前缀体上查询本函数
+  摘要；open 函数一律 `Unknown` 且不写 memo。
+- **取地址例外**：局部变量在函数体内出现 `&local`（一元取地址）时，该局部
+  的来源记为 `Unknown`。字段写入可能把参数 / 静态缓冲存进这个局部，
+  `newRC` 与 `strings.makeString` 都踩过这个形态。
+- `ResetObjects()` 同时清空摘要 memo（AST 指针键不能跨编译复用）。
+
 ---
 
 ## 2. 端到端示例
@@ -114,7 +150,7 @@ fn prepend(head: *Node, val: int) *Node {
 }                              //   #a.Transferred：callee 侧不再释放
 caller:
     head = prepend(head, 4)
-    // collectVar：freshAllocExpr 经 FuncBlock.ReturnsOwned 判真 → mkObjClaim
+    // collectVar：freshAllocExpr 经 RetSourceOf(fb)==ReturnFresh 判真 → mkObjClaim
     //   → 调用方 claim 出本帧对象，释放点随调用方作用域走
     // markArgs（实参位）：ArgEscapeOf(prepend, 0) —— prepend 的摘要说
     //   参数存进了字段（paramGround）→ true → mkEscape 级联到旧对象
@@ -183,7 +219,8 @@ g = ...                       // 全局分支（collectVar）→ [mkEscape, mkWr
 | `func (l *Life) Holder() *VarBlock` | free 时哪个栈槽（创建者被改绑时指向别的绑定名） | 释放指令的地址来源 |
 | `func (l *Life) IsRep() bool` | 我是否拥有这个对象（分配就发生在我的槽位上） | 区分创建者与普通绑定名 |
 | `Life.ReleasesOld bool` / `Life.OldObj *Object` | 写入前先释放旧值（就地释放判定） | 赋值前先 free 旧块再写 |
-| `FuncBlock.ReturnsOwned bool` | "返回值里有本帧分配的对象"声明 | 调用方 freshAllocExpr 消费 → claim |
+| `FuncBlock.ReturnsOwned bool` | 旧声明："返回值里有本帧分配的对象"（`collectRet` 维护，仅诊断） | 消费方已改用 `RetSourceOf` 的严格 Fresh 摘要 |
+| `func RetSourceOf(fb *FuncBlock) ReturnKind` | 返回值来源摘要。只有 `ReturnFresh` 允许调用方 claim 并自动释放 | 见 §1.4 |
 
 Disposal 判定序（一个方法写死，读语义按这个序理解）：
 
@@ -354,7 +391,7 @@ node.go 树基建。
 3. 全局左值                  → mkEscape + mkWroteTo + collectExpr(all escape)，提前 return
 4. 右值是 newRC()            → mkObjNil，提前 return（生命周期手工管）
 5. 覆盖点（非定义）          → mkOldObj 先记旧对象（此后 claim / nil都会覆盖 Obj）
-6. freshAllocExpr(右值)      → mkObjClaim（new / ReturnsOwned 调用 / 字符串拼接）
+6. freshAllocExpr(右值)      → mkObjClaim（new / 严格 Fresh 调用 / 字符串拼接）
 7. 裸引用右值                → mkObjAlias + mkWroteTo + mkFromParam
                                （右值类型 copiesFields → 源 mkEscape）
 8. 其余（字段读 / 索引 / 调用结果 / 字面量）→ mkObjNil（借用）
@@ -412,7 +449,7 @@ node.go 树基建。
 | `mkFieldBind` | collectField | 容器 `bindField(name, src.owner)` |
 | `mkParamOut` | collectArgs / scanFuncFacts（同一条事实两路，判重幂等） | `l.out += paramOut{cb,i}` |
 | `mkTransferObj` | collectRet | `o.Transferred = true` |
-| `mkFuncOwns` | collectRet / new 分支 | `fb.ReturnsOwned = true` |
+| `mkFuncOwns` | collectRet / new 分支 | `fb.ReturnsOwned = true`（旧声明，诊断用；消费改为 `RetSourceOf`） |
 | `mkEscape` | 多数站点（全局 / 装箱 / 实参升级 / 逃逸值全树） | `l.markEscapes()`：变量 / 对象 / 参数链三级级联 |
 
 ### 4.5 判据谓词（gc_pred.go，只读不写）
@@ -423,7 +460,7 @@ node.go 树基建。
 | `copiesFields(t)` | 接口 / any，或含 owning 字段的值类型 | true → 源标逃逸（副本可能活得更久） |
 | `typeSys.StructOf(t)` | 取 `*StructType` 视图（copiesFields / fieldTypeOwning 共用底座；原 GC 侧 structOf 已收编进 type 包） | 非结构体 → nil |
 | `fieldTypeOwning(t, f)` | 结构体字段是否带堆指针 | — |
-| `freshAllocExpr(e)` | new、ReturnsOwned 的调用、字符串拼接（newRC 由 isRCExpr 先行排除） | false → 不 claim |
+| `freshAllocExpr(e)` | new、`RetSourceOf(fb)==ReturnFresh` 的调用、字符串拼接（newRC 由 isRCExpr 先行排除） | false → 不 claim |
 | `isRCExpr(e)` | `Call.IsRC`（newRC） | true → 跳过 claim 与自动释放 |
 | `bareRef / bareVar` | 表达式是纯变量引用（字段读 / 索引 / 调用结果都不是） | nil → 按借用 / 孤立处理 |
 
@@ -439,13 +476,16 @@ go build -o /tmp/esc ./tools/esccheck
 全量跑法是 `for d in test/*/ pkg/*/` 逐目录执行（报错目录跳过），首两行聚合：
 
 ```
-对象=132  RC/泄漏释放=8  泄漏=0  提前释放=0  就地释放=7  字段释放=1
-  作用域释放=92  转移=24  RC=8  真泄漏=0  (转移报告 交出=24 接管=0 无人接管=24)
+对象=160  泄漏=0  提前释放=0  就地释放=7  字段释放=1
+  作用域释放=114  转移=30  RC=8  真泄漏=0  (转移报告 交出=30 接管=0 无人接管=30)
 ```
 
-- 基线：通过 106/115 · 对象=132 · 作用域=92 · 就地=7 · 字段=1 · 转移=24 ·
+- 基线：通过 106/115 · 对象=160 · 作用域=114 · 就地=7 · 字段=1 · 转移=30 ·
   RC=8 · 泄漏=0 · 提前=0 · HolderBad=0。改动 `parser/gc_*.go` 或 `gcfe/*.go`
   之后必须钉住这组数字（基线变更史见 `gc_frontend_design.md` §5）。
+- 132→160 的增量来自严格返回值摘要：旧的 `ReturnsOwned` 依赖已存在的
+  `Life.Obj`，纯传递链无法建立对象；语法摘要打破该循环。163→160 的回落是
+  `newRC` 返回值被降为 `Unknown`（不再误判 Fresh）。
 - `RC=8` 来自 markArgs 挂接恢复（prepend 存字段类实参，方向=多标）以及
   `[]T` 纳入 owning 判据后新暴露的 list 分配（gcprobe / sliceprobe2 各 1）。
 - `提前释放` 必须恒 0——它挂在 checkPremature 的自检上。
@@ -478,9 +518,10 @@ Check 中间轮次的快照不可信（绑定名集合 / 摘要 / 类型都可�
 2. **就地释放**：写左值前读右值侧 `Life.ReleasesOld`（+ `OldObj`），为 true
    则先 free 旧块再写——"多个引用时改一个槽位要不要 free"的答案在这里。
 
-3. **转移**：`Transferred` 的块 callee 侧绝不释放；调用方经
-   `FuncBlock.ReturnsOwned` 把返回值当作本帧新分配接管（§2.2），释放点随
-   调用方的作用域 / RC 规则走。
+3. **转移**：`Transferred` 的块 callee 侧绝不释放；调用方只在
+   `RetSourceOf(fb) == ReturnFresh` 时把返回值当作本帧新分配接管（§1.4），
+   释放点随调用方的作用域 / RC 规则走。混合来源（某分支返回参数）一律
+   `Unknown`，调用方按借用处理。
 
 4. **单态化**：特化副本必须调 `parser.CopyLife`（compile/monomorphize.go
    现挂）。漏拷的后果不是泄漏而是**提前释放**（Life 缺失被当成

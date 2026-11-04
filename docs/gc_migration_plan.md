@@ -65,13 +65,20 @@ main.go
 ### 2.1 全量基线（`test/` 115 个目录，106 成功、9 个既有失败）
 
 ```
-对象=132  作用域=92  就地=7  字段=1  转移=24  RC=8
+对象=160  作用域=114  就地=7  字段=1  转移=30  RC=8
 泄漏=0    提前释放=0  HolderBad=0
 ```
 
-- `[]T` 修复前是 `117 / 6`；修复后对象 +15、RC +2，泄漏与提前释放仍为 0。
-- 五态互斥：作用域（92）/ 就地（7）/ 字段（1）/ 转移（24）/ RC（8），
-  合计 132；真泄漏 0。
+- `[]T` 修复前是 `117 / 6`；修复后对象 132、RC 8，泄漏与提前释放仍为 0。
+- 返回值摘要（Batch B）再把对象 132→160、转移 24→30、作用域 92→114。
+  旧 `FuncBlock.ReturnsOwned` 依赖局部变量已存在的 `Life.Obj`，纯传递返回链
+  （`level1 → level2 → …`）会被截断；`RetSourceOf` 按语法计算，不依赖
+  Check 顺序。
+- 严格 Fresh：任一返回路径不是新分配 / nil / 空串就记 `Unknown`。全语料
+  38 个 `Fresh` 函数已逐个核对；`front=Fresh && back!=Fresh` 为 0，另有
+  1615 处 `front=Unknown / back=Fresh` 的保守漏判。
+- 五态互斥：作用域（114）/ 就地（7）/ 字段（1）/ 转移（30）/ RC（8），
+  合计 160；真泄漏 0。
 - `RC=8` 分布：`gc_loop` 5、`heap_new` 1、`gcprobe` 1、`sliceprobe2` 1。
 - 9 个失败目录是既有解析失败，不是本轮引入。
 
@@ -86,16 +93,16 @@ go run ./tools/gcdiff -o /tmp/gcdiff/test-gcBlocks ./test/gcBlocks
 
 | 侧 | 指标 |
 |---|---|
-| 前端 `gcfe` | 对象 132；作用域 92；就地 7；字段 1；转移 24；RC 8；真泄漏 0；HolderBad 0 |
-| 后端 `compile/gc` | 有释放计划的函数实例 133；出口 204；块尾 67；循环出口 53；覆盖 3；字段 96；临时 48 |
+| 前端 `gcfe` | 对象 160；作用域 114；就地 7；字段 1；转移 30；RC 8；真泄漏 0；HolderBad 0 |
+| 后端 `compile/gc` | 有释放计划的函数实例 132；出口 204；块尾 67；循环出口 53；覆盖 3；字段 94；临时 48（ret 40 / cond 8 / incr 0） |
 
 逐函数归类按目录累计（同一函数在多个目录中会重复计数）：
 
 | 归类 | 次数 | 典型函数 |
 |---|---:|---|
-| 前端独有 | 20 | `testLocalAlloc` / `testLoopAlloc` / `testFieldOrphan` 各 2；`overwriteLoop`、`selfRef`、`fieldAlias`、`listBuild`、`nilDrop` |
-| 后端独有 | 109 | `main` 9；`useTemp` / `buildTree` 各 2；`forCond`、`ifBoth`、`ifOr`、`ifTrue`、`oneTemp`、`twoTemps`、`deepClone`；另有标准库 `strings.trim` 的 ret 临时 |
-| 两边都有 | 24 | `gcBlocks` 的块函数、`stringConcat`、`testNestedAlloc` 等 |
+| 前端独有 | 20 | `main` 4；`testFieldOrphan` / `testLocalAlloc` / `testLoopAlloc` 各 2；`overwriteLoop`、`selfRef`、`fieldAlias`、`listBuild`、`nilDrop` 等 |
+| 后端独有 | 107 | `strings.trim` 37；`console.bufAndStr` 14；`main` 10；`sort` 的四个函数各 6；`time.durationString` / `loadZone` / `zoneAbbr` / `zoneOffset` 各 3；`buildTree`、`deepClone`、`oneTemp`、`twoTemps`、`forCond`、`ifBoth` 各 1 |
+| 两边都有 | 25 | `main` 11；`useTemp` 2；`stringConcat`、`testNestedAlloc`、`stringChain`、`deepAlloc1/2` 等 |
 
 这与 §3 的能力表一致：前端独有集中在“直接 `new` / 覆盖赋值 / 循环分配”，
 后端独有集中在“表达式临时（ret/cond/incr）、字段 cascade、嵌套调用”。

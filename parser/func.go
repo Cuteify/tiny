@@ -229,6 +229,9 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 		// 进入函数作用域
 		p.ThisBlock = nodeTmp
+		// GC 返回值摘要：函数体从这里开始逐句解析；AddChild 会立即 Check，
+		// 自递归调用可能在前缀体上查询本函数摘要，必须标记为未完成。
+		markFuncOpen(f)
 	}
 
 	// TODO: 处理编译标志

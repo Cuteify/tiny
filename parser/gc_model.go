@@ -39,9 +39,12 @@ type Object struct {
 // objects 本次编译分配出的全部对象（单线程解析期，线性追加）。
 var objects []*Object
 
-// ResetObjects 清空对象表。必须在一次新的根包解析/Check 之前调用；
+// ResetObjects 清空对象表与返回值摘要缓存。必须在一次新的根包解析/Check 之前调用；
 // 不能在 SimulateRC 里清，否则会抹掉本次 Check 期间创建的对象。
-func ResetObjects() { objects = nil }
+func ResetObjects() {
+	objects = nil
+	resetRetSources()
+}
 
 func newObject(owner *VarBlock, scope Block) *Object {
 	o := &Object{ID: len(objects) + 1, Owner: owner, Scope: scope}

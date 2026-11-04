@@ -57,17 +57,21 @@ var ArgEscapeOf = func(cb *CallBlock, idx int) bool {
 }
 
 // freshAllocExpr 是否确定在本帧产生新块：new / newRC（由 isRCExpr 另行排除）/
-// ReturnsOwned 的调用 / 字符串拼接。
+// 返回值来源为 ReturnFresh 的调用 / 字符串拼接。
+//
+// 调用结果必须用 RetSourceOf 的严格摘要判定，不能只看 FuncBlock.ReturnsOwned：
+// “有一个分支返回本地分配”不等于“所有分支都归调用方”。混合来源时这里返回
+// false，调用方按借用处理（宁可不释放）。
 func freshAllocExpr(e *Expression) bool {
 	if e == nil {
 		return false
 	}
 	if e.Call != nil {
 		if e.Call.IsBuiltinNewAlloc() {
-			return true // newRC 由 isRCExpr 另行排除
+			return !e.Call.IsRC // newRC 由 isRCExpr 另行排除
 		}
-		// 过程摘要：被调方声明"返回值里有它自己分配的对象" → 所有权已是调用者的
-		if e.Call.Func != nil && e.Call.Func.ReturnsOwned {
+		// 过程摘要：被调方所有返回路径都新分配 → 所有权已是调用者的
+		if e.Call.Func != nil && RetSourceOf(e.Call.Func) == ReturnFresh {
 			return true
 		}
 	}
