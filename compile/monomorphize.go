@@ -694,7 +694,7 @@ func (c *Compiler) addSpecializedFunc(fn *parser.FuncBlock, orig *parser.FuncBlo
 	// 替换函数体中所有局部变量的 TypeParam 类型为具体类型
 	// 确保 collectVarOffsets 能正确计算栈帧布局（TypeParam.Size()=-1 会导致偏移量错误）
 	substituteBodyTypes(node, substMap)
-	// 单态化克隆体的 LLR 结果重算：gc.Build 在单态化之前执行，BlockFreesMap /
+	// 单态化克隆体的 LLR 结果重算：gc.Analyze 在单态化之前执行，BlockFreesMap /
 	// RetFreesMap 的键都是泛型原树的节点；克隆体节点是新对象，直接查表会全部
 	// miss（特化函数因此丢失块尾释放与 ret 临时释放）。克隆体类型已替换为具体
 	// 类型，此处用泛型摘要作为分配/未知调用门槛，重新计算一份以克隆节点为键的

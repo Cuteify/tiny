@@ -36,8 +36,9 @@ func main() {
 		panic(err)
 	}
 
-	// GC 摘要分析：包合并 + Check 重试完成后、代码生成之前执行
-	gc.Build(tmp.AST.(*parser.Node))
+	// GC 摘要分析：包合并 + Check 重试完成后、代码生成之前执行。
+	// 随后的 Compile 会命中 gc.Analyze 的幂等缓存。
+	gc.Analyze(tmp.AST.(*parser.Node))
 	fmt.Println("\n=== GC 函数摘要 ===")
 	if err := gc.DumpAll(os.Stdout); err != nil {
 		panic(err)

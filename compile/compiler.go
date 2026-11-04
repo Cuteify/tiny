@@ -52,8 +52,10 @@ func NewCompiler(parser *parser.Parser) *Compiler {
 // Compile 编译入口方法，将AST节点编译为汇编代码
 func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.initializeContext()
-	// Only reset the generic registry at the top-level entry, not in recursive calls.
+	// Only run top-level pre-passes (and GC analysis) at the top-level entry,
+	// not in recursive calls.
 	if !c.compiling {
+		gc.Analyze(node)
 		resetGenericRegistry()
 		c.compiling = true
 		defer func() { c.compiling = false }()

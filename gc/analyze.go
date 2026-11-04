@@ -29,12 +29,6 @@ type analyzer struct {
 	calleeView map[string]*FnSummary
 }
 
-// Build 只做后端全程序摘要 + LLR，不跑前端对象级分析。
-// Stage 3 保留给尚未切到 Analyze 的调用方；Stage 4 接线后删除。
-func Build(root *parser.Node) {
-	analyzeBackend(root)
-}
-
 // analyzeBackend 遍历根 AST，构建全程序函数摘要（不动点迭代后写入 Table）。
 // 必须在 package 合并与 rootNode.Check() 之后调用。
 func analyzeBackend(root *parser.Node) {
@@ -836,7 +830,7 @@ func exprAllocates(e *parser.Expression) bool {
 		if e.Call.IsBuiltinNewAlloc() {
 			return true
 		}
-		// 用摘要键解析悬空调用（跨文件/跨包调用在 gc.Build 时 Func 可能尚未绑定）
+		// 用摘要键解析悬空调用（跨文件/跨包调用在 gc.Analyze 时 Func 可能尚未绑定）
 		if fs := callSummary(e.Call); fs != nil && fs.RetOwned {
 			return true
 		}
@@ -894,7 +888,7 @@ func ParamEscapes(calleeKey string, idx int) Escape {
 
 // callKey 返回调用点的摘要键。编译器内建（len/cap/new 等）的 FuncBlock
 // 没有名字，此时回退到调用点原名，避免把 `len` 当成空名未知函数。
-// 跨文件/跨包调用的 Func 在 gc.Build 阶段可能尚未绑定，这里按 Table 做
+// 跨文件/跨包调用的 Func 在 gc.Analyze 阶段可能尚未绑定，这里按 Table 做
 // 一次保守解析：精确名 → 包路径后缀唯一匹配 → 末段名唯一匹配。
 func callKey(cb *parser.CallBlock) string {
 	if cb == nil {
