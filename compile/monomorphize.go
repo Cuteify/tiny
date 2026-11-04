@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"cuteify/compile/arch"
-	"cuteify/compile/gc"
+	"cuteify/gc"
 	"cuteify/parser"
 	typeSys "cuteify/type"
 )

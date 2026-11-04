@@ -19,7 +19,7 @@ import (
 	"os"
 	"sort"
 
-	"cuteify/compile/gc"
+	"cuteify/gc"
 	packageSys "cuteify/package"
 	"cuteify/parser"
 )

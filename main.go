@@ -2,7 +2,7 @@ package main
 
 import (
 	"cuteify/compile"
-	"cuteify/compile/gc"
+	"cuteify/gc"
 	packageSys "cuteify/package"
 	"cuteify/parser"
 	"flag"

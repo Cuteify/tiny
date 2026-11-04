@@ -3,7 +3,7 @@ package compile
 import (
 	"cuteify/compile/context"
 	cuteExp "cuteify/compile/exp"
-	"cuteify/compile/gc"
+	"cuteify/gc"
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"cuteify/utils"

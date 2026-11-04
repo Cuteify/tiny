@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"cuteify/compile/gc"
+	"cuteify/gc"
 	"cuteify/gcfe"
 	packageSys "cuteify/package"
 	"cuteify/parser"
