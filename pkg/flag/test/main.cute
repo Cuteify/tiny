@@ -1,6 +1,7 @@
 import "std:flag"
 import "std:memory"
 import "std:strings"
+import "std:syscall"
 fn main() int {
     var failures: int = 0
 
