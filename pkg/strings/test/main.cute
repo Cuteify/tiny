@@ -43,6 +43,18 @@ fn main() int {
         err = 40
     }
 
+    // eq 必须按内容比较：builder 产出的字符串与字面量异址同值
+    var eqBld: ptr = strings.builderNew(2)
+    strings.builderWriteString(eqBld, "abc")
+    var made: string = strings.builderString(eqBld)
+    if !strings.eq(made, "abc") {
+        err = 41
+    }
+    if strings.ne(made, "abc") {
+        err = 42
+    }
+    strings.builderFree(eqBld)
+
     // ne tests
     var a: string = "a"
     var b: string = "b"

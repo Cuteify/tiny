@@ -169,8 +169,11 @@ fn typeByExtension(ext string) string {
         var j: uint = 0
         var entryExtLen: uint = 0
         // 计算 entryExt 长度
-        var _p10: *u8 = entryExtPtr + entryExtLen
-        for ; *_p10 != 0; {
+        for ; true; {
+            var _p10: *u8 = entryExtPtr + entryExtLen
+            if *_p10 == 0 {
+                break
+            }
             entryExtLen = entryExtLen + 1
         }
         if entryExtLen != lookupLen {
@@ -189,8 +192,11 @@ fn typeByExtension(ext string) string {
         if match {
             // 计算 entryMime 长度并构造字符串
             var mimeLen: uint = 0
-            var _p13: *u8 = entryMimePtr + mimeLen
-            for ; *_p13 != 0; {
+            for ; true; {
+                var _p13: *u8 = entryMimePtr + mimeLen
+                if *_p13 == 0 {
+                    break
+                }
                 mimeLen = mimeLen + 1
             }
             var mimeBuf: ptr = memory.malloc(mimeLen + 1)
@@ -223,11 +229,13 @@ fn Extensions() string {
         var _p17: *ptr = mimeTable + strings.toU64(offset)
         var entryExtPtr: ptr = *_p17
         var j: uint = 0
-        var _p18: *u8 = entryExtPtr + j
-        for ; *_p18 != 0; {
+        for ; true; {
+            var _p18: *u8 = entryExtPtr + j
+            if *_p18 == 0 {
+                break
+            }
             var _p19: *u8 = buf + outPos
-            var _p20: *u8 = entryExtPtr + j
-            *_p19 = unsafe.cast[u8](*_p20)
+            *_p19 = unsafe.cast[u8](*_p18)
             outPos = outPos + 1
             j = j + 1
         }

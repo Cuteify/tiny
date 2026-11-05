@@ -30,42 +30,16 @@ fn cap(s string) uint {
 
 fn eq(s string, t string) bool {
     build link("__string_eq")
-    var p: ptr = &s
-    var q: ptr = &t
-    // 比较 ptr + len（值相等的字符串必须长度和内容都相同）
-    var _p3: *uint = p
-    var x0: uint = *_p3
-    var _p4: *uint = q
-    var y0: uint = *_p4
-    if x0 != y0 {
-        ret false
+    // 内容比较：ptr/len 槽位相同不代表字符串相等（构造串与字面量可异址同值）
+    if strings.compare(s, t) == 0 {
+        ret true
     }
-    var _p5: *uint = p + 4
-    var x1: uint = *_p5
-    var _p6: *uint = q + 4
-    var y1: uint = *_p6
-    if x1 != y1 {
-        ret false
-    }
-    ret true
+    ret false
 }
 
 fn ne(s string, t string) bool {
     build link("__string_ne")
-    var p: ptr = &s
-    var q: ptr = &t
-    var _p7: *uint = p
-    var x0: uint = *_p7
-    var _p8: *uint = q
-    var y0: uint = *_p8
-    if x0 != y0 {
-        ret true
-    }
-    var _p9: *uint = p + 4
-    var x1: uint = *_p9
-    var _p10: *uint = q + 4
-    var y1: uint = *_p10
-    if x1 != y1 {
+    if strings.compare(s, t) != 0 {
         ret true
     }
     ret false

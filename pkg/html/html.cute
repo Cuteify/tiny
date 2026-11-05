@@ -91,7 +91,18 @@ fn escape(s string) string {
 }
 
 // unescape 反转义 HTML 实体
-// &lt; → <  &gt; → >  &amp; → &  &quot; → "  &#39; → '  &#60; → <  &#62; → >
+// &lt; → <  &gt; → >  &amp; → &  &quot; → "  &#39; → '
+// 逐字节读写下标，避免把指针变量的声明留在上一个分支作用域里。
+fn byteAtHtml(p: ptr, idx: uint) u8 {
+    var q: *u8 = p + idx
+    ret *q
+}
+
+fn putByteHtml(buf: ptr, pos: uint, value: u8) {
+    var q: *u8 = buf + pos
+    *q = value
+}
+
 fn unescape(s string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
@@ -99,74 +110,48 @@ fn unescape(s string) string {
     var outPos: uint = 0
     var i: uint = 0
     for ; i < sLen; {
-        var _p28: *u8 = sPtr + i
-        var ch: u8 = *_p28
-        if ch == 38 && i + 1 < sLen {
-            // '&' 开始的实体
-            // 检查 &lt;
-            var _p29: *u8 = sPtr + i + 1
-            var _p30: *u8 = sPtr + i + 2
-            var _p31: *u8 = sPtr + i + 3
-            if i + 3 < sLen && *_p29 == 108 && *_p30 == 116 && *_p31 == 59 {
-                var _p32: *u8 = buf + outPos
-                *_p32 = unsafe.cast[u8](60)
+        var ch: u8 = byteAtHtml(sPtr, i)
+        var handled: bool = false
+        if ch == 38 {
+            if i + 3 < sLen && byteAtHtml(sPtr, i + 1) == 108 && byteAtHtml(sPtr, i + 2) == 116 && byteAtHtml(sPtr, i + 3) == 59 {
+                // &lt;
+                putByteHtml(buf, outPos, unsafe.cast[u8](60))
                 outPos = outPos + 1
                 i = i + 4
-            var _p33: *u8 = sPtr + i + 1
-            var _p34: *u8 = sPtr + i + 2
-            var _p35: *u8 = sPtr + i + 3
-            } else if i + 3 < sLen && *_p33 == 103 && *_p34 == 116 && *_p35 == 59 {
+                handled = true
+            } else if i + 3 < sLen && byteAtHtml(sPtr, i + 1) == 103 && byteAtHtml(sPtr, i + 2) == 116 && byteAtHtml(sPtr, i + 3) == 59 {
                 // &gt;
-                var _p36: *u8 = buf + outPos
-                *_p36 = unsafe.cast[u8](62)
+                putByteHtml(buf, outPos, unsafe.cast[u8](62))
                 outPos = outPos + 1
                 i = i + 4
-            var _p37: *u8 = sPtr + i + 1
-            var _p38: *u8 = sPtr + i + 2
-            var _p39: *u8 = sPtr + i + 3
-            var _p40: *u8 = sPtr + i + 4
-            } else if i + 4 < sLen && *_p37 == 97 && *_p38 == 109 && *_p39 == 112 && *_p40 == 59 {
+                handled = true
+            } else if i + 4 < sLen && byteAtHtml(sPtr, i + 1) == 97 && byteAtHtml(sPtr, i + 2) == 109 && byteAtHtml(sPtr, i + 3) == 112 && byteAtHtml(sPtr, i + 4) == 59 {
                 // &amp;
-                var _p41: *u8 = buf + outPos
-                *_p41 = unsafe.cast[u8](38)
+                putByteHtml(buf, outPos, unsafe.cast[u8](38))
                 outPos = outPos + 1
                 i = i + 5
-            var _p42: *u8 = sPtr + i + 1
-            var _p43: *u8 = sPtr + i + 2
-            var _p44: *u8 = sPtr + i + 3
-            var _p45: *u8 = sPtr + i + 4
-            var _p46: *u8 = sPtr + i + 5
-            } else if i + 5 < sLen && *_p42 == 113 && *_p43 == 117 && *_p44 == 111 && *_p45 == 116 && *_p46 == 59 {
+                handled = true
+            } else if i + 5 < sLen && byteAtHtml(sPtr, i + 1) == 113 && byteAtHtml(sPtr, i + 2) == 117 && byteAtHtml(sPtr, i + 3) == 111 && byteAtHtml(sPtr, i + 4) == 116 && byteAtHtml(sPtr, i + 5) == 59 {
                 // &quot;
-                var _p47: *u8 = buf + outPos
-                *_p47 = unsafe.cast[u8](34)
+                putByteHtml(buf, outPos, unsafe.cast[u8](34))
                 outPos = outPos + 1
                 i = i + 6
-            var _p48: *u8 = sPtr + i + 1
-            var _p49: *u8 = sPtr + i + 2
-            var _p50: *u8 = sPtr + i + 3
-            var _p51: *u8 = sPtr + i + 4
-            } else if i + 4 < sLen && *_p48 == 35 && *_p49 == 51 && *_p50 == 57 && *_p51 == 59 {
+                handled = true
+            } else if i + 4 < sLen && byteAtHtml(sPtr, i + 1) == 35 && byteAtHtml(sPtr, i + 2) == 51 && byteAtHtml(sPtr, i + 3) == 57 && byteAtHtml(sPtr, i + 4) == 59 {
                 // &#39;
-                var _p52: *u8 = buf + outPos
-                *_p52 = unsafe.cast[u8](39)
+                putByteHtml(buf, outPos, unsafe.cast[u8](39))
                 outPos = outPos + 1
                 i = i + 5
-            } else {
-                var _p53: *u8 = buf + outPos
-                *_p53 = unsafe.cast[u8](ch)
-                outPos = outPos + 1
-                i = i + 1
+                handled = true
             }
-        } else {
-            var _p54: *u8 = buf + outPos
-            *_p54 = unsafe.cast[u8](ch)
+        }
+        if !handled {
+            putByteHtml(buf, outPos, ch)
             outPos = outPos + 1
             i = i + 1
         }
     }
-    var _p55: *u8 = buf + outPos
-    *_p55 = unsafe.cast[u8](0)
+    putByteHtml(buf, outPos, unsafe.cast[u8](0))
     ret strings.makeString(buf, outPos, outPos)
 }
 
