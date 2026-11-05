@@ -1,5 +1,5 @@
 fn leadingZeros[T](x T) int {
-    var totalBits: int = sizeof(T) * 8
+    var totalBits: int = sizeof[T]() * 8
     if x == 0 {
         ret totalBits
     }
@@ -29,7 +29,7 @@ fn leadingZeros[T](x T) int {
 }
 
 fn trailingZeros[T](x T) int {
-    var totalBits: int = sizeof(T) * 8
+    var totalBits: int = sizeof[T]() * 8
     if x == 0 {
         ret totalBits
     }
@@ -62,7 +62,7 @@ fn trailingZeros[T](x T) int {
 fn onesCount[T](x T) int {
     var v: T = x
     var count: int = 0
-    var bits: int = sizeof(T) * 8
+    var bits: int = sizeof[T]() * 8
     var i: int = 0
     for ; i < bits; {
         count = count + (v & 1)
@@ -73,7 +73,7 @@ fn onesCount[T](x T) int {
 }
 
 fn rotateLeft[T](x T, k int) T {
-    var totalBits: int = sizeof(T) * 8
+    var totalBits: int = sizeof[T]() * 8
     var kk: int = k & (totalBits - 1)
     if kk == 0 {
         ret x
@@ -94,7 +94,7 @@ fn rotateLeft[T](x T, k int) T {
 }
 
 fn rotateRight[T](x T, k int) T {
-    var totalBits: int = sizeof(T) * 8
+    var totalBits: int = sizeof[T]() * 8
     var kk: int = k & (totalBits - 1)
     if kk == 0 {
         ret x
@@ -115,7 +115,7 @@ fn rotateRight[T](x T, k int) T {
 }
 
 fn bitLen[T](x T) int {
-    ret sizeof(T) * 8 - leadingZeros(x)
+    ret sizeof[T]() * 8 - leadingZeros(x)
 }
 
 fn div[T](x T, y T) T {

@@ -21,8 +21,8 @@ fn RGBAModel(r u8, g u8, b u8, a u8) RGBA {
 }
 
 // 预定义颜色常量
-var Black: RGBA = RGBA{0, 0, 0, 255}
-var White: RGBA = RGBA{255, 255, 255, 255}
-var Red: RGBA = RGBA{255, 0, 0, 255}
-var Green: RGBA = RGBA{0, 255, 0, 255}
-var Blue: RGBA = RGBA{0, 0, 255, 255}
+var Black: RGBA = RGBAModel(0, 0, 0, 255)
+var White: RGBA = RGBAModel(255, 255, 255, 255)
+var Red: RGBA = RGBAModel(255, 0, 0, 255)
+var Green: RGBA = RGBAModel(0, 255, 0, 255)
+var Blue: RGBA = RGBAModel(0, 0, 255, 255)

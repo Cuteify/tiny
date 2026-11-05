@@ -43,22 +43,19 @@ fn encodeRune(r int, buf ptr) uint {
 }
 
 // decodeRune 从 UTF-8 字节序列解码一个码点，返回码点和字节数
-fn decodeRune(p ptr) (rune int, size uint) {
+// 具名返回值尚未稳定支持，这里用匿名多返回值，调用处按位置解构。
+fn decodeRune(p ptr) (int, uint) {
     var _p11: *u8 = p
     var b0: uint = *_p11
     // 单字节
     if b0 < 128 {
-        rune = b0
-        size = 1
-        ret
+        ret unsafe.cast[int](b0), 1
     }
     // 双字节
     if b0 >= 192 && b0 < 224 {
         var _p12: *u8 = p + 1
         var b1: uint = *_p12
-        rune = (b0 - 192) * 64 + (b1 - 128)
-        size = 2
-        ret
+        ret unsafe.cast[int]((b0 - 192) * 64 + (b1 - 128)), 2
     }
     // 三字节
     if b0 >= 224 && b0 < 240 {
@@ -66,9 +63,7 @@ fn decodeRune(p ptr) (rune int, size uint) {
         var b1b: uint = *_p13
         var _p14: *u8 = p + 2
         var b2: uint = *_p14
-        rune = (b0 - 224) * 4096 + (b1b - 128) * 64 + (b2 - 128)
-        size = 3
-        ret
+        ret unsafe.cast[int]((b0 - 224) * 4096 + (b1b - 128) * 64 + (b2 - 128)), 3
     }
     // 四字节
     var _p15: *u8 = p + 1
@@ -77,9 +72,7 @@ fn decodeRune(p ptr) (rune int, size uint) {
     var b2c: uint = *_p16
     var _p17: *u8 = p + 3
     var b3: uint = *_p17
-    rune = (b0 - 240) * 262144 + (b1c - 128) * 4096 + (b2c - 128) * 64 + (b3 - 128)
-    size = 4
-    ret
+    ret unsafe.cast[int]((b0 - 240) * 262144 + (b1c - 128) * 4096 + (b2c - 128) * 64 + (b3 - 128)), 4
 }
 
 // runeCount 计算字符串中的 UTF-8 码点数量
@@ -89,22 +82,8 @@ fn runeCount(s string) int {
     var count: int = 0
     var i: uint = 0
     for i < sLen {
-        var r: int
-        var sz: uint
-        r = decodeRune(sPtr + i)
-        // 使用返回的 size 更新索引
-        // decodeRune 返回两个值，需要分别获取
-        var _p18: *u8 = sPtr + i
-        var b0: uint = *_p18
-        var skip: uint = 1
-        if b0 >= 192 && b0 < 224 {
-            skip = 2
-        } else if b0 >= 224 && b0 < 240 {
-            skip = 3
-        } else if b0 >= 240 {
-            skip = 4
-        }
-        i = i + skip
+        r, sz := decodeRune(sPtr + i)
+        i = i + sz
         count = count + 1
     }
     ret count

@@ -56,5 +56,20 @@ fn main() int {
         ret 12
     }
 
+    // math.nan / math.inf：f64 以 IEEE-754 位模式存放，
+    // NaN 通过位模式判断，Inf 通过正数保序比较验证符号。
+    if !math.isNaN(math.nan()) {
+        ret 13
+    }
+    if math.isNaN(1.0) {
+        ret 14
+    }
+    if !(math.inf(1) > 0.0) {
+        ret 15
+    }
+    if !(math.inf(-1) < 0.0) {
+        ret 16
+    }
+
     ret 42
 }

@@ -134,10 +134,14 @@ fn nan() f64 {
     ret 0.0 / 0.0
 }
 
-// isNaN 判断 x 是否为 NaN
+// isNaN 判断 x 是否为 NaN。
+// f64 以 IEEE-754 位模式存放在通用寄存器中，整数比较无法表达
+// NaN != NaN；这里直接检查指数全一且尾数非零。
 fn isNaN(x f64) bool {
-    // NaN != NaN
-    if x != x {
+    var bits: u64 = unsafe.cast[u64](x)
+    var expMask: u64 = 0x7ff0000000000000
+    var fracMask: u64 = 0x000fffffffffffff
+    if (bits & expMask) == expMask && (bits & fracMask) != 0 {
         ret true
     }
     ret false

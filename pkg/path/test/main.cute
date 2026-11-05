@@ -42,8 +42,28 @@ fn main() int {
         failures = failures + 1
     }
 
-    // Test 7: path.split —— 多返回值声明当前编译器尚不支持（Batch 2 语言项），
-    // 此处暂不覆盖；split 的解析路径由 path 源码探针保证可编译。
+    // Test 7: path.split 多返回值（Batch 2：a, b := f() 已支持）
+    sd1, sf1 := path.split("/home/user/file.txt")
+    if !strings.eq(sd1, "/home/user") {
+        failures = failures + 1
+    }
+    if !strings.eq(sf1, "file.txt") {
+        failures = failures + 1
+    }
+    sd2, sf2 := path.split("file.txt")
+    if !strings.eq(sd2, ".") {
+        failures = failures + 1
+    }
+    if !strings.eq(sf2, "file.txt") {
+        failures = failures + 1
+    }
+    sd3, sf3 := path.split("/")
+    if !strings.eq(sd3, "/") {
+        failures = failures + 1
+    }
+    if !strings.eq(sf3, "") {
+        failures = failures + 1
+    }
 
     // Test 8: path.match (true case)
     var m1: bool = path.match("*.txt", "file.txt")
