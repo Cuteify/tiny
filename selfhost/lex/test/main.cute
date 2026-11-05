@@ -1,0 +1,315 @@
+// Cuteify 自举 lexer 行为测试。
+//
+// 运行（仓库根目录）：
+//   CUTE_ROOT=$PWD go run . selfhost/lex/test   # 或已构建的编译器
+// 约定：返回 42 表示全部通过；其它值是该用例组编号。
+import "std:memory"
+import "std:strings"
+import lex "../"
+
+// nl 在运行时构造一个只含换行字节（10）的字符串。
+// 当前编译器把源码里的 "\n" 保留为反斜杠 + n，跨行裸串也不可靠，
+// 所以测试用分配器 + makeString 构造真实换行。
+fn nl() string {
+    var p: ptr = memory.malloc(8)
+    var q: *int = p
+    *q = 10
+    ret strings.makeString(p, 1, 1)
+}
+
+// chk 读取下一个 token，校验类型与文本。
+fn chk(l *lex.Lex, want int, s string) bool {
+    if lex.next(l) != want {
+        ret false
+    }
+    if !strings.eq(lex.text(l), s) {
+        ret false
+    }
+    ret true
+}
+
+// span 校验最近一个 token 的 [start, end) 区间。
+fn span(l *lex.Lex, a uint, b uint) bool {
+    if lex.start(l) != a {
+        ret false
+    }
+    if lex.end(l) != b {
+        ret false
+    }
+    ret true
+}
+
+fn main() int {
+    // 1. 空输入
+    var l: *lex.Lex = lex.mk("")
+    if lex.next(l) != lex.NONE {
+        ret 1
+    }
+    if lex.err(l) != lex.OK {
+        ret 2
+    }
+    if !strings.eq(lex.text(l), "") {
+        ret 3
+    }
+
+    // 2. 关键字与普通标识符
+    l = lex.mk("fn var const let if while for return ret break continue else switch case default range defer try except finally type struct interface enum true false nil build import self __x _a abc123")
+    if !chk(l, lex.FUNC, "fn") { ret 10 }
+    if !chk(l, lex.VAR, "var") { ret 11 }
+    if !chk(l, lex.VAR, "const") { ret 12 }
+    if !chk(l, lex.VAR, "let") { ret 13 }
+    if !chk(l, lex.PROCESSCONTROL, "if") { ret 14 }
+    if !chk(l, lex.PROCESSCONTROL, "while") { ret 15 }
+    if !chk(l, lex.PROCESSCONTROL, "for") { ret 16 }
+    if !chk(l, lex.PROCESSCONTROL, "return") { ret 17 }
+    if !chk(l, lex.PROCESSCONTROL, "ret") { ret 18 }
+    if !chk(l, lex.PROCESSCONTROL, "break") { ret 19 }
+    if !chk(l, lex.PROCESSCONTROL, "continue") { ret 20 }
+    if !chk(l, lex.PROCESSCONTROL, "else") { ret 21 }
+    if !chk(l, lex.PROCESSCONTROL, "switch") { ret 22 }
+    if !chk(l, lex.PROCESSCONTROL, "case") { ret 23 }
+    if !chk(l, lex.PROCESSCONTROL, "default") { ret 24 }
+    if !chk(l, lex.PROCESSCONTROL, "range") { ret 25 }
+    if !chk(l, lex.PROCESSCONTROL, "defer") { ret 26 }
+    if !chk(l, lex.PROCESSCONTROL, "try") { ret 27 }
+    if !chk(l, lex.PROCESSCONTROL, "except") { ret 28 }
+    if !chk(l, lex.PROCESSCONTROL, "finally") { ret 29 }
+    if !chk(l, lex.TYPE, "type") { ret 30 }
+    if !chk(l, lex.TYPE, "struct") { ret 31 }
+    if !chk(l, lex.TYPE, "interface") { ret 32 }
+    if !chk(l, lex.TYPE, "enum") { ret 43 }
+    if !chk(l, lex.BOOL, "true") { ret 33 }
+    if !chk(l, lex.BOOL, "false") { ret 34 }
+    if !chk(l, lex.BOOL, "nil") { ret 35 }
+    if !chk(l, lex.BUILD, "build") { ret 36 }
+    if !chk(l, lex.IMPORT, "import") { ret 37 }
+    if !chk(l, lex.NAME, "self") { ret 38 }
+    if !chk(l, lex.NAME, "__x") { ret 39 }
+    if !chk(l, lex.NAME, "_a") { ret 40 }
+    if !chk(l, lex.NAME, "abc123") { ret 41 }
+    if lex.next(l) != lex.NONE { ret 42 }
+
+    // 3. 数字字面量
+    l = lex.mk("0 42 1_000 0xFF 0Xab_cd 0b1010_0101 0o755 3.14 1e10 2.5E-3")
+    if !chk(l, lex.NUMBER, "0") { ret 50 }
+    if !chk(l, lex.NUMBER, "42") { ret 51 }
+    if !chk(l, lex.NUMBER, "1_000") { ret 52 }
+    if !chk(l, lex.NUMBER, "0xFF") { ret 53 }
+    if !chk(l, lex.NUMBER, "0Xab_cd") { ret 54 }
+    if !chk(l, lex.NUMBER, "0b1010_0101") { ret 55 }
+    if !chk(l, lex.NUMBER, "0o755") { ret 56 }
+    if !chk(l, lex.NUMBER, "3.14") { ret 57 }
+    if !chk(l, lex.NUMBER, "1e10") { ret 58 }
+    if !chk(l, lex.NUMBER, "2.5E-3") { ret 59 }
+    if lex.next(l) != lex.NONE { ret 60 }
+
+    // 4. 数字边界：非法前缀退回 NAME，小数/指数不完整时不吞字符
+    l = lex.mk("1. 123abc 0x 1.foo 1e 1e+ 0b2")
+    if !chk(l, lex.NUMBER, "1") { ret 70 }
+    if !chk(l, lex.SEPARATOR, ".") { ret 71 }
+    if !chk(l, lex.NUMBER, "123") { ret 72 }
+    if !chk(l, lex.NAME, "abc") { ret 73 }
+    if !chk(l, lex.NAME, "0x") { ret 74 }
+    if !chk(l, lex.NUMBER, "1") { ret 75 }
+    if !chk(l, lex.SEPARATOR, ".") { ret 76 }
+    if !chk(l, lex.NAME, "foo") { ret 77 }
+    if !chk(l, lex.NUMBER, "1") { ret 78 }
+    if !chk(l, lex.NAME, "e") { ret 79 }
+    if !chk(l, lex.NUMBER, "1") { ret 80 }
+    if !chk(l, lex.NAME, "e") { ret 81 }
+    if !chk(l, lex.SEPARATOR, "+") { ret 82 }
+    if !chk(l, lex.NAME, "0b2") { ret 83 }
+    if lex.next(l) != lex.NONE { ret 84 }
+
+    // 5. 二字符与三字符分隔符（最长匹配）
+    l = lex.mk("<<= >>= ... == != <= >= ++ -- -> && || << >> := += -= *= /= %= ^= &= |=")
+    if !chk(l, lex.SEPARATOR, "<<=") { ret 90 }
+    if !chk(l, lex.SEPARATOR, ">>=") { ret 91 }
+    if !chk(l, lex.SEPARATOR, "...") { ret 92 }
+    if !chk(l, lex.SEPARATOR, "==") { ret 93 }
+    if !chk(l, lex.SEPARATOR, "!=") { ret 94 }
+    if !chk(l, lex.SEPARATOR, "<=") { ret 95 }
+    if !chk(l, lex.SEPARATOR, ">=") { ret 96 }
+    if !chk(l, lex.SEPARATOR, "++") { ret 97 }
+    if !chk(l, lex.SEPARATOR, "--") { ret 98 }
+    if !chk(l, lex.SEPARATOR, "->") { ret 99 }
+    if !chk(l, lex.SEPARATOR, "&&") { ret 100 }
+    if !chk(l, lex.SEPARATOR, "||") { ret 101 }
+    if !chk(l, lex.SEPARATOR, "<<") { ret 102 }
+    if !chk(l, lex.SEPARATOR, ">>") { ret 103 }
+    if !chk(l, lex.SEPARATOR, ":=") { ret 104 }
+    if !chk(l, lex.SEPARATOR, "+=") { ret 105 }
+    if !chk(l, lex.SEPARATOR, "-=") { ret 106 }
+    if !chk(l, lex.SEPARATOR, "*=") { ret 107 }
+    if !chk(l, lex.SEPARATOR, "/=") { ret 108 }
+    if !chk(l, lex.SEPARATOR, "%=") { ret 109 }
+    if !chk(l, lex.SEPARATOR, "^=") { ret 110 }
+    if !chk(l, lex.SEPARATOR, "&=") { ret 111 }
+    if !chk(l, lex.SEPARATOR, "|=") { ret 112 }
+    if lex.next(l) != lex.NONE { ret 113 }
+
+    // 6. 单字符分隔符与词内空格切分
+    // 源码字符串不做转义，反斜杠用裸串包一层避免写成两个字符。
+    l = lex.mk(`; { } ( ) [ ] , = + - * / % : < > . & | ^ ! ? ~ \ @`)
+    if !chk(l, lex.SEPARATOR, ";") { ret 120 }
+    if !chk(l, lex.SEPARATOR, "{") { ret 121 }
+    if !chk(l, lex.SEPARATOR, "}") { ret 122 }
+    var openParen: bool = chk(l, lex.SEPARATOR, "(")
+    if !openParen { ret 123 }
+    var closeParen: bool = chk(l, lex.SEPARATOR, ")")
+    if !closeParen { ret 124 }
+    if !chk(l, lex.SEPARATOR, "[") { ret 125 }
+    if !chk(l, lex.SEPARATOR, "]") { ret 126 }
+    if !chk(l, lex.SEPARATOR, ",") { ret 127 }
+    if !chk(l, lex.SEPARATOR, "=") { ret 128 }
+    if !chk(l, lex.SEPARATOR, "+") { ret 129 }
+    if !chk(l, lex.SEPARATOR, "-") { ret 130 }
+    if !chk(l, lex.SEPARATOR, "*") { ret 131 }
+    if !chk(l, lex.SEPARATOR, "/") { ret 132 }
+    if !chk(l, lex.SEPARATOR, "%") { ret 133 }
+    if !chk(l, lex.SEPARATOR, ":") { ret 134 }
+    if !chk(l, lex.SEPARATOR, "<") { ret 135 }
+    if !chk(l, lex.SEPARATOR, ">") { ret 136 }
+    if !chk(l, lex.SEPARATOR, ".") { ret 137 }
+    if !chk(l, lex.SEPARATOR, "&") { ret 138 }
+    if !chk(l, lex.SEPARATOR, "|") { ret 139 }
+    if !chk(l, lex.SEPARATOR, "^") { ret 140 }
+    if !chk(l, lex.SEPARATOR, "!") { ret 141 }
+    if !chk(l, lex.SEPARATOR, "?") { ret 142 }
+    if !chk(l, lex.SEPARATOR, "~") { ret 143 }
+    if !chk(l, lex.SEPARATOR, `\`) { ret 144 }
+    if !chk(l, lex.SEPARATOR, "@") { ret 145 }
+    if lex.next(l) != lex.NONE { ret 146 }
+
+    l = lex.mk("a b")
+    if !chk(l, lex.NAME, "a") { ret 147 }
+    if !chk(l, lex.NAME, "b") { ret 148 }
+
+    // 7. 字符串 / 裸串 / 字符
+    l = lex.mk(`"hello"`)
+    if !chk(l, lex.STRING, "hello") { ret 150 }
+    if !span(l, 1, 6) { ret 151 }
+    if lex.pos(l) != 7 { ret 152 }
+
+    l = lex.mk(`""`)
+    if !chk(l, lex.STRING, "") { ret 153 }
+
+    l = lex.mk(`"a b\nc"`)
+    if !chk(l, lex.STRING, `a b\nc`) { ret 154 }
+
+    l = lex.mk("`hello`")
+    if !chk(l, lex.RAW, "hello") { ret 155 }
+    if !span(l, 1, 6) { ret 156 }
+
+    l = lex.mk(`'a'`)
+    if !chk(l, lex.CHAR, "a") { ret 157 }
+    if !span(l, 1, 2) { ret 158 }
+
+    l = lex.mk(`'\n'`)
+    if !chk(l, lex.CHAR, `\n`) { ret 159 }
+
+    // 8. 错误：未闭合字符串 / 字符 / 裸串，非法字符长度
+    l = lex.mk(`"abc`)
+    if lex.next(l) != lex.STRING { ret 160 }
+    if lex.err(l) != lex.ESTR { ret 161 }
+    if !strings.eq(lex.text(l), "abc") { ret 162 }
+
+    l = lex.mk(`'a`)
+    if lex.next(l) != lex.CHAR { ret 163 }
+    if lex.err(l) != lex.ESTR { ret 164 }
+
+    l = lex.mk("`abc")
+    if lex.next(l) != lex.RAW { ret 165 }
+    if lex.err(l) != lex.ERAW { ret 166 }
+    // 出错后下一次 next 应重置错误码；EOF 仍为 NONE
+    if lex.next(l) != lex.NONE { ret 167 }
+    if lex.err(l) != lex.OK { ret 168 }
+
+    l = lex.mk(`'ab'`)
+    if lex.next(l) != lex.CHAR { ret 169 }
+    if lex.err(l) != lex.ECHAR { ret 170 }
+    if !strings.eq(lex.text(l), "ab") { ret 171 }
+
+    l = lex.mk(`''`)
+    if lex.next(l) != lex.CHAR { ret 172 }
+    if lex.err(l) != lex.ECHAR { ret 173 }
+
+    // 9. 注释：跳过 // 到行尾，换行仍作为 SEP 返回
+    var n: string = nl()
+    var src: string = "a // hi" + n + "b"
+    l = lex.mk(src)
+    if !chk(l, lex.NAME, "a") { ret 180 }
+    if !chk(l, lex.SEPARATOR, n) { ret 181 }
+    if !chk(l, lex.NAME, "b") { ret 182 }
+    if lex.next(l) != lex.NONE { ret 183 }
+
+    // 行尾注释到 EOF：直接 EOF，不产生换行
+    l = lex.mk("a // hi")
+    if !chk(l, lex.NAME, "a") { ret 184 }
+    if lex.next(l) != lex.NONE { ret 185 }
+    if lex.err(l) != lex.OK { ret 186 }
+
+    // 整行注释
+    l = lex.mk("// hi" + n + "x")
+    if !chk(l, lex.SEPARATOR, n) { ret 187 }
+    if !chk(l, lex.NAME, "x") { ret 188 }
+
+    // 10. 位置与类型查询
+    l = lex.mk("ab cd")
+    if !chk(l, lex.NAME, "ab") { ret 190 }
+    if !span(l, 0, 2) { ret 191 }
+    if lex.kind(l) != lex.NAME { ret 192 }
+    if !chk(l, lex.NAME, "cd") { ret 193 }
+    if !span(l, 3, 5) { ret 194 }
+    if lex.pos(l) != 5 { ret 195 }
+    if lex.next(l) != lex.NONE { ret 196 }
+    if lex.pos(l) != 5 { ret 197 }
+
+    // 11. 关键字最长匹配：ifx 不是关键字
+    l = lex.mk("ifx if_x")
+    if !chk(l, lex.NAME, "ifx") { ret 200 }
+    if !chk(l, lex.NAME, "if_x") { ret 201 }
+
+    // 12. 分隔符切分复合表达式
+    l = lex.mk("a<<=b...c")
+    if !chk(l, lex.NAME, "a") { ret 210 }
+    if !chk(l, lex.SEPARATOR, "<<=") { ret 211 }
+    if !chk(l, lex.NAME, "b") { ret 212 }
+    if !chk(l, lex.SEPARATOR, "...") { ret 213 }
+    if !chk(l, lex.NAME, "c") { ret 214 }
+
+    // 13. token 枚举编号与 Go 版逐项一致（含 NONE）
+    if lex.NONE != 0 { ret 220 }
+    if lex.FUNC != 1 { ret 221 }
+    if lex.VAR != 2 { ret 222 }
+    if lex.PROCESSCONTROL != 3 { ret 223 }
+    if lex.SEPARATOR != 4 { ret 224 }
+    if lex.STRING != 5 { ret 225 }
+    if lex.NUMBER != 6 { ret 226 }
+    if lex.NAME != 7 { ret 227 }
+    if lex.CHAR != 8 { ret 228 }
+    if lex.TYPE != 9 { ret 229 }
+    if lex.RAW != 10 { ret 230 }
+    if lex.BOOL != 11 { ret 231 }
+    if lex.BUILD != 12 { ret 232 }
+    if lex.IMPORT != 13 { ret 233 }
+
+    // 14. tname：switch 映射与 Go 版 TokenTypeName 同名
+    if !strings.eq(lex.tname(lex.NONE), "NONE") { ret 240 }
+    if !strings.eq(lex.tname(lex.FUNC), "FUNC") { ret 241 }
+    if !strings.eq(lex.tname(lex.VAR), "VAR") { ret 242 }
+    if !strings.eq(lex.tname(lex.PROCESSCONTROL), "PROCESSCONTROL") { ret 243 }
+    if !strings.eq(lex.tname(lex.SEPARATOR), "SEPARATOR") { ret 244 }
+    if !strings.eq(lex.tname(lex.STRING), "STRING") { ret 245 }
+    if !strings.eq(lex.tname(lex.NUMBER), "NUMBER") { ret 246 }
+    if !strings.eq(lex.tname(lex.NAME), "NAME") { ret 247 }
+    if !strings.eq(lex.tname(lex.CHAR), "CHAR") { ret 248 }
+    if !strings.eq(lex.tname(lex.TYPE), "TYPE") { ret 249 }
+    if !strings.eq(lex.tname(lex.RAW), "RAW") { ret 250 }
+    if !strings.eq(lex.tname(lex.BOOL), "BOOL") { ret 251 }
+    if !strings.eq(lex.tname(lex.BUILD), "BUILD") { ret 252 }
+    if !strings.eq(lex.tname(lex.IMPORT), "IMPORT") { ret 253 }
+    if !strings.eq(lex.tname(99), "") { ret 254 }
+
+    ret 42
+}

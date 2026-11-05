@@ -1,0 +1,796 @@
+// Cuteify 自举词法分析器（/tmp 之外的正式实现）
+//
+// 设计约束：
+//   - 不依赖宿主文件 I/O：调用方把源码作为 string 传入，由宿主负责读文件。
+//   - 结构体不存 string 字段：用 ptr + uint 保存源码与切片区间，text() 时
+//     再用 strings.makeString 构造视图，避免全局结构体 string 字段的寻址问题。
+//   - 关键字用 if 链而非 map：语言当前不支持 m[k] 索引，if 链最直接。
+//
+// 与 Go 版 lexer/lexer.go 的对应关系见 selfhost/lex/README.md。
+import "std:strings"
+import "std:memory"
+
+// Token 类型（名称与编号和 Go 版 lexer/keywords.go 的 TokenType 对齐）
+enum TokenType {
+    NONE
+    FUNC
+    VAR
+    PROCESSCONTROL
+    SEPARATOR
+    STRING
+    NUMBER
+    NAME
+    CHAR
+    TYPE
+    RAW
+    BOOL
+    BUILD
+    IMPORT
+}
+
+// 错误码
+const OK: int = 0
+const ESTR: int = 1   // 字符串/字符未闭合或跨行
+const ERAW: int = 2   // 裸字符串未闭合
+const ECHAR: int = 3  // 字符字面量长度非法
+
+// Lex 词法状态。字段刻意用短名：
+//   p/n  源码指针与长度
+//   i    当前游标
+//   a/b  最近一个 token 的内容区间 [a, b)
+//   k    最近一个 token 的类型
+//   e    最近一次 next() 的错误码
+type Lex struct {
+    p: ptr
+    n: uint
+    i: uint
+    a: uint
+    b: uint
+    k: int
+    e: int
+}
+
+// mk 基于一段源码字符串创建词法状态。
+fn mk(s string) *Lex {
+    var l: *Lex = memory.malloc(64)
+    l.p = strings.toCstring(s)
+    l.n = strings.len(s)
+    l.i = 0
+    l.a = 0
+    l.b = 0
+    l.k = NONE
+    l.e = OK
+    ret l
+}
+
+// bt 读取偏移 i 处的字节；越界返回 0。
+fn bt(l *Lex, i uint) uint {
+    if i >= l.n {
+        ret 0
+    }
+    var q: *u8 = l.p + i
+    var v: uint = *q
+    ret v
+}
+
+// text 返回最近一个 token 的文本。字符串/字符/裸串不含定界符。
+fn text(l *Lex) string {
+    var n: uint = l.b - l.a
+    ret strings.makeString(l.p + l.a, n, n)
+}
+
+// kind 返回最近一个 token 的类型。
+fn kind(l *Lex) int {
+    ret l.k
+}
+
+// tname 返回 token 类型名，与 Go 版 LexTokenType/TokenTypeName 一致。
+// 未知类型返回空串。
+fn tname(k int) string {
+    switch k {
+    case NONE:
+        ret "NONE"
+    case FUNC:
+        ret "FUNC"
+    case VAR:
+        ret "VAR"
+    case PROCESSCONTROL:
+        ret "PROCESSCONTROL"
+    case SEPARATOR:
+        ret "SEPARATOR"
+    case STRING:
+        ret "STRING"
+    case NUMBER:
+        ret "NUMBER"
+    case NAME:
+        ret "NAME"
+    case CHAR:
+        ret "CHAR"
+    case TYPE:
+        ret "TYPE"
+    case RAW:
+        ret "RAW"
+    case BOOL:
+        ret "BOOL"
+    case BUILD:
+        ret "BUILD"
+    case IMPORT:
+        ret "IMPORT"
+    default:
+        ret ""
+    }
+    ret ""
+}
+
+// err 返回最近一次 next() 的错误码（OK 表示无错误）。
+fn err(l *Lex) int {
+    ret l.e
+}
+
+// start 返回最近一个 token 的起始偏移。
+fn start(l *Lex) uint {
+    ret l.a
+}
+
+// end 返回最近一个 token 的结束偏移（不含）。
+fn end(l *Lex) uint {
+    ret l.b
+}
+
+// pos 返回当前游标位置。
+fn pos(l *Lex) uint {
+    ret l.i
+}
+
+// skip 跳过行内空白（空格与 Tab），与 Go 版 SkipSep 一致。
+fn skip(l *Lex) {
+    for ; l.i < l.n; {
+        var c: uint = bt(l, l.i)
+        if c != 32 && c != 9 {
+            break
+        }
+        l.i = l.i + 1
+    }
+}
+
+// dig 是否为十进制数字。
+fn dig(c uint) bool {
+    if c >= 48 && c <= 57 {
+        ret true
+    }
+    ret false
+}
+
+// hex 是否为十六进制数字。
+fn hex(c uint) bool {
+    if c >= 48 && c <= 57 {
+        ret true
+    }
+    if c >= 97 && c <= 102 {
+        ret true
+    }
+    if c >= 65 && c <= 70 {
+        ret true
+    }
+    ret false
+}
+
+// oct 是否为八进制数字。
+fn oct(c uint) bool {
+    if c >= 48 && c <= 55 {
+        ret true
+    }
+    ret false
+}
+
+// bin 是否为二进制数字。
+fn bin(c uint) bool {
+    if c == 48 || c == 49 {
+        ret true
+    }
+    ret false
+}
+
+// sep 返回从偏移 i 开始的最长分隔符长度（3/2/1），无匹配返回 0。
+// 分隔符集合与 Go 版 lexer/keywords.go 保持一致；空格在词内也是分隔符，
+// 但 next() 在 token 起始处已经跳过空格与 Tab。
+fn sep(l *Lex, i uint) uint {
+    var c: uint = bt(l, i)
+
+    // 三字符：<<= >>= ...
+    if i + 2 < l.n {
+        var c1: uint = bt(l, i + 1)
+        var c2: uint = bt(l, i + 2)
+        if c == 60 && c1 == 60 && c2 == 61 {
+            ret 3
+        }
+        if c == 62 && c1 == 62 && c2 == 61 {
+            ret 3
+        }
+        if c == 46 && c1 == 46 && c2 == 46 {
+            ret 3
+        }
+    }
+
+    // 二字符：== != <= >= ++ -- -> && || << >> :=
+    //         += -= *= /= %= ^= &= |= //
+    if i + 1 < l.n {
+        var d: uint = bt(l, i + 1)
+        if c == 61 && d == 61 {
+            ret 2
+        }
+        if c == 33 && d == 61 {
+            ret 2
+        }
+        if c == 60 && d == 61 {
+            ret 2
+        }
+        if c == 62 && d == 61 {
+            ret 2
+        }
+        if c == 43 && d == 43 {
+            ret 2
+        }
+        if c == 45 && d == 45 {
+            ret 2
+        }
+        if c == 45 && d == 62 {
+            ret 2
+        }
+        if c == 38 && d == 38 {
+            ret 2
+        }
+        if c == 124 && d == 124 {
+            ret 2
+        }
+        if c == 60 && d == 60 {
+            ret 2
+        }
+        if c == 62 && d == 62 {
+            ret 2
+        }
+        if c == 58 && d == 61 {
+            ret 2
+        }
+        if c == 43 && d == 61 {
+            ret 2
+        }
+        if c == 45 && d == 61 {
+            ret 2
+        }
+        if c == 42 && d == 61 {
+            ret 2
+        }
+        if c == 47 && d == 61 {
+            ret 2
+        }
+        if c == 37 && d == 61 {
+            ret 2
+        }
+        if c == 94 && d == 61 {
+            ret 2
+        }
+        if c == 38 && d == 61 {
+            ret 2
+        }
+        if c == 124 && d == 61 {
+            ret 2
+        }
+        if c == 47 && d == 47 {
+            ret 2
+        }
+    }
+
+    // 单字符
+    if c == 59 {
+        ret 1 // ;
+    }
+    if c == 123 {
+        ret 1 // {
+    }
+    if c == 125 {
+        ret 1 // }
+    }
+    if c == 40 {
+        ret 1 // (
+    }
+    if c == 41 {
+        ret 1 // )
+    }
+    if c == 91 {
+        ret 1 // [
+    }
+    if c == 93 {
+        ret 1 // ]
+    }
+    if c == 44 {
+        ret 1 // ,
+    }
+    if c == 61 {
+        ret 1 // =
+    }
+    if c == 43 {
+        ret 1 // +
+    }
+    if c == 45 {
+        ret 1 // -
+    }
+    if c == 42 {
+        ret 1 // *
+    }
+    if c == 47 {
+        ret 1 // /
+    }
+    if c == 37 {
+        ret 1 // %
+    }
+    if c == 58 {
+        ret 1 // :
+    }
+    if c == 60 {
+        ret 1 // <
+    }
+    if c == 62 {
+        ret 1 // >
+    }
+    if c == 46 {
+        ret 1 // .
+    }
+    if c == 38 {
+        ret 1 // &
+    }
+    if c == 124 {
+        ret 1 // |
+    }
+    if c == 94 {
+        ret 1 // ^
+    }
+    if c == 33 {
+        ret 1 // !
+    }
+    if c == 63 {
+        ret 1 // ?
+    }
+    if c == 126 {
+        ret 1 // ~
+    }
+    if c == 34 {
+        ret 1 // "
+    }
+    if c == 39 {
+        ret 1 // '
+    }
+    if c == 92 {
+        ret 1 // backslash
+    }
+    if c == 64 {
+        ret 1 // @
+    }
+    if c == 10 {
+        ret 1 // \n
+    }
+    if c == 13 {
+        ret 1 // \r
+    }
+    if c == 96 {
+        ret 1 // `
+    }
+    if c == 32 {
+        ret 1 // space
+    }
+    ret 0
+}
+
+// num 从当前游标扫描数字字面量；不是数字返回 false 且不移动游标。
+// 支持 0x/0X、0b/0B、0o/0O、十进制小数、科学计数法、数字间下划线。
+// 与 Go 版一致：0x/0b/0o 后没有有效数字时整体退回普通 NAME 扫描。
+fn num(l *Lex) bool {
+    var s: uint = l.i
+    if s >= l.n {
+        ret false
+    }
+    if !dig(bt(l, s)) {
+        ret false
+    }
+
+    var i: uint = s
+    if bt(l, i) == 48 && i + 1 < l.n {
+        var c: uint = bt(l, i + 1)
+        if c == 120 || c == 88 {
+            i = i + 2
+            var d: uint = 0
+            for ; i < l.n; {
+                var b: uint = bt(l, i)
+                if !hex(b) && b != 95 {
+                    break
+                }
+                if b != 95 {
+                    d = d + 1
+                }
+                i = i + 1
+            }
+            if d == 0 {
+                ret false
+            }
+            l.a = s
+            l.b = i
+            l.i = i
+            l.k = NUMBER
+            ret true
+        }
+        if c == 98 || c == 66 {
+            i = i + 2
+            var d2: uint = 0
+            for ; i < l.n; {
+                var b2: uint = bt(l, i)
+                if !bin(b2) && b2 != 95 {
+                    break
+                }
+                if b2 != 95 {
+                    d2 = d2 + 1
+                }
+                i = i + 1
+            }
+            if d2 == 0 {
+                ret false
+            }
+            l.a = s
+            l.b = i
+            l.i = i
+            l.k = NUMBER
+            ret true
+        }
+        if c == 111 || c == 79 {
+            i = i + 2
+            var d3: uint = 0
+            for ; i < l.n; {
+                var b3: uint = bt(l, i)
+                if !oct(b3) && b3 != 95 {
+                    break
+                }
+                if b3 != 95 {
+                    d3 = d3 + 1
+                }
+                i = i + 1
+            }
+            if d3 == 0 {
+                ret false
+            }
+            l.a = s
+            l.b = i
+            l.i = i
+            l.k = NUMBER
+            ret true
+        }
+    }
+
+    // 十进制整数部分
+    for ; i < l.n; {
+        var b: uint = bt(l, i)
+        if !dig(b) && b != 95 {
+            break
+        }
+        i = i + 1
+    }
+
+    // 小数部分：点后必须紧跟数字，避免把 `1.foo` 吞进数字
+    if i + 1 < l.n && bt(l, i) == 46 && dig(bt(l, i + 1)) {
+        i = i + 2
+        for ; i < l.n; {
+            var b: uint = bt(l, i)
+            if !dig(b) && b != 95 {
+                break
+            }
+            i = i + 1
+        }
+    }
+
+    // 指数部分：e/E 后可带正负号，必须至少有一位数字
+    if i < l.n {
+        var e: uint = bt(l, i)
+        if e == 101 || e == 69 {
+            var j: uint = i + 1
+            if j < l.n {
+                var sg: uint = bt(l, j)
+                if sg == 43 || sg == 45 {
+                    j = j + 1
+                }
+            }
+            if j < l.n && dig(bt(l, j)) {
+                j = j + 1
+                for ; j < l.n; {
+                    var b: uint = bt(l, j)
+                    if !dig(b) && b != 95 {
+                        break
+                    }
+                    j = j + 1
+                }
+                i = j
+            }
+        }
+    }
+
+    l.a = s
+    l.b = i
+    l.i = i
+    l.k = NUMBER
+    ret true
+}
+
+// name 扫描一个普通单词（到下一个分隔符或 EOF 为止）。
+fn name(l *Lex) {
+    var i: uint = l.i
+    for ; i < l.n; {
+        if sep(l, i) > 0 {
+            break
+        }
+        i = i + 1
+    }
+    l.a = l.i
+    l.b = i
+    l.i = i
+}
+
+// kw 把当前 token 文本映射为关键字类型；未命中返回 NAME。
+fn kw(l *Lex) int {
+    var s: string = text(l)
+
+    if strings.eq(s, "fn") {
+        ret FUNC
+    }
+    if strings.eq(s, "const") {
+        ret VAR
+    }
+    if strings.eq(s, "var") {
+        ret VAR
+    }
+    if strings.eq(s, "let") {
+        ret VAR
+    }
+
+    if strings.eq(s, "if") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "while") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "for") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "return") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "ret") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "break") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "continue") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "else") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "switch") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "case") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "default") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "range") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "defer") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "try") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "except") {
+        ret PROCESSCONTROL
+    }
+    if strings.eq(s, "finally") {
+        ret PROCESSCONTROL
+    }
+
+    if strings.eq(s, "type") {
+        ret TYPE
+    }
+    if strings.eq(s, "struct") {
+        ret TYPE
+    }
+    if strings.eq(s, "interface") {
+        ret TYPE
+    }
+    if strings.eq(s, "enum") {
+        ret TYPE
+    }
+
+    if strings.eq(s, "true") {
+        ret BOOL
+    }
+    if strings.eq(s, "false") {
+        ret BOOL
+    }
+    if strings.eq(s, "nil") {
+        ret BOOL
+    }
+
+    if strings.eq(s, "build") {
+        ret BUILD
+    }
+    if strings.eq(s, "import") {
+        ret IMPORT
+    }
+
+    ret NAME
+}
+
+// str 扫描双引号字符串；token 内容不含引号。
+fn str(l *Lex) {
+    var s: uint = l.i + 1
+    var i: uint = s
+    for ; i < l.n; {
+        var c: uint = bt(l, i)
+        if c == 10 || c == 13 {
+            l.a = s
+            l.b = i
+            l.i = i
+            l.k = STRING
+            l.e = ESTR
+            ret
+        }
+        if c == 34 {
+            l.a = s
+            l.b = i
+            l.i = i + 1
+            l.k = STRING
+            ret
+        }
+        i = i + 1
+    }
+    l.a = s
+    l.b = l.n
+    l.i = l.n
+    l.k = STRING
+    l.e = ESTR
+}
+
+// chr 扫描单引号字符；内容不含引号。
+// 与 Go 版一致：反斜杠开头的字符不做转义长度校验。
+fn chr(l *Lex) {
+    var s: uint = l.i + 1
+    var i: uint = s
+    for ; i < l.n; {
+        var c: uint = bt(l, i)
+        if c == 10 || c == 13 {
+            l.a = s
+            l.b = i
+            l.i = i
+            l.k = CHAR
+            l.e = ESTR
+            ret
+        }
+        if c == 39 {
+            var n: uint = i - s
+            if n == 0 {
+                l.e = ECHAR
+            } else if bt(l, s) != 92 && n != 1 {
+                l.e = ECHAR
+            }
+            l.a = s
+            l.b = i
+            l.i = i + 1
+            l.k = CHAR
+            ret
+        }
+        i = i + 1
+    }
+    l.a = s
+    l.b = l.n
+    l.i = l.n
+    l.k = CHAR
+    l.e = ESTR
+}
+
+// raw 扫描反引号裸字符串；允许跨行，内容不含反引号。
+fn raw(l *Lex) {
+    var s: uint = l.i + 1
+    var i: uint = s
+    for ; i < l.n; {
+        if bt(l, i) == 96 {
+            l.a = s
+            l.b = i
+            l.i = i + 1
+            l.k = RAW
+            ret
+        }
+        i = i + 1
+    }
+    l.a = s
+    l.b = l.n
+    l.i = l.n
+    l.k = RAW
+    l.e = ERAW
+}
+
+// comment 跳过 // 到行尾；游标停在 \n 或 \r 上，由下一轮 next() 产出换行 token。
+fn comment(l *Lex) {
+    var i: uint = l.i + 2
+    for ; i < l.n; {
+        var c: uint = bt(l, i)
+        if c == 10 || c == 13 {
+            break
+        }
+        i = i + 1
+    }
+    l.a = i
+    l.b = i
+    l.i = i
+}
+
+// next 扫描并返回下一个 token 类型；EOF 返回 NONE。
+// 每次调用先把错误码重置为 OK；返回 NONE 且 err()==OK 表示正常结束。
+fn next(l *Lex) int {
+    l.e = OK
+    for ; ; {
+        l.k = NONE
+        if l.i >= l.n {
+            l.a = l.i
+            l.b = l.i
+            ret NONE
+        }
+
+        skip(l)
+        if l.i >= l.n {
+            l.a = l.i
+            l.b = l.i
+            ret NONE
+        }
+
+        l.a = l.i
+
+        // 数字在普通单词之前扫描
+        if num(l) {
+            ret l.k
+        }
+
+        var m: uint = sep(l, l.i)
+        if m == 0 {
+            break
+        }
+
+        var c: uint = bt(l, l.i)
+
+        // 注释：只有 "//" 跳过整行（不产出 token）；"/=" 仍是分隔符。
+        if m == 2 && c == 47 && bt(l, l.i + 1) == 47 {
+            comment(l)
+        } else {
+            if c == 34 {
+                str(l)
+                ret l.k
+            }
+            if c == 39 {
+                chr(l)
+                ret l.k
+            }
+            if c == 96 {
+                raw(l)
+                ret l.k
+            }
+            l.k = SEPARATOR
+            l.b = l.i + m
+            l.i = l.b
+            ret SEPARATOR
+        }
+    }
+
+    // 普通单词 / 关键字
+    name(l)
+    l.k = kw(l)
+    ret l.k
+}
