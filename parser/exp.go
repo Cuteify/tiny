@@ -6,6 +6,7 @@ import (
 	"cuteify/utils"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // Expression 表示表达式AST节点
@@ -412,6 +413,78 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 	return root
 }
 
+// parseNumberLiteral 把词法层的数字字面量转换为 float64 常量。
+// 语言内部数值统一存 float64；整数进制前缀与下划线在这里剥离。
+func parseNumberLiteral(lit string) (float64, error) {
+	s := strings.ReplaceAll(lit, "_", "")
+	lower := strings.ToLower(s)
+	base := 0
+	digits := ""
+	switch {
+	case strings.HasPrefix(lower, "0x"):
+		base, digits = 16, s[2:]
+	case strings.HasPrefix(lower, "0b"):
+		base, digits = 2, s[2:]
+	case strings.HasPrefix(lower, "0o"):
+		base, digits = 8, s[2:]
+	case len(s) > 1 && s[0] == '0' && isOctalDigits(s[1:]):
+		// C 风格前导零八进制（如文件模式 0644）
+		base, digits = 8, s[1:]
+	}
+	if base != 0 {
+		u, err := strconv.ParseUint(digits, base, 64)
+		if err != nil {
+			return 0, err
+		}
+		return float64(u), nil
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
+// isFloatLiteral 判断十进制数字字面量是否带小数点或指数。
+// 十六/二/八进制的数字里可能出现 e，不能按指数误判。
+func isFloatLiteral(lit string) bool {
+	s := strings.ReplaceAll(lit, "_", "")
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "0x") || strings.HasPrefix(lower, "0b") || strings.HasPrefix(lower, "0o") {
+		return false
+	}
+	if strings.ContainsAny(s, ".") {
+		return true
+	}
+	return strings.ContainsAny(s, "eE")
+}
+
+func isOctalDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '7' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseCharLiteral 把字符字面量内容（不含引号）解析为码点数值。
+// 支持 Go 风格转义；当前语言没有 rune 类型，字符常量按 int 处理。
+func parseCharLiteral(content string) (int, error) {
+	if content == "" {
+		return 0, fmt.Errorf("empty character literal")
+	}
+	quoted := "'" + content + "'"
+	s, err := strconv.Unquote(quoted)
+	if err != nil {
+		return 0, err
+	}
+	runes := []rune(s)
+	if len(runes) != 1 {
+		return 0, fmt.Errorf("character literal must contain exactly one character")
+	}
+	return int(runes[0]), nil
+}
+
 func (p *Parser) getExp(stopCursor int) *Expression {
 	code := p.Lexer.Next()
 	if code.IsEmpty() {
@@ -425,25 +498,38 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 
 	switch code.Type {
 	case lexer.NUMBER:
-		num, err := strconv.ParseFloat(code.Value, 64)
+		num, err := parseNumberLiteral(code.Value)
 		if err != nil {
 			p.Error.MissError("Expression Error", p.Lexer.Cursor, err.Error())
 			return nil
 		}
 		exp := &Expression{Num: num}
-		if exp.Num == float64(int(exp.Num)) {
+		// 字面量写法决定类型：带小数点或指数的按 f64（即使值恰好是整数，
+		// 如 1.0 / 0.0 需要走 IEEE 浮点除法得到 inf），否则按整数。
+		if isFloatLiteral(code.Value) || exp.Num != float64(int(exp.Num)) {
+			exp.Type = typeSys.GetSystemType("f64")
+		} else {
 			// 值超出 int32 范围时使用 i64，避免 x86 上 mov DWORD[mem], imm 溢出
 			if exp.Num > 2147483647 || exp.Num < -2147483648 {
 				exp.Type = typeSys.GetSystemType("i64")
 			} else {
 				exp.Type = typeSys.GetSystemType("int")
 			}
-		} else {
-			exp.Type = typeSys.GetSystemType("f64")
 		}
 		return exp
 
-	case lexer.STRING, lexer.CHAR, lexer.RAW:
+	case lexer.CHAR:
+		r, err := parseCharLiteral(code.Value)
+		if err != nil {
+			p.Error.MissError("Expression Error", p.Lexer.Cursor, err.Error())
+			return nil
+		}
+		return &Expression{
+			Num:  float64(r),
+			Type: typeSys.GetSystemType("int"),
+		}
+
+	case lexer.STRING, lexer.RAW:
 		return &Expression{
 			StringVal: code.Value,
 			Type:      typeSys.GetSystemType("string"),

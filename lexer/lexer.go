@@ -231,6 +231,17 @@ func (l *Lexer) GetToken() (Token, error) {
 	if l.Cursor >= l.TextLength {
 		return Token{}, io.EOF
 	}
+	// 数字扫描前先跳过行内空白，否则光标停在 `= 0` 的空格上会直接
+	// 落入 GetWord，把 `0` 当成 NAME。
+	l.SkipSep()
+	if l.Cursor >= l.TextLength {
+		return Token{}, io.EOF
+	}
+	// 数字字面量单独扫描：十六进制/二进制/八进制前缀、科学计数法和
+	// 下划线分隔符都不是 GetWord 的"非分隔符字符"模型能正确切分的。
+	if token, ok := l.scanNumber(); ok {
+		return token, nil
+	}
 	// 直接操作光标，获取Token
 	word, isSep := l.GetWord()
 
@@ -247,35 +258,103 @@ func (l *Lexer) GetToken() (Token, error) {
 		token.Cursor = l.Cursor - token.Len()
 		return token, nil
 	}
-	if isDigit(word) {
-		oldCursor := l.Cursor
-		word2, _ := l.GetWord()
-		word3, _ := l.GetWord()
-		if word2 == "." && isDigit(word3) {
-			token := Token{
-				Type:      NUMBER,
-				Value:     word + "." + word3,
-				EndCursor: l.Cursor,
+	token := Token{
+		Type:      NAME,
+		Value:     word,
+		EndCursor: l.Cursor,
+	}
+	token.Cursor = l.Cursor - token.Len()
+	return token, nil
+}
+
+// scanNumber 从当前光标扫描一个完整数字字面量。
+// 支持：0x/0X 十六进制、0b/0B 二进制、0o/0O 八进制、十进制小数、
+// 科学计数法（e/E 可带正负号）以及数字间的下划线。
+func (l *Lexer) scanNumber() (Token, bool) {
+	start := l.Cursor
+	if start >= l.TextLength || !isDecDigit(l.Text[start]) {
+		return Token{}, false
+	}
+
+	i := start
+	if l.Text[i] == '0' && i+1 < l.TextLength {
+		switch l.Text[i+1] {
+		case 'x', 'X':
+			i += 2
+			digits := 0
+			for i < l.TextLength && (isHexDigit(l.Text[i]) || l.Text[i] == '_') {
+				if l.Text[i] != '_' {
+					digits++
+				}
+				i++
 			}
-			token.Cursor = l.Cursor - token.Len()
-			return token, nil
+			if digits == 0 {
+				return Token{}, false
+			}
+			return l.numberToken(start, i), true
+		case 'b', 'B':
+			i += 2
+			digits := 0
+			for i < l.TextLength && (l.Text[i] == '0' || l.Text[i] == '1' || l.Text[i] == '_') {
+				if l.Text[i] != '_' {
+					digits++
+				}
+				i++
+			}
+			if digits == 0 {
+				return Token{}, false
+			}
+			return l.numberToken(start, i), true
+		case 'o', 'O':
+			i += 2
+			digits := 0
+			for i < l.TextLength && ((l.Text[i] >= '0' && l.Text[i] <= '7') || l.Text[i] == '_') {
+				if l.Text[i] != '_' {
+					digits++
+				}
+				i++
+			}
+			if digits == 0 {
+				return Token{}, false
+			}
+			return l.numberToken(start, i), true
 		}
-		l.SetCursor(oldCursor)
-		token := Token{
-			Type:      NUMBER,
-			Value:     word,
-			EndCursor: l.Cursor,
+	}
+
+	for i < l.TextLength && (isDecDigit(l.Text[i]) || l.Text[i] == '_') {
+		i++
+	}
+	// 小数部分：`.` 后必须紧跟数字，避免把 `1.foo` 吞进数字。
+	if i+1 < l.TextLength && l.Text[i] == '.' && isDecDigit(l.Text[i+1]) {
+		i += 2
+		for i < l.TextLength && (isDecDigit(l.Text[i]) || l.Text[i] == '_') {
+			i++
 		}
-		token.Cursor = l.Cursor - token.Len()
-		return token, nil
-	} else {
-		token := Token{
-			Type:      NAME,
-			Value:     word,
-			EndCursor: l.Cursor,
+	}
+	// 指数部分：e/E 后可选 +/-，必须至少有一位数字。
+	if i < l.TextLength && (l.Text[i] == 'e' || l.Text[i] == 'E') {
+		j := i + 1
+		if j < l.TextLength && (l.Text[j] == '+' || l.Text[j] == '-') {
+			j++
 		}
-		token.Cursor = l.Cursor - token.Len()
-		return token, nil
+		if j < l.TextLength && isDecDigit(l.Text[j]) {
+			j++
+			for j < l.TextLength && (isDecDigit(l.Text[j]) || l.Text[j] == '_') {
+				j++
+			}
+			i = j
+		}
+	}
+	return l.numberToken(start, i), true
+}
+
+func (l *Lexer) numberToken(start, end int) Token {
+	l.SetCursor(end)
+	return Token{
+		Type:      NUMBER,
+		Value:     l.Text[start:end],
+		Cursor:    start,
+		EndCursor: end,
 	}
 }
 
@@ -328,9 +407,17 @@ func (token Token) IsEmpty() bool {
 func isDigit(str string) bool {
 	strLength := len(str)
 	for i := 0; i < strLength; i++ {
-		if str[i] < '0' || str[i] > '9' {
+		if !isDecDigit(str[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+func isDecDigit(c byte) bool {
+	return c >= '0' && c <= '9'
+}
+
+func isHexDigit(c byte) bool {
+	return isDecDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }

@@ -1,9 +1,9 @@
 package parser
 
 import (
+	typeSys "cuteify/type"
 	"fmt"
 	"os"
-	typeSys "cuteify/type"
 
 	"strings"
 )
@@ -632,11 +632,27 @@ func (exp *Expression) checkArith(p *Parser) bool {
 	// 类型推导：float→f64；否则宽类型获胜。
 	// 修复：int * u64 原先推导为 int，32 位架构下乘积被截断
 	// （如 365*DAY 纳秒数），必须提升到 8 字节操作数的类型。
-	if typeSys.CheckKind(exp.Left.Type, "float") || typeSys.CheckKind(exp.Right.Type, "float") {
-		exp.Type = typeSys.GetSystemType("f64")
-	} else if exp.Right.Type.Size() > exp.Left.Type.Size() {
+	//
+	// 常量操作数不参与宽度提升：`u32 变量 + 1` 的结果仍是 u32。
+	// 常量字面量（如 1）默认是 int，x86_64 上 int 是 8 字节；若按宽度
+	// 提升会把整个表达式变成 int，后续与 u32 比较就会被判为类型不符。
+	leftConst, rightConst := exp.Left.IsConst(), exp.Right.IsConst()
+	switch {
+	case leftConst && !rightConst:
 		exp.Type = exp.Right.Type
-	} else {
+		if typeSys.CheckKind(exp.Left.Type, "float") && !typeSys.CheckKind(exp.Right.Type, "float") {
+			exp.Type = typeSys.GetSystemType("f64")
+		}
+	case rightConst && !leftConst:
+		exp.Type = exp.Left.Type
+		if typeSys.CheckKind(exp.Right.Type, "float") && !typeSys.CheckKind(exp.Left.Type, "float") {
+			exp.Type = typeSys.GetSystemType("f64")
+		}
+	case typeSys.CheckKind(exp.Left.Type, "float") || typeSys.CheckKind(exp.Right.Type, "float"):
+		exp.Type = typeSys.GetSystemType("f64")
+	case exp.Right.Type.Size() > exp.Left.Type.Size():
+		exp.Type = exp.Right.Type
+	default:
 		exp.Type = exp.Left.Type
 	}
 
@@ -694,7 +710,11 @@ func (exp *Expression) checkCmp(p *Parser) bool {
 // foldNum 常量折叠：设置数值、推导类型、清空子节点。
 func (exp *Expression) foldNum(value float64) {
 	exp.Num = value
-	if exp.Num == float64(int(exp.Num)) {
+	// 浮点上下文保留 f64：-1.0、1.0+1.0 的折叠结果仍是浮点常量，
+	// 不能因数值恰好是整数就退回 int（两者的位模式完全不同）。
+	if typeSys.CheckKind(exp.Type, "float") {
+		exp.Type = typeSys.GetSystemType("f64")
+	} else if exp.Num == float64(int(exp.Num)) {
 		// 值超出 int32 范围时使用 i64，避免 x86 上 mov DWORD[mem], imm 溢出
 		// (NASM 将超出 int32 范围的负数当作无符号处理，产生错误的位模式)
 		if exp.Num > 2147483647 || exp.Num < -2147483648 {
@@ -729,6 +749,12 @@ func (exp *Expression) foldArith(p *Parser) bool {
 		exp.Num = left * right
 	case "/":
 		if right == 0 {
+			// 浮点除零按 IEEE-754 折叠为 ±Inf / NaN。当前后端没有 XMM
+			// 浮点除法，留到运行期会走整数 idiv 触发 SIGFPE。
+			if typeSys.CheckKind(exp.Type, "float") {
+				exp.Num = left / right
+				break
+			}
 			p.Error.MissError("Runtime Error", p.Lexer.Cursor, "division by zero")
 			return false
 		}
