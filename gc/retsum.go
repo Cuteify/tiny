@@ -295,18 +295,41 @@ func (a *analysis) bodyTakesAddrOf(fb *parser.FuncBlock, name string) bool {
 	if v, ok := cache[name]; ok {
 		return v
 	}
+	taken := bodyTakesAddrOfNode(parser.BlockNode(fb), name)
+	cache[name] = taken
+	return taken
+}
+
+// bodyTakesAddrOfNode 在给定函数体节点内查找一元 &name，跳过嵌套函数。
+// 独立于前端 analysis，供后端摘要分析复用；根节点允许是 FuncBlock。
+func bodyTakesAddrOfNode(root *parser.Node, name string) bool {
+	if root == nil || name == "" {
+		return false
+	}
 	taken := false
-	a.walkFuncBody(fb, func(n *parser.Node) {
-		if taken {
+	var walk func(n *parser.Node, isRoot bool)
+	walk = func(n *parser.Node, isRoot bool) {
+		if n == nil || taken {
 			return
+		}
+		if !isRoot {
+			if _, nested := n.Value.(*parser.FuncBlock); nested {
+				return
+			}
 		}
 		nodeExpressions(n.Value, func(e *parser.Expression) {
 			if !taken && exprTakesAddrOf(e, name) {
 				taken = true
 			}
 		})
-	})
-	cache[name] = taken
+		for _, c := range n.Children {
+			walk(c, false)
+		}
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib.ElseBlock != nil {
+			walk(ib.ElseBlock, false)
+		}
+	}
+	walk(root, true)
 	return taken
 }
 
