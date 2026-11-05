@@ -107,8 +107,8 @@ fn getdents(fd: i32, dirp: u64, count: u32) i32 {
     ret syscall(217, fd, dirp, count)
 }
 
-// getcwd 获取当前工作目录到 buf，返回 buf 指针（失败返回 0）
-fn getcwd(buf: ptr, size: u64) ptr {
+// getcwd 获取当前工作目录到 buf，返回写入的字节数（失败返回负 errno）
+fn getcwd(buf: ptr, size: u64) i64 {
     ret syscall64(79, buf, size, 0, 0, 0)
 }
 

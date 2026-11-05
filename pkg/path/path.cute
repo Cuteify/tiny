@@ -263,68 +263,151 @@ fn split(path string) (string, string) {
 }
 
 // clean 清理路径：去除多余斜杠、处理 "." 和 ".."
+// _cleanPush 把 sPtr[start, start+segLen) 追加到输出缓冲，返回新的 dst
+fn _cleanPush(buf: ptr, dst: uint, sPtr: ptr, start: uint, segLen: uint, isAbsolute: bool) uint {
+    var needSlash: bool = dst > 0
+    if isAbsolute && dst == 1 {
+        needSlash = false
+    }
+    if needSlash {
+        var sp: *u8 = buf + dst
+        *sp = unsafe.cast[u8](47)
+        dst = dst + 1
+    }
+    var i: uint = 0
+    for ; i < segLen; {
+        var dp: *u8 = buf + dst + i
+        var sp2: *u8 = sPtr + start + i
+        *dp = unsafe.cast[u8](*sp2)
+        i = i + 1
+    }
+    ret dst + segLen
+}
+
+// _cleanPop 弹出输出缓冲最后一个路径段，返回新的 dst
+fn _cleanPop(buf: ptr, dst: uint, isAbsolute: bool) uint {
+    var start: uint = dst
+    for ; start > 0; {
+        var c: *u8 = buf + start - 1
+        if *c == 47 {
+            break
+        }
+        start = start - 1
+    }
+    if start == 0 {
+        ret 0
+    }
+    if isAbsolute && start == 1 {
+        ret 1
+    }
+    ret start - 1
+}
+
+// _cleanTopDotDot 判断输出缓冲最后一个段是否为 ".."
+fn _cleanTopDotDot(buf: ptr, dst: uint) bool {
+    if dst < 2 {
+        ret false
+    }
+    var start: uint = dst
+    for ; start > 0; {
+        var c: *u8 = buf + start - 1
+        if *c == 47 {
+            break
+        }
+        start = start - 1
+    }
+    if dst - start != 2 {
+        ret false
+    }
+    var c0: *u8 = buf + start
+    var c1: *u8 = buf + start + 1
+    if *c0 == 46 && *c1 == 46 {
+        ret true
+    }
+    ret false
+}
+
+// clean 规范化路径：去掉连续斜杠、"." 与 ".." 段、末尾斜杠（根目录除外）
 fn clean(path string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret "."
     }
     var sPtr: ptr = strings.toCstring(path)
-
-    // 简化实现：去掉连续斜杠、去掉末尾斜杠（根目录除外）
     var buf: ptr = memory.malloc(sLen + 1)
+
+    var first: *u8 = sPtr
+    var isAbsolute: bool = *first == 47
     var dst: uint = 0
-    var src: uint = 0
-    var prevWasSlash: bool = false
+    if isAbsolute {
+        var rootp: *u8 = buf
+        *rootp = unsafe.cast[u8](47)
+        dst = 1
+    }
 
-    // 处理绝对路径
-    var _p26: *u8 = sPtr
-    var isAbsolute: bool = *_p26 == 47
-
-    for ; src < sLen; {
-        var _p27: *u8 = sPtr + src
-        var ch: uint = *_p27
-        if ch == 47 {
-            if !prevWasSlash {
-                // 跳过可能的 "." 和 ".."
-                var _p28: *u8 = buf + dst
-                *_p28 = unsafe.cast[u8](47)
-                dst = dst + 1
-                prevWasSlash = true
+    var i: uint = 0
+    for ; i < sLen; {
+        // 跳过斜杠
+        for ; i < sLen; {
+            var c: *u8 = sPtr + i
+            if *c != 47 {
+                break
             }
-            src = src + 1
-        } else {
-            prevWasSlash = false
-            var _p29: *u8 = buf + dst
-            *_p29 = unsafe.cast[u8](ch)
-            dst = dst + 1
-            src = src + 1
+            i = i + 1
+        }
+        if i >= sLen {
+            break
+        }
+        // 取一个段 [segStart, i)
+        var segStart: uint = i
+        for ; i < sLen; {
+            var c: *u8 = sPtr + i
+            if *c == 47 {
+                break
+            }
+            i = i + 1
+        }
+        var segLen: uint = i - segStart
+
+        var isDot: bool = false
+        var isDotDot: bool = false
+        if segLen == 1 {
+            var d0: *u8 = sPtr + segStart
+            if *d0 == 46 {
+                isDot = true
+            }
+        } else if segLen == 2 {
+            var d1: *u8 = sPtr + segStart
+            var d2: *u8 = sPtr + segStart + 1
+            if *d1 == 46 && *d2 == 46 {
+                isDotDot = true
+            }
+        }
+
+        if !isDot {
+            if isDotDot {
+                if isAbsolute {
+                    if dst > 1 {
+                        dst = _cleanPop(buf, dst, true)
+                    }
+                } else if dst > 0 && !_cleanTopDotDot(buf, dst) {
+                    dst = _cleanPop(buf, dst, false)
+                } else {
+                    dst = _cleanPush(buf, dst, sPtr, segStart, segLen, false)
+                }
+            } else {
+                dst = _cleanPush(buf, dst, sPtr, segStart, segLen, isAbsolute)
+            }
         }
     }
 
-    // 去掉末尾斜杠（根目录除外）
-    var _p30: *u8 = buf + dst - 1
-    if dst > 1 && *_p30 == 47 {
-        if !(isAbsolute && dst == 1) {
-            dst = dst - 1
-        }
-    }
-
-    // 特殊情况：空字符串返回 "."
     if dst == 0 {
-        if isAbsolute {
-            var _p31: *u8 = buf
-            *_p31 = unsafe.cast[u8](47)
-            ret strings.makeString(buf, 1, 1)
-        }
-        var _p32: *u8 = buf
-        *_p32 = unsafe.cast[u8](46)
-        var _p33: *u8 = buf + 1
-        *_p33 = unsafe.cast[u8](0)
-        ret strings.makeString(buf, 1, 1)
+        var dotp: *u8 = buf
+        *dotp = unsafe.cast[u8](46)
+        dst = 1
     }
-
-    var _p34: *u8 = buf + dst
-    *_p34 = unsafe.cast[u8](0)
+    var endp: *u8 = buf + dst
+    *endp = unsafe.cast[u8](0)
     ret strings.makeString(buf, dst, dst)
 }
 
@@ -404,12 +487,12 @@ fn join(elem1 string, elem2 string) string {
 // ============================================================
 
 // separator 返回操作系统路径分隔符
-fn separator() byte {
+fn separator() u8 {
     ret 47  // '/'
 }
 
 // listSeparator 返回操作系统路径列表分隔符
-fn listSeparator() byte {
+fn listSeparator() u8 {
     ret 58  // ':'
 }
 
@@ -491,17 +574,13 @@ fn abs(path string) string {
     }
     // 获取当前工作目录
     var cwdBuf: ptr = memory.malloc(4096)
-    var result: ptr = syscall.getcwd(cwdBuf, 4096)
-    if result == 0 {
+    // Linux getcwd 系统调用成功返回写入的字节数（不是 buf 指针），失败返回 -errno
+    var cwdLenRaw: int = syscall.getcwd(cwdBuf, 4096)
+    if cwdLenRaw <= 0 {
         memory.free(cwdBuf)
         ret path
     }
-    // 计算 cwd 长度
-    var cwdLen: uint = 0
-    var _p56: *u8 = result + cwdLen
-    for ; *_p56 != 0; {
-        cwdLen = cwdLen + 1
-    }
+    var cwdLen: uint = unsafe.cast[uint](cwdLenRaw)
     // 拼接 cwd + "/" + path
     var pathLen: uint = strings.len(path)
     var totalLen: uint = cwdLen + 1 + pathLen
@@ -509,12 +588,12 @@ fn abs(path string) string {
     var i: uint = 0
     for ; i < cwdLen; {
         var _p57: *u8 = buf + i
-        var _p58: *u8 = result + i
+        var _p58: *u8 = cwdBuf + i
         *_p57 = unsafe.cast[u8](*_p58)
         i = i + 1
     }
     var _p59: *u8 = buf + cwdLen
-    *_p59 = unsafe.cast[u8](47  // '/')
+    *_p59 = unsafe.cast[u8](47)  // '/'
     i = 0
     for ; i < pathLen; {
         var _p60: *u8 = buf + cwdLen + 1 + i
@@ -565,13 +644,13 @@ fn rel(basePath string, targetPath string) string {
         i = i + 1
     }
     // 处理完全匹配的情况
+    var _p66: *u8 = targetPtr + i
+    var _p67: *u8 = basePtr + i
     if commonLen == 0 && i == maxLen {
         if baseLen == targetLen {
             commonLen = baseLen
-        var _p66: *u8 = targetPtr + i
         } else if i == baseLen && *_p66 == 47 {
             commonLen = baseLen
-        var _p67: *u8 = basePtr + i
         } else if i == targetLen && *_p67 == 47 {
             commonLen = targetLen
         }
@@ -731,10 +810,10 @@ fn match(pattern string, name string) bool {
         var _p90: *u8 = pPtr + pi
         var _p91: *u8 = nPtr + ni
         var _p92: *u8 = pPtr + pi
+        var _p93: *u8 = pPtr + pi
         if pi < pLen && (*_p90 == *_p91 || *_p92 == 63) {
             pi = pi + 1
             ni = ni + 1
-        var _p93: *u8 = pPtr + pi
         } else if pi < pLen && *_p93 == 42 {
             // '*' — 记录位置，尝试匹配 0 个字符
             starPi = pi
@@ -752,8 +831,11 @@ fn match(pattern string, name string) bool {
     }
 
     // 消耗模式中剩余的 '*'
-    var _p94: *u8 = pPtr + pi
-    for ; pi < pLen && *_p94 == 42; {
+    for ; true; {
+        var _p94: *u8 = pPtr + pi
+        if pi >= pLen || *_p94 != 42 {
+            break
+        }
         pi = pi + 1
     }
 
@@ -811,8 +893,11 @@ fn walk(path string, callback fn(string)) {
             if firstCh != 46 || (*_p98 != 0 && !(*_p99 == 46 && *_p100 == 0)) {
                 // 计算文件名长度
                 var nameLen: uint = 0
-                var _p101: *u8 = namePtr + nameLen
-                for ; *_p101 != 0; {
+                for ; true; {
+                    var _p101: *u8 = namePtr + nameLen
+                    if *_p101 == 0 {
+                        break
+                    }
                     nameLen = nameLen + 1
                 }
                 // 构建完整路径

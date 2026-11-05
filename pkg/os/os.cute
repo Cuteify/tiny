@@ -17,19 +17,14 @@ fn exit(code: i32) {
 // getcwd 获取当前工作目录
 fn getcwd() string {
     var buf: ptr = memory.malloc(4096)
-    var result: ptr = syscall.getcwd(buf, 4096)
-    // getcwd 失败返回 0
-    if result == 0 {
+    // Linux getcwd 系统调用成功返回写入的字节数（不是 buf 指针），失败返回 -errno
+    var n: int = syscall.getcwd(buf, 4096)
+    if n <= 0 {
         memory.free(buf)
         ret ""
     }
-    // 计算长度
-    var len: uint = 0
-    var _p1: *u8 = result + len
-    for ; *_p1 != 0; {
-        len = len + 1
-    }
-    ret strings.makeString(result, len, len)
+    var len: uint = unsafe.cast[uint](n)
+    ret strings.makeString(buf, len, len)
 }
 
 // Linux errno 值（syscall 返回 -errno）
@@ -39,12 +34,12 @@ const EEXIST: int = 17
 const ENOTDIR: int = 20
 
 // errnoOf 从 syscall 返回值提取 errno（正数）
-fn errnoOf(ret: int) int {
-    if ret >= 0 {
+fn errnoOf(code: int) int {
+    if code >= 0 {
         ret 0
     }
-    // -ret
-    var e: int = 0 - ret
+    // -code
+    var e: int = 0 - code
     ret e
 }
 
