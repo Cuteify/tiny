@@ -1146,11 +1146,13 @@ func (c *Compiler) generateDataSection() string {
 	code += "    _oob_msg_len equ $ - _oob_msg\n"
 	for val, label := range c.Ctx.StringConsts {
 		escaped := strings.ReplaceAll(val, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		escaped = strings.ReplaceAll(escaped, "`", "\\`")
+		escaped = strings.ReplaceAll(escaped, "\"", `\"`)
 		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
 		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
 		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
-		code += fmt.Sprintf("    %s db \"%s\", 0\n", label, escaped)
+		// NASM 的双引号字符串不支持反斜杠转义；用反引号字符串承载转义。
+		code += fmt.Sprintf("    %s db `%s`, 0\n", label, escaped)
 		code += fmt.Sprintf("    %s_len equ $ - %s\n", label, label)
 	}
 	// 全局 string 变量：ptr/len/cap 三槽，槽宽随架构指针大小（x86 为 dd）
