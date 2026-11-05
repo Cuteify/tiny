@@ -22,22 +22,14 @@ type Lexer struct {
 }
 
 type Token struct {
-	Type      int
+	Type      TokenType
 	Value     string
 	Cursor    int
 	EndCursor int
 }
 
 func (t Token) String() string {
-	typeName := ""
-	for i, v := range LexTokenType {
-		if v == t.Type {
-			typeName = i
-		}
-	}
-	val := t.Value
-	val = utils.MakeVisible(val)
-	return "[" + typeName + "]" + val
+	return "[" + TokenTypeName(t.Type) + "]" + utils.MakeVisible(t.Value)
 }
 
 func (t Token) Len() int {
@@ -45,7 +37,7 @@ func (t Token) Len() int {
 }
 
 func (t Token) IsLineEnd() bool {
-	return t.IsEmpty() || (t.Type == SEPARATOR && (t.Value == "\n" || t.Value=="\r"))
+	return t.IsEmpty() || (t.Type == SEPARATOR && (t.Value == "\n" || t.Value == "\r"))
 }
 
 func NewLexer(filename string) *Lexer {
@@ -401,7 +393,7 @@ func (l *Lexer) AddCursor(cursor int) {
 }
 
 func (token Token) IsEmpty() bool {
-	return token.Type == 0
+	return token.Type == NONE
 }
 
 func isDigit(str string) bool {
