@@ -417,7 +417,10 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 		MultiNames:    names,
 	}
 	if !vb.Check(p) {
-		return
+		// 跨包被调函数在解析期尚未合并进当前树，右侧调用无法绑定，
+		// 多返回值类型自然也算不出来。节点不能丢：标记未解析，等
+		// rootNode.Check() 在包合并后重试（否则后续引用只剩一个空壳）。
+		vb.Unresolved = true
 	}
 	p.AddChild(&Node{Value: vb})
 }

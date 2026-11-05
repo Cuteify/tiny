@@ -304,8 +304,22 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 							}
 						}
 					} else {
-						if v.Name.Eq(name) && (typ&FindTypeVar) != 0 {
-							res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeVar})
+						// 多返回值解构 `a, b := f()` 只生成一个 owner VarBlock，
+						// 除首个名字外的变量也要命中同一个 owner。
+						if (v.Name.Eq(name) || v.multiNameHit(name)) && (typ&FindTypeVar) != 0 {
+							multiIndex := 0
+							if len(v.MultiNames) > 1 {
+								for i, mn := range v.MultiNames {
+									if mn.First() == name.First() {
+										multiIndex = i
+										break
+									}
+								}
+							}
+							res = append(res, FindResult{
+								Node: child, Value: v, Path: []any{v},
+								Type: FindTypeVar, MultiIndex: multiIndex,
+							})
 						}
 					}
 				}

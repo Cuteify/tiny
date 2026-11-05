@@ -84,19 +84,27 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 				}
 				return nil
 			}
-			subType := p.parseTypeAnnotation()
-			if subType != nil {
-				fullName := nameStr + "." + subType.Type()
-				results := p.Find(NewName(fullName), FindTypeType)
-				if len(results) > 0 {
-					if tb, ok := results[0].Value.(*TypeBlock); ok {
-						return tb.Type()
-					}
-					if t, ok := results[0].Value.(typeSys.Type); ok {
-						return t
-					}
+			// 包限定类型 `flate.Reader`：点号后面是普通名称，不是独立的
+			// 类型注解。保留分段形式交给 Find，才能通过包别名解析。
+			nameParts := []string{nameStr}
+			for next.Type == lexer.SEPARATOR && next.Value == "." {
+				part := p.Lexer.Next()
+				if part.Type != lexer.NAME {
+					p.Error.MissError("Syntax Error", part.Cursor, "need type name after '.'")
+					return nil
 				}
-				return nil
+				nameParts = append(nameParts, part.Value)
+				next = p.Lexer.Next()
+			}
+			p.Lexer.SetCursor(next.Cursor)
+			results := p.Find(NewName(nameParts...), FindTypeType)
+			if len(results) > 0 {
+				if tb, ok := results[0].Value.(*TypeBlock); ok {
+					return tb.Type()
+				}
+				if t, ok := results[0].Value.(typeSys.Type); ok {
+					return t
+				}
 			}
 			return nil
 		}
@@ -398,6 +406,30 @@ func (v *VarBlock) multiNameHit(name Name) bool {
 	return false
 }
 
+// refreshTypeFromDefine 用已绑定的定义块补全引用处的类型。
+// 多返回值解构还要按名字取回自己的槽位类型。
+func (v *VarBlock) refreshTypeFromDefine() bool {
+	vb, ok := v.Define.Value.(*VarBlock)
+	if !ok || vb.Type == nil {
+		return false
+	}
+	v.Type = vb.Type
+	v.Offset = vb.Offset
+	v.IsGlobal = vb.IsGlobal
+	if len(vb.MultiNames) > 1 {
+		for i, mn := range vb.MultiNames {
+			if mn.First() == v.Name.First() {
+				v.MultiIndex = i
+				if i < len(vb.MultiTypes) && vb.MultiTypes[i] != nil {
+					v.Type = vb.MultiTypes[i]
+				}
+				break
+			}
+		}
+	}
+	return true
+}
+
 // ParseDefine 解析变量引用，查找变量定义的位置
 // 这是变量解析的核心函数，会沿着作用域链向上查找
 func (v *VarBlock) ParseDefine(p *Parser) bool {
@@ -410,8 +442,20 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 
 	v.Used = true
 
-	// 使用 Find 查找变量定义
-	if !v.IsDefine && v.Define.Node == nil {
+	// 已有定义但类型还是空：解析期跨包/跨文件时只绑定了 owner，
+	// 包合并后重试时 p.ThisBlock 往往已回到根块，按名字再查找不到
+	// 局部变量。直接沿已绑定的 Define 刷新类型与多返回值槽位。
+	if !v.IsDefine && v.Type == nil && v.Define.Node != nil {
+		if v.refreshTypeFromDefine() {
+			p.ThisBlock = oldThisBlock
+			return true
+		}
+	}
+
+	// 使用 Find 查找变量定义。
+	// Type 仍为空说明上一轮只找到了 owner、还没拿到具体槽位类型
+	// （跨包多返回值声明在包合并前就是这种状态），必须重查一次。
+	if !v.IsDefine && (v.Define.Node == nil || v.Type == nil) {
 		results := p.Find(v.Name, FindTypeVar|FindTypeItem|FindTypeSelf|FindTypeField|FindTypeArg)
 		// 兜底：跨文件/跨包全局变量（根包合并树中查找）
 		if len(results) == 0 && v.Define.Node == nil {
@@ -565,7 +609,7 @@ func (v *VarBlock) Check(p *Parser) bool {
 		}
 	} else {
 		// 使用分支：x = 5（使用已定义的变量）
-		if v.Define.Value == nil {
+		if v.Define.Value == nil || v.Type == nil {
 			v.ParseDefine(p)
 		}
 		if v.Define.Value == nil {
