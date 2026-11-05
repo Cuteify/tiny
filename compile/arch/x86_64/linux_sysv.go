@@ -343,11 +343,9 @@ normalCall:
 		}
 		need := arch.ArgSlots(sysvArgSlotType(arg))
 		if argRegStart[i]+need > len(sysvArgRegs) {
-			if arch.IsListLikeType(arg.Type) {
-				code += a.pushContainer(arg.Value, "参数"+strconv.Itoa(i))
-			} else {
-				code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
-			}
+			// 统一走表达式编译器：容器实参可能是字符串拼接、切片、调用等
+			// 任意三槽表达式，pushContainer 只覆盖常量/变量/调用三种形状。
+			code += a.Exp(arg.Value, "push", "参数"+strconv.Itoa(i))
 		}
 	}
 
@@ -377,8 +375,6 @@ normalCall:
 		// 求值每个参数，直接写入 buffer 槽位
 		cursor = argRegIdx
 		bufIdx := 0
-		ps := a.ctx.PointerSize
-		ln := a.ctx.Arch.LengthName(ps)
 		for i := 0; i < len(call.Args); i++ {
 			arg := call.Args[i]
 			if arg == nil {
@@ -388,42 +384,16 @@ normalCall:
 			if cursor+slots <= len(sysvArgRegs) {
 				bufOff := bufIdx * 8
 				if arch.IsListLikeType(arg.Type) {
-					// 容器直接写 buffer：ptr→[bufOff], len→[bufOff+8], cap→[bufOff+16]
-					exp := arg.Value
-					if exp == nil {
+					// 容器直接写 buffer：ptr→[bufOff], len→[bufOff+8], cap→[bufOff+16]。
+					// 统一走表达式编译器，支持字符串拼接/切片/调用等任意
+					// 三槽表达式；result 用不带宽度前缀的 [rsp+off]，
+					// 由 emit3/copySlots 自行补 QWORD。
+					if arg.Value == nil {
 						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff) + "], 0")
 						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+8) + "], 0")
 						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+16) + "], 0")
-					} else if exp.Call != nil {
-						// 嵌套调用：先 call（结果在 RetSlot），再从 RetSlot 写到 buffer
-						code += a.Call(exp.Call)
-						code += utils.Format("mov RAX, " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot) + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff) + "], RAX")
-						code += utils.Format("mov RAX, " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+ps) + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff+ps) + "], RAX")
-						code += utils.Format("mov RAX, " + ln + " [rbp" + strconv.Itoa(a.ctx.RetSlot+2*ps) + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff+2*ps) + "], RAX")
-					} else if exp.IsConst() {
-						label := "0"
-						if exp.StringVal != "" {
-							label = a.stringLabel(exp.StringVal)
-						}
-						slen := len(exp.StringVal)
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff) + "], " + label + "; ptr")
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+8) + "], " + strconv.Itoa(slen) + "; len")
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+16) + "], " + strconv.Itoa(slen) + "; cap")
-					} else if exp.Var != nil {
-						src := stripOuterBrackets(GenVarAddr(a.ctx, exp.Var))
-						code += utils.Format("mov RAX, " + ln + " [" + src + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff) + "], RAX")
-						code += utils.Format("mov RAX, " + ln + " [" + src + "+" + strconv.Itoa(ps) + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff+ps) + "], RAX")
-						code += utils.Format("mov RAX, " + ln + " [" + src + "+" + strconv.Itoa(2*ps) + "]")
-						code += utils.Format("mov " + ln + " [rsp+" + strconv.Itoa(bufOff+2*ps) + "], RAX")
 					} else {
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff) + "], 0")
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+8) + "], 0")
-						code += utils.Format("mov QWORD [rsp+" + strconv.Itoa(bufOff+16) + "], 0")
+						code += a.Exp(arg.Value, "[rsp+"+strconv.Itoa(bufOff)+"]", "参数"+strconv.Itoa(i))
 					}
 					bufIdx += slots
 				} else {
