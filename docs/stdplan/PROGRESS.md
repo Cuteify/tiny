@@ -22,6 +22,57 @@
 - **下一步**：Batch 1（P0 源码语义）——`strings.eq/ne`、`mime`、`html`、`os.errnoOf`、实参内 `//`、
   10 个测试补显式 import、`sort/test` 陈旧 API、`bytes`/`compress/*` 指针形参。
 
+## 2026-11-05（Batch 1 收口 ✅ · P0 源码语义 + 非语言红项）
+
+- **解析器**：`parser/func.go ParseArgs` 修复嵌套括号死循环——`(` 与嵌套 `)` 均推进 token，
+  外层 `)` 在 `bracketCount == 0` 时结束；`gc_asm_diff.sh current b1` 双 arch
+  SAME=12 DIFF=0 BOTH_FAIL=4 ONE_FAIL=0，parser 改动零回归。
+- **P0 静默错误**：
+  - `strings.eq/ne`（x64/x86）改为 `strings.compare` 内容比较；`strings/test` 增 builder
+    异址同值用例（`made == "abc"`），双 arch rc=42。
+  - `mime` 三处长度循环改为循环内重算指针（`typeByExtension` 两处 + `Extensions` 一处，
+    同时修正 `_p20` 复用旧下标）；rc=42。
+  - `html.unescape` 重写：`byteAtHtml`/`putByteHtml` 逐字节读写下标 + `handled` 标志，
+    清掉跨分支作用域 stale 指针；rc=42。
+  - `os.errnoOf` 形参 `ret`→`code`，避免遮蔽关键字。
+  - 调用实参内 `//` 注释 40 处移到右括号后（gzip/lzw/zlib/ascii85/flag/image/png/os/
+    signal/path/tabwriter）。
+- **非语言红项**：
+  - 10 个测试补显式 `import "std:strings"`：console、container/heap、container/list、
+    log、sort、unicode、hash/crc32、math、math/bits、unicode/utf8。
+  - `pkg/sort/test` 按当前 API 重写（quickSortInts/timsortInts/quickSortStrings/
+    insertionSortStrings）；`pkg/flag/test` 补 `import "std:syscall"`。
+  - `bytes`、`compress/{bzip2,flate,gzip,lzw,zlib}`、`text/tabwriter` 内部
+    `*Reader`/`*Writer`/`*Buffer` 形参改 `ptr`，避开类型化指针形参缺陷。
+  - `os/signal` handler 位读取改 `uint`、`once` 改 `*_p22 != 0`。
+- **getcwd 语义**：Linux 成功返回写入字节数而非 buf 指针（x64/i386 C 探针均 29）；
+  `syscall.getcwd` x64→`i64`、x86→`i32`，`os.getcwd`/`path.abs` 按返回长度构造字符串。
+- **path**：`byte`→`u8`；`clean` 重写为真正的 `.`/`..` 段处理
+  （`_cleanPush`/`_cleanPop`/`_cleanTopDotDot`，含绝对路径根与末尾斜杠）；
+  `rel` 的 `_p66/_p67` 移出分支，`match` 的 `_p93` 前移，`_p94/_p101` 循环内重算。
+  `path.split` 多返回值测试暂移除（`a, b := f()` 编译器仍坏，归 Batch 2）。
+- **flag**：全局 `flagSet` 值改为 `memory.malloc` + 指针，`Flag` 改堆链表；
+  `defineInt/defineBool` 修正为调用 `defineString`；`arg` 用 `sizeof[ptr]()` 步长；
+  `lookup` 用 `strings.eq`；规避全局结构体字段寻址错误。
+
+**验证（BIN=/tmp/opencode/bin/b1）**
+
+- x64 矩阵 22 项：绿 16（`bytes/console/container/heap/container/list/flag/html/io/log/
+  mime/os/path/sort/strings/unicode/uuid=42`，`slices=230`）；`time=2`；编译失败 5
+  （`compress/flate`、`hash/crc32`、`math/bits`、`math`、`unicode/utf8`，均 Batch 2 语言面）。
+  基线 `io=4`/`mime=124`/6 个 NASM 缺陷⑪红面全部转绿。
+- x86 矩阵 22 项：绿 5（`bytes/os/strings/unicode=42`、`slices=230`）；`io=8`（基线 12）、
+  `time=1`；其余 15 项为既有 x86 后端红面（NASM/NULL panic/nil-Type），无绿转红。
+- x64 源码探针 58 包：39 OK / 19 FAIL（基线 31/27）。19 FAIL 全部转入 Batch 2：
+  `archive/tar`（u8 `<`）、`archive/zip`/`compress/{flate,gzip,lzw,zlib}`/
+  `hash/{adler32,crc32,crc64,maphash}`/`math`（十六进制/科学计数法/字符字面量）、
+  `image`/`image/{color,gif,jpeg,png}`（复合字面量表达式）、`math/big`（类型注解）、
+  `math/bits`（泛型 T 算术）、`unicode/utf8`（`[]uint32` 注解）。
+- GC 语料：成功=106 失败=9；对象=160 作用域=111 就地=6 字段=1 转移=30 RC=12；
+  泄漏=0 提前释放=0 HolderBad=0，基线通过。
+- 汇编对拍：SAME=12 DIFF=0 BOTH_FAIL=4 ONE_FAIL=0（x86 4 个 BOTH_FAIL 为预存编译失败）。
+- 编译测试均在临时目录执行，工作区无 `gc_summary.json`/`_main.asm` 运行产物。
+
 ## 2026-10-29（Wave L 实施完成）
 
 - **语言设施全部落地并验证**（改动保留工作区，随 C1–C8 一起挂起提交）：

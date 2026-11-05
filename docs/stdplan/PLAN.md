@@ -374,7 +374,7 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 **支线（不入波次，插空）**：`||`/`&&` 链缺陷（recursion 53→51，参数 vs 字面量判别探针×4）、
 139 簇其余（rcTracking/stringsUtils/sliceTest 栈耗尽定性）、structMethod=45、console.println 输出链（R1）。
 
-### 4.8 外围 stdlib 分批（2026-11-05 基线；Batch 0 ✅）
+### 4.8 外围 stdlib 分批（2026-11-05 基线；Batch 0–1 ✅）
 
 > 前置：核心 Wave M/S/St/Mp/T+F/I 全部收口（§4.1–§4.7），GC 迁移收口于 `1bdfe29`。
 > 事实 SSOT 仍是 `docs/STDLIB_STATUS.md`；本节只定义实施顺序、验收与回滚，不重复其缺口清单。
@@ -389,13 +389,28 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
   （其中多数是 `cdecl.go:120` nil-Type panic）。
 - x64 源码探针 58 包：31 OK / 27 FAIL，与 `STDLIB_STATUS.md` §1.2 逐项一致。
 - 当前数字被三类非语言红项压低：缺陷⑪（10 个测试缺显式 `import "std:strings"`）、P0 源码 bug
-  （`strings.eq`/`mime`/`html`）、调用实参内 `//` 注释。Batch 1 先清这些。
+  （`strings.eq`/`mime`/`html`）、调用实参内 `//` 注释。Batch 1 已全部清除，见下。
+
+**Batch 1 收口（2026-11-05 ✅）**
+
+- 解析器：`ParseArgs` 嵌套括号死循环修复（`(`/嵌套 `)` 推进 token，外层 `)` 结束）；
+  双 arch 汇编对拍 SAME=12 DIFF=0 BOTH_FAIL=4。
+- P0：`strings.eq/ne` 内容比较、`mime` 三处循环指针重算、`html.unescape` 重写、
+  `os.errnoOf` 形参改名、40 处实参内 `//` 移位；`getcwd` 按 Linux 返回字节数语义修正
+  （x64 `i64` / x86 `i32`）；`path.clean` 支持 `.`/`..`；`flag` 指针化重写。
+- 非语言红项：10 个测试补显式 `import "std:strings"`、`sort/test` 重写、`bytes`/
+  `compress/*`/`tabwriter` 的 `*T` 形参改 `ptr`、`os/signal` 位读取修正。
+- 验证：x64 矩阵 16 绿 + `time=2`（`io/mime/html/flag/os/path/bytes` 等全转绿），
+  x86 矩阵 5 绿 + `io=8`/`time=1`；x64 源码探针 **39 OK / 19 FAIL**（基线 31/27）；
+  GC 语料基线（对象=160 作用域=111 就地=6 字段=1 转移=30 RC=12，泄漏/提前释放/0）；
+  汇编对拍零 DIFF。剩余 19 FAIL 全部属 Batch 2 语言面。
+- 新增 Batch 2 项：多返回值声明 `a, b := f()` 仍坏（`path.split` 测试暂移除）。
 
 | 批次 | 范围 | 主要动作 | 验收 / 回滚 |
 |---|---|---|---|
 | **0 基线** ✅ | 脚本 + 文档 | 固化本节与 PROGRESS；`scripts/stdlib_matrix.sh`（测试目录复制到临时目录再编译）、`scripts/stdlib_sources.sh`；`.gitignore` 增 `pkg/**/test/gc_*` | 两脚本复跑与本节基线一致、工作区无运行产物；文档/脚本独立 commit，`git revert` |
-| **1 P0 源码语义** | 静默错误 + 非语言红项 | `strings.eq/ne` 改内容比较（x64/x86）并补构造字符串用例；`mime` 两处循环指针重算；重写 `html.unescape`；`os.errnoOf` 形参改名；调用实参内 `//` 移到右括号后（`flag`/`path`/`compress/*`/`encoding/ascii85`/`os/signal`/`text/tabwriter`/`image*`）；10 个测试补 `import "std:strings"`；重写 `sort/test` 陈旧 API；`bytes`/`compress/*` 内部 `*T` 形参改 `ptr` 或 `unsafe.cast[ptr](r)` | 对应单测 + 22×2 矩阵 + 58 x64 探针；目标 `io=42`、`mime=42`、`html` 编译不再 panic、缺陷⑪ 面清零；按包分 commit，逐包 revert |
-| **2 P1 语言/源码解锁** | 27 个源码探针 FAIL | 先探针定性，源码可改写优先：十六进制/科学计数法/字符字面量、`unicode/utf8` 多返回值签名、`math/bits` 泛型算术、`image/color` 复合字面量、`math/big` 类型注解；确需语言面再动 lexer/parser，最小 diff | 27 FAIL 逐包下降；每项能力 ≥1 最小 repro + ≥1 受影响包转 OK；GC 语料基线不变；编译器改动单独 commit |
+| **1 P0 源码语义** ✅ | 静默错误 + 非语言红项 | `strings.eq/ne` 改内容比较（x64/x86）并补构造字符串用例；`mime` 三处循环指针重算；重写 `html.unescape`；`os.errnoOf` 形参改名；调用实参内 `//` 移到右括号后（`flag`/`path`/`compress/*`/`encoding/ascii85`/`os/signal`/`text/tabwriter`/`image*`）；10 个测试补 `import "std:strings"`；重写 `sort/test` 陈旧 API；`bytes`/`compress/*` 内部 `*T` 形参改 `ptr` 或 `unsafe.cast[ptr](r)` | ✅ 2026-11-05：x64 16 绿、x86 5 绿、探针 39/19、GC/汇编零回归；按包分 commit，逐包 revert |
+| **2 P1 语言/源码解锁** | Batch 1 后剩余 19 个源码探针 FAIL | 先探针定性，源码可改写优先：十六进制/科学计数法/字符字面量、多返回值签名与声明（`a, b := f()`）、`math/bits` 泛型算术、`image*` 复合字面量、`math/big` 类型注解、`unicode/utf8` 的 `[]uint32` 注解；确需语言面再动 lexer/parser，最小 diff | 19 FAIL 逐包下降；每项能力 ≥1 最小 repro + ≥1 受影响包转 OK；GC 语料基线不变；编译器改动单独 commit |
 | **3 存根与功能** | P4 | `encoding/asn1` unmarshal、`image/png`、`compress/bzip2`、`image/gif|jpeg`、`math/big`、`runtime/debug`、`hash` 接口壳 | 每包「编译 + 至少一个行为断言」；未实现项必须显式文档化，禁止误导性 API；按包 revert |
 | **4 x86 后端** | P3 | `compile/arch/x86/cdecl.go:120` nil-Type panic；x86 NASM `operation size not specified`；`io` x86 剩余真实失败 | x86 探针 FAIL 降到与 x64 同量级；x86 矩阵红项逐包归因；后端 commit 独立 + GC/汇编回归 |
 | **5 覆盖与收口** | P2 + 文档 | `maps`/`memory`/`syscall`/`thread` 包级测试；22×2 三连；58×2 探针表；更新 `STDLIB_STATUS.md` 与本文 | 三连稳定、未修项全部有台账；文档 commit |
