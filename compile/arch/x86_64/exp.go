@@ -18,6 +18,15 @@ const (
 	NotExp  = 5
 )
 
+// numLiteral 输出常量操作数的 NASM 字面量。
+// f64 当前没有 XMM 代码生成，统一以 IEEE-754 位模式存放（比较语义对正数保序）。
+func numLiteral(exp *parser.Expression) string {
+	if typeSys.CheckKind(exp.Type, "float") {
+		return utils.Float64BitsLiteral(exp.Num)
+	}
+	return strconv.FormatFloat(exp.Num, 'f', -1, 64)
+}
+
 // lo8Exp 返回寄存器名的低8位寄存器名（setXX/movzx 需要）
 func lo8Exp(name string) string {
 	switch strings.ToUpper(name) {
@@ -656,7 +665,9 @@ func (c *ExpCom) CompileBoolExpr(exp *parser.Expression, result string) (code st
 
 func (c *ExpCom) CompileExprVal(exp *parser.Expression) (code, result string) {
 	if exp.IsConst() {
-		if typeSys.CheckKind(exp.Type, "int", "float", "uint") {
+		if typeSys.CheckKind(exp.Type, "float") {
+			result = utils.Float64BitsLiteral(exp.Num)
+		} else if typeSys.CheckKind(exp.Type, "int", "uint") {
 			result = strconv.FormatFloat(exp.Num, 'f', -1, 64)
 		} else if typeSys.CheckKind(exp.Type, "bool") {
 			if exp.Bool {
@@ -768,8 +779,8 @@ func (c *ExpCom) compileListLitFields(exp *parser.Expression, ptrAddr, lenAddr, 
 
 	dataSection := dataLabel + ":\n"
 	for _, elem := range exp.ListElems {
-		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
-			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint", "float") {
+			val := numLiteral(elem)
 			switch elemSize {
 			case 1:
 				dataSection += "db " + val + "\n"
@@ -979,8 +990,8 @@ func (c *ExpCom) compileListLiteral(exp *parser.Expression) (code string, reg *r
 
 	dataSection := dataLabel + ":\n"
 	for _, elem := range exp.ListElems {
-		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
-			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint", "float") {
+			val := numLiteral(elem)
 			switch elemSize {
 			case 1:
 				dataSection += "db " + val + "\n"
@@ -1036,8 +1047,8 @@ func (c *ExpCom) compileArrayLiteral(exp *parser.Expression) (code string, reg *
 
 	for i, elem := range exp.ListElems {
 		offset := i * elemSize
-		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
-			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint", "float") {
+			val := numLiteral(elem)
 			switch elemSize {
 			case 1:
 				code += utils.Format("mov BYTE [" + reg.Name + "+" + strconv.Itoa(offset) + "], " + val)
@@ -1072,8 +1083,8 @@ func (c *ExpCom) compileArrayToAddr(exp *parser.Expression, baseOffset int, desc
 
 	for i, elem := range exp.ListElems {
 		offset := baseOffset + i*elemSize
-		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint") {
-			val := strconv.FormatFloat(elem.Num, 'f', -1, 64)
+		if elem.IsConst() && typeSys.CheckKind(elem.Type, "int", "uint", "float") {
+			val := numLiteral(elem)
 			switch elemSize {
 			case 1:
 				code += utils.Format("mov BYTE [ebp+" + strconv.Itoa(offset) + "], " + val + "; " + desc)

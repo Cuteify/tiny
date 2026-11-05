@@ -320,6 +320,12 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 				return ""
 			}
 		}
+		// 泛型原体只作为单态化模板存在，不应直接发射：参数/局部变量仍是
+		// TypeParam.Size()==-1，会生成没有宽度前缀的非法内存操作数。
+		// 真正被调用的泛型会由 MonomorphizeIfNeeded 生成 TypeParams=nil 的特化节点。
+		if len(v.TypeParams) > 0 {
+			return ""
+		}
 		if !v.Useful && v.Name.String() != "main" {
 			return ""
 		}
@@ -359,6 +365,9 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 
 func (c *Compiler) compileFuncBlock(n *parser.Node) string {
 	funcBlock := n.Value.(*parser.FuncBlock)
+	if len(funcBlock.TypeParams) > 0 {
+		return ""
+	}
 	if !funcBlock.Useful && funcBlock.Name.String() != "main" {
 		return ""
 	}

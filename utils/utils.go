@@ -2,10 +2,18 @@ package utils
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"strconv"
 	"strings"
 )
+
+// Float64BitsLiteral 把 f64 常量转成 NASM 可接受的 64 位位模式字面量。
+// 当前后端没有 XMM 寄存器，f64 以 IEEE-754 位模式存放在通用寄存器/内存中，
+// 直接输出十进制浮点（如 mov RAX, 3.14）会被 NASM 拒绝。
+func Float64BitsLiteral(f float64) string {
+	return "0x" + strconv.FormatUint(math.Float64bits(f), 16)
+}
 
 // Count 用于全局控制 Format 缩进级别 (与之前 compile 包中的 count 一致)
 var Count int = 0

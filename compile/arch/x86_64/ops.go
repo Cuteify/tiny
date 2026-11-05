@@ -490,21 +490,32 @@ func (a *x86_64Ops) MultiVarDecl(varBlock *parser.VarBlock) string {
 		return ""
 	}
 
-	// 编译函数调用，结果在 RAX（第一个返回值）和 RDX（第二个返回值）
+	var fn *parser.FuncBlock
+	if varBlock.Value.Call != nil {
+		fn = varBlock.Value.Call.Func
+	}
+
+	// 含大值的多返回值：整套结果直接写进多返回值变量的连续槽位。
+	// collectVarOffsets 已按返回顺序把这些槽位排成 [MultiOffsets[0], +Σslots)，
+	// 临时把 RetSlot 指向它，arch.Call 就会把 R10 设到同一处。
+	if arch.FuncReturnsLarge(fn) && len(varBlock.MultiOffsets) > 0 {
+		oldRetSlot := a.ctx.RetSlot
+		a.ctx.RetSlot = varBlock.MultiOffsets[0]
+		code := a.exp(varBlock.Value, "", "multi-return call")
+		a.ctx.RetSlot = oldRetSlot
+		return code
+	}
+
+	// 标量多返回值：结果在 RAX（第一个）和 RDX（第二个）
 	code := a.exp(varBlock.Value, "", "multi-return call")
-
+	ln := a.LengthName(a.PointerSize())
 	for i, name := range varBlock.MultiNames {
-		offset := varBlock.MultiOffsets[i]
-		addr := a.FormatAddr(offset)
-		ln := a.LengthName(a.PointerSize())
-
+		addr := a.FormatAddr(varBlock.MultiOffsets[i])
 		switch i {
 		case 0:
-			// 第一个返回值在 RAX
-			code += utils.Format("mov " + addr + ", " + ln + " RAX; multi-return: " + name.First())
+			code += utils.Format("mov " + ln + " " + addr + ", RAX; multi-return: " + name.First())
 		case 1:
-			// 第二个返回值在 RDX
-			code += utils.Format("mov " + addr + ", " + ln + " RDX; multi-return: " + name.First())
+			code += utils.Format("mov " + ln + " " + addr + ", RDX; multi-return: " + name.First())
 		default:
 			code += utils.Format("; TODO: third+ return value not yet supported")
 		}
@@ -675,12 +686,32 @@ func (a *x86_64Ops) returnValue(ret *parser.ReturnBlock) (code string) {
 		return ""
 	}
 
-	// 多返回值：将值放入 RAX 和 RDX
-	if len(ret.Value) == 2 {
-		// 第一个返回值放入 RAX
-		code += a.exp(ret.Value[0], "RAX", "return值存入RAX")
-		// 第二个返回值放入 RDX
-		code += a.exp(ret.Value[1], "RDX", "return值存入RDX")
+	// 多返回值：
+	// - 全部是标量时放 RAX/RDX（沿用旧 ABI）；
+	// - 含大值（如 (string, string)）时整套按槽位顺序写入隐藏返回槽。
+	if len(ret.Value) > 1 {
+		if arch.FuncReturnsLarge(a.ctx.CurrentFunc) {
+			cum := 0
+			for _, v := range ret.Value {
+				slots := arch.ArgSlots(v.Type)
+				slot := "[rbp" + strconv.Itoa(a.ctx.RetSlot+cum) + "]"
+				code += exppkg.New(a.ctx).Compile(v, "QWORD"+slot, "return值存入返回槽")
+				cum += slots * 8
+			}
+			code += utils.Format("mov R10, QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+cum) + "]; 恢复返回槽地址")
+			for j := 0; j < cum/8; j++ {
+				off := j * 8
+				code += utils.Format("mov RAX, QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+off) + "]")
+				code += utils.Format("mov QWORD [R10+" + strconv.Itoa(off) + "], RAX")
+			}
+			return code
+		}
+		if len(ret.Value) == 2 {
+			// 第一个返回值放入 RAX
+			code += a.exp(ret.Value[0], "RAX", "return值存入RAX")
+			// 第二个返回值放入 RDX
+			code += a.exp(ret.Value[1], "RDX", "return值存入RDX")
+		}
 		return code
 	}
 

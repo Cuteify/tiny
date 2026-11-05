@@ -105,7 +105,7 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	// 预留大值返回槽：容器 24B + R10 保存 8B；结构体按槽数（Size/8）计算
 	retBytes := 24
 	if arch.FuncReturnsLarge(fn) {
-		retBytes = arch.ArgSlots(fn.Return[0]) * 8
+		retBytes = arch.FuncReturnBytes(fn)
 	}
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 8
 	a.ctx.StackSize += retBytes + 8

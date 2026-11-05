@@ -54,23 +54,42 @@ func FuncReturnsContainer(fn *parser.FuncBlock) bool {
 	return fn != nil && len(fn.Return) > 0 && IsListLikeType(fn.Return[0])
 }
 
-// FuncReturnsLarge 判断函数是否返回大值（容器 3 槽 / 结构体多槽），需返回槽机制
+// FuncReturnsLarge 判断函数是否返回大值（容器 3 槽 / 结构体多槽），需返回槽机制。
+// 多返回值里只要有一个槽位放不进一个寄存器，整套返回值都改走返回槽：
+// 这样 `(string, string)` 之类的元组也能按槽位顺序整体回传。
 func FuncReturnsLarge(fn *parser.FuncBlock) bool {
 	if fn == nil || len(fn.Return) == 0 {
 		return false
 	}
-	t := fn.Return[0]
-	if t == nil {
-		return false
+	for _, t := range fn.Return {
+		if t == nil {
+			continue
+		}
+		if IsListLikeType(t) {
+			return true
+		}
+		// 64 位标量（i64/u64/f64）走寄存器/双寄存器（EDX:EAX），不走返回槽
+		if t.Size() == 8 && (t.Type() == "i64" || t.Type() == "u64" || t.Type() == "f64") {
+			continue
+		}
+		if t.Size() > typeSys.TargetPointerSize {
+			return true
+		}
 	}
-	if IsListLikeType(t) {
-		return true
+	return false
+}
+
+// FuncReturnBytes 计算函数返回值在返回槽中占用的总字节数。
+// 单返回值与旧逻辑（ArgSlots(Return[0])*8）一致；多返回值按顺序累加。
+func FuncReturnBytes(fn *parser.FuncBlock) int {
+	if fn == nil {
+		return 0
 	}
-	// 64 位标量（i64/u64/f64）走寄存器/双寄存器（EDX:EAX），不走返回槽
-	if t.Size() == 8 && (t.Type() == "i64" || t.Type() == "u64" || t.Type() == "f64") {
-		return false
+	total := 0
+	for _, t := range fn.Return {
+		total += ArgSlots(t) * 8
 	}
-	return t.Size() > typeSys.TargetPointerSize
+	return total
 }
 
 // CalcArgsSize 计算函数参数大小
@@ -154,15 +173,15 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 		case *parser.VarBlock:
 			if v.IsDefine {
 				if len(v.MultiNames) > 0 {
-					// 多返回值解构：为每个变量分配独立的栈空间
+					// 多返回值解构：为每个变量分配独立的栈空间。
+					// 按 ABI 槽位（ArgSlots*8）而不是 Type.Size() 分配，且从后往前
+					// 落槽，使 MultiOffsets[0] + Σslots 恰好覆盖所有槽位——含大值的
+					// 返回值可以直接由被调函数写进这组变量，无需再经 caller RetSlot。
 					v.MultiOffsets = make([]int, len(v.MultiNames))
-					for i := range v.MultiNames {
-						varSize := 8 // 默认按指针大小分配
+					for i := len(v.MultiNames) - 1; i >= 0; i-- {
+						varSize := 8
 						if i < len(v.MultiTypes) && v.MultiTypes[i] != nil {
-							varSize = v.MultiTypes[i].Size()
-						}
-						if varSize == 0 {
-							varSize = 8
+							varSize = ArgSlots(v.MultiTypes[i]) * 8
 						}
 						*offset -= varSize
 						v.MultiOffsets[i] = *offset
