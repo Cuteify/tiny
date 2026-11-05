@@ -24,9 +24,9 @@ fn encode(data string) string {
     var buf: ptr = memory.malloc(totalChars + 5 + 1)
     // 写入起始标记
     var _p1: *u8 = buf
-    *_p1 = unsafe.cast[u8](60    // '<')
+    *_p1 = unsafe.cast[u8](60)  // '<'
     var _p2: *u8 = buf + 1
-    *_p2 = unsafe.cast[u8](126 // '~')
+    *_p2 = unsafe.cast[u8](126)  // '~'
     var outPos: uint = 2
     var i: uint = 0
     for ; i < dataLen; {
@@ -55,7 +55,7 @@ fn encode(data string) string {
         // 特殊情况：全零 -> 'u'
         if group == 0 && bytesInGroup == 4 {
             var _p4: *u8 = buf + outPos
-            *_p4 = unsafe.cast[u8](117 // 'u')
+            *_p4 = unsafe.cast[u8](117)  // 'u'
             outPos = outPos + 1
         } else {
             // 转换为 5 个 base85 数字
@@ -88,9 +88,9 @@ fn encode(data string) string {
     }
     // 写入结束标记
     var _p8: *u8 = buf + outPos
-    *_p8 = unsafe.cast[u8](126 // '~')
+    *_p8 = unsafe.cast[u8](126)  // '~'
     var _p9: *u8 = buf + outPos + 1
-    *_p9 = unsafe.cast[u8](62  // '>')
+    *_p9 = unsafe.cast[u8](62)  // '>'
     outPos = outPos + 2
     var _p10: *u8 = buf + outPos
     *_p10 = unsafe.cast[u8](0)

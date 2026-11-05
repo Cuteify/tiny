@@ -16,15 +16,15 @@ fn Encode(img **image.Image) string {
     var headerLen: uint = 0
     // 写入 "RGBA:"
     var _p2: *u8 = headerBuf
-    *_p2 = unsafe.cast[u8](82     // 'R')
+    *_p2 = unsafe.cast[u8](82)  // 'R'
     var _p3: *u8 = headerBuf + 1
-    *_p3 = unsafe.cast[u8](71 // 'G')
+    *_p3 = unsafe.cast[u8](71)  // 'G'
     var _p4: *u8 = headerBuf + 2
-    *_p4 = unsafe.cast[u8](66 // 'B')
+    *_p4 = unsafe.cast[u8](66)  // 'B'
     var _p5: *u8 = headerBuf + 3
-    *_p5 = unsafe.cast[u8](65 // 'A')
+    *_p5 = unsafe.cast[u8](65)  // 'A'
     var _p6: *u8 = headerBuf + 4
-    *_p6 = unsafe.cast[u8](58 // ':')
+    *_p6 = unsafe.cast[u8](58)  // ':'
     headerLen = 5
     // 写入宽度
     var ws: string = strings.toString(w, 10)
@@ -39,7 +39,7 @@ fn Encode(img **image.Image) string {
     }
     headerLen = headerLen + wn
     var _p9: *u8 = headerBuf + headerLen
-    *_p9 = unsafe.cast[u8](58 // ':')
+    *_p9 = unsafe.cast[u8](58)  // ':'
     headerLen = headerLen + 1
     // 写入高度
     var hs: string = strings.toString(h, 10)
@@ -54,7 +54,7 @@ fn Encode(img **image.Image) string {
     }
     headerLen = headerLen + hn
     var _p12: *u8 = headerBuf + headerLen
-    *_p12 = unsafe.cast[u8](58 // ':')
+    *_p12 = unsafe.cast[u8](58)  // ':'
     headerLen = headerLen + 1
     // 总长度 = header + 像素数据
     var pixelBytes: uint = w * h * 4

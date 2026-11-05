@@ -32,22 +32,22 @@ fn newWriter(minWidth: int, tabWidth: int, padding: int) *Writer {
     var _p4: *ptr = w + 16
     *_p4 = unsafe.cast[ptr](bufPtr)
     var _p5: *uint = w + 24
-    *_p5 = unsafe.cast[uint](0     // bufLen)
+    *_p5 = unsafe.cast[uint](0)  // bufLen
     var _p6: *uint = w + 28
-    *_p6 = unsafe.cast[uint](4096  // bufCap)
+    *_p6 = unsafe.cast[uint](4096)  // bufCap
     var _p7: *uint = w + 32
-    *_p7 = unsafe.cast[uint](0     // colStart)
+    *_p7 = unsafe.cast[uint](0)  // colStart
     var _p8: *uint = w + 36
-    *_p8 = unsafe.cast[uint](0     // col)
+    *_p8 = unsafe.cast[uint](0)  // col
     var _p9: *uint = w + 40
-    *_p9 = unsafe.cast[uint](0     // lineStart)
+    *_p9 = unsafe.cast[uint](0)  // lineStart
     var result: *Writer
     result = w
     ret result
 }
 
 // write 向写入器追加文本
-fn write(w *Writer, data string) {
+fn write(w ptr, data string) {
     var dataPtr: ptr = strings.toCstring(data)
     var dataLen: uint = strings.len(data)
     var _p10: *ptr = w + 16
@@ -90,7 +90,7 @@ fn write(w *Writer, data string) {
 }
 
 // flush 处理缓冲区中的制表符并返回对齐后的文本
-fn flush(w *Writer) string {
+fn flush(w ptr) string {
     var _p20: *ptr = w + 16
     var bufPtr: ptr = *_p20
     var _p21: *uint = w + 24

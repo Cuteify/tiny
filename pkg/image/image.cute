@@ -19,13 +19,13 @@ fn stride(img *Image) int {
 fn NewRGBA(w int, h int) *Image {
     var img: ptr = memory.malloc(24)
     var _p1: *ptr = img
-    *_p1 = unsafe.cast[ptr](w          // width)
+    *_p1 = unsafe.cast[ptr](w)  // width
     var _p2: *ptr = img + 8
-    *_p2 = unsafe.cast[ptr](h      // height)
+    *_p2 = unsafe.cast[ptr](h)  // height
     var pixelSize: uint = w * h * 4
     var pix: ptr = memory.malloc(pixelSize)
     var _p3: *ptr = img + 16
-    *_p3 = unsafe.cast[ptr](pix   // pixels)
+    *_p3 = unsafe.cast[ptr](pix)  // pixels
     var i: uint = 0
     for ; i < pixelSize; {
         var _p4: *u8 = pix + i

@@ -33,13 +33,13 @@ fn NewReader(data string) *Reader {
 }
 
 // Read 从 bzip2 读取器中读取数据（桩实现，始终返回 0）
-fn Read(r *Reader, buf ptr, n int) int {
+fn Read(r ptr, buf ptr, n int) int {
     // bzip2 解压暂未实现
     ret 0
 }
 
 // Err 返回是否发生错误
-fn Err(r *Reader) bool {
+fn Err(r ptr) bool {
     var _p5: *ptr = r + 24
     ret *_p5 != 0
 }

@@ -33,7 +33,7 @@ fn NewReader(data string, litWidth int) *Reader {
     var i: int = 0
     for ; i < dictSize; {
         var _p1: *u8 = table + i * 4 + 2
-        *_p1 = unsafe.cast[u8](0xFF // 标记为空)
+        *_p1 = unsafe.cast[u8](0xFF)  // 标记为空
         i = i + 1
     }
     // layout: [data:8][dataLen:8][pos:8][litWidth:8][prevCode:8][table:8][tableSize:8][buf:8][bufPos:8][bufLen:8]

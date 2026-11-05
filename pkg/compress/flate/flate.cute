@@ -33,7 +33,7 @@ fn NewReader(data string) *Reader {
 
 // Read 从 Reader 中读取解压数据到 buf，最多读 n 字节
 // 返回实际读取的字节数，0 表示 EOF
-fn Read(r *Reader, buf ptr, n int) int {
+fn Read(r ptr, buf ptr, n int) int {
     var _p4: *ptr = r
     var dataPtr: ptr = *_p4
     var _p5: *ptr = r + 8
@@ -135,7 +135,7 @@ fn NewWriter() *Writer {
 }
 
 // growBuffer 扩展缓冲区
-fn growBuffer(w *Writer, needed: uint) {
+fn growBuffer(w ptr, needed: uint) {
     var _p21: *ptr = w + 16
     var curCap: uint = *_p21
     var newCap: uint = curCap * 2
@@ -161,7 +161,7 @@ fn growBuffer(w *Writer, needed: uint) {
 }
 
 // Write 向 Writer 写入数据
-fn Write(w *Writer, data ptr, n int) int {
+fn Write(w ptr, data ptr, n int) int {
     var _p28: *ptr = w + 8
     var curLen: uint = *_p28
     var _p29: *ptr = w + 16
@@ -202,7 +202,7 @@ fn Write(w *Writer, data ptr, n int) int {
 }
 
 // Close 关闭写入器，追加结束块（BFINAL=1）并返回所有压缩数据
-fn Close(w *Writer) string {
+fn Close(w ptr) string {
     var _p39: *ptr = w + 8
     var curLen: uint = *_p39
     var _p40: *ptr = w + 16

@@ -31,7 +31,7 @@ fn newBuffer() *Buffer {
 }
 
 // grow 扩容缓冲区到至少 newCap 容量
-fn grow(b *Buffer, newCap: uint) {
+fn grow(b ptr, newCap: uint) {
     var _p4: *ptr = b + 8
     var oldCap: uint = *_p4
     if newCap <= oldCap {
@@ -64,7 +64,7 @@ fn grow(b *Buffer, newCap: uint) {
 }
 
 // write 向缓冲区追加原始字节数据
-fn write(b *Buffer, data ptr, dataLen: uint) {
+fn write(b ptr, data ptr, dataLen: uint) {
     var _p11: *ptr = b
     var curLen: uint = *_p11
     var _p12: *ptr = b + 8
@@ -89,26 +89,26 @@ fn write(b *Buffer, data ptr, dataLen: uint) {
 }
 
 // writeString 向缓冲区追加字符串内容
-fn writeString(b *Buffer, s string) {
+fn writeString(b ptr, s string) {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     write(b, sPtr, sLen)
 }
 
 // len 返回缓冲区当前数据长度
-fn len(b *Buffer) uint {
+fn len(b ptr) uint {
     var _p17: *ptr = b
     ret *_p17
 }
 
 // reset 重置缓冲区（长度清零，保留容量）
-fn reset(b *Buffer) {
+fn reset(b ptr) {
     var _p18: *ptr = b
     *_p18 = unsafe.cast[ptr](0)
 }
 
 // String 将缓冲区内容转换为字符串
-fn String(b *Buffer) string {
+fn String(b ptr) string {
     var _p19: *ptr = b
     var dataLen: uint = *_p19
     var _p20: *ptr = b + 16
@@ -128,7 +128,7 @@ fn String(b *Buffer) string {
 }
 
 // bytes 返回缓冲区数据的原始指针和长度（不支持列表，直接返回信息）
-fn bytes(b *Buffer) ptr {
+fn bytes(b ptr) ptr {
     var _p24: *ptr = b + 16
     ret *_p24
 }
