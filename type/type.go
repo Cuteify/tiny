@@ -311,27 +311,28 @@ func NewErrorInterface() *ErrorInterface {
 }
 
 func GetSystemType(name string) Type {
-	name = strings.ToLower(name)
+	// 系统类型名区分大小写：用户完全可以定义 `type Int struct`，
+	// 若这里统一转小写，`Int` 会被误判成内建 int。
 	switch name {
 	case "int":
 		return &IntType{RType: RType{TypeName: "int"}}
 	case "uint":
 		return &UintType{RType: RType{TypeName: "uint"}}
-	case "i64":
+	case "i64", "int64":
 		return &Int64Type{RType: RType{TypeName: "i64"}}
-	case "u64":
+	case "u64", "uint64":
 		return &Uint64Type{RType: RType{TypeName: "u64"}}
-	case "i32":
+	case "i32", "int32", "rune":
 		return &Int32Type{RType: RType{TypeName: "i32"}}
-	case "u32":
+	case "u32", "uint32":
 		return &Uint32Type{RType: RType{TypeName: "u32"}}
-	case "i16":
+	case "i16", "int16":
 		return &Int16Type{RType: RType{TypeName: "i16"}}
-	case "u16":
+	case "u16", "uint16":
 		return &Uint16Type{RType: RType{TypeName: "u16"}}
-	case "i8":
+	case "i8", "int8":
 		return &Int8Type{RType: RType{TypeName: "i8"}}
-	case "u8":
+	case "u8", "uint8":
 		return &Uint8Type{RType: RType{TypeName: "u8"}}
 	case "bool":
 		return &BoolType{RType: RType{TypeName: "bool"}}
@@ -472,7 +473,9 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 			return true
 		}
 		// 任意指针 → 系统 ptr：地址语义一致（如 &s 容器地址赋给 ptr 交给 memory.load64 读槽）
-		if beforePtr && afterType == "ptr" && !afterPtr {
+		// 也允许 *T → *ptr：*ptr 在语言里就是"指向指针大小的槽"，与
+		// 系统 ptr 只差一层指针标记，位宽一致。
+		if beforePtr && afterType == "ptr" {
 			return true
 		}
 		// fn → 系统 ptr：函数指针地址语义一致（如 workerFn 赋给 ptr 传给 pthread_create）
@@ -595,5 +598,14 @@ func TypeEqual(t Type, t2 Type) bool {
 }
 
 func IsNum(t Type) bool {
+	if t == nil {
+		return false
+	}
+	// 泛型类型参数（T）在单态化前没有具体 Kind/Size，但语言上只允许
+	// 数值类型参与 T 的算术/比较/位运算；先按数值处理，具体类型由
+	// 单态化替换后重新检查。
+	if _, ok := t.(*TypeParam); ok {
+		return true
+	}
 	return CheckKind(t, "int", "uint", "float")
 }
