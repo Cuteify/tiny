@@ -380,20 +380,23 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
 		}
 
-		if bracketCount <= -1 { // 找到参数结束的)
-			if !argTmp.Name.IsEmpty() {
-				f.Args = append(f.Args, argTmp)
-			}
-			break
-		}
-
-		// 处理括号
+		// 处理参数列表结束与嵌套括号。
+		// '(' 和嵌套 ')' 必须推进 token，否则同一 token 会在循环里原地打转。
 		if token.Value == "(" {
 			bracketCount++
+			token = p.Lexer.Next()
 			continue
 		}
 		if token.Value == ")" {
+			if bracketCount == 0 {
+				// 参数列表结束；token 已由 Next 读入，游标已越过 ')'
+				if !argTmp.Name.IsEmpty() {
+					f.Args = append(f.Args, argTmp)
+				}
+				break
+			}
 			bracketCount--
+			token = p.Lexer.Next()
 			continue
 		}
 
