@@ -374,7 +374,7 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 **支线（不入波次，插空）**：`||`/`&&` 链缺陷（recursion 53→51，参数 vs 字面量判别探针×4）、
 139 簇其余（rcTracking/stringsUtils/sliceTest 栈耗尽定性）、structMethod=45、console.println 输出链（R1）。
 
-### 4.8 外围 stdlib 分批（2026-11-05 基线；Batch 0–1 ✅）
+### 4.8 外围 stdlib 分批（2026-11-05 基线；Batch 0–2 ✅）
 
 > 前置：核心 Wave M/S/St/Mp/T+F/I 全部收口（§4.1–§4.7），GC 迁移收口于 `1bdfe29`。
 > 事实 SSOT 仍是 `docs/STDLIB_STATUS.md`；本节只定义实施顺序、验收与回滚，不重复其缺口清单。
@@ -406,11 +406,29 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
   汇编对拍零 DIFF。剩余 19 FAIL 全部属 Batch 2 语言面。
 - 新增 Batch 2 项：多返回值声明 `a, b := f()` 仍坏（`path.split` 测试暂移除）。
 
+**Batch 2 收口（2026-11-06 ✅）**
+
+- 语言面：lexer 独立数字扫描（`0x/0b/0o`、C 风格零八进制、下划线、科学计数法）；
+  字面量按写法定型 f64、字符字面量转 int 码点；`int64/uint64/rune` 类别名、
+  系统类型名大小写敏感；常量不参与算术宽度提升、浮点折叠保留 f64、f64 除零按
+  IEEE-754 得 ±Inf/NaN；`*T → *ptr`、包限定类型、泛型 TypeParam 数值判断。
+- 多返回值：`a, b := f()` 跨包声明/解构；未绑定节点保留到包合并后重试；
+  `(string, string)` 等大值元组走隐藏返回槽，变量槽按 ABI 槽宽连续分配。
+- 代码生成：f64 常量输出位模式并拆高低 dword；内存目标二元赋值不再提前落左子；
+  未单态化泛型原体不发射。
+- stdlib：`image/color` 复合字面量改构造调用、`math/bits` 改 `sizeof[T]()`、
+  `math.isNaN` 改位模式、`unicode/utf8.decodeRune` 改匿名多返回值、恢复 `path.split` 用例。
+- 验证：x64 矩阵 **22/22 绿**、x64 源码探针 **58/58 OK**；x86 矩阵 8 绿
+  （含 `slices=230`）、`io=8`/`math=10`/`time=1`、`path` NASM_FAIL；
+  x86 源码探针 1/58（与基线一致）；GC 语料基线不变；`go test` 无新增失败。
+- 未收口：完整 f64 算术/XMM、多返回值赋值形式 `a, b = f()`、x86 大值多返回值
+  （归 Batch 4）。
+
 | 批次 | 范围 | 主要动作 | 验收 / 回滚 |
 |---|---|---|---|
 | **0 基线** ✅ | 脚本 + 文档 | 固化本节与 PROGRESS；`scripts/stdlib_matrix.sh`（测试目录复制到临时目录再编译）、`scripts/stdlib_sources.sh`；`.gitignore` 增 `pkg/**/test/gc_*` | 两脚本复跑与本节基线一致、工作区无运行产物；文档/脚本独立 commit，`git revert` |
 | **1 P0 源码语义** ✅ | 静默错误 + 非语言红项 | `strings.eq/ne` 改内容比较（x64/x86）并补构造字符串用例；`mime` 三处循环指针重算；重写 `html.unescape`；`os.errnoOf` 形参改名；调用实参内 `//` 移到右括号后（`flag`/`path`/`compress/*`/`encoding/ascii85`/`os/signal`/`text/tabwriter`/`image*`）；10 个测试补 `import "std:strings"`；重写 `sort/test` 陈旧 API；`bytes`/`compress/*` 内部 `*T` 形参改 `ptr` 或 `unsafe.cast[ptr](r)` | ✅ 2026-11-05：x64 16 绿、x86 5 绿、探针 39/19、GC/汇编零回归；按包分 commit，逐包 revert |
-| **2 P1 语言/源码解锁** | Batch 1 后剩余 19 个源码探针 FAIL | 先探针定性，源码可改写优先：十六进制/科学计数法/字符字面量、多返回值签名与声明（`a, b := f()`）、`math/bits` 泛型算术、`image*` 复合字面量、`math/big` 类型注解、`unicode/utf8` 的 `[]uint32` 注解；确需语言面再动 lexer/parser，最小 diff | 19 FAIL 逐包下降；每项能力 ≥1 最小 repro + ≥1 受影响包转 OK；GC 语料基线不变；编译器改动单独 commit |
+| **2 P1 语言/源码解锁** ✅ | Batch 1 后剩余 19 个源码探针 FAIL | 先探针定性，源码可改写优先：十六进制/科学计数法/字符字面量、多返回值签名与声明（`a, b := f()`）、`math/bits` 泛型算术、`image*` 复合字面量、`math/big` 类型注解、`unicode/utf8` 的 `[]uint32` 注解；确需语言面再动 lexer/parser，最小 diff | ✅ 2026-11-06：x64 矩阵 22/22、源码探针 58/58；x86 8 绿、探针 1/58；GC/汇编零回归。完整 f64 算术、`a, b = f()`、x86 大值返回留待后续 |
 | **3 存根与功能** | P4 | `encoding/asn1` unmarshal、`image/png`、`compress/bzip2`、`image/gif|jpeg`、`math/big`、`runtime/debug`、`hash` 接口壳 | 每包「编译 + 至少一个行为断言」；未实现项必须显式文档化，禁止误导性 API；按包 revert |
 | **4 x86 后端** | P3 | `compile/arch/x86/cdecl.go:120` nil-Type panic；x86 NASM `operation size not specified`；`io` x86 剩余真实失败 | x86 探针 FAIL 降到与 x64 同量级；x86 矩阵红项逐包归因；后端 commit 独立 + GC/汇编回归 |
 | **5 覆盖与收口** | P2 + 文档 | `maps`/`memory`/`syscall`/`thread` 包级测试；22×2 三连；58×2 探针表；更新 `STDLIB_STATUS.md` 与本文 | 三连稳定、未修项全部有台账；文档 commit |

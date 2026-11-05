@@ -1,8 +1,21 @@
 # Cute 标准库现状
 
 > 适用源码：`pkg/`（58 个非测试包、22 个测试目录）。
-> 审计基线：`HEAD=d4aa03a`，审计用 detached worktree
+> 历史审计基线：`HEAD=d4aa03a`，审计用 detached worktree
 > `/tmp/opencode/stdlib-audit`，审计编译器 `/tmp/opencode/stdlib-audit-bin`。
+>
+> **现状更新（2026-11-06，Batch 1–2 后）**：Batch 2 分组提交为 `e0dedb8`
+> （compile）、`cb5372e`（type）、`759f9c2`/`bccf4e8`（parser）、`c4edbf1`（stdlib）。
+> x64 测试矩阵 **22/22 全绿**
+> （`slices=230`，其余 `=42`）；x64 源码探针 **58/58 OK**；x86 矩阵 8 绿
+> （`bytes/math/bits/os/strings/unicode/unicode/utf8` + `slices=230`），
+> `io=8`、`math=10`、`time=1`，`path` 因 x86 大值多返回值未实现而 NASM_FAIL；
+> x86 源码探针 1/58（与基线一致，后端红面归 Batch 4）。
+> 语言面已支持进制/字符字面量、f64 位模式常量、`*T → *ptr`、包限定类型、
+> 多返回值声明 `a, b := f()`；仍未支持完整 f64 算术/XMM、多返回值赋值
+> `a, b = f()`、x86 大值多返回值。本文 §0–§5 保留 `d4aa03a` 的历史审计快照，
+> 其中的 P0/P1 缺口与矩阵数字**不再代表当前状态**；当前事实以本段和
+> `docs/stdplan/PROGRESS.md` 的 Batch 1/2 收口段为准。
 >
 > 本文只写**当前实测结果**，不写目标设计。“能编译”不等于“能用”，
 > “测试通过”也不等于“语义正确”——两类反例在 §5 都有记录。
@@ -560,7 +573,11 @@ math/big, image/*, testing
 
 ## 7. 修复优先级
 
-### P0：会静默产生错误结果
+### P0：会静默产生错误结果（✅ Batch 1 已清）
+
+> 前 3 项已在 Batch 1 修复（`strings.eq/ne` 内容比较、`mime` 循环指针重算、
+> `html.unescape` 重写）；大整数字面量实参截断由 Batch 2 的字面量扫描与
+> i64 定型收口。保留原文作为历史审计记录。
 
 1. **修 `strings.eq`/`ne` 为内容比较**（或明确改名为 `sameIdentity`，
    另提供 `eq` 内容语义）。当前所有用 `eq` 做业务判断的代码都有风险。
@@ -568,7 +585,11 @@ math/big, image/*, testing
 3. **修大整数字面量作调用实参的截断**（`time` 测试第 9/10 组）。
 4. **修 `html` 的 `_p33` 作用域**，并让编译器对未声明变量报错而不是 panic。
 
-### P1：解锁包数量最多的语言能力
+### P1：解锁包数量最多的语言能力（✅ Batch 2 已清）
+
+> 十六进制/科学计数法/字符字面量、`*T → *ptr`、多返回值签名、泛型 `T` 算术、
+> `uint32` 等宽度别名（`[]uint32` 注解）已在 Batch 2 落地；结构体复合字面量
+> 改为 stdlib 源码等价改写（`RGBAModel(...)`），未扩大语言面。下表保留历史审计口径。
 
 按解锁包数排序：
 
@@ -586,7 +607,7 @@ math/big, image/*, testing
 前三项合计解锁 15 个包，收益最高。`math/big` 即使解锁类型注解也仍是存根，
 优先级可后置。
 
-### P2：测试与加载器
+### P2：测试与加载器（✅ 1–3 已清，4 留 Batch 5）
 
 1. 修缺陷⑪（间接依赖 arch/common 不对等），或至少在 10 个测试里补
    `import "std:strings"`。

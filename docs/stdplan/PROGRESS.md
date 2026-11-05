@@ -73,6 +73,59 @@
 - 汇编对拍：SAME=12 DIFF=0 BOTH_FAIL=4 ONE_FAIL=0（x86 4 个 BOTH_FAIL 为预存编译失败）。
 - 编译测试均在临时目录执行，工作区无 `gc_summary.json`/`_main.asm` 运行产物。
 
+## 2026-11-06（Batch 2 收口 ✅ · P1 语言/源码解锁）
+
+**语言面**
+
+- lexer 新增独立数字扫描 `scanNumber`：`0x/0X`、`0b/0B`、`0o/0O`、C 风格前导零八进制、
+  下划线分隔、小数点、科学计数法（`e/E` 可带正负号）；数字前先 `SkipSep`，避免空格后
+  的 `0` 落进 `GetWord` 当 NAME。
+- 字面量定型：`parseNumberLiteral` 剥离前缀/下划线；`isFloatLiteral` 按**写法**决定 f64
+  （`1.0`、`1e3` 即使值为整数也不退回 int）；字符字面量解析为 int 码点。
+- 数值语义：`int64/uint64/.../rune` 等别名走系统类型；系统类型名改为大小写敏感
+  （用户可定义 `type Int struct`）；常量操作数不参与算术宽度提升（`u32 变量 + 1` 仍为 u32）；
+  `foldNum` 在浮点上下文保留 f64；f64 常量除零按 IEEE-754 折叠为 ±Inf/NaN。
+- 类型：`*T → *ptr` 允许隐式转换；包限定类型 `pkg.Type` 按分段 Name 查找；
+  `IsNum(TypeParam)` 放行泛型原体的数值检查。
+- 多返回值：`a, b := f()` 支持跨包声明与解构；`finder` 为同名槽位命中 owner 并记录
+  `MultiIndex`；解析期未绑定的跨包调用保留节点（`Unresolved`），包合并后
+  `refreshTypeFromDefine` 沿 Define 补类型。
+- 后端：f64 常量以 IEEE-754 位模式输出（`utils.Float64BitsLiteral`），QWORD 内存槽拆高低
+  dword 写入；`math.isNaN` 改位模式判断（整数比较无法表达 `NaN != NaN`）。
+- 代码生成修复：内存目标二元赋值不再提前落左子（`y = x % y` 别名覆盖）；
+  未单态化的泛型原体不发射（避免 `TypeParam.Size()==-1` 的非法操作数）；
+  多返回值大值 ABI：`FuncReturnsLarge` 扫描全部返回项，`FuncReturnBytes` 求总槽宽，
+  变量槽按 `ArgSlots(t)*8` 从后往前分配，`MultiVarDecl` 临时把 `RetSlot` 指向该组变量，
+  `(string, string)` 直接由被调函数写入 caller 槽位。
+- stdlib 源码改写：`image/color` 的 `RGBA{...}` → `RGBAModel(...)`；`math/bits`
+  `sizeof(T)` → `sizeof[T]()`；`unicode/utf8.decodeRune` 改匿名多返回值并在调用处解构；
+  `path.split` 多返回值测试恢复（3 组）。
+
+**验证（BIN=/tmp/opencode/bin/b2）**
+
+- x64 矩阵 22 项：**22/22 全绿**（`slices=230`，其余 `=42`）；Batch 1 遗留的
+  `compress/flate`、`hash/crc32`、`math/bits`、`math`、`unicode/utf8` 全部转绿。
+- x64 源码探针 58 包：**58/58 OK**（基线 31/27，Batch 1 后 39/19）。
+- x86 矩阵 22 项：绿 8（`bytes/math/bits/os/strings/unicode/unicode/utf8=42`、
+  `slices=230`）；`io=8`、`math=10`、`time=1`；`path` 为 NASM_FAIL（x86 大值多返回值未实现），
+  其余为既有 x86 后端红面。
+- x86 源码探针：1 OK / 57 FAIL（与基线一致，nil-Type panic 归 Batch 4）。
+- 定点探针：字面量/类型/多返回值/`path.split`/f64 全部 rc=42；`math.nan/inf` 断言
+  （ret 13–16）通过；`inf(±1)` 正负序比较通过。
+- GC 语料：成功=106 失败=9；对象=160 作用域=111 就地=6 字段=1 转移=30 RC=12；
+  泄漏=0 提前释放=0 HolderBad=0，基线通过。
+- `go test ./lexer/... ./parser/... ./type/... ./utils/... ./compile/...` 无失败；
+  `go test .` 仅 3 个既有缺目录 fixture 失败；`git diff --check` 通过。
+
+**未收口**
+
+- 编译器仍无完整 f64 算术/XMM：当前只有位模式常量、常量折叠、正整数/同号保序比较。
+- 多返回值仅支持声明形式 `a, b := f()`；赋值形式 `a, b = f()` 仍报
+  `need ':=' in multi-value declaration`，留待后续。
+- x86 大值多返回值未实现，`path.split` 在 x86 矩阵仍为 NASM_FAIL，归 Batch 4。
+- x86 既有红面（`cdecl.go:120` nil-Type、NASM `operation size not specified`、
+  `io=8`、`math=10`、`time=1`）无变化，归 Batch 4。
+
 ## 2026-10-29（Wave L 实施完成）
 
 - **语言设施全部落地并验证**（改动保留工作区，随 C1–C8 一起挂起提交）：
