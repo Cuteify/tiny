@@ -63,6 +63,15 @@ func (c *CaseBlock) Parse(p *Parser) {
 			return
 		}
 
+		// default 分支没有 case 值，只读到 ':' 即可；否则会把冒号
+		// 前面的空区间交给 ParseExp，产生 nil 表达式。
+		if c.IsDefault {
+			if t.Value == ":" {
+				break
+			}
+			continue
+		}
+
 		switch t.Value {
 		case ":", ",":
 			p.Lexer.SetCursor(lastSep)

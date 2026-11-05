@@ -279,9 +279,18 @@ func (p *Parser) processControlToken(code lexer.Token) {
 		block := &SwitchBlock{}
 		block.Parse(p)
 	case "case":
+		// 上一个 case 体结束后，ThisBlock 仍停在 CaseBlock 上；
+		// 新 case 到来时先退回所属 SwitchBlock，否则 CaseBlock.Parse
+		// 会误判为 "case outside of switch"。
+		if _, isCase := p.ThisBlock.Value.(*CaseBlock); isCase {
+			p.Back(1)
+		}
 		block := &CaseBlock{}
 		block.Parse(p)
 	case "default":
+		if _, isCase := p.ThisBlock.Value.(*CaseBlock); isCase {
+			p.Back(1)
+		}
 		block := &CaseBlock{IsDefault: true}
 		block.Parse(p)
 	}
@@ -543,6 +552,8 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 		block := &InterfaceDef{}
 		block.Parse(p)
 		p.AddChild(&Node{Value: block})
+	case "enum":
+		p.processEnumToken()
 	default:
 		p.processDefaultToken(code)
 	}
