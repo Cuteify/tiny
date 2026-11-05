@@ -1,4 +1,5 @@
 import "std:hash/crc32"
+import "std:strings"
 fn main() int {
     // Test 1: checksum of empty string returns a deterministic value
     var empty: u32 = crc32.checksum("")

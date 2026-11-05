@@ -1,4 +1,5 @@
 import "std:math"
+import "std:strings"
 fn main() int {
     // math.abs
     if math.abs(-5) != 5 {

@@ -1,4 +1,5 @@
 import "std:log"
+import "std:strings"
 fn main() int {
     // Test 1: log.log should not crash
     log.log("test message")

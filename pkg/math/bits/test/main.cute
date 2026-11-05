@@ -1,4 +1,5 @@
 import "std:math/bits"
+import "std:strings"
 fn main() int {
     // bits.leadingZeros[u32](1) == 31
     if bits.leadingZeros[u32](1) != 31 {

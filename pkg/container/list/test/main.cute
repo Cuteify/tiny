@@ -1,5 +1,6 @@
 import "std:container/list"
 import "std:memory"
+import "std:strings"
 fn main() int {
     var failures: int = 0
 

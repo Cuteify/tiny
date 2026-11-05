@@ -1,116 +1,123 @@
 import "std:sort"
+import "std:slices"
 import "std:memory"
+import "std:strings"
+// sort package test
+// 覆盖当前公开 API：quickSortInts / timsortInts / insertionSortStrings / quickSortStrings
+// （旧版引用的 isSortedInts/searchInts/sortInts 已删除）
+
+fn checkIntSorted(s *[]int) bool {
+    var n: int = slices.len[int](s)
+    var i: int = 0
+    for ; i < n - 1; {
+        var a: int = 0
+        var b: int = 0
+        slices.copyOut[int](s, i, &a)
+        slices.copyOut[int](s, i + 1, &b)
+        if a > b {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+fn makeStrRow(a ptr, i int, s string) {
+    // 先把调用结果落到 VarDecl，再写入裸行：绕开 deref-store 右值调用丢弃缺陷
+    var sp: ptr = strings.toCstring(s)
+    var sl: uint = strings.len(s)
+    var p: *ptr = a + i * 24
+    *p = unsafe.cast[ptr](sp)
+    var q: *ptr = a + i * 24 + 8
+    *q = unsafe.cast[ptr](sl)
+    var c: *ptr = a + i * 24 + 16
+    *c = unsafe.cast[ptr](sl)
+}
+
+fn rowString(a ptr, i int) string {
+    var p: *ptr = a + i * 24
+    var l: *ptr = a + i * 24 + 8
+    var n: uint = unsafe.cast[uint](*l)
+    ret strings.makeString(*p, n, n)
+}
+
 fn main() int {
-    // Create a sorted array: [10, 20, 30, 40, 50]
-    var arr: ptr = memory.malloc(40)
-    var _p1: *ptr = arr + 0
-    *_p1 = unsafe.cast[ptr](10)
-    var _p2: *ptr = arr + 8
-    *_p2 = unsafe.cast[ptr](20)
-    var _p3: *ptr = arr + 16
-    *_p3 = unsafe.cast[ptr](30)
-    var _p4: *ptr = arr + 24
-    *_p4 = unsafe.cast[ptr](40)
-    var _p5: *ptr = arr + 32
-    *_p5 = unsafe.cast[ptr](50)
-
-    var n: int = 5
-
-    // Test isSortedInts on already sorted array
-    if sort.isSortedInts(arr, n) != true {
+    // 1) quickSortInts：基本排序
+    var s1: *[]int = slices.make[int](8)
+    slices.push[int](s1, 34)
+    slices.push[int](s1, 7)
+    slices.push[int](s1, 23)
+    slices.push[int](s1, 32)
+    slices.push[int](s1, 5)
+    if !checkIntSorted(s1) {
+        // 未排序状态不应通过（哨兵自检）
+    } else {
         ret 1
     }
-
-    // Test searchInts: find exact match
-    var idx: int = sort.searchInts(arr, n, 30)
-    if idx != 2 {
+    sort.quickSortInts(s1)
+    if !checkIntSorted(s1) {
         ret 2
     }
-
-    // Test searchInts: value between elements
-    idx = sort.searchInts(arr, n, 25)
-    if idx != 2 {
+    var v0: int = 0
+    var v4: int = 0
+    slices.copyOut[int](s1, 0, &v0)
+    slices.copyOut[int](s1, 4, &v4)
+    if v0 != 5 || v4 != 34 {
         ret 3
     }
 
-    // Test searchInts: value below all elements
-    idx = sort.searchInts(arr, n, 5)
-    if idx != 0 {
+    // 2) timsortInts：含重复值，稳定排序后仍有序
+    var s2: *[]int = slices.make[int](6)
+    slices.push[int](s2, 3)
+    slices.push[int](s2, 1)
+    slices.push[int](s2, 3)
+    slices.push[int](s2, 2)
+    slices.push[int](s2, 1)
+    sort.timsortInts(s2)
+    if !checkIntSorted(s2) {
         ret 4
     }
-
-    // Test searchInts: value above all elements
-    idx = sort.searchInts(arr, n, 100)
-    if idx != 5 {
+    var t0: int = 0
+    var t4: int = 0
+    slices.copyOut[int](s2, 0, &t0)
+    slices.copyOut[int](s2, 4, &t4)
+    if t0 != 1 || t4 != 3 {
         ret 5
     }
 
-    // Test searchInts: first element
-    idx = sort.searchInts(arr, n, 10)
-    if idx != 0 {
+    // 3) quickSortStrings：裸 24B string 行
+    var arr: ptr = memory.malloc(3 * 24)
+    makeStrRow(arr, 0, "pear")
+    makeStrRow(arr, 1, "apple")
+    makeStrRow(arr, 2, "banana")
+    sort.quickSortStrings(arr, 3)
+    if strings.compare(rowString(arr, 0), "apple") != 0 {
         ret 6
     }
-
-    // Test searchInts: last element
-    idx = sort.searchInts(arr, n, 50)
-    if idx != 4 {
+    if strings.compare(rowString(arr, 1), "banana") != 0 {
         ret 7
     }
-
-    // Create an unsorted array and sort it
-    var arr2: ptr = memory.malloc(40)
-    var _p6: *ptr = arr2 + 0
-    *_p6 = unsafe.cast[ptr](50)
-    var _p7: *ptr = arr2 + 8
-    *_p7 = unsafe.cast[ptr](10)
-    var _p8: *ptr = arr2 + 16
-    *_p8 = unsafe.cast[ptr](40)
-    var _p9: *ptr = arr2 + 24
-    *_p9 = unsafe.cast[ptr](20)
-    var _p10: *ptr = arr2 + 32
-    *_p10 = unsafe.cast[ptr](30)
-
-    // Verify it is not sorted
-    if sort.isSortedInts(arr2, n) != false {
+    if strings.compare(rowString(arr, 2), "pear") != 0 {
         ret 8
     }
+    memory.free(arr)
 
-    // Sort it
-    sort.sortInts(arr2, n)
-
-    // Verify it is now sorted
-    if sort.isSortedInts(arr2, n) != true {
+    // 4) insertionSortStrings：前缀串按长度决胜
+    var arr2: ptr = memory.malloc(3 * 24)
+    makeStrRow(arr2, 0, "abc")
+    makeStrRow(arr2, 1, "a")
+    makeStrRow(arr2, 2, "ab")
+    sort.insertionSortStrings(arr2, 3)
+    if strings.compare(rowString(arr2, 0), "a") != 0 {
         ret 9
     }
-
-    // Verify sorted values
-    var _p11: *ptr = arr2 + 0
-    var v0: int = *_p11
-    var _p12: *ptr = arr2 + 8
-    var v1: int = *_p12
-    var _p13: *ptr = arr2 + 16
-    var v2: int = *_p13
-    var _p14: *ptr = arr2 + 24
-    var v3: int = *_p14
-    var _p15: *ptr = arr2 + 32
-    var v4: int = *_p15
-    if v0 != 10 {
+    if strings.compare(rowString(arr2, 1), "ab") != 0 {
         ret 10
     }
-    if v1 != 20 {
+    if strings.compare(rowString(arr2, 2), "abc") != 0 {
         ret 11
     }
-    if v2 != 30 {
-        ret 12
-    }
-    if v3 != 40 {
-        ret 13
-    }
-    if v4 != 50 {
-        ret 14
-    }
-
-    memory.free(arr)
     memory.free(arr2)
+
     ret 42
 }
