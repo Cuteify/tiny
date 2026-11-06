@@ -111,13 +111,17 @@ enum TokenType {
 }
 ```
 
-Cute 的 `enum` 是编译期 int 常量组：成员默认从 0 自增，可用 `= 整数` 指定值；
-枚举名注册为 `int` 真别名，成员名直接可用。**名称、顺序、数值与 Go 版全部对齐**。
-`tname(k)` 用 `switch` 覆盖全部 14 个值（`NONE` → `"NONE"`，未知值返回 `""`），与
-Go 版 `TokenType.String()` 的分支一一对应；`TokenTypeName` 只是 `String()` 的兼容入口。
+Cute 的 `enum` 创建独立命名类型：`enum TokenType` 等价于 Go 的
+`type TokenType int`。成员默认从 0 自增，可用 `= 整数` 指定值；成员常量的类型就是
+`TokenType`，而不是 `int`。**名称、顺序、数值与成员类型身份与 Go 版全部对齐**。
+`Lex.k`、`next`、`kw`、`kind`、`tname` 都使用 `TokenType`，lexer API 不出现
+int/enum 混用。`tname(k)` 用 `switch` 覆盖全部 14 个值（`NONE` → `"NONE"`，未知值
+返回 `""`），与 Go 版 `TokenType.String()` 的分支一一对应；`TokenTypeName` 只是
+`String()` 的兼容入口。
 
 这不是两套枚举，而是同一套枚举在两种语言里的声明形式。Cute 侧暂不支持
-`TokenType.NONE` 作用域限定访问，也不做独立枚举类型检查；这两项都属于后续语言演进。
+`TokenType.NONE` 作用域限定访问；这属于后续语言演进。Cute 的通用数值兼容规则仍允许
+命名数值类型与内置数值类型隐式互转，该规则不限于 enum，也不影响本模块的 typed API。
 
 ### 4.3 简化 API，不简化语义
 
@@ -160,7 +164,7 @@ parser 若需要定界符位置，可由 `start-1`/`end+1` 推回；文档和测
 | 问题 | 修复 |
 |---|---|
 | `LexTokenType` 不含 `NONE`，字符串映射不完整 | 改为 `type TokenType int` 现代枚举，补 `"NONE"`，新增 `String()` 全量 switch，`TokenTypeName` 保留为兼容入口 |
-| Cute 侧缺少枚举声明形式，token 常量只能逐条 `const` | 新增 `enum Name { ... }` 语法：成员自增/显式整数、枚举名注册为 `int` 别名、成员降级为编译期常量 |
+| Cute 侧缺少枚举声明形式，token 常量只能逐条 `const` | 新增 `enum Name { ... }` 语法：成员自增/显式整数、枚举名注册为独立命名类型、成员常量带枚举类型 |
 | NASM 数据段双引号字符串不处理反斜杠转义 | 改用反引号字符串并转义 `\`、`` ` ``、`"`、换行、Tab、CR |
 | 字符串拼接作为函数实参时被编成全零容器 | `SysV.Call` 的容器实参统一走表达式编译器三槽装载 |
 | GC 误释放 `strings.makeString` 返回的视图 | 前端取地址局部判 `Unknown`，后端只认 `RetFresh` |
@@ -199,7 +203,7 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 - `scripts/selfhost_test.sh x86_64`：连续 5 轮 `SELFHOST_OK|RC=42`。
 - `test/enum`：编译、汇编、链接后 `RC=42`，覆盖自增、显式值、十六进制值、负值、
-  显式值后续自增，以及枚举名作为 `int` 别名用于类型标注。
+  显式值后续自增，以及枚举类型用于变量、函数参数/返回值和结构体字段。
 - `scripts/stdlib_matrix.sh x86_64 1`：22 个用例中 21 个 `RC=42`；
   `pkg/slices/test` 为 `RC=230`，与 `HEAD` 构建的基线一致，不是本轮回归。
 - x86：自举测试在 NASM 阶段失败（`operation size not specified`），属于 Batch 4 前
@@ -225,5 +229,5 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 1. 完成 S1 driver：读 token、打印 `tname/text/区间`，用 `lex.cute` 自身做冒烟。
 2. 评估最小 parser 的语法子集，优先覆盖 `fn`、`var/const`、`type struct`、`if/for/ret`。
 3. 设计 Go/Cute token 序列对拍脚本，固定一批源码和期望序列。
-4. 讨论 Cute 枚举的独立类型检查与 `TokenType.NONE` 作用域限定访问；当前先保持
-   “枚举名是 int 别名、成员是编译期常量”的最小实现。
+4. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
+   成员已在本轮落地。
