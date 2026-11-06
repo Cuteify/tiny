@@ -1,0 +1,247 @@
+// Cuteify 自举 parser 行为测试（S2）。
+//
+// 运行（仓库根目录）：
+//   scripts/selfhost_parse.sh x86_64
+// 或已构建 parsedump 时：
+//   parsedump < selfhost/parse/test/main.cute
+//
+// 约定：返回 42 表示全部通过；其它值表示失败用例编号。
+// 换行用 nl() 在运行时构造：当前编译器不处理字符串里的 \n 转义，
+// 跨行裸串也不可靠（与 selfhost/lex/test 相同）。
+import "std:memory"
+import "std:strings"
+import parse "../"
+
+// nl 构造只含换行字节（10）的字符串。
+fn nl() string {
+    var p: ptr = memory.malloc(8)
+    var q: *int = p
+    *q = 10
+    ret strings.makeString(p, 1, 1)
+}
+
+// parsed 解析一段源码并返回 parser（无论成功还是失败）。
+fn parsed(src string) *parse.Parser {
+    var p: *parse.Parser = parse.mk(src)
+    parse.file(p)
+    ret p
+}
+
+// bad 断言源码报指定错误码，且错误位置落在源码范围内。
+fn bad(src string, want int) bool {
+    var p: *parse.Parser = parsed(src)
+    if parse.err(p) != want {
+        ret false
+    }
+    if parse.errPos(p) > strings.len(src) {
+        ret false
+    }
+    ret true
+}
+
+// caseEmpty：空输入合法，所有计数为 0。
+fn caseEmpty() int {
+    var p: *parse.Parser = parsed("")
+    if parse.err(p) != parse.OK { ret 1 }
+    if parse.declCount(p) != 0 { ret 2 }
+    if parse.importCount(p) != 0 { ret 3 }
+    if parse.buildCount(p) != 0 { ret 4 }
+    if parse.enumCount(p) != 0 { ret 5 }
+    if parse.structCount(p) != 0 { ret 6 }
+    if parse.constCount(p) != 0 { ret 7 }
+    if parse.varCount(p) != 0 { ret 8 }
+    if parse.fnCount(p) != 0 { ret 9 }
+    if parse.stmtCount(p) != 0 { ret 10 }
+    if parse.exprCount(p) != 0 { ret 11 }
+    ret 0
+}
+
+// caseLexErr：未闭合字符串必须作为词法错误上报，不能被当成 EOF。
+fn caseLexErr() int {
+    var src: string = ""
+    src = src + "fn f() {" + nl()
+    src = src + `    var s: string = "abc` + nl()
+    src = src + "}" + nl()
+    if !bad(src, parse.ETOK) { ret 1 }
+    ret 0
+}
+
+// caseNewline：换行保留为语句边界；行首 `*q` 必须是解引用而不是乘法。
+fn caseNewline() int {
+    var src: string = ""
+    src = src + "fn f() int {" + nl()
+    src = src + "    var q: *int = 0" + nl()
+    src = src + "    var x: int = 1" + nl()
+    src = src + "    x = x + 2" + nl()
+    src = src + "    *q = x" + nl()
+    src = src + "    ret x" + nl()
+    src = src + "}" + nl()
+    var p: *parse.Parser = parsed(src)
+    if parse.err(p) != parse.OK { ret 1 }
+    if parse.declCount(p) != 1 { ret 2 }
+    if parse.varCount(p) != 2 { ret 3 }
+    if parse.fnCount(p) != 1 { ret 4 }
+    if parse.stmtCount(p) != 5 { ret 5 }
+    if parse.exprCount(p) != 8 { ret 6 }
+    ret 0
+}
+
+// caseDecls：import 分组、build、enum、struct、interface、别名、
+// 函数类型、map、旧式 struct、const/var、两种方法接收者。
+fn caseDecls() int {
+    var src: string = ""
+    src = src + `import "std:strings"` + nl()
+    src = src + `import mem "std:memory"` + nl()
+    src = src + "import (" + nl()
+    src = src + `    "std:syscall"` + nl()
+    src = src + `    _ "std:os"` + nl()
+    src = src + ")" + nl()
+    src = src + "build os(linux)" + nl()
+    src = src + "enum Color {" + nl()
+    src = src + "    RED" + nl()
+    src = src + "    GREEN = 2" + nl()
+    src = src + "}" + nl()
+    src = src + "type Point struct {" + nl()
+    src = src + "    pub x: int" + nl()
+    src = src + "    y: int = 3" + nl()
+    src = src + "    @Extra" + nl()
+    src = src + "}" + nl()
+    src = src + "type Reader interface {" + nl()
+    src = src + "    read(buf: string) int" + nl()
+    src = src + "}" + nl()
+    src = src + "type Alias = []int" + nl()
+    src = src + "type Handler = fn(int) string" + nl()
+    src = src + "type Table = map[string][]int" + nl()
+    src = src + "struct Legacy : Base {" + nl()
+    src = src + "    priv age: int" + nl()
+    src = src + "}" + nl()
+    src = src + "const MAX: int = 10" + nl()
+    src = src + "var total: int = 0" + nl()
+    src = src + "var count: int = 1" + nl()
+    src = src + "fn (self Point) get() int {" + nl()
+    src = src + "    ret self.x" + nl()
+    src = src + "}" + nl()
+    src = src + "fn Point.set(v int) {" + nl()
+    src = src + "    self.x = v" + nl()
+    src = src + "}" + nl()
+    var p: *parse.Parser = parsed(src)
+    if parse.err(p) != parse.OK { ret 1 }
+    if parse.declCount(p) != 16 { ret 2 }
+    if parse.importCount(p) != 3 { ret 3 }
+    if parse.buildCount(p) != 1 { ret 4 }
+    if parse.enumCount(p) != 1 { ret 5 }
+    if parse.structCount(p) != 2 { ret 6 }
+    if parse.constCount(p) != 1 { ret 7 }
+    if parse.varCount(p) != 2 { ret 8 }
+    if parse.fnCount(p) != 2 { ret 9 }
+    if parse.stmtCount(p) != 2 { ret 10 }
+    if parse.exprCount(p) != 10 { ret 11 }
+    ret 0
+}
+
+// caseStmts：if/else-if/else、switch、range、三种 for、defer、多左值。
+fn caseStmts() int {
+    var src: string = ""
+    src = src + "fn f(xs: []int) int {" + nl()
+    src = src + "    var total: int = 0" + nl()
+    src = src + "    var q: int = 0" + nl()
+    src = src + "    var r: int = 0" + nl()
+    src = src + "    q, r := pair()" + nl()
+    src = src + "    for i, v := range xs {" + nl()
+    src = src + "        if i > 3 {" + nl()
+    src = src + "            total = total + v" + nl()
+    src = src + "        } else if i == 0 {" + nl()
+    src = src + "            total = total - 1" + nl()
+    src = src + "        } else {" + nl()
+    src = src + "            total = total + 1" + nl()
+    src = src + "        }" + nl()
+    src = src + "    }" + nl()
+    src = src + "    switch total {" + nl()
+    src = src + "    case 0, 1:" + nl()
+    src = src + "        total = 2" + nl()
+    src = src + "    default:" + nl()
+    src = src + "        total = total + 3" + nl()
+    src = src + "    }" + nl()
+    src = src + "    for j := 0; j < 3; j++ {" + nl()
+    src = src + "        total += j" + nl()
+    src = src + "    }" + nl()
+    src = src + "    for total > 0 {" + nl()
+    src = src + "        break" + nl()
+    src = src + "    }" + nl()
+    src = src + "    defer cleanup(total)" + nl()
+    src = src + "    ret total" + nl()
+    src = src + "}" + nl()
+    var p: *parse.Parser = parsed(src)
+    if parse.err(p) != parse.OK { ret 1 }
+    if parse.declCount(p) != 1 { ret 2 }
+    if parse.varCount(p) != 3 { ret 3 }
+    if parse.fnCount(p) != 1 { ret 4 }
+    if parse.stmtCount(p) != 18 { ret 5 }
+    if parse.exprCount(p) != 42 { ret 6 }
+    ret 0
+}
+
+// caseExprs：优先级、一元、复合字面量、索引/切片/选择器、字符字面量。
+fn caseExprs() int {
+    var src: string = ""
+    src = src + "fn f(a int, b int) int {" + nl()
+    src = src + "    var m: int = (a + b) * 2 - a / b % 3" + nl()
+    src = src + "    var ok: bool = a < b && b >= 0 || !false" + nl()
+    src = src + "    var bits: int = (a << 2) | (b & 7) ^ 1" + nl()
+    src = src + "    var s: []int = []int{1, 2 + 3, 4}" + nl()
+    src = src + "    var fixed: [3]int = [3]int{5, 6, 7}" + nl()
+    src = src + "    var p: *int = new(int)" + nl()
+    src = src + "    var v: int = s[0] + s[1:2][0] + p.x" + nl()
+    src = src + "    var c: int = 'x'" + nl()
+    src = src + "    if ok {" + nl()
+    src = src + "        ret bits" + nl()
+    src = src + "    }" + nl()
+    src = src + "    ret m + v + c" + nl()
+    src = src + "}" + nl()
+    var p: *parse.Parser = parsed(src)
+    if parse.err(p) != parse.OK { ret 1 }
+    if parse.declCount(p) != 1 { ret 2 }
+    if parse.varCount(p) != 8 { ret 3 }
+    if parse.fnCount(p) != 1 { ret 4 }
+    if parse.stmtCount(p) != 11 { ret 5 }
+    if parse.exprCount(p) != 43 { ret 6 }
+    ret 0
+}
+
+// caseNegative：各类语法错误必须返回对应错误码。
+fn caseNegative() int {
+    var brace: string = "fn f() {" + nl() + "    ret 0" + nl()
+    if !bad(brace, parse.ESTMT) { ret 1 }
+
+    if !bad("var x: = 1" + nl(), parse.ETYPE) { ret 2 }
+
+    var expr: string = "fn f() {" + nl() + "    ret 1 +" + nl() + "}" + nl()
+    if !bad(expr, parse.EEXPR) { ret 3 }
+
+    if !bad("@foo" + nl(), parse.EDECL) { ret 4 }
+
+    var field: string = "type P struct {" + nl() + "    a:" + nl() + "}" + nl()
+    if !bad(field, parse.ETYPE) { ret 5 }
+
+    var imp: string = "import (" + nl() + `    "std:strings"` + nl()
+    if !bad(imp, parse.EDECL) { ret 6 }
+    ret 0
+}
+
+fn main() int {
+    var r: int = caseEmpty()
+    if r != 0 { ret 1 }
+    r = caseLexErr()
+    if r != 0 { ret 2 }
+    r = caseNewline()
+    if r != 0 { ret 3 }
+    r = caseDecls()
+    if r != 0 { ret 4 }
+    r = caseStmts()
+    if r != 0 { ret 5 }
+    r = caseExprs()
+    if r != 0 { ret 6 }
+    r = caseNegative()
+    if r != 0 { ret 7 }
+    ret 42
+}
