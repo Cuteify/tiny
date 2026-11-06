@@ -92,10 +92,13 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
   `matrix_x64_I1.log`/`matrix_x86_I1.log`（w11，json 仍消费）、`matrix_x64_I2.log`/`matrix_x86_I2.log`（w12，json 通道关闭）、
   `matrix_x64_I3.log`/`matrix_x86_I3.log`（w13，`json:"-"` 终态）、
   `matrix_x64_w14c.txt`/`matrix_x86_w14c.txt`（w14c，GC 收口 22 项对拍）
-- selfhost（2026-11-06 S1 收口）：`scripts/selfhost_test.sh x86_64`（S0，五连 RC=42）；
+- selfhost（2026-11-06 S2 收口）：`scripts/selfhost_test.sh x86_64`（S0，RC=42）；
   `scripts/selfhost_dump.sh x86_64`（S1，`SELFHOST_DUMP_OK|x86_64|tokens=3851`，token 数随源码变）；
   `scripts/selfhost_parity.sh x86_64`（`SELFHOST_PARITY_OK|x86_64|files=15|tokens=19160`）；
-  driver=`selfhost/cmd/tokdump/`，Go 侧对拍工具=`tools/gotokens/`
+  `scripts/selfhost_parse.sh x86_64`（S2，`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`；
+  全仓 247 个 `.cute` 247/247 `PARSE_OK`）；
+  drivers=`selfhost/cmd/tokdump/`、`selfhost/cmd/parsedump/`，Go 侧 token 对拍工具=`tools/gotokens/`；
+  S2 parser 只验证语法+计数、不建 AST；AST/Go parser 逐节点对拍=S3
 - SSOT：`docs/stdplan/PLAN.md`（计划）/ `docs/stdplan/PROGRESS.md`（执行日志+哨兵基线全表）
 - Wave St 假想攻坚台账：`/tmp/opencode/wave_st_progress.md`
 

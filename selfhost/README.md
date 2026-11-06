@@ -1,8 +1,9 @@
 # Cuteify 自举（selfhost）
 
 本目录用 Cute 语言重写 Cuteify 自身的组件，目标是逐步摆脱“用 Go 写 Cute 编译器”的单向依赖。
-当前完成 S0 **词法分析器**与 S1 **token 流 driver**。仓库里还没有可自举的完整编译器，
-也没有自举解析器/代码生成器；本目录不会假装已经完成自举。
+当前完成 S0 **词法分析器**、S1 **token 流 driver** 与 S2 **最小 parser**。
+仓库里还没有可自举的完整编译器；S2 parser 只验证语法并统计结构，不建 AST，
+也没有自举代码生成器。本目录不会假装已经完成自举。
 
 ## 当前状态
 
@@ -10,9 +11,13 @@
 |---|---|---|---|
 | `lex/` | 0.1.0 | 可用 | Cute 实现的词法分析器，输入 `string`，输出 token 类型 + 文本 + 区间 |
 | `cmd/tokdump/` | 0.1.0 | 可用 | S1 token 流 driver：从 stdin 读入源码，打印 token 类型/文本/行列/区间 |
+| `parse/` | 0.1.0 | 可用 | S2 最小 parser：递归下降语法验证 + 结构计数，不建 AST |
+| `cmd/parsedump/` | 0.1.0 | 可用 | S2 parser driver：从 stdin 读入源码，输出计数或语法错误 |
 
-- 入口：`selfhost/lex/lex.cute`、`selfhost/cmd/tokdump/main.cute`
-- 测试：`selfhost/lex/test/main.cute`（期望退出码 `42`，x86_64 已连续多轮通过）
+- 入口：`selfhost/lex/lex.cute`、`selfhost/parse/parse.cute`、
+  `selfhost/cmd/tokdump/main.cute`、`selfhost/cmd/parsedump/main.cute`
+- 测试：`selfhost/lex/test/main.cute`、`selfhost/parse/test/main.cute`
+  （期望退出码 `42`，x86_64 已通过）
 - 编译器仍由仓库根目录的 Go 程序提供；自举模块目前作为**被编译的 Cute 包**运行。
 - 自举 lexer 不读文件：宿主读入源码后以 `string` 传入，避免在第一阶段引入平台 I/O 差异。
 
@@ -27,10 +32,21 @@ selfhost/
 │   ├── README.md          # API、token 枚举、扫描规则、错误码
 │   └── test/
 │       └── main.cute      # 行为测试（关键字/数字/字符串/注释/错误）
-└── cmd/tokdump/
-    ├── package.json       # 包元数据（name=tokdump）
-    ├── main.cute          # S1：stdin → token 行
-    └── README.md          # driver 用法与输出格式
+├── parse/
+│   ├── package.json       # 包元数据（name=parse）
+│   ├── parse.cute         # S2 最小 parser（语法验证 + 结构计数）
+│   ├── README.md          # API、支持子集、错误码、计数口径
+│   └── test/
+│       └── main.cute      # 正/负例测试（声明/语句/表达式/换行/词法错误）
+└── cmd/
+    ├── tokdump/
+    │   ├── package.json   # 包元数据（name=tokdump）
+    │   ├── main.cute      # S1：stdin → token 行
+    │   └── README.md      # driver 用法与输出格式
+    └── parsedump/
+        ├── package.json   # 包元数据（name=parsedump）
+        ├── main.cute      # S2：stdin → PARSE_OK / PARSE_ERROR
+        └── README.md      # driver 用法与输出格式
 ```
 
 项目级自举计划与阶段划分见 [`docs/SELFHOST.md`](../docs/SELFHOST.md)。
@@ -55,6 +71,8 @@ selfhost/
    `m[k]`，简单直接的实现反而更容易自举。
 6. **不隐藏错误**：`next()` 每次调用重置错误码；`err()` 返回 `OK/ESTR/ERAW/ECHAR`，
    调用方必须检查。EOF 与错误都返回 `NONE`，靠 `err()` 区分。
+7. **parser 只验证语法**：S2 不建 AST、不做类型/符号检查；保留换行 token 并在声明/
+   语句边界显式跳过，`at()` 不比较字面量 token，避免源码里的 `"*"`/`"+"` 被当成运算符。
 
 ## 构建与测试
 
@@ -73,7 +91,10 @@ BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
 # 4. Go/Cute token 序列对拍（默认固定语料，逐字节比较）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parity.sh x86_64
 
-# 5. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
+# 5. S2 parser：自测（RC=42）+ 固定语料；也可传单个文件
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64
+
+# 6. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
 for i in 1 2 3; do
     BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 done
@@ -107,6 +128,22 @@ echo $?   # 期望 42
 - 脚本默认编译器是仓库根的 `cuteify2`；它可能是旧构建，建议始终显式设置 `BIN=`。
 - 当前建议只跑 x86_64。x86 后端在 Batch 4 之前仍有已知红面（NASM 报
   `operation size not specified`），不能作为自举代码的质量判据。
+
+## S2 parser
+
+`selfhost/parse` 在 lexer 之上做递归下降验证，覆盖当前仓库 `.cute` 语料的声明、语句、
+表达式与类型引用子集。它**不建 AST**，只返回首个错误码和结构计数；完整 API、支持列表、
+计数口径与限制见 [`parse/README.md`](parse/README.md)。
+
+- 自测：`selfhost/parse/test/main.cute`，7 组正/负例，期望 `RC=42`。
+- 验收入口：`scripts/selfhost_parse.sh x86_64`；自测通过后跑 18 个固定语料，
+  全部要求 `PARSE_OK`。
+- 全仓扫描（2026-11-06）：`test/`、`pkg/`、`selfhost/` 共 247 个 `.cute` 文件，
+  247/247 `PARSE_OK`。
+- 自解析基线：`selfhost/lex/lex.cute` 与 `selfhost/parse/parse.cute` 均可被
+  S2 parser 完整解析；计数会随源码改动变化，判据是 `PARSE_OK` 而不是固定数值。
+- S2 暂不支持命名/map 复合字面量、函数字面量、`try/except/finally`、`go/select`
+  等语法；遇到时报错，不静默跳过。AST 与 Go parser 逐节点对拍留给 S3。
 
 ## 与 Go 版的差异
 
@@ -153,8 +190,9 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 
 ## 限制
 
-- 只做词法分析，不做语法/类型/代码生成；没有自举 parser。
-- 没有文件 I/O、路径、行号/列号；错误只给字节区间。
+- S2 parser 只做语法验证与结构计数，不建 AST、不做类型/符号/代码生成；完整 parser
+  与逐节点对拍留给 S3。
+- 没有文件 I/O、路径、行号/列号；错误只给字节区间，driver 负责换算行列。
 - 按字节扫描，与 Go 版一致，不按 Unicode 码点切分。
 - 关键字匹配是 O(关键字数) 的字符串比较；lexer 不是性能瓶颈，暂不做 trie。
 - Cute 的 `enum` 会生成独立命名类型，成员常量带该类型；暂不支持
@@ -168,8 +206,12 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 
 ## 下一步
 
-1. 评估自举 parser 的最小语法子集（先覆盖 lexer 自身源码）。
-2. 再讨论文件 I/O、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
-3. 对拍工具位于 `tools/gotokens/`，固定语料清单与基线见 `docs/SELFHOST.md` §4.8。
+1. S3：给 `selfhost/parse` 增加 AST 节点与 `parsedump --ast`，与 Go parser 对同一批
+   源码逐节点对拍；先固定声明/语句/表达式节点形状，再扩语法覆盖。
+2. 修复 S2 暴露的宿主编译器问题（`continue` 跳出循环、结构体数组字段、换行/字面量
+   处理），修好后逐项移除 parser 侧 workaround，并保留负例防回归。
+3. 再讨论文件 I/O、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
+4. 对拍工具位于 `tools/gotokens/`，token 基线见 `docs/SELFHOST.md` §4.8；
+   parser 验收入口见 §4.9 与 §6。
 
 任何阶段完成前都不宣称“已自举”；状态以本文件表格和 `docs/SELFHOST.md` 为准。

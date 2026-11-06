@@ -1,11 +1,12 @@
 # Cuteify 自举计划（SELFHOST）
 
-> 状态：**进行中，已完成 S0 词法分析器与 S1 token 流 driver**。仓库当前没有自举编译器、
-> 自举 parser 或自举代码生成器。
+> 状态：**进行中，已完成 S0 词法分析器、S1 token 流 driver 与 S2 最小 parser**。
+> 仓库当前没有自举编译器或自举代码生成器；S2 parser 只验证语法并统计结构，不建 AST。
 > 入口目录：[`selfhost/`](../selfhost/README.md)。
-> 模块文档：[`selfhost/lex/README.md`](../selfhost/lex/README.md)。
+> 模块文档：[`selfhost/lex/README.md`](../selfhost/lex/README.md)、
+> [`selfhost/parse/README.md`](../selfhost/parse/README.md)。
 
-本文是项目级自举说明；模块的 API、扫描规则、错误码以 `selfhost/lex/README.md` 为准。
+本文是项目级自举说明；模块的 API、扫描规则、错误码以对应模块的 README 为准。
 
 ## 1. 目标与非目标
 
@@ -19,7 +20,7 @@
 ### 非目标
 
 - 本阶段不替换 Go 编译器入口，不修改 `main.go` 的构建方式。
-- 不承诺“源码自举”（用 Cute 编译器编译 Cute 编译器）的时间表；目前连 parser 都没有。
+- 不承诺“源码自举”（用 Cute 编译器编译 Cute 编译器）的时间表；S2 parser 仍是最小子集。
 - 不把 `selfhost/` 混进 `pkg/` 标准库计数，也不改现有 stdlib 测试矩阵的口径。
 - 不为自举而给语言仓促加特性；确实需要语言能力时，先单独评估/提交。
 
@@ -29,11 +30,11 @@
 |---|---|---|---|
 | S0 | 词法分析器（string 输入） | ✅ 0.1.0 | `BIN=... scripts/selfhost_test.sh x86_64` 返回 42 |
 | S1 | token 流 driver / 诊断输出 | ✅ 0.1.0 | `scripts/selfhost_dump.sh` 打印 `lex.cute` 的 token 序列（末尾 `EOF ... tokens=N`） |
-| S2 | 最小 parser（声明/表达式/语句子集） | 计划中 | 能解析 lexer 自身源码的最小语法子集 |
-| S3 | 完整自举 parser | 计划中 | 与 Go parser 对拍同一批源码 |
+| S2 | 最小 parser（声明/表达式/语句子集） | ✅ 0.1.0 | `scripts/selfhost_parse.sh x86_64`：自测 `RC=42`、固定语料全部 `PARSE_OK` |
+| S3 | 完整自举 parser | 计划中 | 与 Go parser 对拍同一批源码（AST 逐节点） |
 | S4 | 自举代码生成/后端 | 计划中 | 与 Go 版汇编或运行结果对拍 |
 
-当前完成 S0、S1。S2 之前不宣称“自举 parser 已可用于生产”。
+当前完成 S0、S1、S2。S3 之前不宣称“自举 parser 已具备完整 AST/语义”。
 
 ## 3. 目录与边界
 
@@ -45,12 +46,24 @@ selfhost/                 # 自举实现，独立于 pkg/ 与 Go lexer/
 │   ├── package.json
 │   ├── README.md
 │   └── test/main.cute
-└── cmd/tokdump/          # S1：token 流 driver（stdin → token 行）
-    ├── main.cute
-    ├── package.json
-    └── README.md
-scripts/selfhost_test.sh  # S0 行为测试入口（复制到临时目录编译运行）
-scripts/selfhost_dump.sh  # S1 token 流入口（编译 driver 并喂入源码）
+├── parse/                # S2：最小 parser（语法验证 + 结构计数）
+│   ├── parse.cute
+│   ├── package.json
+│   ├── README.md
+│   └── test/main.cute
+└── cmd/
+    ├── tokdump/          # S1：token 流 driver（stdin → token 行）
+    │   ├── main.cute
+    │   ├── package.json
+    │   └── README.md
+    └── parsedump/        # S2：parser driver（stdin → 计数/错误）
+        ├── main.cute
+        ├── package.json
+        └── README.md
+scripts/selfhost_test.sh   # S0 行为测试入口（复制到临时目录编译运行）
+scripts/selfhost_dump.sh   # S1 token 流入口（编译 driver 并喂入源码）
+scripts/selfhost_parity.sh # S0 token 序列 Go/Cute 对拍
+scripts/selfhost_parse.sh  # S2 parser 自测、固定语料与单文件验证
 ```
 
 边界约定：
@@ -203,6 +216,35 @@ driver 层。
 - 默认固定语料覆盖 `selfhost/`、`test/`、`pkg/slices`、`pkg/strings`、`pkg/sort`；
 - 2026-11-06：15 个文件、19160 tokens 逐字节一致。
 
+### 4.9 S2 最小 parser：只验证，不建 AST
+
+S2 的验收目标是证明自举词法流能被自举语法分析消费，而不是一次性复刻 Go parser。
+`selfhost/parse` 因此只做递归下降验证与结构计数：
+
+- 入口是 `mk(src)` + `file(p)`；错误通过 `err(p)` / `errPos(p)` 暴露；
+- 错误码分为 `ETOK/EDECL/ETYPE/ESTMT/EEXPR`，只记录第一个错误，`file` 遇错即停；
+- 覆盖 import、build（含 `build asm`）、enum、struct/interface/别名、const/var、fn
+  （含方法接收者与泛型声明）、if/for/while/switch、ret/defer/break/continue、
+  赋值/多左值、表达式优先级、调用/索引/切片/选择器、复合字面量与类型引用；
+- 不建 AST、不做类型检查、不做符号解析；计数只是结构统计，不是 Go AST 节点数的等价物。
+
+parser 的 API、计数口径与完整支持列表见
+[`selfhost/parse/README.md`](../selfhost/parse/README.md)。
+
+### 4.10 S2 暴露的四个实现约束
+
+S2 期间遇到的宿主/自举行为问题已经固化为 parser 的实现约束：
+
+| 约束 | 原因 |
+|---|---|
+| 换行必须保留，在声明/语句边界显式跳过 | 全局跳过会让下一行行首的 `*q` 被上一行表达式当成乘号 |
+| `at()` 不比较 STRING/CHAR/RAW/NUMBER/BOOL | 否则源码里的 `"*"`、`"+"`、`"{"` 会被误判为运算符或块开始 |
+| 拿到 token 时立即检查 `lex.err` | `lex.next()` 每次调用会重置错误码，延后检查会丢掉未闭合字符串的 `ESTR` |
+| parser 循环不使用 `continue`，`Parser` 只用标量/指针字段 | 当前编译器在 `for ; true; { ... }` 中执行 `continue` 会退出循环；结构体数组字段读写不可靠 |
+
+这些问题目前通过 parser 侧规避，后续修宿主编译器时应同步移除对应 workaround，
+并保留 `selfhost/parse/test` 的负例防止回归。
+
 ## 5. 与 Go 版的已知差异
 
 | 差异 | 影响 | 处理 |
@@ -215,6 +257,9 @@ driver 层。
 | 关键字 if 链 | 代码更长，性能非瓶颈 | 等语言有 map 索引或 trie 再优化 |
 | 跨行裸串字面量测试受限 | 当前编译器对源码内跨行 RAW 支持不完整 | 测试用 `nl()` + `makeString` 运行时构造换行；lexer 扫描本身已覆盖 |
 | `tname` 用 switch | 代码略长，token 类型少，非瓶颈 | 与 Go `TokenType.String()` 分支对齐，不追求表驱动 |
+| S2 parser 不建 AST | 无法做语义检查、无法逐节点对拍 | 只做语法验证与结构计数；AST 对拍留给 S3 |
+| S2 parser 额外接受旧式语法 | 与 Go parser 不是 bug-for-bug 兼容 | 为兼容仓库语料接受 `struct Name`、`fn (self T)`、无冒号参数/字段等写法 |
+| S2 不支持命名/map 复合字面量与函数字面量 | 当前仓库语料未使用，先不扩大语法面 | 遇到时返回 `EEXPR`/`ETYPE`，不静默跳过 |
 
 ## 6. 验收与回归
 
@@ -231,6 +276,12 @@ BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
 # Go/Cute token 序列对拍（默认固定语料）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parity.sh x86_64
 
+# S2 parser：自测（RC=42）+ 固定语料，全部要求 PARSE_OK
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64
+
+# S2 parser：只验证指定文件
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64 test/enum/main.cute
+
 # 标准库 22 个用例的回归矩阵（只比较结果行，不改变口径）
 BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 ```
@@ -243,6 +294,14 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
   且含 `IMPORT [import]` / `TYPE [enum]`）。
 - `scripts/selfhost_parity.sh x86_64`：`SELFHOST_PARITY_OK|x86_64|files=15|tokens=19160`
   （2026-11-06；固定语料逐字节一致，语料清单见脚本）。
+- `scripts/selfhost_parse.sh x86_64`：`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`
+  （2026-11-06；自测覆盖 7 组正/负例，固定语料全部 `PARSE_OK`）。
+- S2 自解析基线：
+  `selfhost/lex/lex.cute` → `PARSE_OK|decls=31|imports=2|builds=0|enums=1|structs=1|consts=4|vars=39|fns=23|stmts=449|exprs=954`；
+  `selfhost/parse/parse.cute` → `PARSE_OK|decls=68|imports=2|builds=0|enums=0|structs=1|consts=6|vars=13|fns=59|stmts=740|exprs=1796`。
+  计数随源码改动变化，验收判据是 `PARSE_OK` / 自测 `RC=42`，不是固定数值。
+- 全仓 `.cute` 扫描（2026-11-06）：`test/`、`pkg/`、`selfhost/` 共 247 个文件，
+  247/247 `PARSE_OK`。
 - `test/enum`：编译、汇编、链接后 `RC=42`，覆盖自增、显式值、十六进制值、负值、
   显式值后续自增，以及枚举类型用于变量、函数参数/返回值和结构体字段。
 - `scripts/stdlib_matrix.sh x86_64 1`：22 个用例中 21 个 `RC=42`；
@@ -259,7 +318,12 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 - 修改 `selfhost/lex` 后还要跑一次 `selfhost_dump.sh`，确认 token 流可完整打印且无
   `ERROR` 行；token 数变化本身不是失败。
 - 修改任一侧 lexer 规则后跑 `selfhost_parity.sh`，固定语料必须全部 `PARITY_OK`。
+- 修改 `selfhost/parse` 后跑 `selfhost_parse.sh`：自测必须 `RC=42`，固定语料必须全部
+  `PARSE_OK`；全仓扫描出现新失败时，先判断是语法子集缺口还是 parser 回归。
+- 新增 parser 语法时同步补 `selfhost/parse/test` 的正/负例；负例必须断言错误码，
+  不能只断言“失败”。
 - 与 Go 版对拍时，以 Go 版 token 序列为基准；差异必须先写进 `selfhost/lex/README.md`。
+  S2 parser 暂不与 Go parser 逐节点对拍，那是 S3 的验收项。
 - 不提交 `_main.asm`、`gc_summary.json`、`gc_llr.txt` 等运行产物。
 - 编译器参数必须传**绝对目录**；相对导入 `..` 会被压成标签前缀 `_`，包内 `start()`
   可能退化成 `_start`，与 ELF 入口冲突。
@@ -270,6 +334,9 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 ## 7. 下一步
 
-1. S2：评估最小 parser 的语法子集，优先覆盖 `fn`、`var/const`、`type struct`、`if/for/ret`。
-2. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
+1. S3：在 `selfhost/parse` 上补 AST 节点与 `parsedump --ast`，与 Go parser 对同一批
+   源码逐节点对拍；先固定声明/语句/表达式的节点形状，再扩语法覆盖。
+2. 把 S2 的 workaround 与宿主编译器缺陷分开跟踪：`continue` 跳出循环、结构体数组
+   字段、换行/字面量处理修复后，逐项移除 parser 侧规避并保留负例。
+3. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
    成员已在本轮落地。
