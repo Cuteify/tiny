@@ -1,0 +1,1311 @@
+// Cuteify 自举 parser（S2：最小语法子集）。
+//
+// 目标：用递归下降验证词法正确的 Cute 源码，覆盖 lexer 自身源码所需的声明、
+// 语句与表达式子集。S2 只做语法验证与结构计数，不建 AST、不做类型检查；
+// AST 与 Go parser 逐节点对拍留给 S3。
+//
+// 与 Go 版 parser 的关系：
+//   - 词法流来自 selfhost/lex，token 类型/文本与 Go lexer 对拍通过；
+//   - 语法子集按 Go parser 的实际接受形式实现，但只覆盖 S2 声明的最小集合；
+//   - 未支持的语法（interface、泛型函数、复合字面量等）会报错，不静默跳过。
+import "std:strings"
+import lex "../lex"
+
+// 错误码：0 表示成功，其余为语法错误类别。
+const OK: int = 0
+const ETOK: int = 1   // 词法错误（未闭合字符串等）
+const EDECL: int = 2  // 顶层声明错误
+const ETYPE: int = 3  // 类型引用错误
+const ESTMT: int = 4  // 语句/块错误
+const EEXPR: int = 5  // 表达式错误
+
+// Parser 只存标量与指针：源码用 ptr + uint 保存，token 文本按需构造。
+type Parser struct {
+    l: *lex.Lex
+    p: ptr
+    n: uint
+    k: lex.TokenType
+    a: uint
+    b: uint
+    e: int
+    ep: uint
+    decls: int
+    imports: int
+    builds: int
+    enums: int
+    structs: int
+    consts: int
+    vars: int
+    fns: int
+    stmts: int
+    exprs: int
+}
+
+// mk 基于源码字符串创建 parser，并预读第一个有效 token。
+fn mk(src string) *Parser {
+    var x: *Parser = new(Parser)
+    x.l = lex.mk(src)
+    x.p = strings.toCstring(src)
+    x.n = strings.len(src)
+    x.e = OK
+    x.ep = 0
+    x.decls = 0
+    x.imports = 0
+    x.builds = 0
+    x.enums = 0
+    x.structs = 0
+    x.consts = 0
+    x.vars = 0
+    x.fns = 0
+    x.stmts = 0
+    x.exprs = 0
+    advance(x)
+    ret x
+}
+
+// byteAt 读取源码偏移 i 处的字节；调用方保证 i < n。
+fn byteAt(x *Parser, i uint) uint {
+    var q: *u8 = x.p + i
+    var v: uint = *q
+    ret v
+}
+
+// isNewlineTok 判断当前 token 是否为 LF/CR 换行分隔符。
+// 换行在 Cute 里是语句分隔符；S2 直接跳过，块结构仍由 { } 定义。
+fn isNewlineTok(x *Parser) bool {
+    if x.k != lex.SEPARATOR {
+        ret false
+    }
+    if x.b != x.a + 1 {
+        ret false
+    }
+    var c: uint = byteAt(x, x.a)
+    if c == 10 || c == 13 {
+        ret true
+    }
+    ret false
+}
+
+// advance 读取下一个 token；EOF 时把区间收在源码末尾。
+// 换行 token 保留在流里：语句/声明边界由 skipNL/skipSep 显式处理，
+// 否则上一行末尾的表达式会把下一行开头的 `*`、`-` 误当二元运算符。
+// lex.next 每次调用都会重置错误状态，因此必须在拿到 token 的当下检查。
+fn advance(x *Parser) {
+    x.k = lex.next(x.l)
+    if x.k == lex.NONE {
+        x.a = lex.pos(x.l)
+        x.b = x.a
+        ret
+    }
+    x.a = lex.start(x.l)
+    x.b = lex.end(x.l)
+    if lex.err(x.l) != lex.OK {
+        fail(x, ETOK, x.a)
+    }
+}
+
+// skipNL 跳过 LF/CR 换行 token，不跳过分号。
+fn skipNL(x *Parser) {
+    for ; isNewlineTok(x); {
+        bump(x)
+    }
+}
+
+// skipSep 跳过换行与分号，用于语句/成员边界。
+fn skipSep(x *Parser) {
+    for ; isNewlineTok(x) || at(x, ";"); {
+        bump(x)
+    }
+}
+
+// tstr 把当前 token 的 [a,b) 区间构造为 string 视图。
+fn tstr(x *Parser) string {
+    var n: uint = x.b - x.a
+    ret strings.makeString(x.p + x.a, n, n)
+}
+
+// at 判断当前 token 文本是否等于 s。
+// 字符串/字符/裸串/数字/布尔字面量不参与比较：否则源码里的 "*"、"+"
+// 会被当成运算符，字符串内容为 "{" 时会被当成块开始。
+fn at(x *Parser, s string) bool {
+    if x.k == lex.STRING || x.k == lex.CHAR || x.k == lex.RAW {
+        ret false
+    }
+    if x.k == lex.NUMBER || x.k == lex.BOOL {
+        ret false
+    }
+    ret strings.eq(tstr(x), s)
+}
+
+// atName 判断当前 token 是否普通标识符。
+fn atName(x *Parser) bool {
+    ret x.k == lex.NAME
+}
+
+// bump 前进一个 token。
+fn bump(x *Parser) {
+    advance(x)
+}
+
+// eat 若当前 token 文本为 s，则前进并返回 true。
+fn eat(x *Parser, s string) bool {
+    if at(x, s) {
+        bump(x)
+        ret true
+    }
+    ret false
+}
+
+// fail 记录第一个错误；后续错误不覆盖。
+fn fail(x *Parser, code int, pos uint) {
+    if x.e != OK {
+        ret
+    }
+    x.e = code
+    x.ep = pos
+}
+
+// want 要求当前 token 文本为 s，否则记录 code 错误。
+fn want(x *Parser, s string, code int) bool {
+    if at(x, s) {
+        bump(x)
+        ret true
+    }
+    fail(x, code, x.a)
+    ret false
+}
+
+// wantName 要求当前 token 是 NAME，返回是否成功；成功时前进。
+fn wantName(x *Parser, code int) bool {
+    if x.k != lex.NAME {
+        fail(x, code, x.a)
+        ret false
+    }
+    bump(x)
+    ret true
+}
+
+// atStmtEnd 判断当前位置是否已到语句结束（用于可省略的 ret 表达式）。
+fn atStmtEnd(x *Parser) bool {
+    if x.k == lex.NONE {
+        ret true
+    }
+    if isNewlineTok(x) {
+        ret true
+    }
+    if at(x, ";") || at(x, "}") || at(x, "case") || at(x, "default") {
+        ret true
+    }
+    ret false
+}
+
+// file 解析整个文件：import 与顶层声明。
+fn file(x *Parser) {
+    skipSep(x)
+    for ; x.e == OK && x.k != lex.NONE; {
+        if at(x, "import") {
+            importDecl(x)
+            x.imports = x.imports + 1
+        } else if at(x, "build") {
+            buildDecl(x)
+            x.builds = x.builds + 1
+        } else if at(x, "struct") {
+            legacyStruct(x)
+        } else if at(x, "enum") {
+            enumDecl(x)
+            x.enums = x.enums + 1
+        } else if at(x, "type") {
+            typeDecl(x)
+        } else if at(x, "const") {
+            varDecl(x)
+        } else if at(x, "var") {
+            varDecl(x)
+        } else if at(x, "fn") {
+            fnDecl(x)
+            x.fns = x.fns + 1
+        } else {
+            fail(x, EDECL, x.a)
+            ret
+        }
+        if x.e == OK {
+            x.decls = x.decls + 1
+        }
+        skipSep(x)
+    }
+}
+
+// buildDecl 解析 build 条件或内联汇编：
+//   build os(linux)、build arch("x86_64")、build link("sym")
+//   build asm { ... }（汇编正文按花括号整体跳过）
+fn buildDecl(x *Parser) {
+    bump(x) // build
+    if at(x, "asm") {
+        bump(x)
+        skipBraceGroup(x)
+        ret
+    }
+    expr(x)
+}
+
+// skipBraceGroup 从当前 '{' 开始按嵌套层级整体跳过。
+fn skipBraceGroup(x *Parser) bool {
+    if !want(x, "{", ESTMT) {
+        ret false
+    }
+    var depth: int = 1
+    for ; depth > 0; {
+        if x.k == lex.NONE {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        if at(x, "{") {
+            depth = depth + 1
+        } else if at(x, "}") {
+            depth = depth - 1
+        }
+        bump(x)
+    }
+    ret true
+}
+
+// legacyStruct 解析旧式顶层声明：struct Name { ... }。
+fn legacyStruct(x *Parser) {
+    bump(x) // struct
+    if !wantName(x, EDECL) {
+        ret
+    }
+    structBody(x)
+    x.structs = x.structs + 1
+}
+
+// importDecl 解析 import [别名] "路径" 与 import ( ... ) 分组。
+fn importDecl(x *Parser) {
+    bump(x) // import
+    if at(x, "(") {
+        bump(x)
+        skipSep(x)
+        for ; x.e == OK && !at(x, ")"); {
+            if atName(x) {
+                bump(x) // 组内别名
+            }
+            if x.k != lex.STRING {
+                fail(x, EDECL, x.a)
+                ret
+            }
+            bump(x)
+            skipSep(x)
+        }
+        want(x, ")", EDECL)
+        ret
+    }
+    if atName(x) {
+        bump(x) // 别名
+    }
+    if x.k != lex.STRING {
+        fail(x, EDECL, x.a)
+        ret
+    }
+    bump(x)
+}
+
+// enumDecl 解析 enum Name { 成员... }；成员可用换行或逗号分隔。
+fn enumDecl(x *Parser) {
+    bump(x) // enum
+    if !wantName(x, EDECL) {
+        ret
+    }
+    if !want(x, "{", EDECL) {
+        ret
+    }
+    skipSep(x)
+    for ; x.e == OK && !at(x, "}"); {
+        if x.k == lex.NAME {
+            bump(x)
+            if at(x, "=") {
+                bump(x)
+                if !expr(x) {
+                    ret
+                }
+            }
+        } else if at(x, ",") {
+            bump(x)
+        } else if x.k == lex.NONE {
+            fail(x, EDECL, x.a)
+            ret
+        } else {
+            fail(x, EDECL, x.a)
+            ret
+        }
+        skipSep(x)
+    }
+    want(x, "}", EDECL)
+}
+
+// typeDecl 解析 type 声明：
+//   type Name struct { ... }
+//   type Name interface { ... }
+//   type Name = 类型   （别名）
+//   type Name 类型     （定义）
+fn typeDecl(x *Parser) {
+    bump(x) // type
+    if !wantName(x, EDECL) {
+        ret
+    }
+    if at(x, "struct") {
+        bump(x)
+        structBody(x)
+        x.structs = x.structs + 1
+        ret
+    }
+    if at(x, "interface") {
+        bump(x)
+        interfaceBody(x)
+        ret
+    }
+    if at(x, "=") {
+        bump(x)
+    }
+    typeRef(x)
+}
+
+// structBody 解析结构体字段：修饰符、字段名、类型、默认值与标签。
+fn structBody(x *Parser) bool {
+    // 旧式继承：struct Student : Person { ... }
+    if at(x, ":") {
+        bump(x)
+        if !typeRef(x) {
+            ret false
+        }
+    }
+    if !want(x, "{", EDECL) {
+        ret false
+    }
+    skipSep(x)
+    for ; x.e == OK && !at(x, "}"); {
+        if x.k == lex.NONE {
+            fail(x, EDECL, x.a)
+            ret false
+        }
+        if !structField(x) {
+            ret false
+        }
+        skipSep(x)
+    }
+    ret want(x, "}", EDECL)
+}
+
+// structField 解析单个结构体字段或内嵌类型。
+fn structField(x *Parser) bool {
+    // 内嵌类型： @Parent
+    if at(x, "@") {
+        bump(x)
+        ret typeRef(x)
+    }
+    // 可见性与字段修饰符：pub、priv、prot、!、?、+、-
+    if at(x, "pub") || at(x, "priv") || at(x, "prot") {
+        bump(x)
+    }
+    if at(x, "!") || at(x, "?") || at(x, "+") || at(x, "-") {
+        bump(x)
+    }
+    if !wantName(x, EDECL) {
+        ret false
+    }
+    // 命名内嵌： name @Parent
+    if at(x, "@") {
+        bump(x)
+        ret typeRef(x)
+    }
+    if at(x, ":") {
+        bump(x)
+        if !typeRef(x) {
+            ret false
+        }
+    } else {
+        // 无冒号时按“名字 类型”解析，兼容 x int。
+        if !typeRef(x) {
+            ret false
+        }
+    }
+    if at(x, "=") {
+        bump(x)
+        if !expr(x) {
+            ret false
+        }
+    }
+    // 结构体标签：meta: string `json:"meta"`
+    if x.k == lex.RAW {
+        bump(x)
+    }
+    if at(x, ",") {
+        bump(x)
+    }
+    ret true
+}
+
+// interfaceBody 解析接口方法：name(参数...) 返回类型。
+fn interfaceBody(x *Parser) bool {
+    if !want(x, "{", EDECL) {
+        ret false
+    }
+    skipSep(x)
+    for ; x.e == OK && !at(x, "}"); {
+        if x.k == lex.NONE {
+            fail(x, EDECL, x.a)
+            ret false
+        }
+        if !wantName(x, EDECL) {
+            ret false
+        }
+        if !paramList(x) {
+            ret false
+        }
+        if !returnType(x) {
+            ret false
+        }
+        skipSep(x)
+    }
+    ret want(x, "}", EDECL)
+}
+
+// varDecl 解析 var/const/let 声明（类型标注与初始化值都可省略，但至少要有一个）。
+fn varDecl(x *Parser) bool {
+    var isConst: bool = at(x, "const")
+    bump(x) // var/const/let
+    if !wantName(x, EDECL) {
+        ret false
+    }
+    for ; at(x, ","); {
+        bump(x)
+        if !wantName(x, EDECL) {
+            ret false
+        }
+    }
+    var hasType: bool = false
+    if at(x, ":") {
+        bump(x)
+        if !typeRef(x) {
+            ret false
+        }
+        hasType = true
+    }
+    var hasValue: bool = false
+    if at(x, "=") || at(x, ":=") {
+        bump(x)
+        if !expr(x) {
+            ret false
+        }
+        hasValue = true
+    }
+    if !hasType && !hasValue {
+        fail(x, ETYPE, x.a)
+        ret false
+    }
+    if isConst {
+        x.consts = x.consts + 1
+    } else {
+        x.vars = x.vars + 1
+    }
+    ret true
+}
+
+// typeRef 解析类型引用：*T、[]T、[N]T、map[K]V、fn(...)、Name、a.b.c。
+fn typeRef(x *Parser) bool {
+    if at(x, "*") {
+        bump(x)
+        ret typeRef(x)
+    }
+    if at(x, "[") {
+        bump(x)
+        if at(x, "]") {
+            bump(x)
+            ret typeRef(x)
+        }
+        if x.k != lex.NUMBER {
+            fail(x, ETYPE, x.a)
+            ret false
+        }
+        bump(x)
+        if !want(x, "]", ETYPE) {
+            ret false
+        }
+        ret typeRef(x)
+    }
+    if at(x, "map") {
+        bump(x)
+        if !want(x, "[", ETYPE) {
+            ret false
+        }
+        if !typeRef(x) {
+            ret false
+        }
+        if !want(x, "]", ETYPE) {
+            ret false
+        }
+        ret typeRef(x)
+    }
+    if at(x, "fn") {
+        bump(x)
+        if !want(x, "(", ETYPE) {
+            ret false
+        }
+        skipNL(x)
+        if !at(x, ")") {
+            if !typeRef(x) {
+                ret false
+            }
+            for ; at(x, ","); {
+                bump(x)
+                if !typeRef(x) {
+                    ret false
+                }
+            }
+        }
+        skipNL(x)
+        if !want(x, ")", ETYPE) {
+            ret false
+        }
+        // 函数类型可带返回类型：fn(int) string。
+        if isNewlineTok(x) || at(x, ")") || at(x, "]") || at(x, ";") || at(x, "}") || at(x, ",") || at(x, "=") {
+            ret true
+        }
+        ret typeRef(x)
+    }
+    if x.k != lex.NAME {
+        fail(x, ETYPE, x.a)
+        ret false
+    }
+    bump(x)
+    for ; at(x, "."); {
+        bump(x)
+        if !wantName(x, ETYPE) {
+            ret false
+        }
+    }
+    // 泛型类型实参：Name[T] / Name[K, V]。
+    if at(x, "[") {
+        bump(x)
+        if !typeRef(x) {
+            ret false
+        }
+        for ; at(x, ","); {
+            bump(x)
+            if !typeRef(x) {
+                ret false
+            }
+        }
+        if !want(x, "]", ETYPE) {
+            ret false
+        }
+    }
+    ret true
+}
+
+// fnDecl 解析 fn Name(参数...) 返回类型 { 函数体 }。
+fn fnDecl(x *Parser) bool {
+    bump(x) // fn
+    // 方法接收者：fn (self Point) move(...)
+    if at(x, "(") {
+        if !paramList(x) {
+            ret false
+        }
+    }
+    if !wantName(x, EDECL) {
+        ret false
+    }
+    for ; at(x, "."); {
+        bump(x)
+        if !wantName(x, EDECL) {
+            ret false
+        }
+    }
+    // 泛型参数声明：[T] / [K, V]。
+    if at(x, "[") {
+        bump(x)
+        if !wantName(x, EDECL) {
+            ret false
+        }
+        for ; at(x, ","); {
+            bump(x)
+            if !wantName(x, EDECL) {
+                ret false
+            }
+        }
+        if !want(x, "]", EDECL) {
+            ret false
+        }
+    }
+    if !paramList(x) {
+        ret false
+    }
+    if !returnType(x) {
+        ret false
+    }
+    ret block(x)
+}
+
+// paramList 解析参数列表：name [: ]Type，逗号分隔。
+fn paramList(x *Parser) bool {
+    if !want(x, "(", EDECL) {
+        ret false
+    }
+    skipNL(x)
+    if !at(x, ")") {
+        for ; x.e == OK; {
+            if !wantName(x, EDECL) {
+                ret false
+            }
+            if at(x, ":") {
+                bump(x)
+            }
+            if !typeRef(x) {
+                ret false
+            }
+            // 参数默认值：b: i64 = "hi"
+            if at(x, "=") {
+                bump(x)
+                if !expr(x) {
+                    ret false
+                }
+            }
+            skipNL(x)
+            if at(x, ",") {
+                bump(x)
+                skipNL(x)
+                if at(x, ")") {
+                    break
+                }
+            } else {
+                break
+            }
+        }
+    }
+    skipNL(x)
+    ret want(x, ")", EDECL)
+}
+
+// returnType 解析返回类型：单类型、(T1, T2, ...) 或省略。
+fn returnType(x *Parser) bool {
+    if at(x, "(") {
+        bump(x)
+        skipNL(x)
+        if !at(x, ")") {
+            if !typeRef(x) {
+                ret false
+            }
+            skipNL(x)
+            for ; at(x, ","); {
+                bump(x)
+                skipNL(x)
+                if at(x, ")") {
+                    break
+                }
+                if !typeRef(x) {
+                    ret false
+                }
+                skipNL(x)
+            }
+        }
+        skipNL(x)
+        ret want(x, ")", EDECL)
+    }
+    if at(x, "{") || isNewlineTok(x) || at(x, ";") || at(x, "}") {
+        ret true
+    }
+    ret typeRef(x)
+}
+
+// block 解析 { 语句... }。
+fn block(x *Parser) bool {
+    skipNL(x)
+    if !want(x, "{", ESTMT) {
+        ret false
+    }
+    skipSep(x)
+    for ; x.e == OK && !at(x, "}"); {
+        if x.k == lex.NONE {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        var before: uint = x.a
+        if !stmt(x) {
+            ret false
+        }
+        if x.a == before && !at(x, "}") {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        skipSep(x)
+    }
+    ret want(x, "}", ESTMT)
+}
+
+// stmt 解析一条语句并累计计数。
+fn stmt(x *Parser) bool {
+    var ok: bool = false
+    if at(x, "var") || at(x, "const") || at(x, "let") {
+        ok = varDecl(x)
+    } else if at(x, "if") {
+        ok = ifStmt(x)
+    } else if at(x, "for") || at(x, "while") {
+        ok = forStmt(x)
+    } else if at(x, "switch") {
+        ok = switchStmt(x)
+    } else if at(x, "ret") || at(x, "return") {
+        ok = retStmt(x)
+    } else if at(x, "defer") {
+        bump(x)
+        ok = expr(x)
+    } else if at(x, "build") {
+        buildDecl(x)
+        ok = x.e == OK
+    } else if at(x, "break") || at(x, "continue") {
+        bump(x)
+        eat(x, ";")
+        ok = true
+    } else if at(x, "{") {
+        ok = block(x)
+    } else {
+        ok = simpleStmt(x)
+    }
+    if ok {
+        x.stmts = x.stmts + 1
+    }
+    ret ok
+}
+
+// ifStmt 解析 if 条件 { ... } [else if|else { ... }]。
+fn ifStmt(x *Parser) bool {
+    bump(x) // if
+    if !expr(x) {
+        ret false
+    }
+    if !block(x) {
+        ret false
+    }
+    if eat(x, "else") {
+        if at(x, "if") {
+            ret ifStmt(x)
+        }
+        ret block(x)
+    }
+    ret true
+}
+
+// forStmt 解析 while 形式、for ; cond ; 形式、三表达式形式与 range 形式。
+fn forStmt(x *Parser) bool {
+    bump(x) // for/while
+    skipNL(x)
+    if at(x, "{") {
+        ret block(x)
+    }
+    if at(x, ";") {
+        bump(x)
+        ret forCondTail(x)
+    }
+    if at(x, "var") || at(x, "const") || at(x, "let") {
+        if !varDecl(x) {
+            ret false
+        }
+        skipNL(x)
+        if !want(x, ";", ESTMT) {
+            ret false
+        }
+        ret forCondTail(x)
+    }
+
+    // 表达式起始：range 形式（i, v := range xs）或普通初值。
+    if !expr(x) {
+        ret false
+    }
+    if at(x, ",") {
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+        if !isAssignOp(x) {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        bump(x)
+        skipNL(x)
+        if !at(x, "range") {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+        ret block(x)
+    }
+    if isAssignOp(x) {
+        bump(x)
+        skipNL(x)
+        if at(x, "range") {
+            bump(x)
+            skipNL(x)
+            if !expr(x) {
+                ret false
+            }
+            ret block(x)
+        }
+        // 普通三表达式形式：赋值右侧是初值。
+        if !expr(x) {
+            ret false
+        }
+        skipNL(x)
+        if !want(x, ";", ESTMT) {
+            ret false
+        }
+        ret forCondTail(x)
+    }
+    ret block(x) // while 形式：expr 已解析条件表达式
+}
+
+// forCondTail 解析 for 的“; 条件; 后置语句 { ... }”部分。
+fn forCondTail(x *Parser) bool {
+    skipNL(x)
+    if !at(x, ";") && !expr(x) {
+        ret false
+    }
+    skipNL(x)
+    if !want(x, ";", ESTMT) {
+        ret false
+    }
+    skipNL(x)
+    if !at(x, "{") && !simpleStmt(x) {
+        ret false
+    }
+    ret block(x)
+}
+
+// switchStmt 解析 switch [表达式] { case 表达式: 语句... default: 语句... }。
+fn switchStmt(x *Parser) bool {
+    bump(x) // switch
+    skipNL(x)
+    if !at(x, "{") && !expr(x) {
+        ret false
+    }
+    skipNL(x)
+    if !want(x, "{", ESTMT) {
+        ret false
+    }
+    skipSep(x)
+    var seen: bool = false
+    for ; x.e == OK && !at(x, "}"); {
+        skipSep(x)
+        if x.k == lex.NONE {
+            fail(x, ESTMT, x.a)
+            ret false
+        }
+        if at(x, "case") {
+            bump(x)
+            skipNL(x)
+            if !expr(x) {
+                ret false
+            }
+            skipNL(x)
+            for ; at(x, ","); {
+                bump(x)
+                skipNL(x)
+                if !expr(x) {
+                    ret false
+                }
+                skipNL(x)
+            }
+            if !want(x, ":", ESTMT) {
+                ret false
+            }
+            skipSep(x)
+            seen = true
+        } else if at(x, "default") {
+            bump(x)
+            skipNL(x)
+            if !want(x, ":", ESTMT) {
+                ret false
+            }
+            skipSep(x)
+            seen = true
+        } else {
+            if !seen {
+                fail(x, ESTMT, x.a)
+                ret false
+            }
+            if !stmt(x) {
+                ret false
+            }
+            skipSep(x)
+        }
+    }
+    ret want(x, "}", ESTMT)
+}
+
+// retStmt 解析 ret/return [表达式, ...]。
+fn retStmt(x *Parser) bool {
+    bump(x)
+    if atStmtEnd(x) {
+        ret true
+    }
+    if !expr(x) {
+        ret false
+    }
+    for ; at(x, ","); {
+        bump(x)
+        if !expr(x) {
+            ret false
+        }
+    }
+    ret true
+}
+
+// simpleStmt 解析表达式语句与赋值；支持多左值与逗号分隔表达式。
+fn simpleStmt(x *Parser) bool {
+    if !expr(x) {
+        ret false
+    }
+    for ; at(x, ","); {
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+    }
+    // 省略 var 的声明：x: int = 1
+    if at(x, ":") {
+        bump(x)
+        if !typeRef(x) {
+            ret false
+        }
+        if at(x, "=") {
+            bump(x)
+            if !expr(x) {
+                ret false
+            }
+        }
+        x.vars = x.vars + 1
+        ret true
+    }
+    if isAssignOp(x) {
+        bump(x)
+        if !expr(x) {
+            ret false
+        }
+        for ; at(x, ","); {
+            bump(x)
+            skipNL(x)
+            if !expr(x) {
+                ret false
+            }
+        }
+    }
+    if at(x, "++") || at(x, "--") {
+        bump(x)
+    }
+    ret true
+}
+
+// isAssignOp 判断当前 token 是否为赋值运算符。
+fn isAssignOp(x *Parser) bool {
+    if at(x, "=") || at(x, ":=") {
+        ret true
+    }
+    if at(x, "+=") || at(x, "-=") || at(x, "*=") || at(x, "/=") || at(x, "%=") {
+        ret true
+    }
+    if at(x, "^=") || at(x, "&=") || at(x, "|=") || at(x, "<<=") || at(x, ">>=") {
+        ret true
+    }
+    ret false
+}
+
+// expr 是表达式入口。
+fn expr(x *Parser) bool {
+    ret binary(x, 1)
+}
+
+// prec 返回二元运算符优先级；0 表示不是二元运算符。
+fn prec(s string) int {
+    if strings.eq(s, "||") {
+        ret 1
+    }
+    if strings.eq(s, "&&") {
+        ret 2
+    }
+    if strings.eq(s, "|") {
+        ret 3
+    }
+    if strings.eq(s, "^") {
+        ret 4
+    }
+    if strings.eq(s, "&") {
+        ret 5
+    }
+    if strings.eq(s, "==") || strings.eq(s, "!=") {
+        ret 6
+    }
+    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
+        ret 7
+    }
+    if strings.eq(s, "<<") || strings.eq(s, ">>") {
+        ret 8
+    }
+    if strings.eq(s, "+") || strings.eq(s, "-") {
+        ret 9
+    }
+    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+        ret 10
+    }
+    ret 0
+}
+
+// binary 按优先级解析二元表达式（全部左结合）。
+fn binary(x *Parser, minPrec int) bool {
+    if !unary(x) {
+        ret false
+    }
+    for ; x.e == OK; {
+        var pr: int = prec(tstr(x))
+        if pr < minPrec || pr == 0 {
+            break
+        }
+        bump(x)
+        skipNL(x) // 允许运算符后换行续写
+        if !binary(x, pr + 1) {
+            ret false
+        }
+    }
+    ret true
+}
+
+// unary 解析前缀运算符。
+fn unary(x *Parser) bool {
+    if at(x, "!") || at(x, "-") || at(x, "+") || at(x, "*") || at(x, "&") || at(x, "^") || at(x, "~") {
+        bump(x)
+        ret unary(x)
+    }
+    ret postfix(x)
+}
+
+// postfix 解析调用、索引/泛型实参与选择器。
+fn postfix(x *Parser) bool {
+    if !primary(x) {
+        ret false
+    }
+    for ; x.e == OK; {
+        if at(x, "(") {
+            if !callArgs(x) {
+                ret false
+            }
+        } else if at(x, "[") {
+            bump(x)
+            skipNL(x)
+            // 索引、切片与泛型实参共用方括号。
+            if !at(x, "]") && !at(x, ":") {
+                if !expr(x) {
+                    ret false
+                }
+                skipNL(x)
+            }
+            if at(x, ":") {
+                bump(x) // 切片起点
+                skipNL(x)
+                if !at(x, "]") && !at(x, ":") {
+                    if !expr(x) {
+                        ret false
+                    }
+                    skipNL(x)
+                }
+                if at(x, ":") {
+                    bump(x) // 完整切片 [lo:hi:max]
+                    skipNL(x)
+                    if !at(x, "]") {
+                        if !expr(x) {
+                            ret false
+                        }
+                        skipNL(x)
+                    }
+                }
+            } else {
+                for ; at(x, ","); {
+                    bump(x)
+                    skipNL(x)
+                    if at(x, "]") {
+                        break
+                    }
+                    if !expr(x) {
+                        ret false
+                    }
+                    skipNL(x)
+                }
+            }
+            if !want(x, "]", EEXPR) {
+                ret false
+            }
+        } else if at(x, ".") {
+            bump(x)
+            if !wantName(x, EEXPR) {
+                ret false
+            }
+        } else {
+            break
+        }
+    }
+    ret true
+}
+
+// callArgs 解析 (参数...)。
+fn callArgs(x *Parser) bool {
+    bump(x) // (
+    skipNL(x)
+    if !at(x, ")") {
+        if !expr(x) {
+            ret false
+        }
+        skipNL(x)
+        for ; at(x, ","); {
+            bump(x)
+            skipNL(x)
+            if at(x, ")") {
+                break
+            }
+            if !expr(x) {
+                ret false
+            }
+            skipNL(x)
+        }
+    }
+    ret want(x, ")", EEXPR)
+}
+
+// primary 解析字面量、名字、括号表达式与切片/数组复合字面量。
+fn primary(x *Parser) bool {
+    if x.k == lex.NUMBER || x.k == lex.STRING || x.k == lex.CHAR || x.k == lex.RAW || x.k == lex.BOOL {
+        bump(x)
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    if x.k == lex.NAME {
+        bump(x)
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    // 复合字面量：[]T{...} 与 [N]T{...}。
+    if at(x, "[") {
+        bump(x)
+        if at(x, "]") {
+            bump(x)
+        } else if x.k == lex.NUMBER {
+            bump(x)
+            if !want(x, "]", ETYPE) {
+                ret false
+            }
+        } else {
+            fail(x, ETYPE, x.a)
+            ret false
+        }
+        if !typeRef(x) {
+            ret false
+        }
+        skipNL(x)
+        if at(x, "{") {
+            x.exprs = x.exprs + 1
+            ret compositeLit(x)
+        }
+        // 类型本身作为表达式实参，如 new([]int, 8)。
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    if at(x, "(") {
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+        skipNL(x)
+        if !want(x, ")", EEXPR) {
+            ret false
+        }
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    fail(x, EEXPR, x.a)
+    ret false
+}
+
+// compositeLit 解析 { 元素, ... }，允许嵌套复合字面量。
+fn compositeLit(x *Parser) bool {
+    if !want(x, "{", EEXPR) {
+        ret false
+    }
+    skipNL(x)
+    if !at(x, "}") {
+        if !expr(x) {
+            ret false
+        }
+        skipNL(x)
+        for ; at(x, ","); {
+            bump(x)
+            skipNL(x)
+            if at(x, "}") {
+                break
+            }
+            if !expr(x) {
+                ret false
+            }
+            skipNL(x)
+        }
+    }
+    ret want(x, "}", EEXPR)
+}
+
+// 以下为只读访问器，供 driver 输出与测试断言。
+fn err(x *Parser) int {
+    ret x.e
+}
+
+fn errPos(x *Parser) uint {
+    ret x.ep
+}
+
+fn declCount(x *Parser) int {
+    ret x.decls
+}
+
+fn importCount(x *Parser) int {
+    ret x.imports
+}
+
+fn buildCount(x *Parser) int {
+    ret x.builds
+}
+
+fn enumCount(x *Parser) int {
+    ret x.enums
+}
+
+fn structCount(x *Parser) int {
+    ret x.structs
+}
+
+fn constCount(x *Parser) int {
+    ret x.consts
+}
+
+fn varCount(x *Parser) int {
+    ret x.vars
+}
+
+fn fnCount(x *Parser) int {
+    ret x.fns
+}
+
+fn stmtCount(x *Parser) int {
+    ret x.stmts
+}
+
+fn exprCount(x *Parser) int {
+    ret x.exprs
+}

@@ -1,0 +1,5 @@
+{
+    "name": "parse",
+    "version": "0.1.0",
+    "description": "Cuteify 自举 parser（S2：最小语法子集，只验证不建 AST）"
+}
