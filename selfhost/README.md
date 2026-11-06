@@ -37,8 +37,10 @@ selfhost/
 2. **token 枚举与 Go 版一致**：`NONE / FUNC / VAR / PROCESSCONTROL / SEPARATOR /
    STRING / NUMBER / NAME / CHAR / TYPE / RAW / BOOL / BUILD / IMPORT`，编号也逐项相同。
    Go 侧用现代枚举写法 `type TokenType int` + `const (... = iota)`，并提供
-   `TokenType.String()`；自举侧用 `enum TokenType { ... }` 声明，成员按顺序自动从 0
-   自增。`tname(k)` 用 `switch` 覆盖全部 14 个值（含 `NONE` → `"NONE"`），未知值返回 `""`。
+   `TokenType.String()`；自举侧用 `enum TokenType { ... }` 声明，生成独立的命名类型
+   （等价于 `type TokenType int`），成员按顺序自动从 0 自增且类型就是 `TokenType`。
+   `Lex.k`、`next`、`kw`、`kind`、`tname` 全部使用该类型；`tname(k)` 用 `switch`
+   覆盖全部 14 个值（含 `NONE` → `"NONE"`），未知值返回 `""`。
 3. **API 名称从简**：`mk`、`next`、`text`、`kind`、`err`、`start`、`end`、`pos`、`tname`。
    与 Go 版 `NewLexer` / `GetToken` / `TokenTypeName` 的职责一一对应，但不照搬长名称。
 4. **结构体不存 `string` 字段**：`Lex` 只保存 `ptr + uint`（源码指针、长度、游标、token
@@ -103,6 +105,7 @@ echo $?   # 期望 42
 | 状态 | `Lexer` 带 `Text`/`Filename`/`LineFeed` 等 string 字段 | `Lex` 只存 `ptr/uint/int`，无 string 字段 |
 | token | `Token{Type, Value, Cursor, EndCursor}` 值返回 | `next()` 返回类型，`text/start/end` 读取最近 token |
 | token 名称 | `TokenTypeName` switch 含 `NONE` | `tname(kind)` switch，名称与编号同 Go |
+| 枚举类型 | `type TokenType int` + typed 常量 | `enum TokenType` 独立命名类型 + typed 成员 |
 | 关键字 | `map[string]int` | if 链 + `strings.eq` |
 | 字符串 token 区间 | 包含引号的原始区间 + 去引号 `Value` | `start/end` 指向**内容**（不含定界符） |
 | EOF | `io.EOF` | `NONE` + `err()==OK` |
@@ -133,8 +136,9 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
    `freeSlot`，导致 token 文本偶发损坏。
 5. **switch 解析**：新 `case`/`default` 前从旧 `CaseBlock` 退回 `SwitchBlock`；
    `default` 不解析 case 值。自举 lexer 的 `tname` 依赖该修复。
-6. **Cute `enum` 语法**：支持 `enum Name { A, B = 10 }`，成员自动自增、可显式赋整数、
-   枚举名注册为 `int` 真别名；成员降级为编译期常量，保持现有 `const` 的代码生成路径。
+6. **Cute `enum` 语法**：支持 `enum Name { A, B = 10 }`，成员自动自增、可显式赋整数；
+   枚举名注册为独立命名类型（`type Name int` 语义），成员常量带枚举类型，
+   `Lex.k` 与 lexer API 直接使用 `TokenType`。
 
 ## 限制
 
@@ -142,8 +146,8 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 - 没有文件 I/O、路径、行号/列号；错误只给字节区间。
 - 按字节扫描，与 Go 版一致，不按 Unicode 码点切分。
 - 关键字匹配是 O(关键字数) 的字符串比较；lexer 不是性能瓶颈，暂不做 trie。
-- Cute 的 `enum` 成员降级为作用域内的 int 常量，枚举名是 `int` 真别名；没有独立类型
-  检查，也不支持 `TokenType.NONE` 作用域限定访问。
+- Cute 的 `enum` 会生成独立命名类型，成员常量带该类型；暂不支持
+  `TokenType.NONE` 作用域限定访问。
 - 测试源码里不能直接写跨行裸字符串（当前编译器对字面量 RAW 的跨行处理有缺陷），
   测试用运行时拼接构造含换行的源码；lexer 本身支持跨行裸串。
 - 不含显式 `import "std:strings"` 的裸 `main` 程序可能链接失败：编译器 pre-pass
@@ -156,6 +160,6 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 1. 补 token 流读取示例/小型 driver（仍然只依赖 `string` 输入）。
 2. 评估自举 parser 的最小语法子集（先覆盖 lexer 自身源码）。
 3. 让自举 lexer 解析 `selfhost/lex/lex.cute` 自身，与 Go 版 token 序列做逐项对拍。
-4. 再讨论文件 I/O、错误行列、枚举独立类型检查等语言/运行时增强。
+4. 再讨论文件 I/O、错误行列、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
 
 任何阶段完成前都不宣称“已自举”；状态以本文件表格和 `docs/SELFHOST.md` 为准。

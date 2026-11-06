@@ -18,7 +18,7 @@ fn nl() string {
 }
 
 // chk 读取下一个 token，校验类型与文本。
-fn chk(l *lex.Lex, want int, s string) bool {
+fn chk(l *lex.Lex, want lex.TokenType, s string) bool {
     if lex.next(l) != want {
         ret false
     }

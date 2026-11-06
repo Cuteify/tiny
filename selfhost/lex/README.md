@@ -42,14 +42,14 @@ fn main() int {
 | 函数 | 签名 | 作用 |
 |---|---|---|
 | `mk` | `fn mk(s string) *Lex` | 基于源码字符串创建词法状态；不复制源码 |
-| `next` | `fn next(l *Lex) int` | 扫描下一个 token，返回 token 类型；EOF 返回 `NONE` |
+| `next` | `fn next(l *Lex) TokenType` | 扫描下一个 token，返回 token 类型；EOF 返回 `NONE` |
 | `text` | `fn text(l *Lex) string` | 最近 token 的文本；字符串/字符/裸串不含定界符 |
-| `kind` | `fn kind(l *Lex) int` | 最近 token 的类型（与 `next` 返回值相同） |
+| `kind` | `fn kind(l *Lex) TokenType` | 最近 token 的类型（与 `next` 返回值相同） |
 | `err` | `fn err(l *Lex) int` | 最近一次 `next` 的错误码；`OK` 表示无错误 |
 | `start` | `fn start(l *Lex) uint` | 最近 token 的起始字节偏移（含） |
 | `end` | `fn end(l *Lex) uint` | 最近 token 的结束字节偏移（不含） |
 | `pos` | `fn pos(l *Lex) uint` | 当前扫描游标（下一个待读字节） |
-| `tname` | `fn tname(k int) string` | token 类型名，与 Go 版 `TokenTypeName` 一致；覆盖全部 14 个枚举值，未知值返回 `""` |
+| `tname` | `fn tname(k TokenType) string` | token 类型名，与 Go 版 `TokenTypeName` 一致；覆盖全部 14 个枚举值，未知值返回 `""` |
 
 内部辅助函数 `bt`、`skip`、`dig`、`hex`、`oct`、`bin`、`sep`、`num`、`name`、`kw`、
 `str`、`chr`、`raw`、`comment` 也放在包内，但不建议外部依赖。
@@ -68,8 +68,9 @@ fn main() int {
 
 编号与 Go 版 `lexer/keywords.go` 完全一致。Go 侧现在是现代枚举写法：
 `type TokenType int` + `const (... = iota)`，并提供 `TokenType.String()` 与
-`TokenTypeName(...)`；自举侧用 `enum TokenType { ... }` 声明，成员自动从 0 自增，
-二者名称、顺序、值逐项对齐。
+`TokenTypeName(...)`；自举侧用 `enum TokenType { ... }` 声明，生成独立的命名类型，
+成员自动从 0 自增且常量类型就是 `TokenType`。`Lex.k`、`next`、`kw`、`kind`、`tname`
+全部使用该类型，名称、顺序、值与类型身份逐项对齐。
 
 | 名称 | 值 | 含义 |
 |---|---|---:|
@@ -231,7 +232,7 @@ fn main() int {
   `seek`/`peek`。
 - 没有 Unicode 标识符：按字节判断分隔符，非 ASCII 字节会进入 `NAME`，与 Go 版一致。
 - `tname` 是 `switch`；token 类型很少，暂不做表驱动。
-- Cute 的 `enum` 是编译期 int 常量组：成员直接使用，枚举名注册为 `int` 真别名；
-  暂不支持 `TokenType.NONE` 作用域限定访问或独立枚举类型检查。
+- Cute 的 `enum` 会生成独立命名类型（等价于 `type TokenType int`），成员常量带该类型；
+  暂不支持 `TokenType.NONE` 作用域限定访问。
 - 当前编译器对源码里的跨行裸字符串字面量支持不完整；测试用运行时构造的换行字符串
   拼接源码，lexer 自身的跨行裸串扫描已覆盖。

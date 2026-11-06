@@ -38,7 +38,7 @@ const ECHAR: int = 3  // 字符字面量长度非法
 //   p/n  源码指针与长度
 //   i    当前游标
 //   a/b  最近一个 token 的内容区间 [a, b)
-//   k    最近一个 token 的类型
+//   k    最近一个 token 的类型（TokenType）
 //   e    最近一次 next() 的错误码
 type Lex struct {
     p: ptr
@@ -46,7 +46,7 @@ type Lex struct {
     i: uint
     a: uint
     b: uint
-    k: int
+    k: TokenType
     e: int
 }
 
@@ -80,13 +80,13 @@ fn text(l *Lex) string {
 }
 
 // kind 返回最近一个 token 的类型。
-fn kind(l *Lex) int {
+fn kind(l *Lex) TokenType {
     ret l.k
 }
 
 // tname 返回 token 类型名，与 Go 版 LexTokenType/TokenTypeName 一致。
 // 未知类型返回空串。
-fn tname(k int) string {
+fn tname(k TokenType) string {
     switch k {
     case NONE:
         ret "NONE"
@@ -532,7 +532,7 @@ fn name(l *Lex) {
 }
 
 // kw 把当前 token 文本映射为关键字类型；未命中返回 NAME。
-fn kw(l *Lex) int {
+fn kw(l *Lex) TokenType {
     var s: string = text(l)
 
     if strings.eq(s, "fn") {
@@ -735,7 +735,7 @@ fn comment(l *Lex) {
 
 // next 扫描并返回下一个 token 类型；EOF 返回 NONE。
 // 每次调用先把错误码重置为 OK；返回 NONE 且 err()==OK 表示正常结束。
-fn next(l *Lex) int {
+fn next(l *Lex) TokenType {
     l.e = OK
     for ; ; {
         l.k = NONE
