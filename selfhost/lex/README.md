@@ -230,6 +230,8 @@ fn main() int {
 
 - lexer API 没有文件路径、行号/列号；错误只有字节区间。S1 `tokdump` driver
   已在上层按偏移补行列换算。
+- 与 Go 版的归一化 token 序列由 `scripts/selfhost_parity.sh` 对拍；当前固定语料
+  15 个文件、19160 tokens 逐字节一致。
 - 没有 token 缓冲/回退 API；parser 若需要回退，可保存 `pos` 后重新 `mk`，或后续增加
   `seek`/`peek`。
 - 没有 Unicode 标识符：按字节判断分隔符，非 ASCII 字节会进入 `NAME`，与 Go 版一致。

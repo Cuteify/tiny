@@ -70,7 +70,10 @@ BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 # 3. S1 token 流 driver（默认打印 lex.cute 自身的 token 序列）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
 
-# 4. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
+# 4. Go/Cute token 序列对拍（默认固定语料，逐字节比较）
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parity.sh x86_64
+
+# 5. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
 for i in 1 2 3; do
     BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 done
@@ -166,7 +169,7 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 ## 下一步
 
 1. 评估自举 parser 的最小语法子集（先覆盖 lexer 自身源码）。
-2. 让自举 lexer 解析 `selfhost/lex/lex.cute` 自身，与 Go 版 token 序列做逐项对拍。
-3. 再讨论文件 I/O、错误行列、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
+2. 再讨论文件 I/O、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
+3. 对拍工具位于 `tools/gotokens/`，固定语料清单与基线见 `docs/SELFHOST.md` §4.8。
 
 任何阶段完成前都不宣称“已自举”；状态以本文件表格和 `docs/SELFHOST.md` 为准。
