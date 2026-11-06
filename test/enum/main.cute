@@ -1,7 +1,7 @@
 // Cute enum 语法测试。
 //
 // 覆盖：自增、显式值、十六进制值、负值、后续成员继续自增、
-// 枚举名作为 int 别名用于类型标注。
+// 枚举名作为独立命名类型用于变量、函数参数/返回值和结构体字段。
 import "std:strings"
 
 enum Color {
@@ -17,8 +17,20 @@ enum Small {
     B
 }
 
+type Box struct {
+    c: Color
+}
+
+// same 验证枚举类型可用于函数参数与返回值。
+fn same(c Color) Color {
+    ret c
+}
+
 fn main() int {
-    var t: Color = GREEN
+    // 经局部变量传参：直接传全局枚举常量会触发既有 x86 全局 push 缺 dword 的
+    // codegen 缺陷，与本测试的 enum 类型检查无关。
+    var g: Color = GREEN
+    var t: Color = same(g)
     if t != 1 { ret 1 }
     if RED != 0 { ret 2 }
     if BLUE != 10 { ret 3 }
@@ -26,5 +38,10 @@ fn main() int {
     if BLACK != -1 { ret 5 }
     if A != 16 { ret 6 }
     if B != 17 { ret 7 }
+
+    var box: Box
+    box.c = BLUE
+    if box.c != 10 { ret 8 }
+
     ret 42
 }
