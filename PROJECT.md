@@ -38,7 +38,7 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
     条件清理的真路径是直落，false 清理块前必须 `jmp trueLabel`（已修）。
   - `strings.makeString` 是包装外部 ptr 的非分配函数：LLR 可见对象但不生成
     `COND_FREE`/`RET_FREE`；`_checkStrSorted` 参数指向数组元素缓冲，误释放=UAF。
-  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，预存 deref-store/泛型 len 碰撞面，见 §4）；sprobe01 farm 目录缺失已剔出矩阵
+  - x86 侧预存红面（非回归）：slice_minimal/slice_test/sortMinimal/2/Quick/IntOnly=NASM `operation size not specified`（console 全局 push 缺 dword，codégen 病灶见 PROGRESS 支线池；enum 全局常量直接作函数实参同样触发，`test/enum` 用局部变量绕行，2026-11-06 双 arch 绿）；sortStrOnly/sortTest=COMPILE_FAIL（nil Type 链，预存 deref-store/泛型 len 碰撞面，见 §4）；sprobe01 farm 目录缺失已剔出矩阵
 - farm 跑 rc 要**三连稳定**才可判绿；异 rc 先 re-run。
 - 看生成 asm：`cd /tmp/opencode/run && CUTE_ROOT=/home/gx/Desktop/代码/tiny CUTE_ARCH=x86|x86_64 <bin> -S <dir>`（run 目录=repo 符号 symlink）
 - 超时纪律：`timeout 150`；编译挂死特征=60s+（判死必备）；杀掉的运行后必 `pkill -9 -f "w1[01234] -S"`——**必须字符类**（直写二进制名= pkill 自杀实证）
@@ -59,6 +59,9 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 5. 多值返回不支持则照 slices 先例（哨兵独立 fn / ok 概念位）
 6. 双 arch 分片先例=P8 屏障（common+arch 文件；strings/slices 已分片；slice_x86_64.cute=直写全绿蓝本）
 7. x86 参数槽新语义（缺陷⑰②修后）：sub-4B 参数占 dword 槽（API 无感，系统级）
+8. **enum `Name { ... }` 创建独立命名类型**（`type Name int` 语义），成员常量带枚举类型；
+   支持 `= 负数/十六进制` 与后续自增；暂不支持 `Name.MEMBER` 作用域访问；
+   命名数值类型与内置数值类型仍可隐式互转（`test/enum` 双 arch RC=42 蓝本）
 
 ## 4. 缺陷台账快照（2026-11-02）
 - ⑨a fn 类型形参 parser 死循环——⏸ 未修，绕行=禁用形态
@@ -108,3 +111,4 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 - 变量 var x: type = expr；if/for/blocks 均花括号制；for `for ; i < n; { ... }`（无 i++ 自运算；步进=显式 i = i + 1）
 - 类型宽：int/uint=arch word（x64 8B / x86 4B）、u8/u16/i16 等宽、ptr=arch word、bool 1B、string=24B 头{p@0,n@8/4,c@16/8}、切片头 data@0/len@8/4/cap@16/8
 - unsafe.cast[T] 强转；build arch("x86"|x86_64) 分片头；import "std:xxx"
+- enum `Name { A, B = 10 }`：独立命名类型、成员 typed；无 `Name.MEMBER` 作用域访问
