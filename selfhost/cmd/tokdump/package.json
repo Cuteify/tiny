@@ -1,0 +1,5 @@
+{
+    "name": "tokdump",
+    "version": "0.1.0",
+    "description": "Cuteify 自举 lexer 的 token 流 driver（S1）"
+}

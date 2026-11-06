@@ -6,6 +6,7 @@
 - 实现：`lex.cute`
 - 包名：`lex`
 - 测试：`test/main.cute`（通过返回 `42`）
+- S1 token 流 driver：`../cmd/tokdump/`（stdin → token 行）
 - 外层总览：`../README.md`
 
 ## 快速开始
@@ -227,7 +228,8 @@ fn main() int {
 
 ## 已知限制与后续
 
-- 没有文件路径、行号/列号；错误只有字节区间。
+- lexer API 没有文件路径、行号/列号；错误只有字节区间。S1 `tokdump` driver
+  已在上层按偏移补行列换算。
 - 没有 token 缓冲/回退 API；parser 若需要回退，可保存 `pos` 后重新 `mk`，或后续增加
   `seek`/`peek`。
 - 没有 Unicode 标识符：按字节判断分隔符，非 ASCII 字节会进入 `NAME`，与 Go 版一致。

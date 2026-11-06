@@ -1,0 +1,165 @@
+// Cuteify 自举 token 流 driver（S1）。
+//
+// 从 stdin 读取源码，交给 selfhost/lex 扫描，按行打印：
+//   line:col  TYPE  [text]  [start,end)
+//
+// 换行/回车/制表在 token 文本里渲染为可见转义；行号 1-based，偏移是字节偏移。
+// 输入上限 1 MiB；词法错误返回 1。
+import "std:console"
+import "std:memory"
+import "std:strings"
+import "std:syscall"
+import lex "../../lex"
+
+// nl 在运行时构造换行字符串（源码里的 "\n" 只是反斜杠 + n）。
+fn nl() string {
+    var p: ptr = memory.malloc(8)
+    var q: *int = p
+    *q = 10
+    ret strings.makeString(p, 1, 1)
+}
+
+// readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
+fn readAll() string {
+    var cap: uint = 1048576
+    var buf: ptr = memory.malloc(cap)
+    var total: uint = 0
+    for ; total < cap; {
+        var n: i32 = syscall.read(0, buf + total, cap - total)
+        if n <= 0 {
+            break
+        }
+        total = total + unsafe.cast[uint](n)
+    }
+    ret strings.makeString(buf, total, total)
+}
+
+// advance 从 from 扫描到 to，更新 1-based 行列号（行号按 LF 递增）。
+fn advance(s string, from uint, to uint, line *int, col *int) {
+    if from >= to {
+        ret
+    }
+    var p: ptr = strings.toCstring(s)
+    var i: uint = from
+    for ; i < to; {
+        var q: *u8 = p + i
+        var b: u8 = *q
+        if b == 10 {
+            *line = *line + 1
+            *col = 1
+        } else {
+            *col = *col + 1
+        }
+        i = i + 1
+    }
+}
+
+// showText 把 LF/CR/TAB 渲染成可见转义，避免打乱一行一 token 的输出。
+fn showText(t string) {
+    var n: uint = strings.len(t)
+    if n == 0 {
+        ret
+    }
+    var p: ptr = strings.toCstring(t)
+    var i: uint = 0
+    var s: uint = 0
+    for ; i < n; {
+        var q: *u8 = p + i
+        var b: u8 = *q
+        if b == 10 {
+            if i > s {
+                console.print(strings.makeString(p + s, i - s, i - s))
+            }
+            console.print(`\n`)
+            s = i + 1
+        } else if b == 13 {
+            if i > s {
+                console.print(strings.makeString(p + s, i - s, i - s))
+            }
+            console.print(`\r`)
+            s = i + 1
+        } else if b == 9 {
+            if i > s {
+                console.print(strings.makeString(p + s, i - s, i - s))
+            }
+            console.print(`\t`)
+            s = i + 1
+        }
+        i = i + 1
+    }
+    if n > s {
+        console.print(strings.makeString(p + s, n - s, n - s))
+    }
+}
+
+fn printInt(n int) {
+    console.print(strings.itoa(n))
+}
+
+// printError 打印词法错误码与当前位置。
+fn printError(code int, line int, col int, newline string) {
+    console.print("ERROR ")
+    printInt(code)
+    console.print(" at ")
+    printInt(line)
+    console.print(":")
+    printInt(col)
+    console.print(newline)
+}
+
+fn main() int {
+    var src: string = readAll()
+    var l: *lex.Lex = lex.mk(src)
+    var line: int = 1
+    var col: int = 1
+    var last: uint = 0
+    var count: int = 0
+    var newline: string = nl()
+
+    for ; true; {
+        var k: lex.TokenType = lex.next(l)
+        if k == lex.NONE {
+            if lex.err(l) != lex.OK {
+                advance(src, last, lex.pos(l), &line, &col)
+                printError(lex.err(l), line, col, newline)
+                ret 1
+            }
+            break
+        }
+
+        advance(src, last, lex.start(l), &line, &col)
+        printInt(line)
+        console.print(":")
+        printInt(col)
+        console.print("  ")
+        console.print(lex.tname(k))
+        console.print("  [")
+        showText(lex.text(l))
+        console.print("]  [")
+        printInt(unsafe.cast[int](lex.start(l)))
+        console.print(",")
+        printInt(unsafe.cast[int](lex.end(l)))
+        console.print(")")
+        console.print(newline)
+        count = count + 1
+
+        advance(src, lex.start(l), lex.end(l), &line, &col)
+        last = lex.end(l)
+
+        if lex.err(l) != lex.OK {
+            advance(src, last, lex.pos(l), &line, &col)
+            printError(lex.err(l), line, col, newline)
+            ret 1
+        }
+    }
+
+    advance(src, last, strings.len(src), &line, &col)
+    console.print("EOF ")
+    printInt(line)
+    console.print(":")
+    printInt(col)
+    console.print("  tokens=")
+    printInt(count)
+    console.print(newline)
+    ret 0
+}

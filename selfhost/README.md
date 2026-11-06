@@ -1,16 +1,17 @@
 # Cuteify 自举（selfhost）
 
 本目录用 Cute 语言重写 Cuteify 自身的组件，目标是逐步摆脱“用 Go 写 Cute 编译器”的单向依赖。
-当前只有第一阶段：**词法分析器**。仓库里还没有可自举的完整编译器，也没有自举解析器/代码生成器；
-本目录不会假装已经完成自举。
+当前完成 S0 **词法分析器**与 S1 **token 流 driver**。仓库里还没有可自举的完整编译器，
+也没有自举解析器/代码生成器；本目录不会假装已经完成自举。
 
 ## 当前状态
 
 | 模块 | 版本 | 状态 | 说明 |
 |---|---|---|---|
 | `lex/` | 0.1.0 | 可用 | Cute 实现的词法分析器，输入 `string`，输出 token 类型 + 文本 + 区间 |
+| `cmd/tokdump/` | 0.1.0 | 可用 | S1 token 流 driver：从 stdin 读入源码，打印 token 类型/文本/行列/区间 |
 
-- 入口：`selfhost/lex/lex.cute`
+- 入口：`selfhost/lex/lex.cute`、`selfhost/cmd/tokdump/main.cute`
 - 测试：`selfhost/lex/test/main.cute`（期望退出码 `42`，x86_64 已连续多轮通过）
 - 编译器仍由仓库根目录的 Go 程序提供；自举模块目前作为**被编译的 Cute 包**运行。
 - 自举 lexer 不读文件：宿主读入源码后以 `string` 传入，避免在第一阶段引入平台 I/O 差异。
@@ -20,12 +21,16 @@
 ```
 selfhost/
 ├── README.md              # 本文件：自举目标、状态、构建与测试
-└── lex/
-    ├── package.json       # 包元数据（name=lex）
-    ├── lex.cute           # 词法分析器实现
-    ├── README.md          # API、token 枚举、扫描规则、错误码
-    └── test/
-        └── main.cute      # 行为测试（关键字/数字/字符串/注释/错误）
+├── lex/
+│   ├── package.json       # 包元数据（name=lex）
+│   ├── lex.cute           # 词法分析器实现
+│   ├── README.md          # API、token 枚举、扫描规则、错误码
+│   └── test/
+│       └── main.cute      # 行为测试（关键字/数字/字符串/注释/错误）
+└── cmd/tokdump/
+    ├── package.json       # 包元数据（name=tokdump）
+    ├── main.cute          # S1：stdin → token 行
+    └── README.md          # driver 用法与输出格式
 ```
 
 项目级自举计划与阶段划分见 [`docs/SELFHOST.md`](../docs/SELFHOST.md)。
@@ -62,7 +67,10 @@ TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/selfhostc .
 # 2. 跑自举 lexer 测试（脚本会把源码复制到临时目录，避免污染工作区）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 
-# 3. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
+# 3. S1 token 流 driver（默认打印 lex.cute 自身的 token 序列）
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
+
+# 4. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
 for i in 1 2 3; do
     BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 done
@@ -157,9 +165,8 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 
 ## 下一步
 
-1. 补 token 流读取示例/小型 driver（仍然只依赖 `string` 输入）。
-2. 评估自举 parser 的最小语法子集（先覆盖 lexer 自身源码）。
-3. 让自举 lexer 解析 `selfhost/lex/lex.cute` 自身，与 Go 版 token 序列做逐项对拍。
-4. 再讨论文件 I/O、错误行列、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
+1. 评估自举 parser 的最小语法子集（先覆盖 lexer 自身源码）。
+2. 让自举 lexer 解析 `selfhost/lex/lex.cute` 自身，与 Go 版 token 序列做逐项对拍。
+3. 再讨论文件 I/O、错误行列、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
 
 任何阶段完成前都不宣称“已自举”；状态以本文件表格和 `docs/SELFHOST.md` 为准。
