@@ -1,0 +1,102 @@
+// Cuteify 自举 parser driver（S2）。
+//
+// 从 stdin 读取源码，交给 selfhost/parse 做语法验证，输出结构计数：
+//   PARSE_OK|decls=N|imports=N|enums=N|structs=N|consts=N|vars=N|fns=N|stmts=N|exprs=N
+//
+// 语法错误输出 PARSE_ERROR 并返回 1；输入上限 1 MiB。
+import "std:console"
+import "std:memory"
+import "std:strings"
+import "std:syscall"
+import parse "../../parse"
+
+// nl 在运行时构造换行字符串（源码里的 "\n" 只是反斜杠 + n）。
+fn nl() string {
+    var p: ptr = memory.malloc(8)
+    var q: *int = p
+    *q = 10
+    ret strings.makeString(p, 1, 1)
+}
+
+// readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
+fn readAll() string {
+    var cap: uint = 1048576
+    var buf: ptr = memory.malloc(cap)
+    var total: uint = 0
+    for ; total < cap; {
+        var n: i32 = syscall.read(0, buf + total, cap - total)
+        if n <= 0 {
+            break
+        }
+        total = total + unsafe.cast[uint](n)
+    }
+    ret strings.makeString(buf, total, total)
+}
+
+// advance 从 from 扫描到 to，更新 1-based 行列号（行号按 LF 递增）。
+fn advance(s string, from uint, to uint, line *int, col *int) {
+    if from >= to {
+        ret
+    }
+    var p: ptr = strings.toCstring(s)
+    var i: uint = from
+    for ; i < to; {
+        var q: *u8 = p + i
+        var b: u8 = *q
+        if b == 10 {
+            *line = *line + 1
+            *col = 1
+        } else {
+            *col = *col + 1
+        }
+        i = i + 1
+    }
+}
+
+fn printInt(n int) {
+    console.print(strings.itoa(n))
+}
+
+fn printCounter(name string, n int) {
+    console.print("|")
+    console.print(name)
+    console.print("=")
+    printInt(n)
+}
+
+fn main() int {
+    var src: string = readAll()
+    var p: *parse.Parser = parse.mk(src)
+    parse.file(p)
+
+    if parse.err(p) != parse.OK {
+        var line: int = 1
+        var col: int = 1
+        var pos: uint = parse.errPos(p)
+        advance(src, 0, pos, &line, &col)
+        console.print("PARSE_ERROR|code=")
+        printInt(parse.err(p))
+        console.print("|at=")
+        printInt(line)
+        console.print(":")
+        printInt(col)
+        console.print("|byte=")
+        printInt(unsafe.cast[int](pos))
+        console.print(nl())
+        ret 1
+    }
+
+    console.print("PARSE_OK")
+    printCounter("decls", parse.declCount(p))
+    printCounter("imports", parse.importCount(p))
+    printCounter("builds", parse.buildCount(p))
+    printCounter("enums", parse.enumCount(p))
+    printCounter("structs", parse.structCount(p))
+    printCounter("consts", parse.constCount(p))
+    printCounter("vars", parse.varCount(p))
+    printCounter("fns", parse.fnCount(p))
+    printCounter("stmts", parse.stmtCount(p))
+    printCounter("exprs", parse.exprCount(p))
+    console.print(nl())
+    ret 0
+}
