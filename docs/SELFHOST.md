@@ -1,6 +1,7 @@
 # Cuteify 自举计划（SELFHOST）
 
-> 状态：**进行中，只有词法分析器**。仓库当前没有自举编译器、自举 parser 或自举代码生成器。
+> 状态：**进行中，已完成 S0 词法分析器与 S1 token 流 driver**。仓库当前没有自举编译器、
+> 自举 parser 或自举代码生成器。
 > 入口目录：[`selfhost/`](../selfhost/README.md)。
 > 模块文档：[`selfhost/lex/README.md`](../selfhost/lex/README.md)。
 
@@ -27,24 +28,29 @@
 | 阶段 | 内容 | 状态 | 验收 |
 |---|---|---|---|
 | S0 | 词法分析器（string 输入） | ✅ 0.1.0 | `BIN=... scripts/selfhost_test.sh x86_64` 返回 42 |
-| S1 | token 流 driver / 诊断输出 | 计划中 | 能把 `lex.cute` 自身的 token 序列打印出来 |
+| S1 | token 流 driver / 诊断输出 | ✅ 0.1.0 | `scripts/selfhost_dump.sh` 打印 `lex.cute` 的 token 序列（末尾 `EOF ... tokens=N`） |
 | S2 | 最小 parser（声明/表达式/语句子集） | 计划中 | 能解析 lexer 自身源码的最小语法子集 |
 | S3 | 完整自举 parser | 计划中 | 与 Go parser 对拍同一批源码 |
 | S4 | 自举代码生成/后端 | 计划中 | 与 Go 版汇编或运行结果对拍 |
 
-当前只完成 S0。S1 之前不宣称“自举 lexer 已可用于生产”。
+当前完成 S0、S1。S2 之前不宣称“自举 parser 已可用于生产”。
 
 ## 3. 目录与边界
 
 ```
 selfhost/                 # 自举实现，独立于 pkg/ 与 Go lexer/
 ├── README.md             # 总览、状态、构建测试
-└── lex/                  # 第一阶段：词法分析
-    ├── lex.cute
+├── lex/                  # S0：词法分析
+│   ├── lex.cute
+│   ├── package.json
+│   ├── README.md
+│   └── test/main.cute
+└── cmd/tokdump/          # S1：token 流 driver（stdin → token 行）
+    ├── main.cute
     ├── package.json
-    ├── README.md
-    └── test/main.cute
-scripts/selfhost_test.sh  # 自举模块测试入口（复制到临时目录编译运行）
+    └── README.md
+scripts/selfhost_test.sh  # S0 行为测试入口（复制到临时目录编译运行）
+scripts/selfhost_dump.sh  # S1 token 流入口（编译 driver 并喂入源码）
 ```
 
 边界约定：
@@ -173,12 +179,26 @@ parser 若需要定界符位置，可由 `start-1`/`end+1` 推回；文档和测
 这些修复属于宿主编译器，不改变自举 lexer 的 API；但它们应随自举模块一起回归，
 因为 `tname`、含反斜杠的 token 文本、字符串拼接测试都直接依赖它们。
 
+### 4.7 S1 token 流 driver 的输入与输出
+
+driver 位于 `selfhost/cmd/tokdump/`，只负责“宿主读入 + 打印诊断”，lexer 仍只接收
+`string`：
+
+- 从 stdin 读入源码（上限 1 MiB），交给 `lex.mk`；
+- 一行一个 token：`line:col  TYPE  [text]  [start,end)`；
+- `line:col` 由 driver 按字节偏移换算（1-based，行号按 LF 递增）；
+- LF/CR/TAB 在 token 文本里显示为 `\n`/`\r`/`\t`；
+- 末尾输出 `EOF line:col  tokens=N`；词法错误输出 `ERROR code at line:col` 并返回 1。
+
+这样 S0 的 API 不需要引入文件 I/O 或行列状态；需要文件名/行列的宿主能力集中在
+driver 层。
+
 ## 5. 与 Go 版的已知差异
 
 | 差异 | 影响 | 处理 |
 |---|---|---|
-| 无文件 I/O / `Filename` | 错误没有文件名 | 宿主层补 |
-| 无行列号 | 错误只有字节区间 | S1 driver 补行列换算 |
+| 无文件 I/O / `Filename` | 错误没有文件名 | S1 driver 从 stdin 读入；文件名仍由宿主补 |
+| 无行列号 | 错误只有字节区间 | S1 `tokdump` 已按偏移补行列换算 |
 | 错误码代替 panic | 调用方必须检查 `err()` | 文档 + 测试固定 |
 | 字符串/字符 token 区间指向内容 | 与 Go 的 `Cursor/EndCursor` 不同 | 文档固定；parser 按内容区间使用 |
 | 无 `Lexer.Next()` 的自检分支 | 不会复现 Go 版对带定界符 token 的怪异判断 | 视为修正，不追求 bug-for-bug |
@@ -195,6 +215,9 @@ TMPDIR=/tmp/opencode go build -o /tmp/opencode/bin/selfhostc .
 # 自举 lexer 行为测试（期望 RC=42）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 
+# S1 token 流 driver：默认打印 lex.cute 自身的 token 序列
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
+
 # 标准库 22 个用例的回归矩阵（只比较结果行，不改变口径）
 BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 ```
@@ -202,6 +225,9 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 当前基线（2026-11-06）：
 
 - `scripts/selfhost_test.sh x86_64`：连续 5 轮 `SELFHOST_OK|RC=42`。
+- `scripts/selfhost_dump.sh x86_64`：`SELFHOST_DUMP_OK|x86_64|tokens=3851`
+  （2026-11-06；token 数随 `lex.cute` 改动变化，判据是末尾 `EOF ... tokens=N`
+  且含 `IMPORT [import]` / `TYPE [enum]`）。
 - `test/enum`：编译、汇编、链接后 `RC=42`，覆盖自增、显式值、十六进制值、负值、
   显式值后续自增，以及枚举类型用于变量、函数参数/返回值和结构体字段。
 - `scripts/stdlib_matrix.sh x86_64 1`：22 个用例中 21 个 `RC=42`；
@@ -215,6 +241,8 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 - 自举测试必须独立于 `pkg/` 矩阵，不改变 `scripts/stdlib_matrix.sh` 的 22 个用例口径。
 - 修改 `selfhost/lex` 后至少跑一次 x86_64 测试；x86 只作为参考，不作为 Batch 4 之前的门槛。
+- 修改 `selfhost/lex` 后还要跑一次 `selfhost_dump.sh`，确认 token 流可完整打印且无
+  `ERROR` 行；token 数变化本身不是失败。
 - 与 Go 版对拍时，以 Go 版 token 序列为基准；差异必须先写进 `selfhost/lex/README.md`。
 - 不提交 `_main.asm`、`gc_summary.json`、`gc_llr.txt` 等运行产物。
 - 编译器参数必须传**绝对目录**；相对导入 `..` 会被压成标签前缀 `_`，包内 `start()`
@@ -226,8 +254,8 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 ## 7. 下一步
 
-1. 完成 S1 driver：读 token、打印 `tname/text/区间`，用 `lex.cute` 自身做冒烟。
-2. 评估最小 parser 的语法子集，优先覆盖 `fn`、`var/const`、`type struct`、`if/for/ret`。
-3. 设计 Go/Cute token 序列对拍脚本，固定一批源码和期望序列。
-4. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
+1. S2：评估最小 parser 的语法子集，优先覆盖 `fn`、`var/const`、`type struct`、`if/for/ret`。
+2. 设计 Go/Cute token 序列对拍脚本，固定一批源码和期望序列（S1 driver 已能输出
+   Cute 侧序列）。
+3. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
    成员已在本轮落地。
