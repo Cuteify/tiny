@@ -7,7 +7,8 @@ import (
 	"cuteify/utils"
 )
 
-// processEnumToken 解析 enum 声明，把每个枚举成员降级为同作用域的 int 常量：
+// processEnumToken 解析 enum 声明，为枚举创建独立命名类型，并把每个成员
+// 注册为同作用域内该类型的常量：
 //
 //	enum TokenType {
 //	    NONE
@@ -16,7 +17,8 @@ import (
 //	}
 //
 // 成员默认从 0 开始自增，可用 `= 整数常量` 指定值；成员名可直接使用。
-// 枚举名同时注册为 int 的真别名，便于 `var t: TokenType` 类型标注。
+// 枚举名注册为非真别名（`type TokenType int` 语义），成员常量的类型就是
+// 该枚举类型，与 Go 的 `type TokenType int` + typed `const` 保持一致。
 // 当前不支持 `TokenType.NONE` 作用域限定访问。
 func (p *Parser) processEnumToken() {
 	startCursor := p.Lexer.Cursor
@@ -35,20 +37,15 @@ func (p *Parser) processEnumToken() {
 		p.Error.MissError("Syntax Error", openToken.Cursor, "need '{' after enum name")
 	}
 
-	// 枚举名作为 int 真别名注册，先于成员声明进入作用域。
-	enumType := &TypeBlock{
-		Name:        NewName(enumName),
-		Kind:        TypeAlias,
-		Alias:       typeSys.NewAlias(enumName, typeSys.GetSystemType("int"), true),
-		StartCursor: startCursor,
+	type enumMember struct {
+		name   string
+		value  float64
+		cursor int
 	}
-	if p.Package != nil && p.Package.Path != "" {
-		packageFmt.RegisterType(p.Package.Path, enumName, enumType.Type())
-	}
-	p.AddChild(&Node{Value: enumType})
 
 	nextValue := 0.0
 	seen := make(map[string]bool)
+	var members []enumMember
 
 	for {
 		token := p.Lexer.Next()
@@ -83,8 +80,34 @@ func (p *Parser) processEnumToken() {
 			p.Lexer.SetCursor(next.Cursor)
 		}
 
-		p.addEnumMember(member, value, token.Cursor)
+		members = append(members, enumMember{name: member, value: value, cursor: token.Cursor})
 		nextValue = value + 1
+	}
+
+	// 枚举底层类型默认 int；成员值超出 int32 时退回 i64（保持现有常量宽度）。
+	underlying := typeSys.GetSystemType("int")
+	for _, member := range members {
+		if member.value > 2147483647 || member.value < -2147483648 {
+			underlying = typeSys.GetSystemType("i64")
+			break
+		}
+	}
+
+	// 枚举名注册为非真别名：`type TokenType int`，与底层 int 区分类型身份。
+	enumType := typeSys.NewAlias(enumName, underlying, false)
+	typeBlock := &TypeBlock{
+		Name:        NewName(enumName),
+		Kind:        TypeAlias,
+		Alias:       enumType,
+		StartCursor: startCursor,
+	}
+	if p.Package != nil && p.Package.Path != "" {
+		packageFmt.RegisterType(p.Package.Path, enumName, typeBlock.Type())
+	}
+	p.AddChild(&Node{Value: typeBlock})
+
+	for _, member := range members {
+		p.addEnumMember(member.name, member.value, member.cursor, enumType)
 	}
 }
 
@@ -127,22 +150,19 @@ func (p *Parser) parseEnumValue(enumName, member string) float64 {
 	return value
 }
 
-// addEnumMember 把一个枚举成员注册成和 `const NAME: int = value` 等价的变量块。
-func (p *Parser) addEnumMember(name string, value float64, cursor int) {
-	valueType := typeSys.GetSystemType("int")
-	if value > 2147483647 || value < -2147483648 {
-		valueType = typeSys.GetSystemType("i64")
-	}
+// addEnumMember 把一个枚举成员注册成和
+// `const NAME: EnumType = value` 等价的变量块，成员类型就是枚举类型。
+func (p *Parser) addEnumMember(name string, value float64, cursor int, enumType typeSys.Type) {
 	block := &VarBlock{
 		Name:          NewName(name),
 		IsConst:       true,
 		IsDefine:      true,
 		IsInitialized: true,
 		StartCursor:   cursor,
-		Type:          valueType,
+		Type:          enumType,
 		Value: &Expression{
 			Num:  value,
-			Type: valueType,
+			Type: enumType,
 		},
 	}
 	block.IsGlobal = p.ThisBlock == p.Block
