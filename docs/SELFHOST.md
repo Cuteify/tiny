@@ -1,7 +1,8 @@
 # Cuteify 自举计划（SELFHOST）
 
-> 状态：**进行中，已完成 S0 词法分析器、S1 token 流 driver 与 S2 最小 parser**。
-> 仓库当前没有自举编译器或自举代码生成器；S2 parser 只验证语法并统计结构，不建 AST。
+> 状态：**进行中，已完成 S0 词法分析器、S1 token 流 driver、S2 最小 parser 与 S3 canonical AST parser**。
+> 仓库当前没有自举编译器或自举代码生成器；S3 parser 已能构建与 Go parser 逐节点对拍的
+> canonical AST，但不做完整语义检查。
 > 入口目录：[`selfhost/`](../selfhost/README.md)。
 > 模块文档：[`selfhost/lex/README.md`](../selfhost/lex/README.md)、
 > [`selfhost/parse/README.md`](../selfhost/parse/README.md)。
@@ -20,7 +21,7 @@
 ### 非目标
 
 - 本阶段不替换 Go 编译器入口，不修改 `main.go` 的构建方式。
-- 不承诺“源码自举”（用 Cute 编译器编译 Cute 编译器）的时间表；S2 parser 仍是最小子集。
+- 不承诺“源码自举”（用 Cute 编译器编译 Cute 编译器）的时间表；S3 parser 仍不做完整语义检查与代码生成。
 - 不把 `selfhost/` 混进 `pkg/` 标准库计数，也不改现有 stdlib 测试矩阵的口径。
 - 不为自举而给语言仓促加特性；确实需要语言能力时，先单独评估/提交。
 
@@ -31,10 +32,11 @@
 | S0 | 词法分析器（string 输入） | ✅ 0.1.0 | `BIN=... scripts/selfhost_test.sh x86_64` 返回 42 |
 | S1 | token 流 driver / 诊断输出 | ✅ 0.1.0 | `scripts/selfhost_dump.sh` 打印 `lex.cute` 的 token 序列（末尾 `EOF ... tokens=N`） |
 | S2 | 最小 parser（声明/表达式/语句子集） | ✅ 0.1.0 | `scripts/selfhost_parse.sh x86_64`：自测 `RC=42`、固定语料全部 `PARSE_OK` |
-| S3 | 完整自举 parser | 计划中 | 与 Go parser 对拍同一批源码（AST 逐节点） |
+| S3 | 完整自举 parser（canonical AST） | ✅ 0.2.0 | `scripts/selfhost_ast_parity.sh x86_64`：固定语料全部 `PARITY_OK`；`ALL=1` 全仓 214 一致 + 16 已知差异 |
 | S4 | 自举代码生成/后端 | 计划中 | 与 Go 版汇编或运行结果对拍 |
 
-当前完成 S0、S1、S2。S3 之前不宣称“自举 parser 已具备完整 AST/语义”。
+当前完成 S0、S1、S2、S3。S3 的 AST 以 Go parser 可观察形状为准，允许把 Go 侧
+实现噪声登记为已知差异；S3 仍不做完整语义检查，也不宣称自举编译器已完成。
 
 ## 3. 目录与边界
 
@@ -46,17 +48,19 @@ selfhost/                 # 自举实现，独立于 pkg/ 与 Go lexer/
 │   ├── package.json
 │   ├── README.md
 │   └── test/main.cute
-├── parse/                # S2：最小 parser（语法验证 + 结构计数）
+├── parse/                # S2/S3：递归下降 parser（语法验证 + canonical AST）
 │   ├── parse.cute
 │   ├── package.json
 │   ├── README.md
-│   └── test/main.cute
+│   └── test/
+│       ├── main.cute     # 正/负例与 AST 形状自测
+│       └── ast/          # S3 持久 AST 对拍语料
 └── cmd/
     ├── tokdump/          # S1：token 流 driver（stdin → token 行）
     │   ├── main.cute
     │   ├── package.json
     │   └── README.md
-    └── parsedump/        # S2：parser driver（stdin → 计数/错误）
+    └── parsedump/        # S2/S3：parser driver（stdin → 计数 / canonical AST）
         ├── main.cute
         ├── package.json
         └── README.md
@@ -64,6 +68,8 @@ scripts/selfhost_test.sh   # S0 行为测试入口（复制到临时目录编译
 scripts/selfhost_dump.sh   # S1 token 流入口（编译 driver 并喂入源码）
 scripts/selfhost_parity.sh # S0 token 序列 Go/Cute 对拍
 scripts/selfhost_parse.sh  # S2 parser 自测、固定语料与单文件验证
+scripts/selfhost_ast_parity.sh # S3 canonical AST 对拍（固定语料 / ALL=1 全仓）
+tools/astdump/             # Go 侧 canonical AST 输出工具（S3 对拍基准）
 ```
 
 边界约定：
@@ -231,6 +237,9 @@ S2 的验收目标是证明自举词法流能被自举语法分析消费，而�
 parser 的 API、计数口径与完整支持列表见
 [`selfhost/parse/README.md`](../selfhost/parse/README.md)。
 
+> S3 在同一骨架上补建 canonical AST 与常量折叠；本节描述的是 S2 的验收口径，
+> 仍作为默认计数模式保留。AST 部分见 §4.12。
+
 ### 4.10 S2 暴露的四个实现约束
 
 S2 期间遇到的宿主/自举行为问题已经固化为 parser 的实现约束：
@@ -257,10 +266,42 @@ Go 编译器的类型内建映射（string/map/list → std，见
   改变。
 - 自举 parser 目前只消费源码并统计结构，不执行 Check/codegen，因此不受
   `CUTE_NO_INTRINSIC` 影响；该开关只用于 Go 编译器的回归定位。
-- 后续自举编译器/完整 AST（S3）需要按同一张 `parser/intrinsic.go` 表实现
-  lowering 与重载 mangling；在 S3 完成前不宣称自举侧已对齐。
-- 本波不修改 `selfhost/`；若自举 parser 的固定语料出现差异，先按 S2 语法
-  子集缺口归因，再回到本节的待办。
+- 后续自举代码生成/后端（S4）需要按同一张 `parser/intrinsic.go` 表实现
+  lowering 与重载 mangling；S3 只对齐 parser 可观察的 AST 形状，不实现
+  lowering。
+- S3 已按 Go parser 的常量折叠结果构建 AST；若固定语料出现差异，先按
+  `selfhost/parse/README.md` 的已知差异分类，再判断是 parser 回归还是 Go
+  侧实现噪声。
+
+### 4.12 S3 canonical AST 与逐节点对拍
+
+S3 在 S2 的递归下降骨架上补建 AST，并用两个工具做逐字节对拍：
+
+- `tools/astdump/main.go`：Go 侧基准。解析单个 `.cute` 文件，把 AST 归一化成
+  稳定文本（2 空格缩进、`KIND key=value`），并丢弃 Go parser 的实现噪声
+  （裸变量引用语句、`build` 指令、`defer` token 等）。
+- `selfhost/cmd/parsedump`：设置 `PARSEDUMP_AST=1` 时输出同一格式；默认仍输出
+  S2 的结构计数，保持旧入口兼容。
+- `scripts/selfhost_ast_parity.sh`：构建两侧工具，逐文件 `diff`。默认语料在
+  `selfhost/parse/test/ast/`，并加三个代表文件；`ALL=1` 扫描 `git ls-files '*.cute'`。
+
+canonical 形状的关键规则：
+
+| 规则 | Go 可观察结果 |
+|---|---|
+| 泛型调用语句 | 包一层 `EXPR → CALL`；普通调用是裸 `CALL` |
+| 索引 vs 切片 | 用 `IndexSlice` 区分 `a[i]` 与 `a[i:]`，不能只看 `Index[1]/[2]` 是否为空 |
+| 索引赋值 | `EXPR → BIN op=[]=`；复合赋值按 Go 形状降级 |
+| 解引用赋值 | 可转换 RHS 为 `deref=(值, 指针)`；跨包/泛型调用保留 `BIN op==` |
+| `*p++` / `a[i]++` | `*p++` 展开为 `VAR p = p + 1` + 残留 `EXPR UN* p`；`a[i]++` 观察为 `EXPR → LIT 0` |
+| 内建类型别名 | `int64→i64`、`uint32→u32`、`uint8→u8`、`rune→i32` 等按 Go `TypeName` 输出 |
+| 常量折叠 | 整数算术/移位/位运算/比较/相等、bool 逻辑、字符串 `+`/`*`/`==`/`!=`、一元 `-`/`!`/`~` |
+| 浮点 | 只做一元负号的文本处理；完整 `%v` 最短格式与浮点算术折叠未实现 |
+
+S3 的已知差异分四类：浮点格式/折叠、Go 折叠时序（跨文件/跨包符号未解析时
+`Check` 不执行）、Go 对参数位置 `fn(T)` 的解析 bug、大整数常量超出 `int64`
+精度。脚本在 `ALL=1` 下用白名单输出 `PARITY_KNOWN`，显式传入文件时仍按严格
+模式比较。完整清单与原因见 [`selfhost/parse/README.md`](../selfhost/parse/README.md)。
 
 ## 5. 与 Go 版的已知差异
 
@@ -274,9 +315,15 @@ Go 编译器的类型内建映射（string/map/list → std，见
 | 关键字 if 链 | 代码更长，性能非瓶颈 | 等语言有 map 索引或 trie 再优化 |
 | 跨行裸串字面量测试受限 | 当前编译器对源码内跨行 RAW 支持不完整 | 测试用 `nl()` + `makeString` 运行时构造换行；lexer 扫描本身已覆盖 |
 | `tname` 用 switch | 代码略长，token 类型少，非瓶颈 | 与 Go `TokenType.String()` 分支对齐，不追求表驱动 |
-| S2 parser 不建 AST | 无法做语义检查、无法逐节点对拍 | 只做语法验证与结构计数；AST 对拍留给 S3 |
+| S3 parser 不做完整语义检查 | 不校验名字/类型/参数个数，也不执行 intrinsic lowering | 只对齐 Go parser 可观察的 AST 形状；语义留给后续阶段 |
+| S3 浮点字面量保留源码文本 | `2.50`、`1e3`、高精度 π 与 Go `%v` 输出不同 | 已登记为已知差异；完整浮点解析/最短格式化待后续 |
+| S3 浮点算术未折叠 | `1.0/0.0` 在 Go 侧为 `+Inf`，自举侧仍是 `BIN /` | 已登记为已知差异；整数/布尔/字符串折叠已对齐 |
+| S3 折叠时序不同 | Go 只在 `Check` 可达时折叠；跨文件/跨包符号未解析时参数不折叠 | 自举侧无条件折叠；`ALL=1` 白名单登记，显式文件仍严格 |
+| Go 参数位置的 `fn(T)` 解析 bug | Go 把 `callback fn(string)` 的 `callback` 类型记成 `string` | 不复刻该 bug；`pkg/path/path.cute` 登记为已知差异 |
+| 大整数常量精度 | 超过 `int64` 的十进制常量自举侧溢出 | `pkg/hash/fnv/fnv.cute` 登记为已知差异；后续按 float64 路径处理 |
+| `for ; cond; m[0]++` | Go 的 POST 是未归一化表达式（canonical 为 `EXPR?`） | 不复刻该噪声；不进固定语料，单列已知差异 |
 | S2 parser 额外接受旧式语法 | 与 Go parser 不是 bug-for-bug 兼容 | 为兼容仓库语料接受 `struct Name`、`fn (self T)`、无冒号参数/字段等写法 |
-| S2 不支持命名/map 复合字面量与函数字面量 | 当前仓库语料未使用，先不扩大语法面 | 遇到时返回 `EEXPR`/`ETYPE`，不静默跳过 |
+| 暂不支持命名/map 复合字面量与函数字面量 | 当前仓库语料未使用，先不扩大语法面 | 遇到时返回 `EEXPR`/`ETYPE`，不静默跳过 |
 
 ## 6. 验收与回归
 
@@ -299,12 +346,22 @@ BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64
 # S2 parser：只验证指定文件
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64 test/enum/main.cute
 
+# S3 canonical AST 对拍：固定语料（全部要求 PARITY_OK）
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_ast_parity.sh x86_64
+
+# S3 全仓对拍：已知差异输出 PARITY_KNOWN，Go 单文件解析失败输出 PARITY_SKIP_GO_FAIL
+ALL=1 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_ast_parity.sh x86_64
+
 # 标准库 22 个用例的回归矩阵（只比较结果行，不改变口径）
 BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 ```
 
-当前基线（2026-11-06）：
+当前基线（2026-11-07）：
 
+- `scripts/selfhost_ast_parity.sh x86_64`：`SELFHOST_AST_PARITY_OK|x86_64|ok=11|known=0|go_fail=0`
+  （固定语料 7 个 AST 专项 + 3 个真实用例 + `pkg/slices/test`）。
+- `ALL=1 scripts/selfhost_ast_parity.sh x86_64`：`ok=214|known=16|go_fail=28`
+  （258 个 tracked `.cute`；16 个已知差异见 §5，28 个 Go parser 单文件解析失败被跳过）。
 - `scripts/selfhost_test.sh x86_64`：连续 5 轮 `SELFHOST_OK|RC=42`。
 - `scripts/selfhost_dump.sh x86_64`：`SELFHOST_DUMP_OK|x86_64|tokens=3851`
   （2026-11-06；token 数随 `lex.cute` 改动变化，判据是末尾 `EOF ... tokens=N`
@@ -313,12 +370,12 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
   （2026-11-06；固定语料逐字节一致，语料清单见脚本）。
 - `scripts/selfhost_parse.sh x86_64`：`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`
   （2026-11-06；自测覆盖 7 组正/负例，固定语料全部 `PARSE_OK`）。
-- S2 自解析基线：
+- S2/S3 自解析基线：
   `selfhost/lex/lex.cute` → `PARSE_OK|decls=31|imports=2|builds=0|enums=1|structs=1|consts=4|vars=39|fns=23|stmts=449|exprs=954`；
-  `selfhost/parse/parse.cute` → `PARSE_OK|decls=68|imports=2|builds=0|enums=0|structs=1|consts=6|vars=13|fns=59|stmts=740|exprs=1796`。
+  `selfhost/parse/parse.cute` → `PARSE_OK|decls=170|imports=2|builds=0|enums=0|structs=3|consts=44|vars=238|fns=121|stmts=1747|exprs=4258`。
   计数随源码改动变化，验收判据是 `PARSE_OK` / 自测 `RC=42`，不是固定数值。
-- 全仓 `.cute` 扫描（2026-11-06）：`test/`、`pkg/`、`selfhost/` 共 247 个文件，
-  247/247 `PARSE_OK`。
+- 全仓 `.cute` 扫描（2026-11-07）：`test/`、`pkg/`、`selfhost/` 共 258 个 tracked
+  文件，AST 模式 `self_fail=0`（258/258 可解析）。
 - `test/enum`：编译、汇编、链接后 `RC=42`，覆盖自增、显式值、十六进制值、负值、
   显式值后续自增，以及枚举类型用于变量、函数参数/返回值和结构体字段。
 - `scripts/stdlib_matrix.sh x86_64 1`：22 个用例中 21 个 `RC=42`；
@@ -337,10 +394,14 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 - 修改任一侧 lexer 规则后跑 `selfhost_parity.sh`，固定语料必须全部 `PARITY_OK`。
 - 修改 `selfhost/parse` 后跑 `selfhost_parse.sh`：自测必须 `RC=42`，固定语料必须全部
   `PARSE_OK`；全仓扫描出现新失败时，先判断是语法子集缺口还是 parser 回归。
+- 修改 AST 形状/常量折叠后必须跑 `scripts/selfhost_ast_parity.sh`：固定语料全部
+  `PARITY_OK`；再跑 `ALL=1`，新增差异必须先归因，结构差异修 parser，Go 侧实现噪声
+  才能进白名单并写进 `selfhost/parse/README.md`。
 - 新增 parser 语法时同步补 `selfhost/parse/test` 的正/负例；负例必须断言错误码，
   不能只断言“失败”。
 - 与 Go 版对拍时，以 Go 版 token 序列为基准；差异必须先写进 `selfhost/lex/README.md`。
-  S2 parser 暂不与 Go parser 逐节点对拍，那是 S3 的验收项。
+  AST 对拍以 `tools/astdump` 的 canonical 文本为基准，差异写进
+  `selfhost/parse/README.md`，不能只在脚本里静默跳过。
 - 不提交 `_main.asm`、`gc_summary.json`、`gc_llr.txt` 等运行产物。
 - 编译器参数必须传**绝对目录**；相对导入 `..` 会被压成标签前缀 `_`，包内 `start()`
   可能退化成 `_start`，与 ELF 入口冲突。
@@ -351,9 +412,11 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 ## 7. 下一步
 
-1. S3：在 `selfhost/parse` 上补 AST 节点与 `parsedump --ast`，与 Go parser 对同一批
-   源码逐节点对拍；先固定声明/语句/表达式的节点形状，再扩语法覆盖。
-2. 把 S2 的 workaround 与宿主编译器缺陷分开跟踪：`continue` 跳出循环、结构体数组
+1. S4：在 S3 canonical AST 上实现自举代码生成/后端，与 Go 版汇编或运行结果对拍；
+   在此之前不宣称自举编译器已完成。
+2. 逐项消除 S3 已知差异：浮点解析/最短格式化、浮点算术折叠、Go 折叠时序建模、
+   大整数常量精度；每消除一类，从 `selfhost_ast_parity.sh` 白名单移除并更新文档。
+3. 把 S2 的 workaround 与宿主编译器缺陷分开跟踪：`continue` 跳出循环、结构体数组
    字段、换行/字面量处理修复后，逐项移除 parser 侧规避并保留负例。
-3. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
+4. 讨论 `TokenType.NONE` 作用域限定访问等语言演进；枚举的独立命名类型与 typed
    成员已在本轮落地。

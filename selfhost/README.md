@@ -1,9 +1,10 @@
 # Cuteify 自举（selfhost）
 
 本目录用 Cute 语言重写 Cuteify 自身的组件，目标是逐步摆脱“用 Go 写 Cute 编译器”的单向依赖。
-当前完成 S0 **词法分析器**、S1 **token 流 driver** 与 S2 **最小 parser**。
-仓库里还没有可自举的完整编译器；S2 parser 只验证语法并统计结构，不建 AST，
-也没有自举代码生成器。本目录不会假装已经完成自举。
+当前完成 S0 **词法分析器**、S1 **token 流 driver**、S2 **最小 parser** 与 S3
+**canonical AST parser**。仓库里还没有可自举的完整编译器；S3 parser 已能构建与
+Go parser 逐节点对拍的 canonical AST，但不做完整语义检查，也没有自举代码生成器。
+本目录不会假装已经完成自举。
 
 ## 当前状态
 
@@ -11,8 +12,8 @@
 |---|---|---|---|
 | `lex/` | 0.1.0 | 可用 | Cute 实现的词法分析器，输入 `string`，输出 token 类型 + 文本 + 区间 |
 | `cmd/tokdump/` | 0.1.0 | 可用 | S1 token 流 driver：从 stdin 读入源码，打印 token 类型/文本/行列/区间 |
-| `parse/` | 0.1.0 | 可用 | S2 最小 parser：递归下降语法验证 + 结构计数，不建 AST |
-| `cmd/parsedump/` | 0.1.0 | 可用 | S2 parser driver：从 stdin 读入源码，输出计数或语法错误 |
+| `parse/` | 0.2.0 | 可用 | S2/S3 parser：递归下降语法验证 + 结构计数 + canonical AST/常量折叠 |
+| `cmd/parsedump/` | 0.2.0 | 可用 | S2/S3 driver：默认输出计数；`PARSEDUMP_AST=1` 输出 canonical AST |
 
 - 入口：`selfhost/lex/lex.cute`、`selfhost/parse/parse.cute`、
   `selfhost/cmd/tokdump/main.cute`、`selfhost/cmd/parsedump/main.cute`
@@ -34,10 +35,11 @@ selfhost/
 │       └── main.cute      # 行为测试（关键字/数字/字符串/注释/错误）
 ├── parse/
 │   ├── package.json       # 包元数据（name=parse）
-│   ├── parse.cute         # S2 最小 parser（语法验证 + 结构计数）
-│   ├── README.md          # API、支持子集、错误码、计数口径
+│   ├── parse.cute         # S2/S3 parser（语法验证 + 结构计数 + canonical AST）
+│   ├── README.md          # API、支持子集、错误码、计数口径、折叠与已知差异
 │   └── test/
-│       └── main.cute      # 正/负例测试（声明/语句/表达式/换行/词法错误）
+│       ├── main.cute      # 正/负例与 AST 形状测试
+│       └── ast/           # S3 持久 AST 对拍语料（7 个专项文件）
 └── cmd/
     ├── tokdump/
     │   ├── package.json   # 包元数据（name=tokdump）
@@ -45,7 +47,7 @@ selfhost/
     │   └── README.md      # driver 用法与输出格式
     └── parsedump/
         ├── package.json   # 包元数据（name=parsedump）
-        ├── main.cute      # S2：stdin → PARSE_OK / PARSE_ERROR
+        ├── main.cute      # S2/S3：stdin → 计数 / canonical AST
         └── README.md      # driver 用法与输出格式
 ```
 
@@ -71,8 +73,10 @@ selfhost/
    `m[k]`，简单直接的实现反而更容易自举。
 6. **不隐藏错误**：`next()` 每次调用重置错误码；`err()` 返回 `OK/ESTR/ERAW/ECHAR`，
    调用方必须检查。EOF 与错误都返回 `NONE`，靠 `err()` 区分。
-7. **parser 只验证语法**：S2 不建 AST、不做类型/符号检查；保留换行 token 并在声明/
-   语句边界显式跳过，`at()` 不比较字面量 token，避免源码里的 `"*"`/`"+"` 被当成运算符。
+7. **parser 以 Go 可观察 AST 为准**：S3 在 S2 骨架上补建 canonical AST 与常量折叠，
+   但不做完整类型/符号检查；保留换行 token 并在声明/语句边界显式跳过，`at()` 不比较
+   字面量 token，避免源码里的 `"*"`/`"+"` 被当成运算符。Go 侧实现噪声登记为已知差异，
+   不复刻 bug。
 
 ## 构建与测试
 
@@ -91,10 +95,16 @@ BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh x86_64
 # 4. Go/Cute token 序列对拍（默认固定语料，逐字节比较）
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parity.sh x86_64
 
-# 5. S2 parser：自测（RC=42）+ 固定语料；也可传单个文件
+# 5. S2/S3 parser：自测（RC=42）+ 固定语料；也可传单个文件
 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_parse.sh x86_64
 
-# 6. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
+# 6. S3 canonical AST 对拍：固定语料全部 PARITY_OK
+BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_ast_parity.sh x86_64
+
+# 7. S3 全仓对拍：已知差异输出 PARITY_KNOWN，Go 解析失败输出 PARITY_SKIP_GO_FAIL
+ALL=1 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_ast_parity.sh x86_64
+
+# 8. 可选：重复跑几轮确认没有 GC/寄存器偶发问题
 for i in 1 2 3; do
     BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_test.sh x86_64
 done
@@ -129,21 +139,24 @@ echo $?   # 期望 42
 - 当前建议只跑 x86_64。x86 后端在 Batch 4 之前仍有已知红面（NASM 报
   `operation size not specified`），不能作为自举代码的质量判据。
 
-## S2 parser
+## S2/S3 parser
 
-`selfhost/parse` 在 lexer 之上做递归下降验证，覆盖当前仓库 `.cute` 语料的声明、语句、
-表达式与类型引用子集。它**不建 AST**，只返回首个错误码和结构计数；完整 API、支持列表、
-计数口径与限制见 [`parse/README.md`](parse/README.md)。
+`selfhost/parse` 在 lexer 之上做递归下降解析，覆盖当前仓库 `.cute` 语料的声明、语句、
+表达式与类型引用子集。S2 只返回首个错误码和结构计数；S3 在同一骨架上构建 canonical
+AST 并实现常量折叠。完整 API、支持列表、计数口径、折叠规则与已知差异见
+[`parse/README.md`](parse/README.md)。
 
-- 自测：`selfhost/parse/test/main.cute`，7 组正/负例，期望 `RC=42`。
-- 验收入口：`scripts/selfhost_parse.sh x86_64`；自测通过后跑 18 个固定语料，
+- 自测：`selfhost/parse/test/main.cute`，覆盖 7 组正/负例与 AST 形状，期望 `RC=42`。
+- S2 验收入口：`scripts/selfhost_parse.sh x86_64`；自测通过后跑 18 个固定语料，
   全部要求 `PARSE_OK`。
-- 全仓扫描（2026-11-06）：`test/`、`pkg/`、`selfhost/` 共 247 个 `.cute` 文件，
-  247/247 `PARSE_OK`。
-- 自解析基线：`selfhost/lex/lex.cute` 与 `selfhost/parse/parse.cute` 均可被
-  S2 parser 完整解析；计数会随源码改动变化，判据是 `PARSE_OK` 而不是固定数值。
+- S3 验收入口：`scripts/selfhost_ast_parity.sh x86_64`；默认语料（`test/ast/` 7 个专项
+  + 3 个真实用例 + `pkg/slices/test`）全部要求 `PARITY_OK`。
+- S3 全仓扫描：`ALL=1 scripts/selfhost_ast_parity.sh x86_64`，2026-11-07 基线为
+  `ok=214|known=16|go_fail=28`（258 个 tracked `.cute`，28 个 Go 单文件解析失败被跳过）。
+- canonical AST 与 Go 侧逐字节对齐：`tools/astdump` 是基准，`parsedump` 设置
+  `PARSEDUMP_AST=1` 输出同一格式；默认计数模式保持 S2 兼容。
 - S2 暂不支持命名/map 复合字面量、函数字面量、`try/except/finally`、`go/select`
-  等语法；遇到时报错，不静默跳过。AST 与 Go parser 逐节点对拍留给 S3。
+  等语法；遇到时报错，不静默跳过。S3 已补 AST 与折叠，但同样不做完整语义检查。
 
 ## 与 Go 版的差异
 
@@ -190,8 +203,10 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 
 ## 限制
 
-- S2 parser 只做语法验证与结构计数，不建 AST、不做类型/符号/代码生成；完整 parser
-  与逐节点对拍留给 S3。
+- S3 parser 只对齐 Go parser 可观察的 AST 形状，不做完整类型/符号/代码生成；
+  S4 才实现自举后端。
+- 已知差异分四类：浮点格式/折叠、Go 折叠时序、Go 参数位置 `fn(T)` 解析 bug、
+  大整数常量精度；清单与白名单见 [`parse/README.md`](parse/README.md)。
 - 没有文件 I/O、路径、行号/列号；错误只给字节区间，driver 负责换算行列。
 - 按字节扫描，与 Go 版一致，不按 Unicode 码点切分。
 - 关键字匹配是 O(关键字数) 的字符串比较；lexer 不是性能瓶颈，暂不做 trie。
@@ -206,12 +221,14 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 
 ## 下一步
 
-1. S3：给 `selfhost/parse` 增加 AST 节点与 `parsedump --ast`，与 Go parser 对同一批
-   源码逐节点对拍；先固定声明/语句/表达式节点形状，再扩语法覆盖。
-2. 修复 S2 暴露的宿主编译器问题（`continue` 跳出循环、结构体数组字段、换行/字面量
+1. S4：在 S3 canonical AST 上实现自举代码生成/后端，与 Go 版汇编或运行结果对拍；
+   在此之前不宣称自举编译器已完成。
+2. 逐项消除 S3 已知差异：浮点解析/最短格式化、浮点算术折叠、Go 折叠时序建模、
+   大整数常量精度；每消除一类，从 `scripts/selfhost_ast_parity.sh` 白名单移除并更新文档。
+3. 修复 S2 暴露的宿主编译器问题（`continue` 跳出循环、结构体数组字段、换行/字面量
    处理），修好后逐项移除 parser 侧 workaround，并保留负例防回归。
-3. 再讨论文件 I/O、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
-4. 对拍工具位于 `tools/gotokens/`，token 基线见 `docs/SELFHOST.md` §4.8；
-   parser 验收入口见 §4.9 与 §6。
+4. 再讨论文件 I/O、`TokenType.NONE` 作用域限定访问等语言/运行时增强。
+5. 对拍工具位于 `tools/gotokens/` 与 `tools/astdump/`，token 基线见
+   `docs/SELFHOST.md` §4.8，AST 基线见 §4.12 与 §6。
 
 任何阶段完成前都不宣称“已自举”；状态以本文件表格和 `docs/SELFHOST.md` 为准。
