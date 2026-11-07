@@ -1,5 +1,5 @@
 {
     "name": "parse",
-    "version": "0.1.0",
-    "description": "Cuteify 自举 parser（S2：最小语法子集，只验证不建 AST）"
+    "version": "0.2.0",
+    "description": "Cuteify 自举 parser（S3：canonical AST + 常量折叠，与 Go parser 逐节点对拍）"
 }

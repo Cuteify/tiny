@@ -1,0 +1,15 @@
+// S3 AST 对拍：表达式优先级、括号、字面量容器、索引/切片。
+fn expr(a int, b int) int {
+    var m: int = (a + b) * 2 - a / b % 3
+    var ok: bool = a < b && b >= 0 || !false
+    var bits: int = (a << 2) | (b & 7) ^ 1
+    var s: []int = []int{1, 2 + 3, 4}
+    var fixed: [3]int = [3]int{5, 6, 7}
+    var p: *int = new(int)
+    var v: int = s[0] + s[1:2][0] + p.x
+    var c: int = 'x'
+    if ok {
+        ret bits
+    }
+    ret m + v + c
+}

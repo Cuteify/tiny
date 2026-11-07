@@ -1,0 +1,23 @@
+// S3 AST 对拍：if/else、for 的 init/cond/post、switch/case。
+// for-post 的索引自增（m[0]++）是 Go parser 的已知噪声，单独登记，不进本语料。
+fn control(m: []int, n: int) int {
+    var s: int = 0
+    var i: int = 0
+    for ; i < n; i++ {
+        s = s + i
+    }
+    for ; m[0] < n; i++ {
+        s = s + 1
+    }
+    switch n {
+    case 1:
+        s = s + 1
+    default:
+        s = s + 2
+    }
+    if s > 0 {
+        ret s
+    } else {
+        ret 0
+    }
+}

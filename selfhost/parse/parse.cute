@@ -1,13 +1,13 @@
-// Cuteify 自举 parser（S2：最小语法子集）。
+// Cuteify 自举 parser（S3：语法验证 + canonical AST）。
 //
 // 目标：用递归下降验证词法正确的 Cute 源码，覆盖 lexer 自身源码所需的声明、
-// 语句与表达式子集。S2 只做语法验证与结构计数，不建 AST、不做类型检查；
-// AST 与 Go parser 逐节点对拍留给 S3。
+// 语句与表达式子集，并构建与 Go parser 可观察形状一致的最小 AST。
+// S3 不做完整语义检查；类型/常量值只保留对拍所需的信息。
 //
 // 与 Go 版 parser 的关系：
 //   - 词法流来自 selfhost/lex，token 类型/文本与 Go lexer 对拍通过；
-//   - 语法子集按 Go parser 的实际接受形式实现，但只覆盖 S2 声明的最小集合；
-//   - 未支持的语法（interface、泛型函数、复合字面量等）会报错，不静默跳过。
+//   - AST 节点形状按 tools/astdump 的归一化规则构建，与 Go parser 逐节点对拍；
+//   - 未支持的语法（泛型函数、结构体字面量等）会报错，不静默跳过。
 import "std:strings"
 import lex "../lex"
 
@@ -19,6 +19,71 @@ const ETYPE: int = 3  // 类型引用错误
 const ESTMT: int = 4  // 语句/块错误
 const EEXPR: int = 5  // 表达式错误
 
+// canonical AST 节点种类（与 cmd/parsedump --ast / tools/astdump 一致）。
+const A_FILE: int = 0
+const A_VAR: int = 1
+const A_TYPE: int = 2
+const A_FIELD: int = 3
+const A_METHOD: int = 4
+const A_FN: int = 5
+const A_ARG: int = 6
+const A_RET: int = 7
+const A_IF: int = 8
+const A_ELSE: int = 9
+const A_COND: int = 10
+const A_FOR: int = 11
+const A_INIT: int = 12
+const A_POST: int = 13
+const A_RANGE: int = 14
+const A_RNAME: int = 15
+const A_SWITCH: int = 16
+const A_TARGET: int = 17
+const A_CASE: int = 18
+const A_VAL: int = 19
+const A_RETURN: int = 20
+const A_BREAK: int = 21
+const A_CALL: int = 22
+const A_NAME: int = 23
+const A_LIT: int = 24
+const A_STR: int = 25
+const A_BOOL: int = 26
+const A_NIL: int = 27
+const A_LIST: int = 28
+const A_ARRAY: int = 29
+const A_INDEX: int = 30
+const A_SLICE: int = 31
+const A_LO: int = 32
+const A_HI: int = 33
+const A_MAX: int = 34
+const A_BIN: int = 35
+const A_UN: int = 36
+const A_EXPR: int = 37
+
+// Ast 是 canonical AST 节点。
+//   k    节点种类
+//   name 主文本（名字/字面量）
+//   attr 附加属性（flags、kind=、op=、level、nargs 等）
+//   aux  次要属性（类型文本 / under 类型）
+//   child/next 子节点与兄弟节点链
+//   num/lk 数字字面量值/种类（1=int, 2=float）；lk 在 CALL 上表示泛型调用
+type Ast struct {
+    k: int
+    name: string
+    attr: string
+    aux: string
+    child: *Ast
+    next: *Ast
+    num: int
+    lk: int
+}
+
+// GName 是顶层变量名链表节点，用于给函数内对全局变量的赋值补 g 标志。
+// Parser 字段保持标量/指针，名字放堆节点里。
+type GName struct {
+    name: string
+    next: *GName
+}
+
 // Parser 只存标量与指针：源码用 ptr + uint 保存，token 文本按需构造。
 type Parser struct {
     l: *lex.Lex
@@ -27,6 +92,7 @@ type Parser struct {
     k: lex.TokenType
     a: uint
     b: uint
+    le: uint
     e: int
     ep: uint
     decls: int
@@ -39,6 +105,15 @@ type Parser struct {
     fns: int
     stmts: int
     exprs: int
+    gvars: *GName
+    root: *Ast
+    cur: *Ast
+    ex: *Ast
+    ty: string
+    nm: string
+    recv: string
+    fnd: int
+    argc: int
 }
 
 // mk 基于源码字符串创建 parser，并预读第一个有效 token。
@@ -59,8 +134,500 @@ fn mk(src string) *Parser {
     x.fns = 0
     x.stmts = 0
     x.exprs = 0
+    x.root = astNew(A_FILE)
+    x.cur = x.root
+    x.ex = 0
+    x.ty = ""
+    x.nm = ""
+    x.recv = ""
+    x.fnd = 0
+    x.argc = 0
+    x.gvars = 0
     advance(x)
     ret x
+}
+
+// astNew 分配并清零一个 AST 节点。
+fn astNew(k int) *Ast {
+    var a: *Ast = new(Ast)
+    a.k = k
+    a.name = ""
+    a.attr = ""
+    a.aux = ""
+    a.child = 0
+    a.next = 0
+    ret a
+}
+
+// astAdd 把 c 追加为 p 的最后一个子节点；c 为空时忽略。
+fn astAdd(p *Ast, c *Ast) {
+    if unsafe.cast[uint](p) == 0 || unsafe.cast[uint](c) == 0 {
+        ret
+    }
+    if unsafe.cast[uint](p.child) == 0 {
+        p.child = c
+        ret
+    }
+    var q: *Ast = p.child
+    for ; unsafe.cast[uint](q.next) != 0; {
+        q = q.next
+    }
+    q.next = c
+}
+
+// astEmit 把节点挂到当前语句/声明容器。
+fn astEmit(x *Parser, n *Ast) {
+    astAdd(x.cur, n)
+}
+
+// astUn 创建一元表达式节点。
+fn astUn(k int, op string, e *Ast) *Ast {
+    var n: *Ast = astNew(k)
+    n.attr = op
+    astAdd(n, e)
+    ret n
+}
+
+// astBin 创建二元表达式节点。
+fn astBin(op string, l *Ast, r *Ast) *Ast {
+    var n: *Ast = astNew(A_BIN)
+    n.attr = op
+    astAdd(n, l)
+    astAdd(n, r)
+    ret n
+}
+
+// astName 创建 NAME 节点。
+fn astName(s string) *Ast {
+    var n: *Ast = astNew(A_NAME)
+    n.name = s
+    ret n
+}
+
+// astLit 创建整数 LIT 节点（s 为十进制文本）。
+fn astLit(s string) *Ast {
+    var n: *Ast = astNew(A_LIT)
+    n.name = s
+    n.num = parseNumText(s)
+    n.lk = 1
+    ret n
+}
+
+// astInt 用整数值构造 LIT；文本按 Go float64 的 %v 规则输出。
+fn astInt(v int) *Ast {
+    var n: *Ast = astNew(A_LIT)
+    n.name = goIntText(v)
+    n.num = v
+    n.lk = 1
+    ret n
+}
+
+// astFloatLit 用浮点文本构造 LIT（保留源码文本）。
+fn astFloatLit(s string) *Ast {
+    var n: *Ast = astNew(A_LIT)
+    n.name = s
+    n.lk = 2
+    ret n
+}
+
+// isFloatText 判断十进制数字 token 是否为浮点写法（十六进制里的 e 不算）。
+fn isFloatText(s string) bool {
+    var n: uint = strings.len(s)
+    if n == 0 {
+        ret false
+    }
+    var c0: uint = byteStr(s, 0)
+    var c1: uint = 0
+    if n > 1 {
+        c1 = byteStr(s, 1)
+    }
+    if c0 == 48 && (c1 == 120 || c1 == 88 || c1 == 98 || c1 == 66 || c1 == 111 || c1 == 79) {
+        ret false
+    }
+    if hasByte(s, 46) {
+        ret true
+    }
+    if hasByte(s, 101) {
+        ret true
+    }
+    if hasByte(s, 69) {
+        ret true
+    }
+    ret false
+}
+
+// astNumLit 按 token 原文构造数字 LIT：浮点保留原文，整数归一化。
+fn astNumLit(s string) *Ast {
+    if isFloatText(s) {
+        ret astFloatLit(s)
+    }
+    ret astInt(parseNumText(s))
+}
+
+// astStr 创建 STR 节点（s 为解码后的内容）。
+fn astStr(s string) *Ast {
+    var n: *Ast = astNew(A_STR)
+    n.name = s
+    ret n
+}
+
+// litInt/litFloat/litBool/litStr 判断节点是否为可折叠字面量。
+fn litInt(n *Ast) bool {
+    if astNull(n) {
+        ret false
+    }
+    if n.k != A_LIT {
+        ret false
+    }
+    if n.lk != 1 {
+        ret false
+    }
+    ret true
+}
+
+fn litFloat(n *Ast) bool {
+    if astNull(n) {
+        ret false
+    }
+    if n.k != A_LIT {
+        ret false
+    }
+    if n.lk != 2 {
+        ret false
+    }
+    ret true
+}
+
+fn litBool(n *Ast) bool {
+    if astNull(n) {
+        ret false
+    }
+    if n.k != A_BOOL {
+        ret false
+    }
+    ret true
+}
+
+fn litStr(n *Ast) bool {
+    if astNull(n) {
+        ret false
+    }
+    if n.k != A_STR {
+        ret false
+    }
+    ret true
+}
+
+// astBoolOf 由 bool 值创建 BOOL 节点。
+fn astBoolOf(v bool) *Ast {
+    if v {
+        ret astBool("true")
+    }
+    ret astBool("false")
+}
+
+// catText 拼接两个字符串。
+fn catText(a string, b string) string {
+    var bb: ptr = strings.builderNew(strings.len(a) + strings.len(b) + 1)
+    strings.builderWriteString(bb, a)
+    strings.builderWriteString(bb, b)
+    ret strings.builderString(bb)
+}
+
+// repeatText 把 s 重复 count 次；count<=0 返回空串。
+fn repeatText(s string, count int) string {
+    if count <= 0 {
+        ret ""
+    }
+    var cap: uint = strings.len(s) * unsafe.cast[uint](count) + 1
+    var bb: ptr = strings.builderNew(cap)
+    var i: int = 0
+    for ; i < count; {
+        strings.builderWriteString(bb, s)
+        i = i + 1
+    }
+    ret strings.builderString(bb)
+}
+
+// negFloatText 对浮点文本取负：已有负号则去掉，否则前置负号。
+fn negFloatText(s string) string {
+    var n: uint = strings.len(s)
+    if n > 0 && byteStr(s, 0) == 45 {
+        ret strings.makeString(strings.toCstring(s) + 1, n - 1, n - 1)
+    }
+    ret catText("-", s)
+}
+
+// foldUn 尝试折叠一元常量：-整数/-浮点、!bool、~整数。
+// 与 Go parser 的 checkUnary 一致，其余保留 UN 节点。
+fn foldUn(op string, e *Ast) *Ast {
+    if strings.eq(op, "-") {
+        if litInt(e) {
+            ret astInt(0 - e.num)
+        }
+        if litFloat(e) {
+            ret astFloatLit(negFloatText(e.name))
+        }
+    }
+    if strings.eq(op, "!") && litBool(e) {
+        if strings.eq(e.attr, "true") {
+            ret astBool("false")
+        }
+        ret astBool("true")
+    }
+    if strings.eq(op, "~") && litInt(e) {
+        // 与 Go 的 ^int64(v) 等价；用算术式避免依赖一元 ~ 的位宽。
+        ret astInt((0 - e.num) - 1)
+    }
+    ret astUn(A_UN, op, e)
+}
+
+// foldBin 尝试折叠二元常量。整数运算/比较、bool 逻辑/相等、
+// 字符串 +/==/!= 与字符串 * 整数按 Go parser 的观察结果折叠。
+fn foldBin(op string, l *Ast, r *Ast) *Ast {
+    if litInt(l) && litInt(r) {
+        var a: int = l.num
+        var b: int = r.num
+        if strings.eq(op, "+") {
+            ret astInt(a + b)
+        }
+        if strings.eq(op, "-") {
+            ret astInt(a - b)
+        }
+        if strings.eq(op, "*") {
+            ret astInt(a * b)
+        }
+        if strings.eq(op, "/") {
+            if b != 0 {
+                ret astInt(a / b)
+            }
+        } else if strings.eq(op, "%") {
+            if b != 0 {
+                ret astInt(a % b)
+            }
+        } else if strings.eq(op, "<<") {
+            ret astInt(a << b)
+        } else if strings.eq(op, ">>") {
+            ret astInt(a >> b)
+        } else if strings.eq(op, "&") {
+            ret astInt(a & b)
+        } else if strings.eq(op, "|") {
+            ret astInt(a | b)
+        } else if strings.eq(op, "^") {
+            ret astInt(a ^ b)
+        } else if strings.eq(op, "<") {
+            ret astBoolOf(a < b)
+        } else if strings.eq(op, ">") {
+            ret astBoolOf(a > b)
+        } else if strings.eq(op, "<=") {
+            ret astBoolOf(a <= b)
+        } else if strings.eq(op, ">=") {
+            ret astBoolOf(a >= b)
+        } else if strings.eq(op, "==") {
+            ret astBoolOf(a == b)
+        } else if strings.eq(op, "!=") {
+            ret astBoolOf(a != b)
+        }
+    }
+    if litBool(l) && litBool(r) {
+        var a: bool = strings.eq(l.attr, "true")
+        var b: bool = strings.eq(r.attr, "true")
+        if strings.eq(op, "&&") {
+            // 值上下文的 a&&b 在当前后端会退化为左值，改用分支。
+            if a {
+                if b {
+                    ret astBool("true")
+                }
+            }
+            ret astBool("false")
+        }
+        if strings.eq(op, "||") {
+            if a {
+                ret astBool("true")
+            }
+            if b {
+                ret astBool("true")
+            }
+            ret astBool("false")
+        }
+        if strings.eq(op, "==") {
+            // Go foldEq 对 bool 常量按 Num(0)==Num(0) 比较，恒为 true。
+            ret astBool("true")
+        }
+        if strings.eq(op, "!=") {
+            ret astBool("false")
+        }
+    }
+    if litStr(l) && litStr(r) {
+        if strings.eq(op, "+") {
+            ret astStr(catText(l.name, r.name))
+        }
+        if strings.eq(op, "==") {
+            ret astBoolOf(strings.eq(l.name, r.name))
+        }
+        if strings.eq(op, "!=") {
+            if strings.eq(l.name, r.name) {
+                ret astBool("false")
+            }
+            ret astBool("true")
+        }
+    }
+    if litStr(l) && litInt(r) && strings.eq(op, "*") {
+        ret astStr(repeatText(l.name, r.num))
+    }
+    ret astBin(op, l, r)
+}
+
+// astDot 拼接 "a.b" 形式的限定名。
+fn astDot(a string, b string) string {
+    var bb: ptr = strings.builderNew(strings.len(a) + strings.len(b) + 2)
+    strings.builderWriteString(bb, a)
+    strings.builderWriteString(bb, ".")
+    strings.builderWriteString(bb, b)
+    ret strings.builderString(bb)
+}
+
+// spanText 取源码 [s, x.le) 区间文本（x.le 是上一个被消费 token 的终点），
+// 并去掉尾部空格。不能用到下一个 token 起点 x.a：换行/注释会被卷进来。
+fn spanText(x *Parser, s uint) string {
+    var e: uint = x.le
+    if e < s {
+        e = s
+    }
+    var n: uint = e - s
+    var t: string = strings.makeString(x.p + s, n, n)
+    ret strings.trimRight(t, " ")
+}
+
+// addGlobal 记录一个顶层变量名（用于 assignTail 补 g 标志）。
+fn addGlobal(x *Parser, name string) {
+    var g: *GName = new(GName)
+    g.name = name
+    g.next = x.gvars
+    x.gvars = g
+}
+
+// isGlobalVar 判断名字是否为顶层变量（不含点号的简单名）。
+fn isGlobalVar(x *Parser, name string) bool {
+    var g: *GName = x.gvars
+    for ; unsafe.cast[uint](g) != 0; {
+        if strings.eq(g.name, name) {
+            ret true
+        }
+        g = g.next
+    }
+    ret false
+}
+
+// digitVal 返回 0-9/a-f/A-F 的数值；其他返回 0。
+fn digitVal(c uint) int {
+    if c >= 48 && c <= 57 {
+        ret unsafe.cast[int](c - 48)
+    }
+    if c >= 97 && c <= 102 {
+        ret unsafe.cast[int](c - 97 + 10)
+    }
+    if c >= 65 && c <= 70 {
+        ret unsafe.cast[int](c - 65 + 10)
+    }
+    ret 0
+}
+
+// byteStr 返回 s 在 i 处的字节；调用方保证 i < len。
+fn byteStr(s string, i uint) uint {
+    var p: ptr = strings.toCstring(s)
+    var q: *u8 = p + i
+    ret unsafe.cast[uint](*q)
+}
+
+// octalTail 判断 s 是否全部由 0-7 组成。
+fn octalTail(s string) bool {
+    var n: uint = strings.len(s)
+    if n == 0 {
+        ret false
+    }
+    var i: uint = 0
+    for ; i < n; {
+        var c: uint = byteStr(s, i)
+        if c < 48 || c > 55 {
+            ret false
+        }
+        i = i + 1
+    }
+    ret true
+}
+
+// parseNumText 把整数字面量归一化成十进制 int（剥离下划线与进制前缀）。
+// 浮点字面量不在 S3 对拍范围内：遇到 '.' 或 'e' 时按 0 处理。
+fn parseNumText(s string) int {
+    var n: uint = strings.len(s)
+    var base: int = 10
+    var i: uint = 0
+    var val: int = 0
+    if n == 0 {
+        ret 0
+    }
+    var c0: uint = byteStr(s, 0)
+    var c1: uint = 0
+    if n > 1 {
+        c1 = byteStr(s, 1)
+    }
+    if c0 == 48 && (c1 == 120 || c1 == 88) {
+        base = 16
+        i = 2
+    } else if c0 == 48 && (c1 == 98 || c1 == 66) {
+        base = 2
+        i = 2
+    } else if c0 == 48 && (c1 == 111 || c1 == 79) {
+        base = 8
+        i = 2
+    } else if n > 1 && c0 == 48 && octalTail(s) {
+        base = 8
+        i = 1
+    }
+    for ; i < n; {
+        var c: uint = byteStr(s, i)
+        if c != 95 {
+            val = val * base + digitVal(c)
+        }
+        i = i + 1
+    }
+    ret val
+}
+
+// charVal 解析字符字面量内容（不含引号）为码点值。
+fn charVal(s string) int {
+    var n: uint = strings.len(s)
+    if n == 0 {
+        ret 0
+    }
+    var c: uint = byteStr(s, 0)
+    if c == 92 && n > 1 {
+        var e: uint = byteStr(s, 1)
+        if e == 110 {
+            ret 10
+        }
+        if e == 116 {
+            ret 9
+        }
+        if e == 114 {
+            ret 13
+        }
+        if e == 48 {
+            ret 0
+        }
+        if e == 92 {
+            ret 92
+        }
+        if e == 39 {
+            ret 39
+        }
+        if e == 34 {
+            ret 34
+        }
+        ret unsafe.cast[int](e)
+    }
+    ret unsafe.cast[int](c)
 }
 
 // byteAt 读取源码偏移 i 处的字节；调用方保证 i < n。
@@ -142,8 +709,9 @@ fn atName(x *Parser) bool {
     ret x.k == lex.NAME
 }
 
-// bump 前进一个 token。
+// bump 前进一个 token；记下刚消费 token 的终点供 spanText 使用。
 fn bump(x *Parser) {
+    x.le = x.b
     advance(x)
 }
 
@@ -176,11 +744,13 @@ fn want(x *Parser, s string, code int) bool {
 }
 
 // wantName 要求当前 token 是 NAME，返回是否成功；成功时前进。
+// 成功时把名字文本记录到 x.nm，调用方需要时立即取走。
 fn wantName(x *Parser, code int) bool {
     if x.k != lex.NAME {
         fail(x, code, x.a)
         ret false
     }
+    x.nm = tstr(x)
     bump(x)
     ret true
 }
@@ -269,12 +839,21 @@ fn skipBraceGroup(x *Parser) bool {
 }
 
 // legacyStruct 解析旧式顶层声明：struct Name { ... }。
+// Go parser 的旧式结构体只注册“冒号形式/嵌入/访问修饰”字段，空格形式
+// （val u64）不注册；canonical 按同一规则输出。
 fn legacyStruct(x *Parser) {
     bump(x) // struct
     if !wantName(x, EDECL) {
         ret
     }
-    structBody(x)
+    var tn: *Ast = astNew(A_TYPE)
+    tn.name = x.nm
+    tn.attr = "kind=struct"
+    astEmit(x, tn)
+    var sp: *Ast = x.cur
+    x.cur = tn
+    structBody(x, 0)
+    x.cur = sp
     x.structs = x.structs + 1
 }
 
@@ -309,24 +888,51 @@ fn importDecl(x *Parser) {
 }
 
 // enumDecl 解析 enum Name { 成员... }；成员可用换行或逗号分隔。
+// AST：TYPE(kind=enum) 后跟兄弟 VAR(flags=cgdi)，与 Go parser 的可观察形状一致。
 fn enumDecl(x *Parser) {
     bump(x) // enum
     if !wantName(x, EDECL) {
         ret
     }
+    var ename: string = x.nm
     if !want(x, "{", EDECL) {
         ret
     }
+    var tn: *Ast = astNew(A_TYPE)
+    tn.name = ename
+    tn.attr = "kind=enum"
+    astEmit(x, tn)
     skipSep(x)
+    var nextv: int = 0
     for ; x.e == OK && !at(x, "}"); {
         if x.k == lex.NAME {
+            var mname: string = tstr(x)
             bump(x)
+            var value: int = nextv
             if at(x, "=") {
                 bump(x)
-                if !expr(x) {
+                var neg: bool = false
+                if at(x, "-") {
+                    neg = true
+                    bump(x)
+                }
+                if x.k != lex.NUMBER {
+                    fail(x, EDECL, x.a)
                     ret
                 }
+                value = parseNumText(tstr(x))
+                x.exprs = x.exprs + 1
+                bump(x)
+                if neg {
+                    value = 0 - value
+                }
             }
+            var mn: *Ast = astNew(A_VAR)
+            mn.name = mname
+            mn.attr = "cgdi"
+            mn.child = astInt(value)
+            astEmit(x, mn)
+            nextv = value + 1
         } else if at(x, ",") {
             bump(x)
         } else if x.k == lex.NONE {
@@ -351,25 +957,54 @@ fn typeDecl(x *Parser) {
     if !wantName(x, EDECL) {
         ret
     }
+    var tname: string = x.nm
     if at(x, "struct") {
         bump(x)
-        structBody(x)
+        var sn: *Ast = astNew(A_TYPE)
+        sn.name = tname
+        sn.attr = "kind=struct"
+        astEmit(x, sn)
+        var sp: *Ast = x.cur
+        x.cur = sn
+        structBody(x, 1)
+        x.cur = sp
         x.structs = x.structs + 1
         ret
     }
     if at(x, "interface") {
         bump(x)
+        var in: *Ast = astNew(A_TYPE)
+        in.name = tname
+        in.attr = "kind=interface"
+        astEmit(x, in)
+        var ip: *Ast = x.cur
+        x.cur = in
         interfaceBody(x)
+        x.cur = ip
         ret
     }
+    var isAlias: bool = false
     if at(x, "=") {
         bump(x)
+        isAlias = true
     }
-    typeRef(x)
+    if !typeRef(x) {
+        ret
+    }
+    var tn: *Ast = astNew(A_TYPE)
+    tn.name = tname
+    if isAlias {
+        tn.attr = "kind=alias"
+    } else {
+        tn.attr = "kind=newtype"
+    }
+    tn.aux = x.ty
+    astEmit(x, tn)
 }
 
 // structBody 解析结构体字段：修饰符、字段名、类型、默认值与标签。
-fn structBody(x *Parser) bool {
+// mode=0 旧式 struct（空格形式字段不注册），mode=1 type struct（全部注册）。
+fn structBody(x *Parser, mode int) bool {
     // 旧式继承：struct Student : Person { ... }
     if at(x, ":") {
         bump(x)
@@ -386,7 +1021,7 @@ fn structBody(x *Parser) bool {
             fail(x, EDECL, x.a)
             ret false
         }
-        if !structField(x) {
+        if !structField(x, mode) {
             ret false
         }
         skipSep(x)
@@ -394,39 +1029,79 @@ fn structBody(x *Parser) bool {
     ret want(x, "}", EDECL)
 }
 
+// skipLine 跳过当前字段行剩余 token（停在换行/分号/右花括号前）。
+fn skipLine(x *Parser) {
+    for ; x.e == OK && x.k != lex.NONE; {
+        if isNewlineTok(x) || at(x, ";") || at(x, "}") {
+            ret
+        }
+        bump(x)
+    }
+}
+
 // structField 解析单个结构体字段或内嵌类型。
-fn structField(x *Parser) bool {
+// canonical 与 Go parser 一致：@Parent 记为 anon、name @Parent 名字与类型
+// 都不输出、!/?/_ 记为 access=1/3/4、pub/priv/prot 被忽略。
+fn structField(x *Parser, mode int) bool {
     // 内嵌类型： @Parent
     if at(x, "@") {
         bump(x)
-        ret typeRef(x)
+        if !typeRef(x) {
+            ret false
+        }
+        var en: *Ast = astNew(A_FIELD)
+        en.attr = "anon=1"
+        astEmit(x, en)
+        ret true
     }
-    // 可见性与字段修饰符：pub、priv、prot、!、?、+、-
-    if at(x, "pub") || at(x, "priv") || at(x, "prot") {
+    // Go parser 对 + / - 开头的字段行整行跳过，不注册字段。
+    if at(x, "+") || at(x, "-") {
+        skipLine(x)
+        ret true
+    }
+    // 可见性与字段修饰符：pub、priv、prot 被丢弃；! 只读、? 只写。
+    var access: int = 0
+    if at(x, "!") {
         bump(x)
-    }
-    if at(x, "!") || at(x, "?") || at(x, "+") || at(x, "-") {
+        access = 3
+    } else if at(x, "?") {
+        bump(x)
+        access = 4
+    } else if at(x, "pub") || at(x, "priv") || at(x, "prot") {
         bump(x)
     }
     if !wantName(x, EDECL) {
         ret false
     }
-    // 命名内嵌： name @Parent
+    var fname: string = x.nm
+    // 命名内嵌： name @Parent（canonical 不输出 name/type/anon）。
     if at(x, "@") {
         bump(x)
-        ret typeRef(x)
+        if !typeRef(x) {
+            ret false
+        }
+        var nn: *Ast = astNew(A_FIELD)
+        astEmit(x, nn)
+        ret true
     }
+    // 下划线开头的字段在 Go parser 里被强制视为 private。
+    if byteStr(fname, 0) == 95 {
+        access = 1
+    }
+    var hasColon: bool = false
     if at(x, ":") {
         bump(x)
         if !typeRef(x) {
             ret false
         }
+        hasColon = true
     } else {
         // 无冒号时按“名字 类型”解析，兼容 x int。
         if !typeRef(x) {
             ret false
         }
     }
+    var fty: string = x.ty
     if at(x, "=") {
         bump(x)
         if !expr(x) {
@@ -439,6 +1114,16 @@ fn structField(x *Parser) bool {
     }
     if at(x, ",") {
         bump(x)
+    }
+    // 旧式 struct 的空格形式字段不注册。
+    if mode == 1 || hasColon {
+        var fld: *Ast = astNew(A_FIELD)
+        fld.name = fname
+        fld.aux = fty
+        if access != 0 {
+            fld.attr = "access=" + strings.itoa(access)
+        }
+        astEmit(x, fld)
     }
     ret true
 }
@@ -457,12 +1142,21 @@ fn interfaceBody(x *Parser) bool {
         if !wantName(x, EDECL) {
             ret false
         }
-        if !paramList(x) {
+        var mn: *Ast = astNew(A_METHOD)
+        mn.name = x.nm
+        astEmit(x, mn)
+        var mp: *Ast = x.cur
+        x.cur = mn
+        if !paramList(x, 2) {
+            x.cur = mp
             ret false
         }
+        mn.attr = strings.itoa(x.argc)
         if !returnType(x) {
+            x.cur = mp
             ret false
         }
+        x.cur = mp
         skipSep(x)
     }
     ret want(x, "}", EDECL)
@@ -475,6 +1169,7 @@ fn varDecl(x *Parser) bool {
     if !wantName(x, EDECL) {
         ret false
     }
+    var vname: string = x.nm
     for ; at(x, ","); {
         bump(x)
         if !wantName(x, EDECL) {
@@ -490,27 +1185,145 @@ fn varDecl(x *Parser) bool {
         hasType = true
     }
     var hasValue: bool = false
+    var val: *Ast = 0
     if at(x, "=") || at(x, ":=") {
         bump(x)
         if !expr(x) {
             ret false
         }
+        val = x.ex
         hasValue = true
     }
     if !hasType && !hasValue {
         fail(x, ETYPE, x.a)
         ret false
     }
+    // const 关键字不改变 Go AST 的 IsConst（只有 enum 成员带 c）。
+    var flags: string = ""
+    if x.fnd == 0 {
+        flags = flags + "g"
+    }
+    flags = flags + "d"
+    if hasValue {
+        flags = flags + "i"
+    }
+    var vn: *Ast = astNew(A_VAR)
+    vn.name = vname
+    vn.attr = flags
+    vn.child = val
+    astEmit(x, vn)
+    if x.fnd == 0 {
+        addGlobal(x, vname)
+    }
     if isConst {
         x.consts = x.consts + 1
     } else {
         x.vars = x.vars + 1
     }
+    x.nm = vname
     ret true
 }
 
-// typeRef 解析类型引用：*T、[]T、[N]T、map[K]V、fn(...)、Name、a.b.c。
+// typeRef 解析类型引用并把规范类型文本记录到 x.ty。
+// typeIdentByte 判断字节是否可作为类型文本中的标识符字符。
+fn typeIdentByte(c uint) bool {
+    if c == 95 {
+        ret true
+    }
+    if c >= 48 && c <= 57 {
+        ret true
+    }
+    if c >= 65 && c <= 90 {
+        ret true
+    }
+    if c >= 97 && c <= 122 {
+        ret true
+    }
+    ret false
+}
+
+// typeWord 把内建类型别名规范成 Go type 包的 TypeName（int64→i64 等）。
+// 只处理 GetSystemType 的别名；短名与用户类型保持原样。
+fn typeWord(s string) string {
+    if strings.eq(s, "int64") {
+        ret "i64"
+    }
+    if strings.eq(s, "uint64") {
+        ret "u64"
+    }
+    if strings.eq(s, "int32") {
+        ret "i32"
+    }
+    if strings.eq(s, "rune") {
+        ret "i32"
+    }
+    if strings.eq(s, "uint32") {
+        ret "u32"
+    }
+    if strings.eq(s, "int16") {
+        ret "i16"
+    }
+    if strings.eq(s, "uint16") {
+        ret "u16"
+    }
+    if strings.eq(s, "int8") {
+        ret "i8"
+    }
+    if strings.eq(s, "uint8") {
+        ret "u8"
+    }
+    ret s
+}
+
+// canonTypeText 规范化类型源码文本：把完整内建别名替换成短名。
+// Go 的 typeStr 输出 TypeName，因此 []uint32 必须对拍成 []u32。
+// 点号后的标识符是包限定类型，不做内建替换。
+fn canonTypeText(s string) string {
+    var n: uint = strings.len(s)
+    if n == 0 {
+        ret s
+    }
+    var bb: ptr = strings.builderNew(n + 1)
+    var i: uint = 0
+    var prevDot: bool = false
+    for ; i < n; {
+        var c: uint = byteStr(s, i)
+        if typeIdentByte(c) {
+            var st: uint = i
+            for ; i < n; {
+                if !typeIdentByte(byteStr(s, i)) {
+                    break
+                }
+                i = i + 1
+            }
+            var word: string = strings.makeString(strings.toCstring(s) + st, i - st, i - st)
+            if prevDot {
+                strings.builderWriteString(bb, word)
+            } else {
+                strings.builderWriteString(bb, typeWord(word))
+            }
+            prevDot = false
+        } else {
+            var one: string = strings.makeString(strings.toCstring(s) + i, 1, 1)
+            strings.builderWriteString(bb, one)
+            prevDot = c == 46
+            i = i + 1
+        }
+    }
+    ret strings.builderString(bb)
+}
+
 fn typeRef(x *Parser) bool {
+    var ts: uint = x.a
+    if !typeRefCore(x) {
+        ret false
+    }
+    x.ty = canonTypeText(spanText(x, ts))
+    ret true
+}
+
+// typeRefCore 解析类型引用：*T、[]T、[N]T、map[K]V、fn(...)、Name、a.b.c。
+fn typeRefCore(x *Parser) bool {
     if at(x, "*") {
         bump(x)
         ret typeRef(x)
@@ -605,11 +1418,14 @@ fn typeRef(x *Parser) bool {
 fn fnDecl(x *Parser) bool {
     bump(x) // fn
     // 方法接收者：fn (self Point) move(...)
+    var recv: string = ""
     if at(x, "(") {
-        if !paramList(x) {
+        if !paramList(x, 1) {
             ret false
         }
+        recv = x.recv
     }
+    var ns: uint = x.a
     if !wantName(x, EDECL) {
         ret false
     }
@@ -619,7 +1435,11 @@ fn fnDecl(x *Parser) bool {
             ret false
         }
     }
-    // 泛型参数声明：[T] / [K, V]。
+    var fname: string = spanText(x, ns)
+    if strings.len(recv) != 0 {
+        fname = astDot(recv, fname)
+    }
+    // 泛型参数声明：[T] / [K, V]（canonical 不输出，仅跳过）。
     if at(x, "[") {
         bump(x)
         if !wantName(x, EDECL) {
@@ -635,38 +1455,65 @@ fn fnDecl(x *Parser) bool {
             ret false
         }
     }
-    if !paramList(x) {
+    var fd: *Ast = astNew(A_FN)
+    fd.name = fname
+    astEmit(x, fd)
+    var fp: *Ast = x.cur
+    x.cur = fd
+    x.fnd = x.fnd + 1
+    if !paramList(x, 0) {
+        x.fnd = x.fnd - 1
+        x.cur = fp
         ret false
     }
     if !returnType(x) {
+        x.fnd = x.fnd - 1
+        x.cur = fp
         ret false
     }
-    ret block(x)
+    var ok: bool = block(x)
+    x.fnd = x.fnd - 1
+    x.cur = fp
+    ret ok
 }
 
 // paramList 解析参数列表：name [: ]Type，逗号分隔。
-fn paramList(x *Parser) bool {
+// mode 0=普通函数参数（生成 ARG 节点），1=方法接收者（记录类型），2=接口方法参数（只计数）。
+fn paramList(x *Parser, mode int) bool {
     if !want(x, "(", EDECL) {
         ret false
     }
+    var count: int = 0
     skipNL(x)
     if !at(x, ")") {
         for ; x.e == OK; {
             if !wantName(x, EDECL) {
                 ret false
             }
+            var pname: string = x.nm
             if at(x, ":") {
                 bump(x)
             }
             if !typeRef(x) {
                 ret false
             }
+            var pty: string = x.ty
             // 参数默认值：b: i64 = "hi"
             if at(x, "=") {
                 bump(x)
                 if !expr(x) {
                     ret false
                 }
+            }
+            count = count + 1
+            if mode == 1 {
+                x.recv = pty
+            }
+            if mode == 0 {
+                var an: *Ast = astNew(A_ARG)
+                an.name = pname
+                an.aux = pty
+                astEmit(x, an)
             }
             skipNL(x)
             if at(x, ",") {
@@ -680,6 +1527,7 @@ fn paramList(x *Parser) bool {
             }
         }
     }
+    x.argc = count
     skipNL(x)
     ret want(x, ")", EDECL)
 }
@@ -693,6 +1541,9 @@ fn returnType(x *Parser) bool {
             if !typeRef(x) {
                 ret false
             }
+            var rn: *Ast = astNew(A_RET)
+            rn.aux = x.ty
+            astEmit(x, rn)
             skipNL(x)
             for ; at(x, ","); {
                 bump(x)
@@ -703,6 +1554,9 @@ fn returnType(x *Parser) bool {
                 if !typeRef(x) {
                     ret false
                 }
+                var rm: *Ast = astNew(A_RET)
+                rm.aux = x.ty
+                astEmit(x, rm)
                 skipNL(x)
             }
         }
@@ -712,7 +1566,13 @@ fn returnType(x *Parser) bool {
     if at(x, "{") || isNewlineTok(x) || at(x, ";") || at(x, "}") {
         ret true
     }
-    ret typeRef(x)
+    if !typeRef(x) {
+        ret false
+    }
+    var r1: *Ast = astNew(A_RET)
+    r1.aux = x.ty
+    astEmit(x, r1)
+    ret true
 }
 
 // block 解析 { 语句... }。
@@ -754,12 +1614,16 @@ fn stmt(x *Parser) bool {
     } else if at(x, "ret") || at(x, "return") {
         ok = retStmt(x)
     } else if at(x, "defer") {
+        // Go 版 parser 丢弃 defer token，AST 里就是普通调用语句。
         bump(x)
-        ok = expr(x)
+        ok = simpleStmt(x)
     } else if at(x, "build") {
         buildDecl(x)
         ok = x.e == OK
-    } else if at(x, "break") || at(x, "continue") {
+    } else if at(x, "break") {
+        ok = breakStmt(x)
+    } else if at(x, "continue") {
+        // Go 版 parser 丢弃 continue token，不生成 AST 节点。
         bump(x)
         eat(x, ";")
         ok = true
@@ -774,22 +1638,96 @@ fn stmt(x *Parser) bool {
     ret ok
 }
 
+// breakStmt 解析 break [N] / break (N)。
+fn breakStmt(x *Parser) bool {
+    bump(x) // break
+    var level: int = 1
+    if at(x, "(") {
+        bump(x)
+        if x.k == lex.NUMBER {
+            level = parseNumText(tstr(x))
+            bump(x)
+        }
+        eat(x, ")")
+    } else if x.k == lex.NUMBER {
+        level = parseNumText(tstr(x))
+        bump(x)
+    }
+    if level < 1 {
+        level = 1
+    }
+    var bn: *Ast = astNew(A_BREAK)
+    bn.attr = strings.itoa(level)
+    astEmit(x, bn)
+    eat(x, ";")
+    ret true
+}
+
 // ifStmt 解析 if 条件 { ... } [else if|else { ... }]。
 fn ifStmt(x *Parser) bool {
     bump(x) // if
+    var in: *Ast = astNew(A_IF)
+    astEmit(x, in)
+    var ip: *Ast = x.cur
+    x.cur = in
     if !expr(x) {
+        x.cur = ip
         ret false
     }
+    var cn: *Ast = astNew(A_COND)
+    cn.child = x.ex
+    astAdd(in, cn)
     if !block(x) {
+        x.cur = ip
         ret false
     }
     if eat(x, "else") {
+        var en: *Ast = astNew(A_ELSE)
+        astAdd(in, en)
+        var ep: *Ast = x.cur
+        x.cur = en
+        var ok: bool = false
         if at(x, "if") {
-            ret ifStmt(x)
+            ok = ifStmt(x)
+        } else {
+            ok = block(x)
         }
-        ret block(x)
+        x.cur = ep
+        if !ok {
+            x.cur = ip
+            ret false
+        }
     }
+    x.cur = ip
     ret true
+}
+
+// astBool 创建 BOOL 节点。
+fn astBool(v string) *Ast {
+    var n: *Ast = astNew(A_BOOL)
+    n.attr = v
+    ret n
+}
+
+// astNameOf 取表达式节点的名字（非 NAME 返回空串）。
+fn astNameOf(n *Ast) string {
+    if unsafe.cast[uint](n) == 0 {
+        ret ""
+    }
+    if n.k == A_NAME {
+        ret n.name
+    }
+    ret ""
+}
+
+// dropLast 去掉字符串最后一个字节（用于把 "+=" 变成 "+"）。
+fn dropLast(s string) string {
+    var n: uint = strings.len(s)
+    if n == 0 {
+        ret s
+    }
+    var m: uint = n - 1
+    ret strings.makeString(strings.toCstring(s), m, m)
 }
 
 // forStmt 解析 while 形式、for ; cond ; 形式、三表达式形式与 range 形式。
@@ -797,33 +1735,57 @@ fn forStmt(x *Parser) bool {
     bump(x) // for/while
     skipNL(x)
     if at(x, "{") {
-        ret block(x)
+        var f0: *Ast = astNew(A_FOR)
+        astEmit(x, f0)
+        var p0: *Ast = x.cur
+        x.cur = f0
+        var ok0: bool = block(x)
+        x.cur = p0
+        ret ok0
     }
     if at(x, ";") {
+        var f1: *Ast = astNew(A_FOR)
+        astEmit(x, f1)
+        var p1: *Ast = x.cur
+        x.cur = f1
         bump(x)
-        ret forCondTail(x)
+        var ok1: bool = forCondTail(x)
+        x.cur = p1
+        ret ok1
     }
     if at(x, "var") || at(x, "const") || at(x, "let") {
         if !varDecl(x) {
             ret false
         }
+        var iname: string = x.nm
         skipNL(x)
         if !want(x, ";", ESTMT) {
             ret false
         }
-        ret forCondTail(x)
+        var f2: *Ast = astNew(A_FOR)
+        astEmit(x, f2)
+        var p2: *Ast = x.cur
+        x.cur = f2
+        var i2: *Ast = astNew(A_INIT)
+        i2.child = astName(iname)
+        astAdd(f2, i2)
+        var ok2: bool = forCondTail(x)
+        x.cur = p2
+        ret ok2
     }
 
     // 表达式起始：range 形式（i, v := range xs）或普通初值。
     if !expr(x) {
         ret false
     }
+    var first: *Ast = x.ex
     if at(x, ",") {
         bump(x)
         skipNL(x)
         if !expr(x) {
             ret false
         }
+        var second: *Ast = x.ex
         if !isAssignOp(x) {
             fail(x, ESTMT, x.a)
             ret false
@@ -839,9 +1801,29 @@ fn forStmt(x *Parser) bool {
         if !expr(x) {
             ret false
         }
-        ret block(x)
+        var coll2: *Ast = x.ex
+        var fr2: *Ast = astNew(A_FOR)
+        astEmit(x, fr2)
+        var pr2: *Ast = x.cur
+        x.cur = fr2
+        var c2: *Ast = astNew(A_COND)
+        c2.child = astBool("true")
+        astAdd(fr2, c2)
+        var rg2: *Ast = astNew(A_RANGE)
+        rg2.child = coll2
+        astAdd(fr2, rg2)
+        var rn1: *Ast = astNew(A_RNAME)
+        rn1.name = astNameOf(first)
+        astAdd(fr2, rn1)
+        var rn2: *Ast = astNew(A_RNAME)
+        rn2.name = astNameOf(second)
+        astAdd(fr2, rn2)
+        var ok3: bool = block(x)
+        x.cur = pr2
+        ret ok3
     }
     if isAssignOp(x) {
+        var op: string = tstr(x)
         bump(x)
         skipNL(x)
         if at(x, "range") {
@@ -850,47 +1832,136 @@ fn forStmt(x *Parser) bool {
             if !expr(x) {
                 ret false
             }
-            ret block(x)
+            var coll1: *Ast = x.ex
+            var fr1: *Ast = astNew(A_FOR)
+            astEmit(x, fr1)
+            var pr1: *Ast = x.cur
+            x.cur = fr1
+            var c1: *Ast = astNew(A_COND)
+            c1.child = astBool("true")
+            astAdd(fr1, c1)
+            var rg1: *Ast = astNew(A_RANGE)
+            rg1.child = coll1
+            astAdd(fr1, rg1)
+            var rx: *Ast = astNew(A_RNAME)
+            rx.name = astNameOf(first)
+            astAdd(fr1, rx)
+            var ok4: bool = block(x)
+            x.cur = pr1
+            ret ok4
         }
         // 普通三表达式形式：赋值右侧是初值。
         if !expr(x) {
             ret false
         }
+        var ival: *Ast = x.ex
+        var vn: *Ast = astNew(A_VAR)
+        vn.name = astNameOf(first)
+        if strings.eq(op, ":=") {
+            vn.attr = "d"
+        }
+        vn.child = ival
+        astEmit(x, vn)
         skipNL(x)
         if !want(x, ";", ESTMT) {
             ret false
         }
-        ret forCondTail(x)
+        var f3: *Ast = astNew(A_FOR)
+        astEmit(x, f3)
+        var p3: *Ast = x.cur
+        x.cur = f3
+        var ini: *Ast = astNew(A_INIT)
+        ini.child = astName(astNameOf(first))
+        astAdd(f3, ini)
+        var ok5: bool = forCondTail(x)
+        x.cur = p3
+        ret ok5
     }
-    ret block(x) // while 形式：expr 已解析条件表达式
+    // while 形式：expr 已解析条件表达式
+    var fw: *Ast = astNew(A_FOR)
+    astEmit(x, fw)
+    var pw: *Ast = x.cur
+    x.cur = fw
+    var cw: *Ast = astNew(A_COND)
+    cw.child = x.ex
+    astAdd(fw, cw)
+    var okw: bool = block(x)
+    x.cur = pw
+    ret okw
 }
 
 // forCondTail 解析 for 的“; 条件; 后置语句 { ... }”部分。
 fn forCondTail(x *Parser) bool {
     skipNL(x)
-    if !at(x, ";") && !expr(x) {
-        ret false
+    if !at(x, ";") {
+        if !expr(x) {
+            ret false
+        }
+        var cn: *Ast = astNew(A_COND)
+        cn.child = x.ex
+        astEmit(x, cn)
     }
     skipNL(x)
     if !want(x, ";", ESTMT) {
         ret false
     }
     skipNL(x)
-    if !at(x, "{") && !simpleStmt(x) {
-        ret false
+    if !at(x, "{") {
+        if !forPost(x) {
+            ret false
+        }
     }
     ret block(x)
+}
+
+// forPost 解析 for 的后置语句；i++/i-- 按 Go parser 的脱糖形状建 AST。
+fn forPost(x *Parser) bool {
+    if !expr(x) {
+        ret false
+    }
+    var left: *Ast = x.ex
+    if at(x, "++") || at(x, "--") {
+        var op: string = "+"
+        if at(x, "--") {
+            op = "-"
+        }
+        bump(x)
+        var lname: string = astNameOf(left)
+        var pn: *Ast = astNew(A_POST)
+        pn.child = astName(lname)
+        astEmit(x, pn)
+        var vn: *Ast = astNew(A_VAR)
+        vn.name = lname
+        vn.child = astBin(op, astName(lname), astInt(1))
+        astEmit(x, vn)
+        ret true
+    }
+    if isAssignOp(x) {
+        ret assignTail(x, left, 1)
+    }
+    ret true
 }
 
 // switchStmt 解析 switch [表达式] { case 表达式: 语句... default: 语句... }。
 fn switchStmt(x *Parser) bool {
     bump(x) // switch
+    var sn: *Ast = astNew(A_SWITCH)
+    astEmit(x, sn)
+    var sp: *Ast = x.cur
+    x.cur = sn
     skipNL(x)
-    if !at(x, "{") && !expr(x) {
-        ret false
+    if !at(x, "{") {
+        if !expr(x) {
+            x.cur = sp
+            ret false
+        }
+        var tn: *Ast = astNew(A_TARGET)
+        tn.child = x.ex
+        astAdd(sn, tn)
     }
     skipNL(x)
     if !want(x, "{", ESTMT) {
+        x.cur = sp
         ret false
     }
     skipSep(x)
@@ -899,24 +1970,38 @@ fn switchStmt(x *Parser) bool {
         skipSep(x)
         if x.k == lex.NONE {
             fail(x, ESTMT, x.a)
+            x.cur = sp
             ret false
         }
         if at(x, "case") {
             bump(x)
             skipNL(x)
+            x.cur = sn
+            var cn: *Ast = astNew(A_CASE)
+            astAdd(sn, cn)
+            x.cur = cn
             if !expr(x) {
+                x.cur = sp
                 ret false
             }
+            var v0: *Ast = astNew(A_VAL)
+            v0.child = x.ex
+            astAdd(cn, v0)
             skipNL(x)
             for ; at(x, ","); {
                 bump(x)
                 skipNL(x)
                 if !expr(x) {
+                    x.cur = sp
                     ret false
                 }
+                var vn: *Ast = astNew(A_VAL)
+                vn.child = x.ex
+                astAdd(cn, vn)
                 skipNL(x)
             }
             if !want(x, ":", ESTMT) {
+                x.cur = sp
                 ret false
             }
             skipSep(x)
@@ -924,7 +2009,13 @@ fn switchStmt(x *Parser) bool {
         } else if at(x, "default") {
             bump(x)
             skipNL(x)
+            x.cur = sn
+            var dn: *Ast = astNew(A_CASE)
+            dn.attr = "1"
+            astAdd(sn, dn)
+            x.cur = dn
             if !want(x, ":", ESTMT) {
+                x.cur = sp
                 ret false
             }
             skipSep(x)
@@ -932,40 +2023,113 @@ fn switchStmt(x *Parser) bool {
         } else {
             if !seen {
                 fail(x, ESTMT, x.a)
+                x.cur = sp
                 ret false
             }
             if !stmt(x) {
+                x.cur = sp
                 ret false
             }
             skipSep(x)
         }
+        if x.cur == sn {
+            x.cur = sp
+        }
     }
+    x.cur = sp
     ret want(x, "}", ESTMT)
 }
 
 // retStmt 解析 ret/return [表达式, ...]。
 fn retStmt(x *Parser) bool {
     bump(x)
+    var rn: *Ast = astNew(A_RETURN)
+    astEmit(x, rn)
     if atStmtEnd(x) {
         ret true
     }
     if !expr(x) {
         ret false
     }
+    astAdd(rn, x.ex)
     for ; at(x, ","); {
         bump(x)
         if !expr(x) {
             ret false
         }
+        astAdd(rn, x.ex)
     }
     ret true
 }
 
-// simpleStmt 解析表达式语句与赋值；支持多左值与逗号分隔表达式。
-fn simpleStmt(x *Parser) bool {
-    if !expr(x) {
+// isConstNode 判断 expression 节点是否为 Go 的 IsConst 形状：
+// 无变量引用、无调用、无运算符，即 LIT/STR/BOOL/NIL。
+fn isConstNode(n *Ast) bool {
+    if unsafe.cast[uint](n) == 0 {
         ret false
     }
+    if n.k == A_LIT || n.k == A_STR || n.k == A_BOOL || n.k == A_NIL {
+        ret true
+    }
+    ret false
+}
+
+// firstName 返回点分名称的第一段。Go 的 Name.First() 对 b.val 返回 b，
+// removeOldStaticVal 只按第一段匹配，字段路径不会互相清理。
+fn firstName(s string) string {
+    var n: uint = strings.len(s)
+    var i: uint = 0
+    for ; i < n; {
+        if byteStr(s, i) == 46 {
+            ret strings.makeString(strings.toCstring(s), i, i)
+        }
+        i = i + 1
+    }
+    ret s
+}
+
+// dropOldConstAssign 复刻 Go parser 的 removeOldStaticVal：解析新的 x = ...
+// 时，从当前块尾部向前移除同名变量的旧常量赋值，遇到 if/for/else 停止。
+// 定义节点（flags 含 d）保留，否则后续引用会找不到定义。
+// 比较键是名称第一段：b.val = 7 不清 b.val 的旧赋值（对齐 Go）。
+fn dropOldConstAssign(x *Parser, name string) {
+    name = firstName(name)
+    var lastCtl: *Ast = 0
+    var c: *Ast = x.cur.child
+    for ; !astNull(c); {
+        if c.k == A_IF || c.k == A_FOR || c.k == A_ELSE {
+            lastCtl = c
+        }
+        c = c.next
+    }
+    var prev: *Ast = lastCtl
+    var q: *Ast = 0
+    if astNull(lastCtl) {
+        q = x.cur.child
+    } else {
+        q = lastCtl.next
+    }
+    for ; !astNull(q); {
+        var nx: *Ast = q.next
+        var drop: bool = false
+        if q.k == A_VAR && strings.eq(q.name, name) && !hasByte(q.attr, 100) && isConstNode(q.child) {
+            drop = true
+        }
+        if drop {
+            if astNull(prev) {
+                x.cur.child = nx
+            } else {
+                prev.next = nx
+            }
+        } else {
+            prev = q
+        }
+        q = nx
+    }
+}
+
+// assignCommaTail 消费多左值赋值的剩余部分（只做语法消费）。
+fn assignCommaTail(x *Parser) bool {
     for ; at(x, ","); {
         bump(x)
         skipNL(x)
@@ -973,36 +2137,195 @@ fn simpleStmt(x *Parser) bool {
             ret false
         }
     }
+    ret true
+}
+
+// derefAssignable 近似 Go parser 在 Check 期能否完成 *p = rhs 的 deref= 转换：
+// 跨包调用和泛型调用的 RHS 检查失败，保持 "="；常量与本地调用可转换。
+fn derefAssignable(rhs *Ast) bool {
+    if astNull(rhs) {
+        ret false
+    }
+    if rhs.k != A_CALL {
+        ret true
+    }
+    if hasByte(rhs.name, 46) {
+        ret false
+    }
+    if rhs.lk == 1 {
+        ret false
+    }
+    ret true
+}
+
+// assignTail 解析赋值/自增尾部并生成与 Go parser 同形的节点。
+// multi 是左侧表达式个数（多值 := 的首个 VarBlock 带 di）。
+fn assignTail(x *Parser, first *Ast, multi int) bool {
+    var lname: string = astNameOf(first)
+    if at(x, "++") || at(x, "--") {
+        var uop: string = "+"
+        if at(x, "--") {
+            uop = "-"
+        }
+        bump(x)
+        // Go parser 对 a[i]++ 只留下默认 Num=0 的表达式；语句层观察为
+        // EXPR / LIT 0。
+        if !astNull(first) && first.k == A_INDEX {
+            var xe: *Ast = astNew(A_EXPR)
+            xe.child = astInt(0)
+            astEmit(x, xe)
+            ret assignCommaTail(x)
+        }
+        // *p++ → VAR p = p + 1，随后残留 EXPR UN* p。
+        if !astNull(first) && first.k == A_UN && strings.eq(first.attr, "*") {
+            var pn: string = astNameOf(first.child)
+            var pv: *Ast = astNew(A_VAR)
+            pv.name = pn
+            if isGlobalVar(x, pn) {
+                pv.attr = "g"
+            }
+            pv.child = astBin(uop, astName(pn), astInt(1))
+            astEmit(x, pv)
+            var pe: *Ast = astNew(A_EXPR)
+            pe.child = astUn(A_UN, "*", astName(pn))
+            astEmit(x, pe)
+            ret assignCommaTail(x)
+        }
+        var uv: *Ast = astNew(A_VAR)
+        uv.name = lname
+        if isGlobalVar(x, lname) {
+            uv.attr = "g"
+        }
+        uv.child = astBin(uop, astName(lname), astInt(1))
+        astEmit(x, uv)
+        ret assignCommaTail(x)
+    }
+
+    var op: string = tstr(x)
+    bump(x)
+    if !expr(x) {
+        ret false
+    }
+    var rhs: *Ast = x.ex
+
+    // 索引赋值：EXPR / BIN op=[]= (INDEX, RHS)；复合运算符按 Go 形状丢弃。
+    if !astNull(first) && first.k == A_INDEX {
+        var xe: *Ast = astNew(A_EXPR)
+        xe.child = astBin("[]=", first, rhs)
+        astEmit(x, xe)
+        ret assignCommaTail(x)
+    }
+
+    // 解引用赋值：可转换的 RHS → deref=(值, 指针)；
+    // 跨包/泛型调用 → BIN op== 保留左侧 UN*。
+    if !astNull(first) && first.k == A_UN && strings.eq(first.attr, "*") {
+        var pn: string = astNameOf(first.child)
+        if strings.eq(op, "=") {
+            var xe: *Ast = astNew(A_EXPR)
+            if derefAssignable(rhs) {
+                xe.child = astBin("deref=", rhs, first.child)
+            } else {
+                xe.child = astBin("=", first, rhs)
+            }
+            astEmit(x, xe)
+            ret assignCommaTail(x)
+        }
+        // *p += v → VAR p = p + v，随后残留 EXPR UN* p。
+        var pv: *Ast = astNew(A_VAR)
+        pv.name = pn
+        if isGlobalVar(x, pn) {
+            pv.attr = "g"
+        }
+        pv.child = astBin(dropLast(op), astName(pn), rhs)
+        astEmit(x, pv)
+        var pe: *Ast = astNew(A_EXPR)
+        pe.child = astUn(A_UN, "*", astName(pn))
+        astEmit(x, pe)
+        ret assignCommaTail(x)
+    }
+
+    var vn: *Ast = astNew(A_VAR)
+    vn.name = lname
+    if strings.eq(op, ":=") {
+        if multi > 1 {
+            vn.attr = "di"
+        } else {
+            vn.attr = "d"
+        }
+        vn.child = rhs
+    } else if strings.eq(op, "=") {
+        dropOldConstAssign(x, lname)
+        if isGlobalVar(x, lname) {
+            vn.attr = "g"
+        }
+        vn.child = rhs
+    } else {
+        if isGlobalVar(x, lname) {
+            vn.attr = "g"
+        }
+        vn.child = astBin(dropLast(op), astName(lname), rhs)
+    }
+    astEmit(x, vn)
+    ret assignCommaTail(x)
+}
+
+// simpleStmt 解析表达式语句与赋值；支持多左值与逗号分隔表达式。
+fn simpleStmt(x *Parser) bool {
+    if !expr(x) {
+        ret false
+    }
+    var first: *Ast = x.ex
+    var nleft: int = 1
+    for ; at(x, ","); {
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+        nleft = nleft + 1
+    }
     // 省略 var 的声明：x: int = 1
     if at(x, ":") {
         bump(x)
         if !typeRef(x) {
             ret false
         }
+        var hv: bool = false
+        var val: *Ast = 0
         if at(x, "=") {
             bump(x)
             if !expr(x) {
                 ret false
             }
+            val = x.ex
+            hv = true
         }
+        var vn: *Ast = astNew(A_VAR)
+        vn.name = astNameOf(first)
+        if hv {
+            vn.attr = "di"
+        } else {
+            vn.attr = "d"
+        }
+        vn.child = val
+        astEmit(x, vn)
         x.vars = x.vars + 1
         ret true
     }
-    if isAssignOp(x) {
-        bump(x)
-        if !expr(x) {
-            ret false
-        }
-        for ; at(x, ","); {
-            bump(x)
-            skipNL(x)
-            if !expr(x) {
-                ret false
-            }
-        }
+    if isAssignOp(x) || at(x, "++") || at(x, "--") {
+        ret assignTail(x, first, nleft)
     }
-    if at(x, "++") || at(x, "--") {
-        bump(x)
+    // 表达式语句：Go 版只在调用时生成节点，其余裸表达式是语法错误。
+    if unsafe.cast[uint](first) != 0 && first.k == A_CALL {
+        // 泛型调用 f[T](...) 在 Go 里经表达式路径解析，语句层多包一层
+        // Expression 节点（canonical 为 EXPR → CALL）；普通调用是裸 CALL。
+        if first.lk == 1 {
+            var xe: *Ast = astNew(A_EXPR)
+            xe.child = first
+            astEmit(x, xe)
+        } else {
+            astEmit(x, first)
+        }
     }
     ret true
 }
@@ -1027,6 +2350,8 @@ fn expr(x *Parser) bool {
 }
 
 // prec 返回二元运算符优先级；0 表示不是二元运算符。
+// 数值对齐 Go 版 parser/exp.go 的 opTable（低位先结合）：
+// ||1 / &&2 / == !=3 / 关系4 / |5 / ^6 / &7 / 移位9 / +-10 / */%11。
 fn prec(s string) int {
     if strings.eq(s, "||") {
         ret 1
@@ -1034,34 +2359,81 @@ fn prec(s string) int {
     if strings.eq(s, "&&") {
         ret 2
     }
-    if strings.eq(s, "|") {
+    if strings.eq(s, "==") || strings.eq(s, "!=") {
         ret 3
     }
-    if strings.eq(s, "^") {
+    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
         ret 4
     }
-    if strings.eq(s, "&") {
+    if strings.eq(s, "|") {
         ret 5
     }
-    if strings.eq(s, "==") || strings.eq(s, "!=") {
+    if strings.eq(s, "^") {
         ret 6
     }
-    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
+    if strings.eq(s, "&") {
         ret 7
     }
     if strings.eq(s, "<<") || strings.eq(s, ">>") {
-        ret 8
-    }
-    if strings.eq(s, "+") || strings.eq(s, "-") {
         ret 9
     }
-    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+    if strings.eq(s, "+") || strings.eq(s, "-") {
         ret 10
+    }
+    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+        ret 11
     }
     ret 0
 }
 
-// binary 按优先级解析二元表达式（全部左结合）。
+// hasByte 判断 s 中是否含字节 ch。
+fn hasByte(s string, ch uint) bool {
+    var n: uint = strings.len(s)
+    var i: uint = 0
+    for ; i < n; {
+        if byteStr(s, i) == ch {
+            ret true
+        }
+        i = i + 1
+    }
+    ret false
+}
+
+// goIntText 复刻 Go fmt %v 对 float64 整数值的格式化：
+// 绝对值 >= 1e6 时用最短尾数科学计数法（指数补到至少两位），否则十进制。
+fn goIntText(n int) string {
+    if n < 0 {
+        var nb: ptr = strings.builderNew(32)
+        strings.builderWriteString(nb, "-")
+        strings.builderWriteString(nb, goIntText(0 - n))
+        ret strings.builderString(nb)
+    }
+    var dec: string = strings.itoa(n)
+    var nd: uint = strings.len(dec)
+    if nd <= 6 {
+        ret dec
+    }
+    var end: uint = nd
+    for ; end > 1 && byteStr(dec, end - 1) == 48; {
+        end = end - 1
+    }
+    var bb: ptr = strings.builderNew(nd + 8)
+    strings.builderWriteString(bb, strings.makeString(strings.toCstring(dec), 1, 1))
+    if end > 1 {
+        strings.builderWriteString(bb, ".")
+        var mant: string = strings.makeString(strings.toCstring(dec) + 1, end - 1, end - 1)
+        strings.builderWriteString(bb, mant)
+    }
+    strings.builderWriteString(bb, "e+")
+    var exp: int = unsafe.cast[int](nd - 1)
+    if exp < 10 {
+        strings.builderWriteString(bb, "0")
+    }
+    strings.builderWriteString(bb, strings.itoa(exp))
+    ret strings.builderString(bb)
+}
+
+// binary 按优先级解析二元表达式（全部左结合），结果写入 x.ex。
 fn binary(x *Parser, minPrec int) bool {
     if !unary(x) {
         ret false
@@ -1071,77 +2443,195 @@ fn binary(x *Parser, minPrec int) bool {
         if pr < minPrec || pr == 0 {
             break
         }
+        var op: string = tstr(x)
         bump(x)
         skipNL(x) // 允许运算符后换行续写
+        var left: *Ast = x.ex
         if !binary(x, pr + 1) {
             ret false
         }
+        x.ex = foldBin(op, left, x.ex)
     }
     ret true
 }
 
-// unary 解析前缀运算符。
+// unary 解析前缀运算符，结果写入 x.ex。
 fn unary(x *Parser) bool {
     if at(x, "!") || at(x, "-") || at(x, "+") || at(x, "*") || at(x, "&") || at(x, "^") || at(x, "~") {
+        var op: string = tstr(x)
         bump(x)
-        ret unary(x)
+        if !unary(x) {
+            ret false
+        }
+        x.ex = foldUn(op, x.ex)
+        ret true
     }
     ret postfix(x)
 }
 
-// postfix 解析调用、索引/泛型实参与选择器。
+// indexOrSlice 解析 [ ... ] 的索引或切片；进入时 x.ex 是基表达式。
+fn indexOrSlice(x *Parser) bool {
+    var base: *Ast = x.ex
+    bump(x) // [
+    skipNL(x)
+    var hasLo: bool = false
+    var lo: *Ast = 0
+    if !at(x, "]") && !at(x, ":") {
+        if !expr(x) {
+            ret false
+        }
+        lo = x.ex
+        hasLo = true
+        skipNL(x)
+    }
+    if at(x, ":") {
+        var sn: *Ast = astNew(A_SLICE)
+        astAdd(sn, base)
+        if hasLo {
+            var ln: *Ast = astNew(A_LO)
+            ln.child = lo
+            astAdd(sn, ln)
+        }
+        bump(x) // 切片起点
+        skipNL(x)
+        if !at(x, "]") && !at(x, ":") {
+            if !expr(x) {
+                ret false
+            }
+            var hn: *Ast = astNew(A_HI)
+            hn.child = x.ex
+            astAdd(sn, hn)
+            skipNL(x)
+        }
+        if at(x, ":") {
+            bump(x) // 完整切片 [lo:hi:max]
+            skipNL(x)
+            if !at(x, "]") {
+                if !expr(x) {
+                    ret false
+                }
+                var xn: *Ast = astNew(A_MAX)
+                xn.child = x.ex
+                astAdd(sn, xn)
+                skipNL(x)
+            }
+        }
+        if !want(x, "]", EEXPR) {
+            ret false
+        }
+        x.ex = sn
+        ret true
+    }
+    // 索引：多余逗号属于泛型实参形式，只消费不建节点。
+    for ; at(x, ","); {
+        bump(x)
+        skipNL(x)
+        if at(x, "]") {
+            break
+        }
+        if !expr(x) {
+            ret false
+        }
+        skipNL(x)
+    }
+    if !want(x, "]", EEXPR) {
+        ret false
+    }
+    var ix: *Ast = astNew(A_INDEX)
+    astAdd(ix, base)
+    astAdd(ix, lo)
+    x.ex = ix
+    ret true
+}
+
+// genericAhead 判断当前 `[` 是否为泛型调用类型实参：括号内只出现类型成分
+// （标识符字符、*、.、逗号、嵌套方括号），闭合后紧跟 '('。
+// 与 Go parser 的 isGenericCallAhead 一致，只做源码扫描，不移动游标。
+fn genericAhead(x *Parser) bool {
+    var i: uint = x.a + 1
+    var depth: int = 1
+    var prevName: bool = false
+    for ; i < x.n; {
+        var c: uint = byteAt(x, i)
+        if c == 91 {
+            depth = depth + 1
+            prevName = false
+        } else if c == 93 {
+            depth = depth - 1
+            if depth == 0 {
+                var j: uint = i + 1
+                for ; j < x.n; {
+                    var d: uint = byteAt(x, j)
+                    if d == 32 || d == 9 {
+                        j = j + 1
+                    } else {
+                        ret d == 40
+                    }
+                }
+                ret false
+            }
+            prevName = false
+        } else if c == 42 || c == 46 || c == 44 || c == 32 || c == 9 {
+            prevName = false
+        } else if c == 95 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) {
+            prevName = true
+        } else if c >= 48 && c <= 57 && prevName {
+            // 数字只允许跟在标识符字符后（u8、T2）；纯数字是索引而不是类型实参。
+        } else {
+            ret false
+        }
+        i = i + 1
+    }
+    ret false
+}
+
+// skipTypeArgs 消费 [T, U] 形式的类型实参列表（不建 AST）。
+fn skipTypeArgs(x *Parser) bool {
+    var depth: int = 0
+    for ; x.e == OK; {
+        if at(x, "[") {
+            depth = depth + 1
+        } else if at(x, "]") {
+            depth = depth - 1
+        }
+        bump(x)
+        if depth == 0 {
+            ret true
+        }
+    }
+    ret false
+}
+
+// postfix 解析调用、索引/切片与选择器，把组合后的表达式写入 x.ex。
 fn postfix(x *Parser) bool {
     if !primary(x) {
         ret false
     }
+    var pendingGen: bool = false
     for ; x.e == OK; {
         if at(x, "(") {
-            if !callArgs(x) {
-                ret false
+            var cn: *Ast = astNew(A_CALL)
+            cn.name = astNameOf(x.ex)
+            if pendingGen {
+                // lk=1 标记泛型调用；derefAssignable 用它近似 Go Check 失败。
+                cn.lk = 1
             }
-        } else if at(x, "[") {
-            bump(x)
-            skipNL(x)
-            // 索引、切片与泛型实参共用方括号。
-            if !at(x, "]") && !at(x, ":") {
-                if !expr(x) {
+            pendingGen = false
+            if strings.eq(cn.name, "new") || strings.eq(cn.name, "newRC") {
+                if !newArgs(x, cn) {
                     ret false
                 }
-                skipNL(x)
+            } else if !callArgs(x, cn) {
+                ret false
             }
-            if at(x, ":") {
-                bump(x) // 切片起点
-                skipNL(x)
-                if !at(x, "]") && !at(x, ":") {
-                    if !expr(x) {
-                        ret false
-                    }
-                    skipNL(x)
+            x.ex = cn
+        } else if at(x, "[") {
+            if genericAhead(x) {
+                if !skipTypeArgs(x) {
+                    ret false
                 }
-                if at(x, ":") {
-                    bump(x) // 完整切片 [lo:hi:max]
-                    skipNL(x)
-                    if !at(x, "]") {
-                        if !expr(x) {
-                            ret false
-                        }
-                        skipNL(x)
-                    }
-                }
-            } else {
-                for ; at(x, ","); {
-                    bump(x)
-                    skipNL(x)
-                    if at(x, "]") {
-                        break
-                    }
-                    if !expr(x) {
-                        ret false
-                    }
-                    skipNL(x)
-                }
-            }
-            if !want(x, "]", EEXPR) {
+                pendingGen = true
+            } else if !indexOrSlice(x) {
                 ret false
             }
         } else if at(x, ".") {
@@ -1149,6 +2639,7 @@ fn postfix(x *Parser) bool {
             if !wantName(x, EEXPR) {
                 ret false
             }
+            x.ex = astName(astDot(astNameOf(x.ex), x.nm))
         } else {
             break
         }
@@ -1156,14 +2647,40 @@ fn postfix(x *Parser) bool {
     ret true
 }
 
-// callArgs 解析 (参数...)。
-fn callArgs(x *Parser) bool {
+// newArgs 解析 new(T) / newRC(T)：首个参数是类型，Go 侧存入 NewType 而
+// 不进 Args，因此 canonical 不输出 ARG；逗号后的额外表达式仍按 ARG 输出。
+fn newArgs(x *Parser, call *Ast) bool {
+    bump(x) // (
+    skipNL(x)
+    if !typeRef(x) {
+        ret false
+    }
+    skipNL(x)
+    for ; at(x, ","); {
+        bump(x)
+        skipNL(x)
+        if !expr(x) {
+            ret false
+        }
+        var an: *Ast = astNew(A_ARG)
+        an.child = x.ex
+        astAdd(call, an)
+        skipNL(x)
+    }
+    ret want(x, ")", EEXPR)
+}
+
+// callArgs 解析 (参数...)，把每个实参包成 ARG 挂到 call 节点。
+fn callArgs(x *Parser, call *Ast) bool {
     bump(x) // (
     skipNL(x)
     if !at(x, ")") {
         if !expr(x) {
             ret false
         }
+        var a0: *Ast = astNew(A_ARG)
+        a0.child = x.ex
+        astAdd(call, a0)
         skipNL(x)
         for ; at(x, ","); {
             bump(x)
@@ -1174,29 +2691,59 @@ fn callArgs(x *Parser) bool {
             if !expr(x) {
                 ret false
             }
+            var an: *Ast = astNew(A_ARG)
+            an.child = x.ex
+            astAdd(call, an)
             skipNL(x)
         }
     }
     ret want(x, ")", EEXPR)
 }
 
-// primary 解析字面量、名字、括号表达式与切片/数组复合字面量。
+// primary 解析字面量、名字、括号表达式与切片/数组复合字面量，写入 x.ex。
 fn primary(x *Parser) bool {
-    if x.k == lex.NUMBER || x.k == lex.STRING || x.k == lex.CHAR || x.k == lex.RAW || x.k == lex.BOOL {
-        bump(x)
+    if x.k == lex.NUMBER {
+        x.ex = astNumLit(tstr(x))
         x.exprs = x.exprs + 1
+        bump(x)
+        ret true
+    }
+    if x.k == lex.STRING || x.k == lex.RAW {
+        x.ex = astStr(tstr(x))
+        x.exprs = x.exprs + 1
+        bump(x)
+        ret true
+    }
+    if x.k == lex.CHAR {
+        x.ex = astInt(charVal(tstr(x)))
+        x.exprs = x.exprs + 1
+        bump(x)
+        ret true
+    }
+    if x.k == lex.BOOL {
+        var t: string = tstr(x)
+        if strings.eq(t, "nil") {
+            x.ex = astNew(A_NIL)
+        } else {
+            x.ex = astBool(t)
+        }
+        x.exprs = x.exprs + 1
+        bump(x)
         ret true
     }
     if x.k == lex.NAME {
-        bump(x)
+        x.ex = astName(tstr(x))
         x.exprs = x.exprs + 1
+        bump(x)
         ret true
     }
     // 复合字面量：[]T{...} 与 [N]T{...}。
     if at(x, "[") {
         bump(x)
+        var isList: bool = false
         if at(x, "]") {
             bump(x)
+            isList = true
         } else if x.k == lex.NUMBER {
             bump(x)
             if !want(x, "]", ETYPE) {
@@ -1212,9 +2759,10 @@ fn primary(x *Parser) bool {
         skipNL(x)
         if at(x, "{") {
             x.exprs = x.exprs + 1
-            ret compositeLit(x)
+            ret compositeLit(x, isList)
         }
         // 类型本身作为表达式实参，如 new([]int, 8)。
+        x.ex = astName(x.ty)
         x.exprs = x.exprs + 1
         ret true
     }
@@ -1235,16 +2783,23 @@ fn primary(x *Parser) bool {
     ret false
 }
 
-// compositeLit 解析 { 元素, ... }，允许嵌套复合字面量。
-fn compositeLit(x *Parser) bool {
+// compositeLit 解析 { 元素, ... }，允许嵌套复合字面量，结果写入 x.ex。
+fn compositeLit(x *Parser, isList bool) bool {
     if !want(x, "{", EEXPR) {
         ret false
+    }
+    var n: *Ast = 0
+    if isList {
+        n = astNew(A_LIST)
+    } else {
+        n = astNew(A_ARRAY)
     }
     skipNL(x)
     if !at(x, "}") {
         if !expr(x) {
             ret false
         }
+        astAdd(n, x.ex)
         skipNL(x)
         for ; at(x, ","); {
             bump(x)
@@ -1255,10 +2810,15 @@ fn compositeLit(x *Parser) bool {
             if !expr(x) {
                 ret false
             }
+            astAdd(n, x.ex)
             skipNL(x)
         }
     }
-    ret want(x, "}", EEXPR)
+    if !want(x, "}", EEXPR) {
+        ret false
+    }
+    x.ex = n
+    ret true
 }
 
 // 以下为只读访问器，供 driver 输出与测试断言。
@@ -1308,4 +2868,38 @@ fn stmtCount(x *Parser) int {
 
 fn exprCount(x *Parser) int {
     ret x.exprs
+}
+
+// astRoot 返回根节点（其子链即顶层声明）。
+fn astRoot(x *Parser) *Ast {
+    ret x.root
+}
+
+// astNull 判断节点指针是否为空。
+fn astNull(n *Ast) bool {
+    ret unsafe.cast[uint](n) == 0
+}
+
+fn nodeKind(n *Ast) int {
+    ret n.k
+}
+
+fn nodeName(n *Ast) string {
+    ret n.name
+}
+
+fn nodeAttr(n *Ast) string {
+    ret n.attr
+}
+
+fn nodeAux(n *Ast) string {
+    ret n.aux
+}
+
+fn nodeChild(n *Ast) *Ast {
+    ret n.child
+}
+
+fn nodeNext(n *Ast) *Ast {
+    ret n.next
 }

@@ -1,0 +1,46 @@
+// S3 AST 对拍：解引用/索引/字段赋值的 canonical 形状。
+type Node struct {
+    val: int
+    next: *Node
+}
+
+fn set(p: *int, m: []int) int {
+    *p = 1
+    *p += 4
+    m[0] = 2
+    m[0] += 3
+    var x: int = *p
+    ret x
+}
+
+fn castAssign(p: *u8) int {
+    var v: *u8 = p
+    *p = unsafe.cast[u8](*v)
+    *p = 3 + 4
+    ret 0
+}
+
+fn g() u8 {
+    ret 1
+}
+
+fn callAssign(p: *u8) int {
+    *p = g()
+    ret 0
+}
+
+fn inc(p: *int, m: []int) int {
+    *p++
+    m[0]++
+    ret 0
+}
+
+fn field() int {
+    var holder: *Node = new(Node)
+    var b: *Node = new(Node)
+    b.val = 7
+    holder.next = b
+    b = new(Node)
+    b.val = 9
+    ret holder.next.val
+}

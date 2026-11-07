@@ -1,0 +1,7 @@
+// S3 AST 对拍：泛型调用语句在 Go 里包一层 EXPR，普通调用是裸 CALL。
+fn genericStmt(s: *[]int) int {
+    slices.push[int](s, 1)
+    foo(s)
+    maps.set[int](s, 2, 3)
+    ret 0
+}

@@ -1,0 +1,13 @@
+// S3 AST 对拍：内建类型别名规范化（int64→i64、uint32→u32、rune→i32 等）。
+type Buf struct {
+    abs: []uint32
+    raw: []uint8
+    big: int64
+    code: rune
+}
+
+type Handler = fn(int) string
+
+fn conv(buf: []uint32, data: []uint8, h: Handler) int64 {
+    ret 0
+}

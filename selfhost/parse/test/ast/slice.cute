@@ -1,0 +1,12 @@
+// S3 AST 对拍：索引、负索引、切片端点/步长与省略端点。
+fn sliceShape(a: []int, s: string) int {
+    var x: int = a[0]
+    var y: int = a[-1]
+    var p: []int = a[1:]
+    var q: []int = a[:2]
+    var r: []int = a[::2]
+    var t: []int = a[1:3:2]
+    var u: string = s[-1:]
+    var v: string = s[:-1]
+    ret x + y + len(p) + len(q) + len(r) + len(t) + len(u) + len(v)
+}
