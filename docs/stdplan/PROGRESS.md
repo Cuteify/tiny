@@ -2,6 +2,51 @@
 
 > SSOT：`docs/stdplan/PLAN.md`（现为 **v2.5**）。本文件逐日记录实施与验证事实。
 
+## 2026-11-07（类型内建映射 + 函数重载 Phase 1–4 收口 ✅）
+
+- **范围**：按 `PLAN_TYPE_INTRINSIC_OVERLOAD.md` 实施 Go 编译器侧；自举侧只留
+  待办，见 `SELFHOST.md` §4.11。用户可读规则落到新增
+  `docs/stdplan/TYPE_INTRINSIC.md`。
+- **Phase 1 string**：新增 `parser/intrinsic.go` 表与 `resolveIntrinsicFunc`；
+  `string ==/!=` 在 Check 期降为 `std:strings.eq/ne`，字面量仍编译期折叠。
+  `CUTE_NO_INTRINSIC=1` 关闭隐式映射并回退三槽比较。
+- **Phase 2 重载**：`parser/func.go` 重写注册表与 mangling（不同 arity →
+  `name+arity`；同 arity 冲突 → 追加类型标签；`MangledOverride` 最高优先）；
+  `parser/call.go` 收集候选并按 arity/类型打分；包合并后
+  `RebuildOverloadRegistry` + `FinalCheck` 才把无匹配/歧义当致命错误。函数
+  指针赋值按注解 `fn(...)` 选重载，标签取 `MangledName()`。
+- **Phase 3 map**：`type/map.go` 单指针表示；`m[k]`/`m[k]=v` 在 codegen 手工
+  发 `maps.get/set` 调用（栈临时区 + SysV 寄存器）；nil map 读零值、写自动
+  `maps.new`，`len(nil)=0` 走原生 codegen。
+- **Phase 4 自动可用**：根包预加载 `strings/maps/slices` 且不占用 import 别名；
+  `Name.FixPath` 对未显式 import 的 `strings/maps/slices` 回退 `IntrinsicPkgs`。
+  新增 `test/intrinsic_auto` 固定“无 import 使用 `slices.len/cap` + `strings.eq/ne`”。
+- **附加（用户新增）**：负数索引与切片步长。`Expression.IndexSlice` 按源码是否
+  出现冒号判定；负数索引运行期 `idx += len` 后仍做边界检查；无 step/非负边界
+  保留视图语义，有 step 或常量负边界走新建缓冲 + 跨步拷贝；负 step 缺省边界
+  为 `lo=len-1, hi=-1`，step==0 结果为空。x86_64 生效，x86 留 Batch 4。
+- **顺修**：数组字面量在无宽度前缀的目标上生成 `mov [rbp-x], imm` 的 NASM
+  “operation size not specified”；`ZeroVar` 对定长数组整槽清零。
+- **验证**（x86_64，2026-11-07）：
+  - `test/intrinsic_string`、`intrinsic_auto`、`overload`、`overload_types`、
+    `map_index`、`neg_index_step` 均 `ALL PASS`、退出 42。
+  - `test/array_basic` `PASS: ALL`；`slice_minimal` ok；`slice_test`
+    `x=42 *p=42 10`；`strings` `PASS: ALL`（退出 60）；`list` 退出 33、
+    `string` 退出 100（均为测试设计的总和取模，非失败）；`mp_map` 退出 74
+    （与基线一致）。
+  - 越界：list `a[-4]`、array `arr[-4]`、string `s[-6]` 均输出
+    `index out of range` 到 stderr 并退出 1。
+  - `go build ./...` 通过；`go test ./...` 仅 3 个既存失败（缺
+    `test/full_syntax_test`、`test/list_test` 目录），lexer/type 通过。
+  - 自举 parser：用当前编译器跑 HEAD 版 `selfhost/` 固定语料（`/tmp/opencode/base`）
+    得 `SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`；工作区未提交的
+    `selfhost/parse` S3 WIP 自身为 RC=6，不属本波改动。
+- **已知限制**：动态负边界且无 step 不归一化；x86 负数索引/步长未验收；
+  无 import 的 `maps.len(m)` 仍 `no matching overload`（用内建 `len(m)`）；
+  `maps.new` 返回值直接赋给 map 变量仍受限。
+- **下一步**：回到 `SELFHOST.md` S3（`prec()` 优先级、`dropOldConstAssign`
+  字段路径误删、持久对拍语料/脚本），再清理提交。
+
 ## 2026-11-05（外围 stdlib 基线 + Batch 0）
 
 - **前置**：GC Stage 1–5 全部收口（HEAD `1bdfe29`，未 push）；核心 Wave M/S/St/Mp/T+F/I 均已收口。

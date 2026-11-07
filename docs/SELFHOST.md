@@ -245,6 +245,23 @@ S2 期间遇到的宿主/自举行为问题已经固化为 parser 的实现约�
 这些问题目前通过 parser 侧规避，后续修宿主编译器时应同步移除对应 workaround，
 并保留 `selfhost/parse/test` 的负例防止回归。
 
+### 4.11 类型内建映射与自举 parser
+
+Go 编译器的类型内建映射（string/map/list → std，见
+[`stdplan/TYPE_INTRINSIC.md`](stdplan/TYPE_INTRINSIC.md)）发生在 **parser Check
+与 codegen**，不改变 lexer 的 token 流，也不改变 S2 parser 的“只验证/计数”
+职责：
+
+- `test/intrinsic_string`、`overload`、`map_index`、`neg_index_step` 的 AST
+  形状仍以 Go parser 可观察结果为准；`parsedump` 的计数口径不因 lowering
+  改变。
+- 自举 parser 目前只消费源码并统计结构，不执行 Check/codegen，因此不受
+  `CUTE_NO_INTRINSIC` 影响；该开关只用于 Go 编译器的回归定位。
+- 后续自举编译器/完整 AST（S3）需要按同一张 `parser/intrinsic.go` 表实现
+  lowering 与重载 mangling；在 S3 完成前不宣称自举侧已对齐。
+- 本波不修改 `selfhost/`；若自举 parser 的固定语料出现差异，先按 S2 语法
+  子集缺口归因，再回到本节的待办。
+
 ## 5. 与 Go 版的已知差异
 
 | 差异 | 影响 | 处理 |

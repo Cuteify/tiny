@@ -446,9 +446,12 @@ v1「deprecated 薄壳」作废，用户拍板 **hashmap 删包**：
 
 | 想要 | 需要动 | 决定 |
 |---|---|---|
-| `m[k]` 索引/赋值语法 | parser 绑定链 | 不做；显式 `map.get/set` |
+| `m[k]` 索引/赋值语法 | parser 绑定链 + codegen | **做（Phase 3 ✅）**；nil map 读零值、写自动初始化；见 `TYPE_INTRINSIC.md` |
 | `for k,v in map` | parser ForBlock | 不做；keys/values 迭代 |
-| 运算符重载 | parser | 不做 |
+| 运算符重载 | parser | 不做（函数重载已做，见下） |
+| 函数重载（顶层函数） | parser 候选选择 + mangling | **做（Phase 2 ✅）**：按 arity/类型消歧；同 arity 冲突追加类型标签 |
+| 类型内建映射（string/map/list → std） | parser 内建表 + 预加载 + codegen | **做（Phase 1–4 ✅）**：`CUTE_NO_INTRINSIC=1` 可关闭；见 `TYPE_INTRINSIC.md` |
+| 负数索引 / 切片步长 | parser `IndexSlice` + codegen | **做（x86_64 ✅）**；x86 留 Batch 4 |
 | panic/recover | 运行时机制 | 不做；ok 形态 |
 | GC 代替 RC | 全世界 | 不做（P1） |
 | 泛型 struct `struct [T]` | monomorphize 扩展 | 另期立项（R7；maps 手工寻址不阻塞） |
