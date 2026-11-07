@@ -513,16 +513,28 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 		}
 		// 不是变量：函数名作为值使用（函数指针 / 取函数地址）
 		if v.Define.Node == nil {
-			for _, fr := range p.Find(v.Name, FindTypeFunc) {
-				if fb, ok := fr.Value.(*FuncBlock); ok && fb != nil {
-					v.Type = funcTypeOf(fb)
-					v.Define = FindResult{Node: fr.Node, Value: fb, Path: fr.Path, Type: FindTypeFunc}
-					// 函数被作为值引用：标记 Useful，否则死代码消除会不发这个
-					// 函数的标签，取地址处 lea rax, [name] 链接期符号未定义
-					fb.Useful = true
-					p.ThisBlock = oldThisBlock
-					return true
+			var chosen FindResult
+			if ft, ok := v.Type.(*typeSys.FuncType); ok {
+				if fr, found := FindFuncValueByType(p, v.Name, ft); found {
+					chosen = fr
 				}
+			}
+			if chosen.Node == nil {
+				for _, fr := range p.Find(v.Name, FindTypeFunc) {
+					if fb, ok := fr.Value.(*FuncBlock); ok && fb != nil && !funcBuildIgnored(fb) {
+						chosen = fr
+						break
+					}
+				}
+			}
+			if fb, ok := chosen.Value.(*FuncBlock); ok && fb != nil {
+				v.Type = funcTypeOf(fb)
+				v.Define = chosen
+				// 函数被作为值引用：标记 Useful，否则死代码消除会不发这个
+				// 函数的标签，取地址处 lea rax, [name] 链接期符号未定义
+				fb.Useful = true
+				p.ThisBlock = oldThisBlock
+				return true
 			}
 		}
 		p.ThisBlock = oldThisBlock
@@ -588,6 +600,20 @@ func (v *VarBlock) Check(p *Parser) bool {
 	if v.IsDefine {
 		// 定义分支：var x int = 5
 		if v.Value != nil {
+			// 函数指针注解 `var f: fn(int) int = pick`：按注解类型选重载，
+			// 不能沿用“找到第一个同名函数”的旧行为。解析阶段可能已经把
+			// 第一个候选绑定到 Var.Type 上，这里以注解类型为准重新选择。
+			if ft, ok := v.Type.(*typeSys.FuncType); ok && v.Value.Var != nil {
+				cur, _ := v.Value.Var.Define.Value.(*FuncBlock)
+				if cur == nil || !funcMatchesType(cur, ft) {
+					if fr, found := FindFuncValueByType(p, v.Value.Var.Name, ft); found {
+						fb := fr.Value.(*FuncBlock)
+						v.Value.Var.Type = funcTypeOf(fb)
+						v.Value.Var.Define = fr
+						fb.Useful = true
+					}
+				}
+			}
 			if ok := v.Value.Check(p); !ok {
 				return false
 			}

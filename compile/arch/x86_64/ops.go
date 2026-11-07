@@ -464,6 +464,13 @@ func (a *x86_64Ops) VarDecl(varBlock *parser.VarBlock) string {
 	}
 	// 函数指针赋值：将函数名地址存入变量
 	if ft, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
+		// 函数名直接赋值（含重载）：标签必须与函数定义一致，优先走 FuncBlock。
+		if varBlock.Value.Var != nil {
+			if fb, ok := varBlock.Value.Var.Define.Value.(*parser.FuncBlock); ok && fb != nil {
+				varAddr := GenVarAddr(a.ctx, varBlock)
+				return utils.Format("mov QWORD "+varAddr+", "+fb.MangledName()+"; 设置函数指针变量"+varBlock.Name.String())
+			}
+		}
 		if varBlock.Value.Var != nil && varBlock.Value.Var.Type != nil {
 			addr := GenVarAddr(a.ctx, varBlock.Value.Var)
 			varAddr := GenVarAddr(a.ctx, varBlock)

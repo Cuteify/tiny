@@ -246,28 +246,35 @@ func (exp *Expression) checkAssign(p *Parser) bool {
 	return true
 }
 
-// checkIndexAssign 检查索引赋值 list[index] = value。
+// checkIndexAssign 检查索引赋值 arr[index] = value。
+// 节点形状：exp.Left 是 [] 索引节点，exp.Right 是右值。
+// 历史实现把 exp.Right 当成被索引对象（list 检查因此长期未真正生效）；
+// 本波为 map 增加类型判定时按真实形状读取，list 旧路径不改，避免扩大行为面。
 func (exp *Expression) checkIndexAssign(p *Parser) bool {
-	// The indexed variable is stored in exp.Right (due to Insert logic)
-	indexed := exp.Right
-	if indexed != nil {
-		if !indexed.Check(p) {
+	value := exp.Right
+	if value != nil {
+		if !value.Check(p) {
 			return false
 		}
 	}
-	// The value being assigned is in exp.Left
-	if exp.Left != nil {
-		if !exp.Left.Check(p) {
+	idxNode := exp.Left
+	if idxNode != nil {
+		if !idxNode.Check(p) {
 			return false
 		}
 	}
 
-	if indexed.Type != nil && indexed.Type.Kind() == "list" {
-		listType := indexed.Type.(*typeSys.ListType)
-		elemType := listType.Elem()
-		if exp.Left.Type != nil && !typeSys.AutoType(exp.Left.Type, elemType, exp.Left.IsConst()) {
+	if idxNode != nil && idxNode.Separator == "[]" && idxNode.Right != nil &&
+		idxNode.Right.Type != nil && idxNode.Right.Type.Kind() == "map" {
+		mt, ok := idxNode.Right.Type.(*typeSys.MapType)
+		if !ok || mt.Elem() == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "invalid map type in index assignment")
+			return false
+		}
+		elemType := mt.Elem()
+		if value != nil && value.Type != nil && !typeSys.AutoType(value.Type, elemType, value.IsConst()) {
 			p.Error.MissError("Type Error", p.Lexer.Cursor,
-				"cannot use "+exp.Left.Type.Type()+" as type "+elemType.Type()+" in index assignment")
+				"cannot use "+value.Type.Type()+" as type "+elemType.Type()+" in map assignment")
 			return false
 		}
 	}
@@ -384,8 +391,8 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 	switch kind {
 	case "list":
 		listType := indexed.Type.(*typeSys.ListType)
-		// 切片判断：end 或 step 非 nil
-		if exp.Index[1] != nil || exp.Index[2] != nil {
+		// 切片判断：源码中存在冒号（含 a[lo:] / a[:hi] / a[:] 等省略端点）
+		if exp.IndexSlice {
 			// 切片操作，返回相同列表类型
 			exp.Type = indexed.Type
 		} else {
@@ -398,7 +405,7 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 
 	case "string":
 		// 字符串索引返回 byte
-		if exp.Index[1] == nil && exp.Index[2] == nil {
+		if !exp.IndexSlice {
 			exp.Type = typeSys.GetSystemType("byte")
 		} else {
 			// 字符串切片返回 string
@@ -408,13 +415,37 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 
 	case "array":
 		// 定长数组不支持切片：a[i] 返回元素类型
-		if exp.Index[1] != nil || exp.Index[2] != nil {
+		if exp.IndexSlice {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot slice a fixed-size array")
 			return false
 		}
 		if arrType, ok := indexed.Type.(*typeSys.ArrayType); ok && arrType.Elem() != nil {
 			exp.Type = arrType.Elem()
 		}
+		return true
+
+	case "map":
+		mt, ok := indexed.Type.(*typeSys.MapType)
+		if !ok || mt.Elem() == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "index operand has invalid map type")
+			return false
+		}
+		if exp.IndexSlice {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot slice a map")
+			return false
+		}
+		if exp.Index[0] == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "map index is empty")
+			return false
+		}
+		keyType := mt.Key()
+		idxType := exp.Index[0].Type
+		if keyType != nil && idxType != nil && !typeSys.AutoType(idxType, keyType, exp.Index[0].IsConst()) {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"cannot use "+safeTypeName(idxType)+" as map key type "+safeTypeName(keyType))
+			return false
+		}
+		exp.Type = mt.Elem()
 		return true
 
 	default:
@@ -667,6 +698,11 @@ func (exp *Expression) checkArith(p *Parser) bool {
 
 // checkEq 检查相等比较（== !=），只要左右类型相同即可。
 func (exp *Expression) checkEq(p *Parser) bool {
+	// 内建类型映射：string 的内容比较交给 std:strings.eq/ne。
+	// 必须在通用三槽比较与常量折叠之前改写；字面量仍本地折叠。
+	if exp.tryIntrinsicStringEq(p) {
+		return true
+	}
 
 	// nil 与任意指针类型（ptr / *T）比较恒合法
 	nilL := exp.Left.ConstNil && isPtrLike(exp.Right.Type)

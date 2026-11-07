@@ -265,6 +265,14 @@ func (n Name) FixPath(pkg *packageFmt.Info) bool {
 	}
 	pkgRealPath := packageFmt.FixPathName(pkg.Imports[importName])
 	if pkgRealPath == "" {
+		// 内建类型映射：根包预加载 std 包但不占用用户 import 别名。
+		// 未显式导入时，`strings/maps/slices.fn` 回退到预加载包路径；
+		// 显式导入别名优先，用户同名变量由 FindVar 的局部作用域先行匹配。
+		if path, ok := IntrinsicPkgs[importName]; ok {
+			pkgRealPath = packageFmt.FixPathName(path)
+		}
+	}
+	if pkgRealPath == "" {
 		return false
 	}
 	n[0].Name = pkgRealPath

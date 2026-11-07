@@ -26,6 +26,7 @@ type Expression struct {
 	checked   bool           // 是否已通过语义检查，防止重复检查
 	stmt      bool           // 该表达式位于语句位置（非值位置），void 调用合法
 	Index     [3]*Expression // 列表索引
+	IndexSlice bool          // Index 是否来自切片 a[lo:hi:step]（含省略端点的情形）
 	ListElems []*Expression  // 列表字面量元素，Separator="list_lit"时有效
 }
 
@@ -665,6 +666,7 @@ func (p *Parser) handleIndex() *Expression {
 	// 状态机解析 [start:end:step]
 	index := [3]*Expression{}
 	state := 0 // 0=start, 1=end, 2=step
+	sawColon := false
 	bracketDepth := 1
 	// startCursor tracks the start of the current expression within brackets
 	// Cursor is already past '[' when handleIndex is called
@@ -696,13 +698,15 @@ func (p *Parser) handleIndex() *Expression {
 					// Advance cursor past the closing ']'
 					p.Lexer.SetCursor(token.EndCursor)
 					return &Expression{
-						Separator: "[]",
-						Index:     index,
+						Separator:  "[]",
+						Index:      index,
+						IndexSlice: sawColon,
 					}
 				}
 				continue
 			case ":":
 				if bracketDepth == 1 {
+					sawColon = true
 					if startCursor < token.Cursor {
 						p.Lexer.SetCursor(startCursor)
 						exp := p.ParseExp(token.Cursor)
@@ -725,8 +729,9 @@ func (p *Parser) handleIndex() *Expression {
 	}
 
 	return &Expression{
-		Separator: "[]",
-		Index:     index,
+		Separator:  "[]",
+		Index:      index,
+		IndexSlice: sawColon,
 	}
 }
 

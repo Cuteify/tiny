@@ -79,6 +79,26 @@ var all *All = &All{
 	Types: make(map[string]*parser.Node),
 }
 
+// fixNamePath 固定一个跨包名称的第一段。
+// 先按导入别名解析；别名里没有、且第一段正好等于本包名时，按“包名自引用”
+// 固定为本包完整路径——std 包内部大量使用 `strings.foo` 这种写法，但包
+// 不会 import 自己，根包也没有对应别名。若不处理，这些调用在合并后的
+// Find 中永远匹配不到完整路径函数，Check 无法把被调函数标记 Useful。
+func fixNamePath(name *parser.Name, pkg *packageFmt.Info) bool {
+	if name == nil || pkg == nil || !name.IsPath() {
+		return false
+	}
+	if name.FixPath(pkg) {
+		return true
+	}
+	if (*name)[0].Name != pkg.Name || pkg.Name == "" || pkg.Path == "" {
+		return false
+	}
+	(*name)[0].Name = packageFmt.FixPathName(pkg.Path)
+	(*name)[0].IsPkgPath = true
+	return true
+}
+
 // fixPkgNamePaths 使用包自身的导入表把跨包名称的第一段固定为包路径前缀。
 // 合并后的树共享根 Parser（根包导入表不含本包别名），若不在此固定，
 // rootNode.Check 阶段的 FixPath 找不到别名，导致跨包调用解析失败
@@ -91,7 +111,7 @@ func fixPkgNamePaths(n *parser.Node, pkg *packageFmt.Info) {
 	switch v := n.Value.(type) {
 	case *parser.CallBlock:
 		if v.Name.IsPath() {
-			v.Name.FixPath(pkg)
+			fixNamePath(&v.Name, pkg)
 		} else if v.Func == nil {
 			v.Name.SetPkgPath(pkg.Path)
 		}
@@ -146,7 +166,7 @@ func fixExpNamePaths(exp *parser.Expression, pkg *packageFmt.Info) {
 	}
 	if exp.Call != nil {
 		if exp.Call.Name.IsPath() {
-			exp.Call.Name.FixPath(pkg)
+			fixNamePath(&exp.Call.Name, pkg)
 		} else if exp.Call.Func == nil {
 			exp.Call.Name.SetPkgPath(pkg.Path)
 		}
@@ -158,7 +178,7 @@ func fixExpNamePaths(exp *parser.Expression, pkg *packageFmt.Info) {
 	}
 	if exp.Var != nil {
 		if exp.Var.Name.IsPath() {
-			exp.Var.Name.FixPath(pkg)
+			fixNamePath(&exp.Var.Name, pkg)
 		} else if exp.Var.Type == nil {
 			// 同包跨文件全局变量/常量引用（parse 期未解析出类型）
 			exp.Var.Name.SetPkgPath(pkg.Path)
@@ -227,6 +247,26 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 				packages[builtinPath] = info
 			}
 		}
+
+		// 内建类型映射：根包预加载 string/map/slice 的 std 实现。
+		// 不写入根包 import 别名——parser lowering 用完整包路径构造调用名，
+		// 避免占用用户可能已经使用的 strings/maps/slices 别名。
+		if os.Getenv("CUTE_NO_INTRINSIC") == "" {
+			for _, name := range []string{"strings", "maps", "slices"} {
+				pkgPath, err := stdPackageDir(name)
+				if err != nil {
+					return nil, err
+				}
+				if _, ok := packages[pkgPath]; !ok {
+					info, err := GetPackage(pkgPath, false)
+					if err != nil {
+						return nil, err
+					}
+					packages[pkgPath] = info
+				}
+				parser.IntrinsicPkgs[name] = pkgPath
+			}
+		}
 	}
 
 	// 处理子目录和.cute文件
@@ -273,6 +313,16 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 					switch v := p.Block.Children[i].Value.(type) {
 					case *parser.FuncBlock:
 						v.Name.SetPkgPath(packagePath)
+						ignored := false
+						for _, bf := range v.BuildFlags {
+							if bf.Ignore {
+								ignored = true
+								break
+							}
+						}
+						if !ignored {
+							parser.RegisterIntrinsicFunc(v)
+						}
 					case *parser.VarBlock:
 						v.Name.SetPkgPath(packagePath)
 					case *parser.TypeBlock:
@@ -356,6 +406,14 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			}
 		}
 		fixParser(rootNode)
+
+		// 重载注册表必须在合并后的完整树上重建：解析期只见过当前文件，
+		// 跨文件前向引用和跨包函数都要靠这一次统一登记。
+		parser.RebuildOverloadRegistry(rootNode)
+		// 合并完成后的 Check 才允许把“无匹配重载/歧义”当成真错误。
+		if rootNode.Parser != nil {
+			rootNode.Parser.FinalCheck = true
+		}
 
 		for round := 0; round < 50; round++ {
 			if !rootNode.Check() {

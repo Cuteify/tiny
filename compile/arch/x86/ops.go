@@ -281,6 +281,13 @@ func (a *x86Ops) VarDecl(varBlock *parser.VarBlock) string {
 	}
 	// 函数指针赋值：将函数名地址存入变量
 	if ft, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
+		// 函数名直接赋值（含重载）：标签必须与函数定义一致，优先走 FuncBlock。
+		if varBlock.Value.Var != nil {
+			if fb, ok := varBlock.Value.Var.Define.Value.(*parser.FuncBlock); ok && fb != nil {
+				varAddr := genVarAddr(a.ctx, varBlock)
+				return utils.Format("mov dword " + varAddr + ", " + fb.MangledName() + "; 设置函数指针变量" + varBlock.Name.String())
+			}
+		}
 		if varBlock.Value.Var != nil && varBlock.Value.Var.Type != nil {
 			// 变量引用：加载变量地址
 			addr := genVarAddr(a.ctx, varBlock.Value.Var)

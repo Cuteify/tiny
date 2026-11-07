@@ -5,6 +5,7 @@ import (
 	typeSys "cuteify/type"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // FuncBlock 函数定义结构体
@@ -20,42 +21,273 @@ type FuncBlock struct {
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
 }
 
+// overloadSet 同名函数（重载集合）。
+// 键是 NASM 名：mangling 冲突只取决于最终汇编标签，而不是源码名称。
+type overloadSet struct {
+	funcs    []*FuncBlock
+	byArity  map[int][]*FuncBlock
+	conflict map[int]bool // 该 arity 是否有多个定义 → 需要追加类型标签
+}
+
+var overloadRegistry = map[string]*overloadSet{}
+
 // MangledName 返回函数的 mangled 名称。
-// 同名不同参函数（重载）标签后接参数个数消歧，否则 NASM 报
-// "label `add' inconsistently redefined"。
+//
+//   - 非重载函数：保持原名，完全向后兼容；
+//   - 同名不同 arity：name + arity；
+//   - 同名且同 arity 有多个定义：name + arity + "_" + 参数类型标签。
+//
+// 类型标签只对真正冲突的 arity 生效，其他 arity 的标签面保持最小。
 func (f *FuncBlock) MangledName() string {
 	if f.MangledOverride != "" {
 		return f.MangledOverride
 	}
 	n := f.Name.NASM()
-	if n != "main" && isOverloadedName(n) {
-		n += strconv.Itoa(len(f.Args))
+	if n == "main" {
+		return n
 	}
-	return n
+	set := overloadRegistry[n]
+	if set == nil || len(set.funcs) <= 1 {
+		return n
+	}
+	arity := len(f.Args)
+	n += strconv.Itoa(arity)
+	if !set.conflict[arity] {
+		return n
+	}
+	return n + "_" + overloadTypeTag(f.Args)
 }
 
-// overloadNames 记录每个函数名出现过的参数个数集合（解析期注册）
-var overloadNames = map[string]map[int]bool{}
+// overloadTypeTag 为一组形参生成稳定、可用于汇编标签的类型标签。
+func overloadTypeTag(args []*ArgBlock) string {
+	parts := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == nil {
+			parts = append(parts, "any")
+			continue
+		}
+		parts = append(parts, overloadTypeCode(a.Type))
+	}
+	if len(parts) == 0 {
+		return "void"
+	}
+	tag := strings.Join(parts, "_")
+	// 极长标签用 FNV-1a 截断，规则固定在计划文档里：
+	// 超过 64 个字符时保留前 16 字符 + 8 位十六进制哈希。
+	if len(tag) > 64 {
+		tag = tag[:16] + "_" + shortHash(tag)
+	}
+	return tag
+}
 
+// overloadTypeCode 类型 → 标签片段（稳定优先，只保留 [A-Za-z0-9_]）。
+func overloadTypeCode(t typeSys.Type) string {
+	if t == nil {
+		return "any"
+	}
+	if _, isTP := t.(*typeSys.TypeParam); isTP {
+		return "tp_" + sanitizeTypeCode(t.Type())
+	}
+	if t.IsPointer() {
+		if elem := t.Elem(); elem != nil {
+			return "p_" + overloadTypeCode(elem)
+		}
+		return "p"
+	}
+	switch t.Kind() {
+	case "list":
+		if elem := t.Elem(); elem != nil {
+			return "list_" + overloadTypeCode(elem)
+		}
+		return "list"
+	case "array":
+		if elem := t.Elem(); elem != nil {
+			return "array_" + overloadTypeCode(elem)
+		}
+		return "array"
+	case "map":
+		if mt, ok := t.(*typeSys.MapType); ok {
+			return "map_" + overloadTypeCode(mt.Key()) + "_" + overloadTypeCode(mt.Elem())
+		}
+		return "map"
+	case "struct":
+		return sanitizeTypeCode(t.Type())
+	}
+	return sanitizeTypeCode(t.Type())
+}
+
+func sanitizeTypeCode(s string) string {
+	if s == "" {
+		return "any"
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// shortHash FNV-1a 32 位，8 位十六进制。
+func shortHash(s string) string {
+	var h uint32 = 2166136261
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return strconv.FormatUint(uint64(h), 16)
+}
+
+func funcBuildIgnored(f *FuncBlock) bool {
+	if f == nil {
+		return true
+	}
+	for _, b := range f.BuildFlags {
+		if b != nil && b.Ignore {
+			return true
+		}
+	}
+	return false
+}
+
+// registerOverload 把函数登记到解析期注册表（定义解析完成时调用）。
 func registerOverload(f *FuncBlock) {
-	if len(f.Name) == 0 {
+	if f == nil || len(f.Name) == 0 || funcBuildIgnored(f) {
 		return
 	}
 	n := f.Name.NASM()
 	if n == "main" {
 		return
 	}
-	m := overloadNames[n]
-	if m == nil {
-		m = map[int]bool{}
-		overloadNames[n] = m
+	set := overloadRegistry[n]
+	if set == nil {
+		set = &overloadSet{
+			byArity:  map[int][]*FuncBlock{},
+			conflict: map[int]bool{},
+		}
+		overloadRegistry[n] = set
 	}
-	m[len(f.Args)] = true
+	for _, old := range set.funcs {
+		if old == f {
+			return
+		}
+	}
+	set.funcs = append(set.funcs, f)
+	arity := len(f.Args)
+	set.byArity[arity] = append(set.byArity[arity], f)
+	// 同 arity 出现多个定义就必须追加类型标签，否则 NASM 会看到两个同名标签。
+	// 类型完全相同的重复定义仍会撞标签——那本来就是非法定义，交给汇编期报错。
+	if len(set.byArity[arity]) > 1 {
+		set.conflict[arity] = true
+	}
 }
 
-// isOverloadedName 判断同名函数是否存在不同参数个数的重载
-func isOverloadedName(n string) bool {
-	return len(overloadNames[n]) > 1
+// sameTypeShape 判断两个类型是否形状相同（Type() + 指针 + 递归元素）。
+func sameTypeShape(a, b typeSys.Type) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.IsPointer() != b.IsPointer() {
+		return false
+	}
+	if a.IsPointer() {
+		return sameTypeShape(a.Elem(), b.Elem())
+	}
+	if a.Type() != b.Type() {
+		return false
+	}
+	switch a.Kind() {
+	case "list", "array":
+		return sameTypeShape(a.Elem(), b.Elem())
+	case "map":
+		am, aok := a.(*typeSys.MapType)
+		bm, bok := b.(*typeSys.MapType)
+		if !aok || !bok {
+			return aok == bok
+		}
+		return sameTypeShape(am.Key(), bm.Key()) && sameTypeShape(am.Elem(), bm.Elem())
+	}
+	return true
+}
+
+// sameFuncSignature 判断两个函数定义是否同签名。
+func sameFuncSignature(a, b *FuncBlock) bool {
+	if a == nil || b == nil || len(a.Args) != len(b.Args) {
+		return false
+	}
+	for i := range a.Args {
+		if a.Args[i] == nil || b.Args[i] == nil {
+			if a.Args[i] != b.Args[i] {
+				return false
+			}
+			continue
+		}
+		if !sameTypeShape(a.Args[i].Type, b.Args[i].Type) {
+			return false
+		}
+	}
+	return true
+}
+
+// funcMatchesType 判断函数定义的形参形状是否与 fn(...) 类型一致。
+func funcMatchesType(f *FuncBlock, ft *typeSys.FuncType) bool {
+	if f == nil || ft == nil || len(f.Args) != len(ft.Args) {
+		return false
+	}
+	for i := range f.Args {
+		if f.Args[i] == nil || !sameTypeShape(f.Args[i].Type, ft.Args[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// FindFuncValueByType 在候选重载中按函数指针类型选一个。
+// 没有精确匹配时退回第一个候选（保持旧的“函数名作为值”行为）。
+func FindFuncValueByType(p *Parser, name Name, ft *typeSys.FuncType) (FindResult, bool) {
+	var fallback *FindResult
+	for _, fr := range p.Find(name, FindTypeFunc) {
+		fb, ok := fr.Value.(*FuncBlock)
+		if !ok || fb == nil || funcBuildIgnored(fb) {
+			continue
+		}
+		if fallback == nil {
+			f := fr
+			fallback = &f
+		}
+		if funcMatchesType(fb, ft) {
+			return fr, true
+		}
+	}
+	if fallback != nil {
+		return *fallback, true
+	}
+	return FindResult{}, false
+}
+
+// RebuildOverloadRegistry 在包合并完成后重建重载注册表。
+// 解析期注册只覆盖“已经解析到”的定义；跨文件前向引用、跨包合并都要靠这里。
+func RebuildOverloadRegistry(root *Node) {
+	overloadRegistry = map[string]*overloadSet{}
+	if root == nil {
+		return
+	}
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if f, ok := n.Value.(*FuncBlock); ok {
+			registerOverload(f)
+		}
+		EachSubNode(n, walk)
+	}
+	walk(root)
 }
 
 // GetNameString 返回函数名（供 ImplementsInterface 的接口方法名匹配使用，
@@ -414,9 +646,10 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		// 处理其他部分
 		if bracketCount == 0 {
 			if token.Value == ":" {
-				// 指针/切片参数（*T、[]T）走类型注解解析
+				// 指针/切片/映射参数（*T、[]T、map[K]V）走类型注解解析
 				nextTok := p.Lexer.Next()
-				if nextTok.Value == "*" || nextTok.Value == "[" {
+				if nextTok.Value == "*" || nextTok.Value == "[" ||
+					(nextTok.Type == lexer.NAME && nextTok.Value == "map") {
 					p.Lexer.SetCursor(nextTok.Cursor)
 					argTmp.Type = p.parseTypeAnnotation()
 				} else {

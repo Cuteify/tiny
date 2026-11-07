@@ -23,6 +23,7 @@ type Parser struct {
 	CurStructType     typeSys.Type            // 当前正在解析的结构体类型实例（与注册后同一实例）
 	CurTypeParams     map[string]typeSys.Type // 当前泛型函数的类型参数（fn f[T]{} 体内 T 解析为 TypeParam）
 	FileImports       []ImportItem            // 文件级 import 声明（Wave L，仅记录，别名注册在 package 层）
+	FinalCheck        bool                    // 包合并后的最终 Check：此时“查不到/无匹配”才是真错误
 }
 
 // ParsePhase 为 true 表示各包/各文件尚未合并成同一棵树。

@@ -27,6 +27,165 @@ func safeTypeName(t typeSys.Type) string {
 	return t.Type()
 }
 
+// collectCallCandidates 收集同名函数候选（去重、跳过当前目标平台忽略的定义）。
+func collectCallCandidates(p *Parser, name Name) []*FuncBlock {
+	var out []*FuncBlock
+	if p == nil || name.IsEmpty() {
+		return out
+	}
+	seen := map[*FuncBlock]bool{}
+	for _, node := range p.Find(name, FindTypeFunc) {
+		fb, ok := node.Value.(*FuncBlock)
+		if !ok || fb == nil || funcBuildIgnored(fb) || seen[fb] {
+			continue
+		}
+		seen[fb] = true
+		out = append(out, fb)
+	}
+	return out
+}
+
+// appendUniqueFuncs 按指针去重追加候选。
+func appendUniqueFuncs(dst []*FuncBlock, fbs ...*FuncBlock) []*FuncBlock {
+	if len(fbs) == 0 {
+		return dst
+	}
+	seen := make(map[*FuncBlock]bool, len(dst)+len(fbs))
+	for _, f := range dst {
+		seen[f] = true
+	}
+	for _, f := range fbs {
+		if f == nil || seen[f] || funcBuildIgnored(f) {
+			continue
+		}
+		seen[f] = true
+		dst = append(dst, f)
+	}
+	return dst
+}
+
+// methodCandidates 收集接收者类型上所有同名方法（含重载）。
+// enterTypeFind 只返回 Methods() 里第一个命中项，无法支撑同 arity 方法重载。
+func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
+	for t != nil && t.IsPointer() {
+		t = t.Elem()
+	}
+	if t == nil {
+		return nil
+	}
+	var out []*FuncBlock
+	for _, m := range t.Methods() {
+		fb, ok := m.(*FuncBlock)
+		if !ok || fb == nil || funcBuildIgnored(fb) {
+			continue
+		}
+		if fb.Name.Last() == method {
+			out = append(out, fb)
+		}
+	}
+	return out
+}
+
+const (
+	callScoreExactArity = 1 << 20
+	callScoreExactType  = 100
+	callScoreSameKind   = 40
+	callScoreNumeric    = 10
+	callScoreAssignable = 1
+)
+
+// matchCallCandidate 判断实参与候选函数是否兼容，并给出消歧分。
+// 类型未知（跨文件未解析）的实参不参与判负，只降低可比较度。
+func matchCallCandidate(c *CallBlock, fb *FuncBlock) (ok bool, score int) {
+	if c == nil || fb == nil {
+		return false, 0
+	}
+	n := len(c.Args)
+	if n > len(fb.Args) {
+		return false, 0
+	}
+	// 缺少的形参必须有默认值。
+	for i := n; i < len(fb.Args); i++ {
+		if fb.Args[i] == nil || fb.Args[i].Default == nil {
+			return false, 0
+		}
+	}
+	if n == len(fb.Args) {
+		score += callScoreExactArity
+	} else {
+		score -= (len(fb.Args) - n) * 1000
+	}
+	for i := 0; i < n; i++ {
+		arg := c.Args[i]
+		if arg == nil || arg.Value == nil || i >= len(fb.Args) || fb.Args[i] == nil {
+			continue
+		}
+		at, dt := arg.Value.Type, fb.Args[i].Type
+		if at == nil || dt == nil {
+			continue
+		}
+		if !typeSys.AutoType(at, dt, true) {
+			return false, 0
+		}
+		switch {
+		case sameTypeShape(at, dt):
+			score += callScoreExactType
+		case at.Type() == dt.Type():
+			score += callScoreExactType / 2
+		case at.Kind() == dt.Kind():
+			score += callScoreSameKind
+		case typeSys.IsNum(at) && typeSys.IsNum(dt):
+			score += callScoreNumeric
+		default:
+			score += callScoreAssignable
+		}
+	}
+	return true, score
+}
+
+// selectCallCandidate 从候选中选一个。
+// compatible 是兼容候选数；ambiguous 表示实参类型已知但最高分仍无法唯一确定。
+func selectCallCandidate(c *CallBlock, candidates []*FuncBlock) (sel *FuncBlock, compatible int, ambiguous bool) {
+	type scored struct {
+		fb    *FuncBlock
+		score int
+	}
+	var best []scored
+	allKnown := true
+	for _, arg := range c.Args {
+		if arg == nil || arg.Value == nil || arg.Value.Type == nil {
+			allKnown = false
+			break
+		}
+	}
+	for _, fb := range candidates {
+		ok, sc := matchCallCandidate(c, fb)
+		if !ok {
+			continue
+		}
+		compatible++
+		if len(best) == 0 || sc > best[0].score {
+			best = append(best[:0], scored{fb: fb, score: sc})
+		} else if sc == best[0].score {
+			best = append(best, scored{fb: fb, score: sc})
+		}
+	}
+	if len(best) == 0 {
+		return nil, compatible, false
+	}
+	if len(best) == 1 || !allKnown {
+		return best[0].fb, compatible, false
+	}
+	// 同分且实参类型已知：签名完全相同（重复定义）时取第一个，
+	// 签名不同则说明打分器无法可靠区分 → 歧义。
+	for _, b := range best[1:] {
+		if !sameFuncSignature(best[0].fb, b.fb) {
+			return nil, compatible, true
+		}
+	}
+	return best[0].fb, compatible, false
+}
+
 // Check 检查函数调用的参数数量和类型是否匹配
 func (c *CallBlock) Check(p *Parser) bool {
 	if c.Name.IsEmpty() {
@@ -38,62 +197,40 @@ func (c *CallBlock) Check(p *Parser) bool {
 		return true
 	}
 
+	// 函数重载 Phase 2：先收集全部同名候选，再按 arity / 实参类型选择。
+	// 不能像旧实现那样“取第一个并顺手把所有同名函数标 Useful”，
+	// 否则同名不同 arity 的调用会绑定到错误定义，或产生重复汇编标签。
+	var candidates []*FuncBlock
 	if c.Func == nil {
-		results := p.Find(c.Name, FindTypeFunc)
-		for _, node := range results {
-			fb, ok := node.Value.(*FuncBlock)
-			if !ok {
-				continue
-			}
-			ignored := false
-			for _, buildFlag := range fb.BuildFlags {
-				if buildFlag.Ignore {
-					ignored = true
-					break
-				}
-			}
-			if ignored {
-				continue
-			}
-			fb.Useful = true
-			if c.Func == nil {
-				fb.Useful = true
-				c.Func = fb
-				// 包名被方法分支误判为接收者时，清除伪 ThisVar
-				if fb.Class == nil {
-					c.ThisVar = nil
-				}
-			}
-		}
+		candidates = collectCallCandidates(p, c.Name)
 	}
 
 	// 内置包兜底：无命名空间调用（print(...)）→ 注册表直接定位函数块。
-	// 本地/用户函数优先：仅在上方查找失败后进入；
-	// 直接设置 c.Func，首趟即完成参数检查，无需等待包合并重试。
-	if c.Func == nil && !c.Name.IsPath() {
-		if fb, ok := BuiltinFuncs[c.Name.First()]; ok {
-			fb.Useful = true
-			c.Func = fb
-			c.ThisVar = nil
+	// 本地/用户函数优先：仅在上方查找失败后进入。
+	if c.Func == nil && len(candidates) == 0 && !c.Name.IsPath() {
+		if fb, ok := BuiltinFuncs[c.Name.First()]; ok && !funcBuildIgnored(fb) {
+			candidates = append(candidates, fb)
 		}
 	}
 
-	// 方法调用（找到的 Func 属于类型）：设置 ThisVar 为接收者
-	if c.Func != nil && c.Func.Class != nil && c.ThisVar == nil && c.Name.IsPath() {
+	// 方法调用（候选属于类型）：设置 ThisVar 为接收者。
+	if c.Func == nil && c.ThisVar == nil && c.Name.IsPath() {
+		hasClass := false
+		for _, fb := range candidates {
+			if fb.Class != nil {
+				hasClass = true
+				break
+			}
+		}
 		receiverName := c.Name.Fork()
 		receiverName = receiverName[:len(receiverName)-1]
-		c.ThisVar = &VarBlock{Name: receiverName}
-		c.ThisVar.ParseDefine(p)
-	}
-
-	// If still not found and name is a path (e.g. a.len), try method call
-	if c.Func == nil && c.Name.IsPath() && c.ThisVar == nil {
-		receiverName := c.Name.Fork()
-		receiverName = receiverName[:len(receiverName)-1]
-		// 接收者必须为简单名：FixPkgNamePaths 固定的完整包路径（如
-		// /home/.../pkg/memory.store64）不是方法调用，跳过 ParseDefine
-		//（CheckName 会因路径段中的 '/' 报 "name is not valid"）。
-		if !receiverName.IsPath() {
+		if hasClass {
+			c.ThisVar = &VarBlock{Name: receiverName}
+			c.ThisVar.ParseDefine(p)
+		} else if len(candidates) == 0 && !receiverName.IsPath() {
+			// 接收者必须为简单名：FixPkgNamePaths 固定的完整包路径（如
+			// /home/.../pkg/memory.store64）不是方法调用，跳过 ParseDefine
+			//（CheckName 会因路径段中的 '/' 报 "name is not valid"）。
 			c.ThisVar = &VarBlock{Name: receiverName}
 			c.ThisVar.ParseDefine(p)
 		}
@@ -111,7 +248,12 @@ func (c *CallBlock) Check(p *Parser) bool {
 				}
 			}
 		}
-		if c.ThisVar.Type != nil && c.ThisVar.Type.Kind() == "list" {
+		// 方法重载：enterTypeFind 只返回第一个同名方法，这里按接收者类型
+		// 把该类型上所有同名方法都收进候选，供类型消歧使用。
+		if c.Func == nil && c.ThisVar.Type != nil && c.Name.IsPath() {
+			candidates = appendUniqueFuncs(candidates, methodCandidates(c.ThisVar.Type, c.Name.Last())...)
+		}
+		if len(candidates) == 0 && c.ThisVar.Type != nil && c.ThisVar.Type.Kind() == "list" {
 			methodName := c.Name.Last()
 			switch methodName {
 			case "len", "cap", "ptr":
@@ -120,6 +262,37 @@ func (c *CallBlock) Check(p *Parser) bool {
 					Name:   NewName("__list_" + methodName),
 				}
 			}
+		}
+	}
+
+	if c.Func == nil && len(candidates) > 0 {
+		// 消歧需要实参类型：先做 Check（幂等），跨文件未解析的类型保持 nil，
+		// 打分器会把它当作“未知”而不是“不匹配”。
+		for _, arg := range c.Args {
+			if arg != nil && arg.Value != nil {
+				arg.Value.Check(p)
+			}
+		}
+		sel, compatible, ambiguous := selectCallCandidate(c, candidates)
+		if sel == nil {
+			if p.FinalCheck {
+				if ambiguous {
+					p.Error.MissError("Call Error", p.Lexer.Cursor,
+						"ambiguous call to "+c.Name.String()+": "+itoa(len(candidates))+" overloads match")
+					return false
+				}
+				if compatible == 0 {
+					p.Error.MissError("Call Error", p.Lexer.Cursor,
+						"no matching overload for "+c.Name.String()+" with "+itoa(len(c.Args))+" arguments")
+					return false
+				}
+			}
+			// 解析期：可能还有同名定义尚未解析到，留给合并后的 Check 重试。
+			return false
+		}
+		c.Func = sel
+		if sel.Class == nil {
+			c.ThisVar = nil
 		}
 	}
 
@@ -307,7 +480,7 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 		if len(c.Args) == 1 {
 			c.Args[0].Value.Check(p)
 			argType := c.Args[0].Value.Type
-			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
+			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list" || argType.Kind() == "map") {
 				// 字符串走 link 路径（call __string_len）：提前标记提供者 Useful，
 				// 否则提供者可能因无人显式调用被死代码消除（链接期符号未定义）
 				if argType.Kind() == "string" {
