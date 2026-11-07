@@ -102,5 +102,8 @@ func bareVar(e *parser.Expression) *parser.VarBlock {
 	if e.Index[0] != nil || e.Index[1] != nil || e.Index[2] != nil {
 		return nil
 	}
+	if e.IndexSlice {
+		return nil
+	}
 	return e.Var
 }

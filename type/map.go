@@ -11,11 +11,12 @@ func NewMapType(key, value Type) *MapType {
 	return &MapType{key: key, value: value}
 }
 
+// Size map 值语义是单个 header 指针（std:maps 的 mapHdr*）。
+// 早期按 ptr+len+cap 三槽预留是未落地的设想；WAVE Mp 起 pkg/maps
+// 以单指针作为唯一句柄，这里必须与运行期表示一致，否则 map 值
+// 作为参数/局部变量会整体错位。
 func (m *MapType) Size() int {
-	if TargetPointerSize == 8 {
-		return 24 // ptr + len + cap (8 × 3)
-	}
-	return 12 // ptr + len + cap (4 × 3)
+	return TargetPointerSize
 }
 
 func (m *MapType) Alignment() int {
