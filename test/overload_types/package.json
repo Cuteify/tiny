@@ -1,0 +1,5 @@
+{
+    "name": "overload_types",
+    "version": "0.1.0",
+    "description": "Function overload resolution by argument types (same arity)"
+}

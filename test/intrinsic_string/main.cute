@@ -1,0 +1,39 @@
+// 内建 string 映射测试：无显式 import "std:strings" 时，
+// == / != 应自动走 std:strings.eq / ne（内容比较，而非三槽地址比较）。
+fn main() int {
+    var failures: int = 0
+
+    var a: string = "abc"
+    // 运行期拼接：产生与字面量异址、同内容的字符串。
+    var b: string = a + ""
+
+    if a == b {
+        // 期望：内容相等
+    } else {
+        failures = failures + 1
+    }
+
+    if a != b {
+        failures = failures + 1
+    }
+
+    var empty1: string = ""
+    var empty2: string = "" + ""
+    if empty1 == empty2 {
+        // 期望：空串内容相等
+    } else {
+        failures = failures + 1
+    }
+
+    var diff: string = "abd"
+    if a == diff {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        println("intrinsic_string: ALL PASS")
+        ret 42
+    }
+    println("intrinsic_string: FAIL")
+    ret 1
+}

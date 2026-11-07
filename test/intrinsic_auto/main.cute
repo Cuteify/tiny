@@ -1,0 +1,47 @@
+// Phase 4 验收：无需显式 import，std:strings / std:slices 的函数自动可用。
+// 覆盖：slices.len/cap 回退解析、strings.eq/ne 自动可用、与内建比较共存。
+// 输出 intrinsic_auto: ALL PASS 并退出 42。
+fn main() int {
+    var passed: int = 0
+
+    var s: []int = []int{1, 2, 3}
+    var n: int = slices.len[int](&s)
+    var c: int = slices.cap[int](&s)
+
+    if n == 3 {
+        passed = passed + 1
+    }
+    if c == 3 {
+        passed = passed + 1
+    }
+
+    if strings.eq("abc", "abc") {
+        passed = passed + 1
+    }
+    if strings.ne("abc", "abd") {
+        passed = passed + 1
+    }
+    if strings.eq("abc", "abd") {
+        // 期望不相等
+    } else {
+        passed = passed + 1
+    }
+    if strings.ne("abc", "abc") {
+        // 期望相等
+    } else {
+        passed = passed + 1
+    }
+
+    // 自动可用的 std 调用与内建运算组合。
+    var total: int = n + c
+    if total == 6 {
+        passed = passed + 1
+    }
+
+    if passed == 7 {
+        println("intrinsic_auto: ALL PASS")
+        ret 42
+    }
+    println("intrinsic_auto: FAIL")
+    ret 1
+}

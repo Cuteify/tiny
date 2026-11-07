@@ -1,0 +1,55 @@
+// 函数重载：同 arity、按参数类型消歧
+// 验收：mangled 标签必须带类型后缀，运行输出 ALL PASS、退出码 42。
+
+fn describe(x: int) int {
+    ret 10
+}
+
+fn describe(x: string) int {
+    ret 20
+}
+
+fn describe(x: bool) int {
+    ret 30
+}
+
+fn mix(a: int, b: string) int {
+    ret 40
+}
+
+fn mix(a: string, b: int) int {
+    ret 50
+}
+
+fn main() int {
+    var failures: int = 0
+
+    if describe(7) != 10 {
+        failures = failures + 1
+    }
+
+    var s: string = "hello"
+    if describe(s) != 20 {
+        failures = failures + 1
+    }
+
+    var b: bool = true
+    if describe(b) != 30 {
+        failures = failures + 1
+    }
+
+    var s2: string = "world"
+    if mix(1, s2) != 40 {
+        failures = failures + 1
+    }
+    if mix(s2, 1) != 50 {
+        failures = failures + 1
+    }
+
+    if failures == 0 {
+        println("overload_types: ALL PASS")
+        ret 42
+    }
+    println("overload_types: FAIL")
+    ret 1
+}
