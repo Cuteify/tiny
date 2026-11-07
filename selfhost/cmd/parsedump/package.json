@@ -1,5 +1,5 @@
 {
     "name": "parsedump",
-    "version": "0.1.0",
-    "description": "Cuteify 自举 parser 的语法验证 driver（S2）"
+    "version": "0.2.0",
+    "description": "Cuteify 自举 parser driver（S2 计数 + S3 canonical AST）"
 }

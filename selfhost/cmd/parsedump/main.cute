@@ -1,8 +1,9 @@
-// Cuteify 自举 parser driver（S2）。
+// Cuteify 自举 parser driver（S2/S3）。
 //
-// 从 stdin 读取源码，交给 selfhost/parse 做语法验证，输出结构计数：
+// 默认从 stdin 读取源码，交给 selfhost/parse 做语法验证，输出结构计数：
 //   PARSE_OK|decls=N|imports=N|enums=N|structs=N|consts=N|vars=N|fns=N|stmts=N|exprs=N
 //
+// 设置 PARSEDUMP_AST=1 时改为输出 canonical AST（与 tools/astdump 逐字节对齐）。
 // 语法错误输出 PARSE_ERROR 并返回 1；输入上限 1 MiB。
 import "std:console"
 import "std:memory"
@@ -64,7 +65,439 @@ fn printCounter(name string, n int) {
     printInt(n)
 }
 
+// envOne 判断环境变量是否为 "1"。运行期无 argv，AST 模式靠它切换。
+fn envOne(name string) bool {
+    var np: ptr = unsafe.cast[ptr](strings.toCstring(name))
+    var v: ptr = syscall.getenv(np, strings.len(name))
+    if unsafe.cast[uint](v) == 0 {
+        ret false
+    }
+    var q: *u8 = v
+    ret *q == 49
+}
+
+// ===== canonical AST 打印 =====
+// 输出格式必须与 tools/astdump 逐字节一致：2 空格缩进、KIND key=value。
+
+fn w(bb ptr, s string) {
+    strings.builderWriteString(bb, s)
+}
+
+fn pPad(bb ptr, d int) {
+    var i: int = 0
+    for ; i < d; {
+        w(bb, "  ")
+        i = i + 1
+    }
+}
+
+fn pEnd(bb ptr) {
+    w(bb, nl())
+}
+
+fn pHex(bb ptr, v uint) {
+    var digits: string = "0123456789abcdef"
+    var dp: ptr = strings.toCstring(digits)
+    w(bb, strings.makeString(dp + v, 1, 1))
+}
+
+// pQuote 按 Go %q（strconv.Quote）的常见 ASCII 形态转义并加双引号。
+fn pQuote(bb ptr, s string) {
+    w(bb, `"`)
+    var n: uint = strings.len(s)
+    var base: ptr = strings.toCstring(s)
+    var i: uint = 0
+    for ; i < n; {
+        var q: *u8 = base + i
+        var c: uint = *q
+        if c == 92 {
+            w(bb, `\\`)
+        } else if c == 34 {
+            w(bb, `\"`)
+        } else if c == 10 {
+            w(bb, `\n`)
+        } else if c == 9 {
+            w(bb, `\t`)
+        } else if c == 13 {
+            w(bb, `\r`)
+        } else if c == 7 {
+            w(bb, `\a`)
+        } else if c == 8 {
+            w(bb, `\b`)
+        } else if c == 11 {
+            w(bb, `\v`)
+        } else if c == 12 {
+            w(bb, `\f`)
+        } else if c >= 32 && c != 127 {
+            // Go %q 对可打印 Unicode 原样输出；UTF-8 多字节按字节透传。
+            w(bb, strings.makeString(base + i, 1, 1))
+        } else {
+            w(bb, `\x`)
+            var hi: uint = c / 16
+            var lo: uint = c - hi * 16
+            pHex(bb, hi)
+            pHex(bb, lo)
+        }
+        i = i + 1
+    }
+    w(bb, `"`)
+}
+
+// pType 输出节点的类型文本；缺失时与 Go 侧一致记为 ?。
+fn pType(bb ptr, n *parse.Ast) {
+    var t: string = parse.nodeAux(n)
+    if strings.len(t) == 0 {
+        w(bb, "?")
+    } else {
+        w(bb, t)
+    }
+}
+
+fn pChildren(bb ptr, n *parse.Ast, d int) {
+    var c: *parse.Ast = parse.nodeChild(n)
+    for ; !parse.astNull(c); {
+        astPrint(bb, c, d)
+        c = parse.nodeNext(c)
+    }
+}
+
+// pChild 输出唯一子表达式（缺失则跳过）。
+fn pChild(bb ptr, n *parse.Ast, d int) {
+    var c: *parse.Ast = parse.nodeChild(n)
+    if !parse.astNull(c) {
+        astPrint(bb, c, d)
+    }
+}
+
+fn astPrint(bb ptr, n *parse.Ast, d int) {
+    if parse.astNull(n) {
+        ret
+    }
+    var k: int = parse.nodeKind(n)
+    if k == parse.A_FILE {
+        pPad(bb, d)
+        w(bb, "FILE")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_VAR {
+        pPad(bb, d)
+        w(bb, "VAR name=")
+        w(bb, parse.nodeName(n))
+        var vf: string = parse.nodeAttr(n)
+        if strings.len(vf) != 0 {
+            w(bb, " flags=")
+            w(bb, vf)
+        }
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_TYPE {
+        pPad(bb, d)
+        w(bb, "TYPE name=")
+        w(bb, parse.nodeName(n))
+        var ta: string = parse.nodeAttr(n)
+        if strings.len(ta) != 0 {
+            w(bb, " ")
+            w(bb, ta)
+        }
+        var tu: string = parse.nodeAux(n)
+        if strings.len(tu) != 0 {
+            w(bb, " under=")
+            w(bb, tu)
+        }
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_FIELD {
+        pPad(bb, d)
+        w(bb, "FIELD name=")
+        w(bb, parse.nodeName(n))
+        w(bb, " type=")
+        pType(bb, n)
+        var fa: string = parse.nodeAttr(n)
+        if strings.len(fa) != 0 {
+            w(bb, " ")
+            w(bb, fa)
+        }
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_METHOD {
+        pPad(bb, d)
+        w(bb, "METHOD name=")
+        w(bb, parse.nodeName(n))
+        w(bb, " nargs=")
+        w(bb, parse.nodeAttr(n))
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_FN {
+        pPad(bb, d)
+        w(bb, "FN name=")
+        w(bb, parse.nodeName(n))
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_ARG {
+        var an: string = parse.nodeName(n)
+        var at: string = parse.nodeAux(n)
+        var aa: string = parse.nodeAttr(n)
+        pPad(bb, d)
+        if strings.len(an) == 0 && strings.len(at) == 0 && strings.len(aa) == 0 {
+            // 调用实参在 Go canonical 里是裸 ARG，不输出 name/type。
+            w(bb, "ARG")
+        } else {
+            w(bb, "ARG name=")
+            w(bb, an)
+            w(bb, " type=")
+            pType(bb, n)
+            if strings.len(aa) != 0 {
+                w(bb, " ")
+                w(bb, aa)
+            }
+        }
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_RET {
+        pPad(bb, d)
+        w(bb, "RET type=")
+        pType(bb, n)
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_IF {
+        pPad(bb, d)
+        w(bb, "IF")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_ELSE {
+        pPad(bb, d)
+        w(bb, "ELSE")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_COND {
+        pPad(bb, d)
+        w(bb, "COND")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_FOR {
+        pPad(bb, d)
+        w(bb, "FOR")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_INIT {
+        pPad(bb, d)
+        w(bb, "INIT")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_POST {
+        pPad(bb, d)
+        w(bb, "POST")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_RANGE {
+        pPad(bb, d)
+        w(bb, "RANGE")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_RNAME {
+        pPad(bb, d)
+        w(bb, "RNAME name=")
+        w(bb, parse.nodeName(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_SWITCH {
+        pPad(bb, d)
+        w(bb, "SWITCH")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_TARGET {
+        pPad(bb, d)
+        w(bb, "TARGET")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_CASE {
+        pPad(bb, d)
+        w(bb, "CASE")
+        var ca: string = parse.nodeAttr(n)
+        if strings.eq(ca, "1") {
+            w(bb, " default=1")
+        }
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_VAL {
+        pPad(bb, d)
+        w(bb, "VAL")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_RETURN {
+        pPad(bb, d)
+        w(bb, "RETURN")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_BREAK {
+        pPad(bb, d)
+        w(bb, "BREAK level=")
+        w(bb, parse.nodeAttr(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_CALL {
+        pPad(bb, d)
+        w(bb, "CALL name=")
+        w(bb, parse.nodeName(n))
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_EXPR {
+        pPad(bb, d)
+        w(bb, "EXPR")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_LIST {
+        pPad(bb, d)
+        w(bb, "LIST")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_ARRAY {
+        pPad(bb, d)
+        w(bb, "ARRAY")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_INDEX {
+        pPad(bb, d)
+        w(bb, "INDEX")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_SLICE {
+        pPad(bb, d)
+        w(bb, "SLICE")
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_LO {
+        pPad(bb, d)
+        w(bb, "LO")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_HI {
+        pPad(bb, d)
+        w(bb, "HI")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_MAX {
+        pPad(bb, d)
+        w(bb, "MAX")
+        pEnd(bb)
+        pChild(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_BIN {
+        pPad(bb, d)
+        w(bb, "BIN op=")
+        w(bb, parse.nodeAttr(n))
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_UN {
+        pPad(bb, d)
+        w(bb, "UN op=")
+        w(bb, parse.nodeAttr(n))
+        pEnd(bb)
+        pChildren(bb, n, d + 1)
+        ret
+    }
+    if k == parse.A_NAME {
+        pPad(bb, d)
+        w(bb, "NAME ")
+        w(bb, parse.nodeName(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_LIT {
+        pPad(bb, d)
+        w(bb, "LIT ")
+        w(bb, parse.nodeName(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_STR {
+        pPad(bb, d)
+        w(bb, "STR ")
+        pQuote(bb, parse.nodeName(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_BOOL {
+        pPad(bb, d)
+        w(bb, "BOOL ")
+        w(bb, parse.nodeAttr(n))
+        pEnd(bb)
+        ret
+    }
+    if k == parse.A_NIL {
+        pPad(bb, d)
+        w(bb, "NIL")
+        pEnd(bb)
+        ret
+    }
+    pPad(bb, d)
+    w(bb, "NODE? kind=")
+    w(bb, strings.itoa(k))
+    pEnd(bb)
+}
+
 fn main() int {
+    var astMode: bool = envOne("PARSEDUMP_AST")
     var src: string = readAll()
     var p: *parse.Parser = parse.mk(src)
     parse.file(p)
@@ -84,6 +517,13 @@ fn main() int {
         printInt(unsafe.cast[int](pos))
         console.print(nl())
         ret 1
+    }
+
+    if astMode {
+        var bb: ptr = strings.builderNew(65536)
+        astPrint(bb, parse.astRoot(p), 0)
+        console.print(strings.builderString(bb))
+        ret 0
     }
 
     console.print("PARSE_OK")
