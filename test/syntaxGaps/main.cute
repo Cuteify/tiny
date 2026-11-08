@@ -1,0 +1,14 @@
+fn main() int {
+    var sum: int = 0
+    for i := 0; i < 5; i = i + 1 {
+        sum += i
+    }
+    var sum2: int = 0
+    for i := 0; i < 5; i += 1 {
+        sum2 += i
+    }
+    if sum == 10 && sum2 == 10 {
+        ret 42
+    }
+    ret 1
+}

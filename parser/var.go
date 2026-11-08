@@ -165,14 +165,18 @@ func (v *VarBlock) Parse(p *Parser) {
 //   - VAR: 带关键字的声明，如 "var x int = 5"
 func (v *VarBlock) ParseVar(p *Parser) {
 	code := p.Lexer.Next()
+	stop := p.FindEndCursor()
+	if p.exprStop > 0 && p.exprStop < stop {
+		stop = p.exprStop
+	}
 
 	switch code.Type {
 	case lexer.NAME:
 		// 普通变量名形式
-		v.ParseNameVar(p, code, p.FindEndCursor())
+		v.ParseNameVar(p, code, stop)
 	case lexer.VAR:
 		// var关键字形式
-		v.ParseKeywordVar(p, code, p.FindEndCursor())
+		v.ParseKeywordVar(p, code, stop)
 	default:
 		// 语法错误：需要变量名
 		if p.Lexer.Cursor == 0 {

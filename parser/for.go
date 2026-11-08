@@ -194,7 +194,10 @@ func (f *ForBlock) parseIncrement(p *Parser) {
 
 	// 有增量表达式
 	p.Lexer.SetCursor(incToken.Cursor)
+	oldStop := p.exprStop
+	p.exprStop = endCursor - 1
 	f.Increment = p.ParseExp(endCursor - 1)
+	p.exprStop = oldStop
 }
 
 // Check 检查 for 循环的有效性
