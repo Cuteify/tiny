@@ -92,9 +92,19 @@
 
 ## P5 内建表符号化
 
-- [ ] string `*` 表项
-- [ ] Native 例外注释
-- [ ] 提交
+- [x] string `*` 表项
+  - `parser/intrinsic.go`：新增 `{Kind:"string", Op:"*", Pkg:"std:strings", Fn:"repeatN", Form:IntrinsicCall, Phase:1}`
+  - 新增 `lowerIntrinsicCall` 公共 helper；`tryIntrinsicStringEq` 复用之
+  - `tryIntrinsicStringMul`：`string * int` 运行期 lowering 到 `strings.repeatN`
+  - `parser/exp_check.go` 的 `checkMul`：常量仍本地折叠；运行期 lowering 失败时显式报 `operator * not defined for type string`，不再静默生成空结果
+- [x] Native 例外注释
+  - `intrinsicTable`：string `+`（GC 来源标记）、len/cap/索引、map len（nil map）、list len/cap/索引（左值/地址）均在表项旁注明保留原因
+  - `docs/stdplan/TYPE_INTRINSIC.md`：同步 `*` 表项；修正 P4 后的自动导入说明（预加载不提供用户命名空间回退）
+- [x] 验证
+  - 临时用例：`s * n`（运行期）、`s * 0`、`"xy" * 2`（常量折叠）x86_64 编译运行 exit=42
+  - `CUTE_NO_INTRINSIC=1` 时运行期重复显式报 `operator * not defined for type string`
+  - 回归与基线一致：intrinsic_string 42、intrinsic_auto 42、autoImport 42、operatorOverload 42、overload 42、controlFlow 39、convert 42、sliceTest 0、mp_map 74、structValue 11、string 100、strings 60、stringOperations 50、stringsUtils 62、stringUtils 编译失败（既有 `strings.join` 无匹配重载）
+- [x] 提交：`实现: string 乘法内建表项`
 
 ## P6 build 指令
 

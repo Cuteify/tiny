@@ -834,8 +834,14 @@ func (exp *Expression) checkMul(p *Parser) bool {
 		if exp.Left.IsConst() && exp.Right.IsConst() {
 			exp.StringVal = strings.Repeat(exp.Left.StringVal, int(exp.Right.Num))
 			exp.foldBin()
+			return true
 		}
-		return true
+		// 运行期重复 lowering 到 std:strings.repeatN；表项缺失或
+		// CUTE_NO_INTRINSIC 开启时显式报错，不能再静默生成空结果。
+		if exp.tryIntrinsicStringMul(p) {
+			return true
+		}
+		return exp.checkOverload(p)
 
 	case typeSys.IsNum(exp.Left.Type) && typeSys.IsNum(exp.Right.Type):
 		return exp.checkArith(p)

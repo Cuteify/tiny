@@ -15,14 +15,17 @@
    `std:slices`，并把逻辑包名 → 本地路径登记到 `parser.IntrinsicPkgs`。
 2. 预加载**不写入根包 import 别名**，因此不会占用用户已有的
    `strings` / `maps` / `slices` 变量名或 import 别名。
-3. 未显式 `import` 时，`strings.foo` / `maps.foo` / `slices.foo` 由
-   `Name.FixPath` 的 `IntrinsicPkgs` 回退解析到预加载包；显式 import 别名优先。
-4. 局部变量优先于包回退：函数内先按 `FindVar` 查局部/参数/字段，只有找不到
+3. 预加载**不提供用户命名空间回退**：`strings.foo` / `maps.foo` / `slices.foo`
+   必须显式 `import` 对应包才能解析。预加载包只供 `intrinsicTable` 的
+   lowering 用完整包路径构造调用，不参与 `Name.FixPath` 的别名解析。
+4. 局部变量优先于包路径：函数内先按 `FindVar` 查局部/参数/字段，只有找不到
    名称时才走包路径解析。
 5. `string` 的 `==` / `!=` 在 `checkEq` 阶段直接改写为 `std:strings.eq/ne`
    调用；两个字面量的比较仍在编译期折叠，不产生调用。
-6. `CUTE_NO_INTRINSIC=1` 关闭上述全部隐式行为：不预加载 std 包、不做 string
-   内容比较 lowering；显式 import 的包不受影响。
+6. `string * int` 的运行期形态在 `checkMul` 阶段改写为 `std:strings.repeatN`
+   调用；常量形态仍在编译期折叠。
+7. `CUTE_NO_INTRINSIC=1` 关闭上述全部隐式行为：不预加载 std 包、不做 string
+   内容比较/重复的 lowering；显式 import 的包不受影响。
 
 ---
 
@@ -31,14 +34,15 @@
 | Kind | 操作 | 实现 | 形态 | 说明 |
 |---|---|---|---|---|
 | `string` | `==` / `!=` | `std:strings.eq` / `ne` | parser lowering | 内容比较，不再比较三槽头 |
-| `string` | `+` | 编译器内建 | Native | 保留现有 `stringConcatExp` |
+| `string` | `*` | `std:strings.repeatN` | parser lowering | 运行期重复；常量在编译期折叠 |
+| `string` | `+` | 编译器内建 | Native | 保留现有 `stringConcatExp`（GC 来源标记 `string-concat`） |
 | `string` | `len` / `cap` | 编译器内建 | Native | 读头部 len/cap |
 | `string` | `s[i]` / `s[lo:hi:step]` | 编译器内建 | Native | 索引返回 `byte`，切片返回 `string` |
 | `map` | `len(m)` | 编译器内建 | Native | nil map 返回 0，不解引用 |
 | `map` | `m[k]` | `std:maps.get` | codegen | nil/缺失键返回零值 |
 | `map` | `m[k] = v` | `std:maps.set` | codegen | nil map 自动 `maps.new` 并写回左值 |
-| `list` | `len` / `cap` | 编译器内建 | Native | 读切片头 |
-| `list` | `s[i]` / `s[i] = v` | 编译器内建 | Native | 保留现有代码生成 |
+| `list` | `len` / `cap` | 编译器内建 | Native | 读切片头（需要左值/地址） |
+| `list` | `s[i]` / `s[i] = v` | 编译器内建 | Native | 保留现有代码生成（需要地址） |
 | `list` | `s[lo:hi:step]` | 编译器内建 | Native | 视图或新建缓冲，见 §4 |
 
 `std:slices` 的 `len/cap/push/get/set/...` 作为命名 API 自动可用，但不替换

@@ -25,11 +25,11 @@ const (
 // IntrinsicEntry 描述“某类型的某操作由哪个 std 实现承载”。
 // 这是类型映射的唯一事实源：parser / codegen / 文档都应查这张表。
 type IntrinsicEntry struct {
-	Kind string // string | map | list
-	Op   string // ==, !=, +, [], []=, len, cap ...
-	Pkg  string // std:strings / std:maps / std:slices；Native 时为空
-	Fn   string // 包内函数名；Native 时为空
-	Form IntrinsicForm
+	Kind  string // string | map | list
+	Op    string // ==, !=, +, [], []=, len, cap ...
+	Pkg   string // std:strings / std:maps / std:slices；Native 时为空
+	Fn    string // 包内函数名；Native 时为空
+	Form  IntrinsicForm
 	Phase int // 1=string, 2=map, 3=list
 }
 
@@ -53,9 +53,11 @@ var IntrinsicPkgs = map[string]string{}
 
 // intrinsicTable 第一版表。Native 行只用于文档/后续切换，不参与 lowering。
 var intrinsicTable = []IntrinsicEntry{
-	// string：内容比较交给 std:strings.eq/ne；+ / len / cap / 索引保留原生实现。
+	// string：内容比较交给 std:strings.eq/ne，重复交给 repeatN；
+	// + / len / cap / 索引保留原生实现。
 	{Kind: "string", Op: "==", Pkg: "std:strings", Fn: "eq", Form: IntrinsicCall, Phase: 1},
 	{Kind: "string", Op: "!=", Pkg: "std:strings", Fn: "ne", Form: IntrinsicCall, Phase: 1},
+	{Kind: "string", Op: "*", Pkg: "std:strings", Fn: "repeatN", Form: IntrinsicCall, Phase: 1},
 	{Kind: "string", Op: "+", Form: IntrinsicNative, Phase: 1},
 	{Kind: "string", Op: "len", Form: IntrinsicNative, Phase: 1},
 	{Kind: "string", Op: "cap", Form: IntrinsicNative, Phase: 1},
@@ -151,6 +153,33 @@ func isStringLiteral(exp *Expression) bool {
 		exp.Type != nil && exp.Type.Kind() == "string"
 }
 
+// lowerIntrinsicCall 把当前表达式改写成 entry 指定的普通函数调用。
+// 调用方负责常量折叠等特殊路径；这里只处理运行期 lowering。
+func (exp *Expression) lowerIntrinsicCall(p *Parser, entry *IntrinsicEntry, resultType typeSys.Type, args ...*Expression) bool {
+	if entry == nil || entry.Form != IntrinsicCall {
+		return false
+	}
+	fb := resolveIntrinsicFunc(p, entry)
+	if fb == nil || len(fb.Args) != len(args) {
+		return false
+	}
+	fb.Useful = true
+	callArgs := make([]*ArgBlock, 0, len(args))
+	for _, arg := range args {
+		callArgs = append(callArgs, &ArgBlock{Value: arg, Type: arg.Type})
+	}
+	exp.Call = &CallBlock{
+		Name: fb.Name,
+		Func: fb,
+		Args: callArgs,
+	}
+	exp.Separator = ""
+	exp.Left = nil
+	exp.Right = nil
+	exp.Type = resultType
+	return true
+}
+
 // tryIntrinsicStringEq 在 string ==/!= 的运行期路径上把表达式改写成
 // std:strings.eq/ne 调用。常量字面量仍走本地折叠，避免无谓调用。
 //
@@ -185,27 +214,25 @@ func (exp *Expression) tryIntrinsicStringEq(p *Parser) bool {
 		return true
 	}
 
-	fb := resolveIntrinsicFunc(p, entry)
-	if fb == nil {
-		// std 包未加载时回退旧行为；CUTE_NO_INTRINSIC 已显式关闭。
-		return false
-	}
-	if len(fb.Args) != 2 {
-		return false
-	}
-	fb.Useful = true
+	return exp.lowerIntrinsicCall(p, entry, typeSys.GetSystemType("bool"), exp.Left, exp.Right)
+}
 
-	exp.Call = &CallBlock{
-		Name: fb.Name,
-		Func: fb,
-		Args: []*ArgBlock{
-			{Value: exp.Left, Type: exp.Left.Type},
-			{Value: exp.Right, Type: exp.Right.Type},
-		},
+// tryIntrinsicStringMul 在 string * int 的运行期路径上把表达式改写成
+// std:strings.repeatN 调用。常量折叠仍由 checkMul 本地完成。
+func (exp *Expression) tryIntrinsicStringMul(p *Parser) bool {
+	if IntrinsicDisabled() {
+		return false
 	}
-	exp.Separator = ""
-	exp.Left = nil
-	exp.Right = nil
-	exp.Type = typeSys.GetSystemType("bool")
-	return true
+	if exp.Left == nil || exp.Right == nil ||
+		exp.Left.Type == nil || exp.Right.Type == nil {
+		return false
+	}
+	if exp.Left.Type.Kind() != "string" || exp.Right.Type.Kind() != "int" {
+		return false
+	}
+	entry := LookupIntrinsic("string", "*")
+	if entry == nil || entry.Form != IntrinsicCall {
+		return false
+	}
+	return exp.lowerIntrinsicCall(p, entry, typeSys.GetSystemType("string"), exp.Left, exp.Right)
 }
