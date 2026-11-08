@@ -9,6 +9,7 @@ import (
 type SwitchBlock struct {
 	Target *Expression  // switch 后面的表达式
 	Cases  []*CaseBlock // case 分支的值列表（在 Parse 阶段填充，供编译器使用）
+	Offset int          // 代码生成期分配的唯一编号（switch_<n> / break 定位）
 }
 
 // CaseBlock 存储单个 case 分支的信息（供编译器使用）

@@ -350,6 +350,12 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		return c.compileForBlock(n)
 	case *parser.BreakBlock:
 		return c.compileBreakBlock(n)
+	case *parser.ContinueBlock:
+		return c.compileContinueBlock(n)
+	case *parser.FallthroughBlock:
+		// fallthrough 本身不生成代码；是否跳到下一个 case 由
+		// compileSwitchBlock 根据 case 末尾节点决定。
+		return ""
 	case *parser.SwitchBlock:
 		return c.compileSwitchBlock(n)
 	case *parser.CaseBlock:
@@ -663,7 +669,8 @@ func (c *Compiler) compileElseBlock(ifBlock *parser.IfBlock, label string) strin
 func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 	switchBlock := n.Value.(*parser.SwitchBlock)
 	c.Ctx.SwitchCount++
-	label := fmt.Sprintf("switch_%d", c.Ctx.SwitchCount)
+	switchBlock.Offset = c.Ctx.SwitchCount
+	label := fmt.Sprintf("switch_%d", switchBlock.Offset)
 	endLabel := "switch_end_" + label
 
 	// 根据架构选择寄存器名
@@ -681,18 +688,24 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 		code += c.Ctx.Arch.Exp(switchBlock.Target, scratchReg1, "switch target")
 	}
 
-	// 使用 SwitchBlock.Cases 信息 + 子节点中的 CaseClause 进行编译
-	// CaseClause 节点在 n.Children 中，case body 语句是 CaseClause 的子节点
-	defaultIdx := -1
-	caseIdx := 0
+	// CaseBlock 节点在 n.Children 中，顺序即源码顺序。
+	// 标签按源码顺序编号，default 不再特殊移到最后。
+	caseNodes := make([]*parser.Node, 0, len(switchBlock.Cases))
+	for _, child := range n.Children {
+		if _, ok := child.Value.(*parser.CaseBlock); ok {
+			caseNodes = append(caseNodes, child)
+		}
+	}
 
 	// 先为每个 case 生成比较跳转
-	for i, sc := range switchBlock.Cases {
+	defaultLabel := ""
+	for i, child := range caseNodes {
+		sc := child.Value.(*parser.CaseBlock)
+		caseLabel := fmt.Sprintf("case_%s_%d", label, i)
 		if sc.IsDefault {
-			defaultIdx = i
+			defaultLabel = caseLabel
 			continue
 		}
-		caseLabel := fmt.Sprintf("case_%s_%d", label, caseIdx)
 		for _, val := range sc.Values {
 			// 编译 case 值到寄存器
 			code += c.Ctx.Arch.Exp(val, scratchReg2, "case value")
@@ -708,49 +721,35 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 			}
 			code += utils.Format("je " + caseLabel)
 		}
-		caseIdx++
 	}
 
 	// 没有匹配的 case，跳转到 default 或 end
-	if defaultIdx >= 0 {
-		code += utils.Format("jmp switch_default_" + label)
+	if defaultLabel != "" {
+		code += utils.Format("jmp " + defaultLabel)
 	} else {
 		code += utils.Format("jmp " + endLabel)
 	}
 
-	// 编译每个 case 的 body（遍历 CaseClause 子节点，编译其子节点中的语句）
-	caseIdx = 0
-	for _, child := range n.Children {
-		cc, ok := child.Value.(*parser.CaseBlock)
-		if !ok {
-			continue
-		}
-		if cc.IsDefault {
-			continue
-		}
-		caseLabel := fmt.Sprintf("case_%s_%d", label, caseIdx)
-		code += utils.Format(caseLabel + ":")
-		// 编译 CaseClause 的子节点（case body 语句）
+	// 按源码顺序编译每个 case 的 body
+	for i, child := range caseNodes {
+		code += utils.Format(fmt.Sprintf("case_%s_%d:", label, i))
+
+		hasFallthrough := false
 		for _, stmt := range child.Children {
+			if _, ok := stmt.Value.(*parser.FallthroughBlock); ok {
+				hasFallthrough = true
+				continue
+			}
 			code += c.compileChild(stmt)
 		}
-		// 隐式 break：跳出 switch
-		code += utils.Format("jmp " + endLabel)
-		caseIdx++
-	}
 
-	// 编译 default body
-	if defaultIdx >= 0 {
-		code += utils.Format("switch_default_" + label + ":")
-		// 找到 default 对应的 CaseClause 子节点
-		for _, child := range n.Children {
-			cc, ok := child.Value.(*parser.CaseBlock)
-			if ok && cc.IsDefault {
-				for _, stmt := range child.Children {
-					code += c.compileChild(stmt)
-				}
-				break
-			}
+		if hasFallthrough && i+1 < len(caseNodes) {
+			// fallthrough：直接进入下一个 case 的 body 标签。
+			code += utils.Format(fmt.Sprintf("jmp case_%s_%d; fallthrough", label, i+1))
+		} else {
+			// 隐式 break：跳出 switch。最后一个 case 的 fallthrough
+			// 已在 Parse 期报错，这里兜底跳出口。
+			code += utils.Format("jmp " + endLabel)
 		}
 	}
 
@@ -929,6 +928,8 @@ func (c *Compiler) compileForBlock(n *parser.Node) string {
 	}
 
 	code += c.Compile(n)
+	// continue 落点：先执行块级释放，再进入增量表达式。
+	code += utils.Format("for_" + strconv.Itoa(forBlock.Offset) + "_continue:")
 	// 块级释放：在循环体末尾释放该块内分配的对象
 	code += c.emitBlockFrees(n)
 	code += c.Ctx.Arch.ForEnd(forBlock, incrPlan.code)
@@ -1056,6 +1057,8 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 
 	// 8. 编译循环体
 	code += c.Compile(n)
+	// continue 落点：先执行块级释放，再做索引自增。
+	code += utils.Format("for_" + strconv.Itoa(forBlock.Offset) + "_continue:")
 	// 块级释放：在循环体末尾释放该块内分配的对象
 	code += c.emitBlockFrees(n)
 
@@ -1077,24 +1080,38 @@ func (c *Compiler) compileForRangeBlock(n *parser.Node) string {
 
 func (c *Compiler) compileBreakBlock(n *parser.Node) string {
 	breakBlock := n.Value.(*parser.BreakBlock)
-	current := n.Father
-	forLevel := 0
-	var targetFor *parser.ForBlock
-	for current != nil {
-		if fb, ok := current.Value.(*parser.ForBlock); ok {
-			forLevel++
-			if forLevel == breakBlock.Level {
-				targetFor = fb
-				break
+	seen := 0
+	for current := n.Father; current != nil; current = current.Father {
+		switch v := current.Value.(type) {
+		case *parser.ForBlock:
+			seen++
+			if seen == breakBlock.Level {
+				return utils.Format("jmp for_" + strconv.Itoa(v.Offset) + "_end")
+			}
+		case *parser.SwitchBlock:
+			seen++
+			if seen == breakBlock.Level {
+				return utils.Format("jmp switch_end_switch_" + strconv.Itoa(v.Offset))
 			}
 		}
-		current = current.Father
 	}
-	if targetFor == nil {
-		return "; break: no enclosing for loop at level " + fmt.Sprintf("%d", breakBlock.Level) + "\n"
+	return "; break: no enclosing loop/switch at level " + fmt.Sprintf("%d", breakBlock.Level) + "\n"
+}
+
+// compileContinueBlock 生成 continue 跳转。Go 语义：只统计 for 循环，
+// switch 不构成 continue 目标；目标标签位于循环体释放之后、增量之前。
+func (c *Compiler) compileContinueBlock(n *parser.Node) string {
+	continueBlock := n.Value.(*parser.ContinueBlock)
+	seen := 0
+	for current := n.Father; current != nil; current = current.Father {
+		if fb, ok := current.Value.(*parser.ForBlock); ok {
+			seen++
+			if seen == continueBlock.Level {
+				return utils.Format("jmp for_" + strconv.Itoa(fb.Offset) + "_continue")
+			}
+		}
 	}
-	forLabel := "for_" + strconv.Itoa(targetFor.Offset)
-	return utils.Format("jmp " + forLabel + "_end")
+	return "; continue: no enclosing loop at level " + fmt.Sprintf("%d", continueBlock.Level) + "\n"
 }
 
 func (c *Compiler) compileTypeBlock(n *parser.Node) string {

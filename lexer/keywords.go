@@ -73,6 +73,7 @@ var (
 		"ret":       PROCESSCONTROL, // 旧拼法，保留兼容
 		"break":     PROCESSCONTROL,
 		"continue":  PROCESSCONTROL,
+		"fallthrough": PROCESSCONTROL,
 		"else":      PROCESSCONTROL,
 		"switch":    PROCESSCONTROL,
 		"case":      PROCESSCONTROL,

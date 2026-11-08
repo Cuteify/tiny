@@ -51,6 +51,26 @@ func (f *ForBlock) Parse(p *Parser) {
 	p.Lexer.Skip('{')
 }
 
+// ParseWhile 解析 while 条件循环。复用 ForBlock 形态（Init/Increment 为空），
+// 代码生成与普通 for 完全一致。
+func (f *ForBlock) ParseWhile(p *Parser) {
+	forNode := &Node{Value: f}
+
+	p.ThisBlock.AddChild(forNode)
+	p.ThisBlock = forNode
+
+	endCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: "{"}, p.FindEndCursor())
+	if endCursor == -1 {
+		p.Error.MissError("While Loop Error", p.Lexer.Cursor, "while loop must end by '{'")
+	}
+	f.Condition = p.ParseExp(endCursor - 1)
+	if f.Condition == nil {
+		p.Error.MissError("While Loop Error", p.Lexer.Cursor, "while loop condition is empty")
+	}
+
+	p.Lexer.Skip('{')
+}
+
 // parseRange 解析 `for i, v := range coll`。成功返回 true，失败时游标已复位。
 //
 // RangeNames 的类型留到 Check 里定：被遍历表达式的类型在 Parse 期常常还

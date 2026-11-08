@@ -31,4 +31,20 @@ func (b *BreakBlock) Parse(p *Parser) {
 	} else {
 		p.Lexer.SetCursor(nextToken.Cursor)
 	}
+
+	depth := 0
+	for b := p.ThisBlock; b != nil; b = b.Father {
+		switch b.Value.(type) {
+		case *ForBlock, *SwitchBlock:
+			depth++
+		}
+	}
+	if depth == 0 {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'break' outside of loop or switch")
+		return
+	}
+	if b.Level > depth {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"break level "+strconv.Itoa(b.Level)+" exceeds enclosing loop/switch depth "+strconv.Itoa(depth))
+	}
 }

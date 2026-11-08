@@ -147,10 +147,29 @@
 
 ## P8 控制流
 
-- [ ] continue/while
-- [ ] 多级跳转
-- [ ] fallthrough
-- [ ] 测试与提交
+- [x] continue/while
+  - `lexer/keywords.go`：`fallthrough` 加入 `PROCESSCONTROL`
+  - `parser/continue.go`：`ContinueBlock` 支持 `continue` / `continue N` / `continue(N)`；只统计 `ForBlock`，越级或循环外显式报错
+  - `parser/for.go`：`while` 复用 `ForBlock`（`ParseWhile`，Init/Increment 为空）
+  - `parser/parser.go`：`processControlToken` 增加 `while`/`continue`/`fallthrough`；`try`/`except`/`finally` 显式报“暂不支持”
+- [x] 多级跳转
+  - `parser/break.go`：校验 break 层级，`ForBlock`/`SwitchBlock` 都计入
+  - `compile/compiler.go`：`compileBreakBlock` 按祖先顺序定位 for/switch 目标；新增 `compileContinueBlock` 只找 for
+  - `compileForBlock`/`compileForRangeBlock` 在块级释放前发 `for_<n>_continue:`，再执行增量/索引自增
+  - `parser/switch.go`：`SwitchBlock.Offset`，供 break 定位 `switch_end_switch_<n>`
+- [x] fallthrough
+  - `parser/fallthrough.go`：只允许直接位于 case 体内
+  - `parser/node.go`：case 中 fallthrough 之后再加语句报错
+  - `parser/parser.go`：switch 关闭时最后一个 case 以 fallthrough 结尾报错
+  - `compileSwitchBlock`：case body 按源码顺序编译，标签稳定为 `case_switch_<n>_<i>`；有 fallthrough 跳下一个 case，否则跳出口（default 不再最后统一编译）
+- [x] 附带修复
+  - `parser/var.go`：`removeOldStaticVal` 遇到 break/continue/return/fallthrough/switch 停止删除旧常量赋值，避免 `r=20; break; r=30` 误删 `r=20`
+- [x] 测试与提交
+  - `test/controlFlow2`：while 倒计时、while 内 continue/break、continue、break 2、continue 2、switch break、switch 内 continue、switch→外层 break 2、fallthrough（含 default 在中间）；x86_64/x86 exit=42
+  - `test/controlFlow` continue 生效后 exit=37（原 39）
+  - 负例验证：fallthrough 非末尾/最后一个 case、continue 循环外、break/continue 越级、try 均显式报错
+  - P0 回归与基线一致；全量 `-S` 扫描仅剩既有失败（x86_64：fnptr_test/iface_dispatch/stringUtils；x86 另加 convertFloat/sortStrOnly/sortTest）
+- [x] 提交：`实现: 控制流语法补全`
 
 ## P9 文档
 

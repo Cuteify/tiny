@@ -133,6 +133,19 @@ func RebuildBlockIndex(root *Node) {
 
 // AddChild 向当前节点添加子节点并建立父子关系
 func (n *Node) AddChild(node *Node) {
+	// fallthrough 必须是 case 的最后一条语句：case 里已有 fallthrough
+	// 还继续追加语句即报错。
+	if _, isCase := n.Value.(*CaseBlock); isCase {
+		for _, child := range n.Children {
+			if _, ok := child.Value.(*FallthroughBlock); ok {
+				if n.Parser != nil {
+					n.Parser.Error.MissError("Syntax Error", n.Parser.Lexer.Cursor,
+						"fallthrough must be the last statement in a case")
+				}
+				break
+			}
+		}
+	}
 	n.Children = append(n.Children, node)
 	node.Father = n
 	if node.Value != nil {

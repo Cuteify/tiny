@@ -108,6 +108,7 @@ func (p *Parser) Next() (finish bool) {
 		// case 分支与所属 switch 只共用一个 '}'：若当前停在 case 上，
 		// 要连退两层，否则 switch 之后的语句会被挂进 switch 节点里。
 		if _, isCase := p.ThisBlock.Value.(*CaseBlock); isCase {
+			p.checkFallthroughFinalCase()
 			p.Back(1)
 			if _, isSwitch := p.ThisBlock.Value.(*SwitchBlock); isSwitch {
 				p.Back(1)
@@ -320,6 +321,18 @@ func (p *Parser) processFuncToken(code lexer.Token) {
 	}
 }
 
+// checkFallthroughFinalCase 在 switch 关闭时检查最后一个 case 是否以
+// fallthrough 结尾——最后一个 case 没有下一个 body 可跳，必须报错。
+func (p *Parser) checkFallthroughFinalCase() {
+	children := p.ThisBlock.Children
+	if len(children) == 0 {
+		return
+	}
+	if _, ok := children[len(children)-1].Value.(*FallthroughBlock); ok {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "cannot fallthrough final case in switch")
+	}
+}
+
 func (p *Parser) processControlToken(code lexer.Token) {
 	switch code.Value {
 	case "if":
@@ -334,11 +347,24 @@ func (p *Parser) processControlToken(code lexer.Token) {
 	case "for":
 		block := &ForBlock{}
 		block.Parse(p)
+	case "while":
+		block := &ForBlock{}
+		block.ParseWhile(p)
 	case "break":
 		block := &BreakBlock{}
 		block.Parse(p)
 		node := &Node{Value: block}
 		p.ThisBlock.AddChild(node)
+	case "continue":
+		block := &ContinueBlock{}
+		block.Parse(p)
+		p.ThisBlock.AddChild(&Node{Value: block})
+	case "fallthrough":
+		block := &FallthroughBlock{}
+		block.Parse(p)
+		p.ThisBlock.AddChild(&Node{Value: block})
+	case "try", "except", "finally":
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'"+code.Value+"' is not supported yet")
 	case "switch":
 		block := &SwitchBlock{}
 		block.Parse(p)

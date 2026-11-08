@@ -574,8 +574,10 @@ func (v *VarBlock) removeOldStaticVal(p *Parser) {
 				continue
 			}
 			switch p.ThisBlock.Children[i].Value.(type) {
-			case *FuncBlock, *ForBlock, *ElseBlock, *IfBlock:
-				// 遇到控制流块，停止搜索
+			case *FuncBlock, *ForBlock, *ElseBlock, *IfBlock,
+				*SwitchBlock, *BreakBlock, *ContinueBlock, *ReturnBlock, *FallthroughBlock:
+				// 遇到控制流块，停止搜索：后面的赋值不保证执行，
+				// 不能把控制转移之前的常量赋值当作死存储删除。
 				goto end
 			case *VarBlock:
 				tmp := p.ThisBlock.Children[i].Value.(*VarBlock)
