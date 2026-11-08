@@ -52,6 +52,18 @@ func (c *ECompiler) collectRec(exp *parser.Expression) *ExpInfo {
 		}
 	}
 
+	// 调用实参：内建调用（显式数值转换、len/cap 等）会用当前 ECompiler
+	// 直接生成实参表达式，必须提前收集实参的 SU/子节点信息；
+	// 否则复合实参（如 u32(bits >> 32)）在 generate 时找不到 Left/Right，
+	// 被当成空表达式静默丢弃。
+	if exp.Call != nil {
+		for _, arg := range exp.Call.Args {
+			if arg != nil && arg.Value != nil {
+				c.collectRec(arg.Value)
+			}
+		}
+	}
+
 	// 叶子节点
 	if exp.Separator == "" {
 		if exp.IsConst() {
@@ -123,6 +135,13 @@ func (c *ECompiler) assignExpIDRec(exp *parser.Expression) {
 
 	c.assignExpIDRec(exp.Left)
 	c.assignExpIDRec(exp.Right)
+	if exp.Call != nil {
+		for _, arg := range exp.Call.Args {
+			if arg != nil && arg.Value != nil {
+				c.assignExpIDRec(arg.Value)
+			}
+		}
+	}
 }
 
 // expKey 生成表达式结构 key（排除调用和变量）

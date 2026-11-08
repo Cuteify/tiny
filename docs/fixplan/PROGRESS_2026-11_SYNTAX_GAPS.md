@@ -49,10 +49,21 @@
 
 ## P3 数值转换
 
-- [ ] checkBuiltin 转换分支
-- [ ] codegen 转换
-- [ ] unsafe.cast 回归
-- [ ] 测试与提交
+- [x] checkBuiltin 转换分支
+  - `parser/call.go` 新增 `CallBlock.ConvertType`；`convertTypeNames` 覆盖 int/uint/i8–i64/u8–u64/别名/byte/f32/f64
+  - `checkConvertBuiltin`：单实参校验、源类型限定整数/浮点/byte、x86 显式拒绝浮点与 64 位转换
+- [x] codegen 转换
+  - `compile/exp/exp.go` 的 `builtinCall` 按 `ConvertType` 分派 `builtinConvert`
+  - float→int `cvttsd2si`/`cvttss2si`；int→float `cvtsi2sd`/`cvtsi2ss`；f32↔f64 `cvtss2sd`/`cvtsd2ss`
+  - int 窄化截断低位；有符号 `movsx`/`movsxd`，无符号 `movzx`/`mov eax,eax`
+- [x] unsafe.cast 回归
+  - 保持 codegen 透传（位级重解释），`unsafe.cast[byte]`、`unsafe.cast[ptr]`、`unsafe.cast[*int]` 均通过
+- [x] 测试与提交
+  - `test/convert`：整数截断/扩展、变量/链式转换、`unsafe.cast` 三种形态；x86_64 与 x86 均 exit=42
+  - `test/convertFloat`：浮点↔整数、f32↔f64 往返、`f64(7)` 位模式高低 32 位校验；x86_64 exit=42
+  - 负例：`neg32_float` 报 `floating-point conversion f64 -> int is not supported on 32-bit target`；`neg32_i64` 报 `64-bit conversion int -> i64 is not supported on 32-bit target`
+  - 修复 `compile/exp/collect.go`：调用实参递归进入 `expInfo`，避免 `u32(bits >> 32)` 这类复合实参在 `builtinConvert` 里被静默丢弃
+  - 回归与基线一致：operatorOverload 42、overload 42、controlFlow 39、complexTest 17、for_range_test 139、gcRetFree 3/0、fullSyntaxTest 1、structValue 11、structMethod 45、enum 42、iface_generic 0、mp_map 74
 
 ## P4 自动导入收窄
 

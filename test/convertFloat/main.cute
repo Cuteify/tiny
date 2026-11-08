@@ -1,0 +1,84 @@
+// 显式数值转换：浮点 <-> 整数、f32 <-> f64（x86_64）
+fn main() int {
+    var failures: int = 0
+
+    // 浮点 -> 整数：向零截断
+    if int(3.9) != 3 {
+        println("FAIL 1"); failures += 1
+    }
+    if int(-3.9) != -3 {
+        println("FAIL 2"); failures += 1
+    }
+    if i32(3.9) != 3 {
+        println("FAIL 3"); failures += 1
+    }
+    if i64(-3.9) != -3 {
+        println("FAIL 4"); failures += 1
+    }
+    if int(u8(3.9)) != 3 {
+        println("FAIL 5"); failures += 1
+    }
+    var f: f64 = 3.9
+    if int(f) != 3 {
+        println("FAIL 6"); failures += 1
+    }
+    if i32(f) != 3 {
+        println("FAIL 7"); failures += 1
+    }
+    if u64(f) != 3 {
+        println("FAIL 8"); failures += 1
+    }
+
+    // 整数 -> 浮点
+    if f64(7) != 7.0 {
+        println("FAIL 9"); failures += 1
+    }
+    // f64(7) 的 IEEE-754 位模式：0x401C000000000000。
+    // 大整数常量按 float64 存储会丢低位，因此拆成高低 32 位验证。
+    var bits: u64 = unsafe.cast[u64](f64(7))
+    var hi: u32 = u32(bits >> 32)
+    if hi != 1075576832 {
+        println("FAIL 9b"); failures += 1
+    }
+    var lo: u32 = unsafe.cast[u32](bits)
+    if lo != 0 {
+        println("FAIL 9c"); failures += 1
+    }
+    var n: int = 7
+    if f64(n) != 7.0 {
+        println("FAIL 10"); failures += 1
+    }
+    var m: i64 = i64(-3)
+    if f64(m) != -3.0 {
+        println("FAIL 11"); failures += 1
+    }
+    var u: u32 = u32(42)
+    if f64(u) != 42.0 {
+        println("FAIL 12"); failures += 1
+    }
+
+    // f32 <-> f64 往返
+    if f64(f32(3.5)) != 3.5 {
+        println("FAIL 13"); failures += 1
+    }
+    var g: f32 = f32(2.25)
+    if f64(g) != 2.25 {
+        println("FAIL 14"); failures += 1
+    }
+    if int(f32(3.9)) != 3 {
+        println("FAIL 15"); failures += 1
+    }
+    if i64(f32(-3.9)) != -3 {
+        println("FAIL 16"); failures += 1
+    }
+    if int(f32(42)) != 42 {
+        println("FAIL 17"); failures += 1
+    }
+
+    if failures == 0 {
+        println("convertFloat: ALL PASS")
+        ret 42
+    }
+    println("convertFloat: FAIL")
+    ret failures
+}

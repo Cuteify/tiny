@@ -13,6 +13,7 @@ type CallBlock struct {
 	Node         *Node
 	ThisVar      *VarBlock
 	NewType      typeSys.Type // new(T) 的目标类型（内建堆对象创建）
+	ConvertType  typeSys.Type // int(x)/f64(x) 等显式数值转换的目标类型
 	IsRC         bool         // 是否为 RC（引用计数）调用
 	IsVariadic   bool         // 调用是否包含变参参数
 	VariadicType typeSys.Type // 变参参数的元素类型
@@ -423,8 +424,87 @@ func (c *CallBlock) Parse(p *Parser) {
 	p.ThisBlock.AddChild(&Node{Value: c})
 }
 
+// convertTypeNames 显式数值转换的函数名到系统类型名映射。
+// 别名（int64/uint32…）与 GetSystemType 保持一致，byte 视作 u8。
+var convertTypeNames = map[string]string{
+	"int": "int", "uint": "uint",
+	"i8": "i8", "i16": "i16", "i32": "i32", "i64": "i64",
+	"u8": "u8", "u16": "u16", "u32": "u32", "u64": "u64",
+	"int8": "i8", "int16": "i16", "int32": "i32", "int64": "i64",
+	"uint8": "u8", "uint16": "u16", "uint32": "u32", "uint64": "u64",
+	"byte": "byte",
+	"f32":  "f32", "f64": "f64",
+}
+
+// isNumericConvertSource 判断类型能否作为显式数值转换的源。
+// byte 是一字节无符号整数，允许参与；bool/string/容器不允许。
+func isNumericConvertSource(t typeSys.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, ok := t.(*typeSys.TypeParam); ok {
+		return true
+	}
+	return typeSys.CheckKind(t, "int", "uint", "float", "byte")
+}
+
+// checkConvertBuiltin 处理 int(x)/i64(x)/f64(x) 等显式数值转换。
+// 转换语义是数值转换（截断/扩展/浮点舍入），不是 unsafe.cast 的位重解释。
+func (c *CallBlock) checkConvertBuiltin(p *Parser, name string) bool {
+	targetName, ok := convertTypeNames[name]
+	if !ok {
+		return false
+	}
+	target := typeSys.GetSystemType(targetName)
+	if target == nil {
+		return false
+	}
+	if len(c.Args) != 1 || c.Args[0] == nil || c.Args[0].Value == nil {
+		p.Error.MissError("Call Error", p.Lexer.Cursor,
+			"conversion to "+name+" expects exactly one argument")
+		return false
+	}
+	arg := c.Args[0].Value
+	if !arg.Check(p) {
+		return false
+	}
+	src := arg.Type
+	if src == nil {
+		// 跨文件/跨包类型尚未解析：留待合并后的 Check 重试。
+		return false
+	}
+	if !isNumericConvertSource(src) {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"cannot convert "+safeTypeName(src)+" to "+targetName)
+		return false
+	}
+	// 32 位后端暂不支持浮点转换与 64 位标量转换：显式报错，避免生成错误代码。
+	if typeSys.TargetPointerSize == 4 {
+		unsupported := ""
+		if typeSys.CheckKind(src, "float") || typeSys.CheckKind(target, "float") {
+			unsupported = "floating-point"
+		} else if src.Size() > 4 || target.Size() > 4 {
+			unsupported = "64-bit"
+		}
+		if unsupported != "" {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				unsupported+" conversion "+safeTypeName(src)+" -> "+targetName+
+					" is not supported on 32-bit target")
+			return false
+		}
+	}
+	c.ConvertType = target
+	c.Func = &FuncBlock{Return: []typeSys.Type{target}}
+	return true
+}
+
 func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	name := c.Name.String()
+	if !c.Name.IsPath() {
+		if c.checkConvertBuiltin(p, name) {
+			return true
+		}
+	}
 	switch name {
 	case "new":
 		// new(T[, v...])：堆对象创建内建，返回 *T；

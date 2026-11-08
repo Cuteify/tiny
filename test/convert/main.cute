@@ -1,0 +1,81 @@
+// 显式数值转换：整数截断/扩展（x86_64 与 x86 共用）
+fn main() int {
+    var failures: int = 0
+
+    // 常量转换：窄化截断低位
+    if u8(300) != 44 {
+        failures += 1
+    }
+    if int(byte(300)) != 44 {
+        failures += 1
+    }
+    if i8(200) != -56 {
+        failures += 1
+    }
+    if i16(70000) != 4464 {
+        failures += 1
+    }
+    if u8(i16(300)) != 44 {
+        failures += 1
+    }
+
+    // 变量转换：有符号扩展 / 无符号零扩展
+    var a: i8 = i8(200)
+    if int(a) != -56 {
+        failures += 1
+    }
+    if u16(a) != 65480 {
+        failures += 1
+    }
+    var b: u8 = u8(200)
+    if int(b) != 200 {
+        failures += 1
+    }
+    if i16(b) != 200 {
+        failures += 1
+    }
+    var c: i16 = i16(-2)
+    if int(c) != -2 {
+        failures += 1
+    }
+    if u16(c) != 65534 {
+        failures += 1
+    }
+    var d: i32 = i32(70000)
+    if int(d) != 70000 {
+        failures += 1
+    }
+
+    // 链式转换
+    if int(u8(300)) != 44 {
+        failures += 1
+    }
+    if i8(u16(65535)) != -1 {
+        failures += 1
+    }
+
+    // unsafe.cast 保持位级重解释，不做数值转换
+    var x: int = 300
+    var raw: byte = unsafe.cast[byte](x)
+    if int(raw) != 44 {
+        failures += 1
+    }
+    var p: ptr
+    var p2: ptr = unsafe.cast[ptr](p)
+    if p2 != p {
+        failures += 1
+    }
+    var y: int = 5
+    var q: *int = unsafe.cast[*int](&y)
+    *q = 9
+    if y != 9 {
+        failures += 1
+    }
+
+    if failures == 0 {
+        println("convert: ALL PASS")
+        ret 42
+    }
+    println("convert: FAIL")
+    ret failures
+}

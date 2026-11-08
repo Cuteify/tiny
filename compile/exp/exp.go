@@ -2664,7 +2664,7 @@ func (c *ECompiler) mapLenValue(arg *parser.Expression, result string) string {
 		if memPrefix(dst) == "" {
 			dst = ln + " " + dst
 		}
-		code += utils.Format("mov "+dst+", "+matchMemWidth(dst, c.arch.ReturnReg()))
+		code += utils.Format("mov " + dst + ", " + matchMemWidth(dst, c.arch.ReturnReg()))
 	} else {
 		code += utils.Format("mov " + result + ", " + c.arch.ReturnReg())
 	}
@@ -3938,6 +3938,12 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 	name := call.Name.String()
 	_, lenOff, capOff := c.listFields()
 	switch name {
+	case "int", "uint", "i8", "i16", "i32", "i64",
+		"u8", "u16", "u32", "u64", "byte", "f32", "f64",
+		"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64":
+		if call.ConvertType != nil {
+			return c.builtinConvert(call, result)
+		}
 	case "len", "cap":
 		if len(call.Args) == 1 && call.Args[0] != nil && call.Args[0].Value != nil &&
 			call.Args[0].Value.Type != nil {
@@ -4008,6 +4014,223 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 		}
 	}
 	return ""
+}
+
+// builtinConvert 生成显式数值转换 int(x)/i64(x)/f64(x) 等。
+// 与 unsafe.cast 不同：这里按数值语义转换（截断/扩展/浮点舍入），
+// 不是位模式重解释。
+func (c *ECompiler) builtinConvert(call *parser.CallBlock, result string) string {
+	if call == nil || call.ConvertType == nil || len(call.Args) != 1 ||
+		call.Args[0] == nil || call.Args[0].Value == nil {
+		return ""
+	}
+	arg := call.Args[0].Value
+	if arg.Type == nil {
+		return ""
+	}
+	code := c.generate(arg, c.arch.ReturnReg())
+	code += c.emitConvert(arg.Type, call.ConvertType)
+	code += c.storeConvertResult(result, call.ConvertType)
+	return code
+}
+
+// emitConvert 把返回寄存器中的 src 值按数值语义转换成 dst。
+// 约定：f32/f64 都以 IEEE-754 位模式存放在通用寄存器中，转换借 XMM0 中转。
+func (c *ECompiler) emitConvert(src, dst typeSys.Type) string {
+	srcFloat := typeSys.CheckKind(src, "float")
+	dstFloat := typeSys.CheckKind(dst, "float")
+	reg := c.arch.ReturnReg()
+
+	// 同类型：无操作。
+	if typeSys.TypeEqual(src, dst) {
+		return ""
+	}
+
+	switch {
+	case srcFloat && dstFloat:
+		if src.Type() == "f32" {
+			// f32 → f64
+			return utils.Format("movd XMM0, "+eName(reg)+"; f32 bits") +
+				utils.Format("cvtss2sd XMM0, XMM0; f32 -> f64") +
+				utils.Format("movq "+reg+", XMM0")
+		}
+		// f64 → f32
+		return utils.Format("movq XMM0, "+reg+"; f64 bits") +
+			utils.Format("cvtsd2ss XMM0, XMM0; f64 -> f32") +
+			utils.Format("movd "+eName(reg)+", XMM0")
+
+	case srcFloat:
+		// 浮点 → 整数：向零截断。
+		if src.Type() == "f32" {
+			return utils.Format("movd XMM0, "+eName(reg)+"; f32 bits") +
+				utils.Format("cvttss2si "+reg+", XMM0; f32 -> int") +
+				c.normalizeIntReg(dst)
+		}
+		return utils.Format("movq XMM0, "+reg+"; f64 bits") +
+			utils.Format("cvttsd2si "+reg+", XMM0; f64 -> int") +
+			c.normalizeIntReg(dst)
+
+	case dstFloat:
+		// 整数 → 浮点：先按源宽度扩展到 64 位（无符号 64 位超大值不在 v1 范围）。
+		code := c.extendIntReg(src)
+		if dst.Type() == "f32" {
+			return code +
+				utils.Format("cvtsi2ss XMM0, "+reg+"; int -> f32") +
+				utils.Format("movd "+eName(reg)+", XMM0")
+		}
+		return code +
+			utils.Format("cvtsi2sd XMM0, "+reg+"; int -> f64") +
+			utils.Format("movq "+reg+", XMM0")
+
+	default:
+		// 整数 → 整数：先按源宽度扩展，再按目标宽度归一化（截断低位）。
+		return c.extendIntReg(src) + c.normalizeIntReg(dst)
+	}
+}
+
+// intSigned 判断整数类型是否有符号。Kind "int" 覆盖 i8/i16/i32/i64/int。
+func intSigned(t typeSys.Type) bool {
+	if t == nil {
+		return true
+	}
+	if _, ok := t.(*typeSys.TypeParam); ok {
+		return true
+	}
+	return typeSys.CheckKind(t, "int")
+}
+
+// extendIntReg 把返回寄存器中的整数按源类型宽度扩展到寄存器全宽
+// （x86_64 扩展到 64 位；x86 扩展到 32 位）。
+func (c *ECompiler) extendIntReg(t typeSys.Type) string {
+	if t == nil {
+		return ""
+	}
+	reg := c.arch.ReturnReg()
+	size := t.Size()
+	signed := intSigned(t)
+	if c.arch.PointerSize() == 4 {
+		switch size {
+		case 1:
+			if signed {
+				return utils.Format("movsx " + reg + ", " + lo8(reg) + "; sign-extend i8")
+			}
+			return utils.Format("movzx " + reg + ", " + lo8(reg) + "; zero-extend u8")
+		case 2:
+			if signed {
+				return utils.Format("movsx " + reg + ", " + lo16(reg) + "; sign-extend i16")
+			}
+			return utils.Format("movzx " + reg + ", " + lo16(reg) + "; zero-extend u16")
+		}
+		return ""
+	}
+	switch size {
+	case 1:
+		if signed {
+			return utils.Format("movsx " + reg + ", " + lo8(reg) + "; sign-extend i8")
+		}
+		return utils.Format("movzx " + reg + ", " + lo8(reg) + "; zero-extend u8")
+	case 2:
+		if signed {
+			return utils.Format("movsx " + reg + ", " + lo16(reg) + "; sign-extend i16")
+		}
+		return utils.Format("movzx " + reg + ", " + lo16(reg) + "; zero-extend u16")
+	case 4:
+		if signed {
+			return utils.Format("movsxd " + reg + ", " + eName(reg) + "; sign-extend i32")
+		}
+		return utils.Format("mov " + eName(reg) + ", " + eName(reg) + "; zero-extend u32")
+	}
+	return ""
+}
+
+// normalizeIntReg 把转换结果按目标整数类型宽度归一化，保证寄存器里的
+// 值与目标类型语义一致（窄化截断低位，有符号补符号位）。
+func (c *ECompiler) normalizeIntReg(t typeSys.Type) string {
+	if t == nil {
+		return ""
+	}
+	size := t.Size()
+	if c.arch.PointerSize() == 8 && size == 8 {
+		return ""
+	}
+	if c.arch.PointerSize() == 4 && size >= 4 {
+		return ""
+	}
+	return c.extendIntReg(t)
+}
+
+// storeConvertResult 把返回寄存器中的转换结果交付到 result。
+// result 可能是寄存器名、内存操作数、"push" 或空串（结果留在返回寄存器）。
+func (c *ECompiler) storeConvertResult(result string, t typeSys.Type) string {
+	reg := c.arch.ReturnReg()
+	if result == "" || result == reg {
+		return ""
+	}
+	if result == "push" {
+		return utils.Format("push " + reg)
+	}
+	size := 8
+	if t != nil && t.Size() > 0 {
+		size = t.Size()
+	}
+	if strings.Contains(result, "[") {
+		dst := result
+		prefix := operandPrefix(dst)
+		if prefix == "" {
+			switch size {
+			case 1:
+				prefix = "BYTE"
+			case 2:
+				prefix = "WORD"
+			case 4:
+				prefix = "DWORD"
+			default:
+				prefix = "QWORD"
+			}
+			dst = prefix + " " + dst
+		}
+		low := reg
+		switch prefix {
+		case "BYTE":
+			low = lo8(reg)
+		case "WORD":
+			low = lo16(reg)
+		case "DWORD":
+			low = eName(reg)
+		}
+		return utils.Format("mov " + dst + ", " + low)
+	}
+	// 寄存器目标：按目标宽度取低寄存器名。
+	return utils.Format("mov " + regWidthName(result, size) + ", " + regWidthName(reg, size))
+}
+
+// operandPrefix 返回内存操作数已有的宽度前缀（容忍前缀与 '[' 之间的空格）。
+func operandPrefix(mem string) string {
+	u := strings.ToUpper(strings.TrimSpace(mem))
+	switch {
+	case strings.HasPrefix(u, "QWORD"):
+		return "QWORD"
+	case strings.HasPrefix(u, "DWORD"):
+		return "DWORD"
+	case strings.HasPrefix(u, "WORD"):
+		return "WORD"
+	case strings.HasPrefix(u, "BYTE"):
+		return "BYTE"
+	}
+	return ""
+}
+
+// regWidthName 返回寄存器按指定字节宽度的名字。
+func regWidthName(reg string, size int) string {
+	switch size {
+	case 1:
+		return lo8(reg)
+	case 2:
+		return lo16(reg)
+	case 4:
+		return eName(reg)
+	}
+	return reg
 }
 
 // builtinCopy copy(dst, src)：同 Kind 容器（str/str 或 list/list）元素拷贝，
