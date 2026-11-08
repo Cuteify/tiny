@@ -36,11 +36,30 @@ func isBuiltinIndexKind(t typeSys.Type) bool {
 	if t == nil {
 		return false
 	}
+	// *[]T：codegen 的 indexAccess/indexSet 会先解引用指针再按 list 处理，
+	// Check 必须与 codegen 保持同一种归类，不能把 *[]T 当自定义类型去
+	// lower 成 get/set（ListType 没有方法表）。
+	if t.IsPointer() {
+		if elem := t.Elem(); elem != nil && elem.Kind() == "list" {
+			return true
+		}
+	}
 	switch t.Kind() {
 	case "list", "string", "array", "map":
 		return true
 	}
 	return false
+}
+
+// builtinIndexTarget 返回内建索引/切片语义所针对的容器类型。
+// *[]T 解引用为 []T（与 codegen 的 indexAccess/indexSet 一致）。
+func builtinIndexTarget(t typeSys.Type) typeSys.Type {
+	if t != nil && t.IsPointer() {
+		if elem := t.Elem(); elem != nil && elem.Kind() == "list" {
+			return elem
+		}
+	}
+	return t
 }
 
 // intLiteral 构造 int 字面量表达式（供切片缺省边界使用）。
@@ -550,15 +569,16 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 		}
 	}
 
-	kind := indexed.Type.Kind()
+	indexedType := builtinIndexTarget(indexed.Type)
+	kind := indexedType.Kind()
 
 	switch kind {
 	case "list":
-		listType := indexed.Type.(*typeSys.ListType)
+		listType := indexedType.(*typeSys.ListType)
 		// 切片判断：源码中存在冒号（含 a[lo:] / a[:hi] / a[:] 等省略端点）
 		if exp.IndexSlice {
 			// 切片操作，返回相同列表类型
-			exp.Type = indexed.Type
+			exp.Type = indexedType
 		} else {
 			// 索引操作，返回元素类型
 			if listType.Elem() != nil {

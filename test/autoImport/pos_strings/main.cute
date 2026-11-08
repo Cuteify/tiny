@@ -1,0 +1,9 @@
+// 显式 import 后 strings 命名空间可用
+import "std:strings"
+
+fn main() int {
+    if strings.len("abc") == 3 {
+        ret 42
+    }
+    ret 1
+}

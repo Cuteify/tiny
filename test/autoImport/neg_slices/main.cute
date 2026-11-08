@@ -1,0 +1,8 @@
+// 负例：没有 import "std:slices" 时不能用 slices.make
+fn main() int {
+    var s: ptr = slices.make[int](4)
+    if s == nil {
+        ret 1
+    }
+    ret 42
+}

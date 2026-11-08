@@ -1,6 +1,10 @@
-// Phase 4 验收：无需显式 import，std:strings / std:slices 的函数自动可用。
-// 覆盖：slices.len/cap 回退解析、strings.eq/ne 自动可用、与内建比较共存。
+// P4 收窄自动导入后的验收：
+// - string 的 == / != 仍由类型内建 lower（不需要 import）
+// - strings/slices 的命名函数必须显式 import 才能使用
 // 输出 intrinsic_auto: ALL PASS 并退出 42。
+import "std:slices"
+import "std:strings"
+
 fn main() int {
     var passed: int = 0
 
@@ -21,18 +25,14 @@ fn main() int {
     if strings.ne("abc", "abd") {
         passed = passed + 1
     }
-    if strings.eq("abc", "abd") {
-        // 期望不相等
-    } else {
+    if "abc" == "abc" {
         passed = passed + 1
     }
-    if strings.ne("abc", "abc") {
-        // 期望相等
-    } else {
+    if "abc" != "abd" {
         passed = passed + 1
     }
 
-    // 自动可用的 std 调用与内建运算组合。
+    // 显式 import 的 std 调用与内建运算组合。
     var total: int = n + c
     if total == 6 {
         passed = passed + 1

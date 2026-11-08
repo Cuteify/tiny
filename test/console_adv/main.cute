@@ -11,7 +11,7 @@ fn main() int {
 
     // 清屏 + 光标归位
     console.clearScreen()
-    console.setCursorPos(1, 1)
+    console.moveCursor(1, 1)
 
     // 16 色测试
     console.setFg(console.FG_RED)

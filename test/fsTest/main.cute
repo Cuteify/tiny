@@ -1,4 +1,5 @@
 import "std:fs"
+import "std:memory"
 fn main() i32 {
     // 1. 创建并写入文件（"hello\n" 小端字节 = 11473676690792）
     var data: u64 = 11473676690792

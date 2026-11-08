@@ -187,6 +187,14 @@ func selectCallCandidate(c *CallBlock, candidates []*FuncBlock) (sel *FuncBlock,
 	return best[0].fb, compatible, false
 }
 
+// pathBuiltinCalls 由 codegen 直接分派、不绑定 FuncBlock 的路径名内建调用。
+// 这些名字没有对应的真实函数定义，最终 Check 不能按“未解析跨包调用”报错。
+var pathBuiltinCalls = map[string]bool{
+	"unsafe.cast":   true,
+	"memory.new":    true,
+	"memory.sizeof": true,
+}
+
 // Check 检查函数调用的参数数量和类型是否匹配
 func (c *CallBlock) Check(p *Parser) bool {
 	if c.Name.IsEmpty() {
@@ -300,7 +308,13 @@ func (c *CallBlock) Check(p *Parser) bool {
 	if c.Func == nil {
 		if c.Name.IsPath() {
 			// 跨包调用：包函数在全部包解析完成合并后才可见，
-			// 此处静默返回，由合并后的 rootNode.Check() 重试解析
+			// 解析期静默返回，由合并后的 rootNode.Check() 重试解析。
+			// 最终 Check 仍解析不到，说明包没有显式 import（或函数不存在）：
+			// 必须报错，不能静默生成空调用。
+			if p.FinalCheck && !pathBuiltinCalls[c.Name.String()] {
+				p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
+				return false
+			}
 			return true
 		}
 		if p.Block == p.ThisBlock {

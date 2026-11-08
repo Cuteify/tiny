@@ -1,5 +1,6 @@
 import "std:fs"
 import "std:console"
+import "std:memory"
 // echo 测试：从 stdin 逐块读取，原样写回 stdout，直到 EOF
 
 fn main() int {

@@ -260,16 +260,20 @@ func (n Name) FixPath(pkg *packageFmt.Info) bool {
 		return true
 	}
 	importName := n[0].Name
-	if pkg == nil || pkg.Imports == nil {
+	if pkg == nil {
 		return false
 	}
-	pkgRealPath := packageFmt.FixPathName(pkg.Imports[importName])
+	pkgRealPath := ""
+	if pkg.Imports != nil {
+		pkgRealPath = packageFmt.FixPathName(pkg.Imports[importName])
+	}
 	if pkgRealPath == "" {
-		// 内建类型映射：根包预加载 std 包但不占用用户 import 别名。
-		// 未显式导入时，`strings/maps/slices.fn` 回退到预加载包路径；
-		// 显式导入别名优先，用户同名变量由 FindVar 的局部作用域先行匹配。
-		if path, ok := IntrinsicPkgs[importName]; ok {
-			pkgRealPath = packageFmt.FixPathName(path)
+		// 包名自引用：std 包内部大量使用 `strings.foo` / `slices.foo`
+		// 这类写法，但包不会 import 自己。只按包自身的名字匹配，
+		// 不再回退到自动预加载的 strings/maps/slices——那些包仅供
+		// intrinsic lowering 用完整路径构造调用，不是用户名称解析入口。
+		if pkg.Name != "" && importName == pkg.Name && pkg.Path != "" {
+			pkgRealPath = packageFmt.FixPathName(pkg.Path)
 		}
 	}
 	if pkgRealPath == "" {

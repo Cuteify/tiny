@@ -165,6 +165,6 @@ fn main() int {
     var allocs: uint = memory.reportAllocCount()
     var frees: uint = memory.reportFreeCount()
 
-    var result: int = gPassed * 65536 + gTestNum * 256 + leaks.toInt()
+    var result: int = gPassed * 65536 + gTestNum * 256 + int(leaks)
     ret result
 }

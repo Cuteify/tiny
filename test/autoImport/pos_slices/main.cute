@@ -1,0 +1,10 @@
+// 显式 import 后 slices 命名空间可用
+import "std:slices"
+
+fn main() int {
+    var s: ptr = slices.make[int](4)
+    if s == nil {
+        ret 1
+    }
+    ret 42
+}

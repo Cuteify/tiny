@@ -1,0 +1,4 @@
+// 负例：没有 import "std:strings" 时不能用 strings.len
+fn main() int {
+    ret strings.len("abc")
+}

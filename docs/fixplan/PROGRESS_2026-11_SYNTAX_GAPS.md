@@ -67,10 +67,28 @@
 
 ## P4 自动导入收窄
 
-- [ ] FixPath 收窄
-- [ ] 自引用回退
-- [ ] 正负例测试
-- [ ] 提交
+- [x] FixPath 收窄
+  - `parser/name.go`：移除 `IntrinsicPkgs` 裸名回退，只查 `pkg.Imports` 与包名自引用
+  - `pkg.Imports == nil` 时仍允许自引用（合并树上的包名带路径前缀）
+- [x] 最终 Check 报错
+  - `parser/call.go`：`FinalCheck` 下未解析的路径调用报 `not found function '<name>'`
+  - 白名单 `pathBuiltinCalls`：`unsafe.cast` / `memory.new` / `memory.sizeof` 由 codegen 直接分派
+- [x] 正负例测试
+  - `test/autoImport`：builtin 无 import 可用、string `==` intrinsic 可用；x86_64/x86 exit=42
+  - `test/autoImport/pos_strings`、`pos_slices`：显式 import 后命名空间可用；x86_64/x86 exit=42
+  - `test/autoImport/neg_strings`：报 `not found function 'strings.len'`
+  - `test/autoImport/neg_slices`：报 `not found function 'slices.make'`
+- [x] 暴露的沉默失败修复
+  - `test/sliceTest/main.cute` 补 `import "std:testing"`
+  - `test/echo`、`test/fsTest`、`test/stringsTest` 补 `import "std:memory"`
+  - `test/console_adv` 改调用真实 API `console.moveCursor`（原 `setCursorPos` 不存在）
+  - `test/rcLeak` 的 `leaks.toInt()` 改为 P3 显式转换 `int(leaks)`（原方法不存在）
+  - `test/intrinsic_auto` 按新语义改写：命名空间显式 import，intrinsic `==/!=` 不依赖 import
+  - `parser/exp_check.go`：`*[]T` 索引按 list 归类，与 codegen `indexAccess/indexSet` 一致
+- [x] 全量 `-S` 扫描
+  - 只剩基线既有失败：`buildKeyword` panic、`fnptr_test` not found `f`、`iface_dispatch` 类型错误、`stringUtils` `strings.join` 无匹配重载
+- [x] 回归与提交
+  - P2/P3 测试与核心回归退出码和基线一致；`test/slice_test` x86_64 exit=0（x86 汇编失败为基线既有）
 
 ## P5 内建表符号化
 

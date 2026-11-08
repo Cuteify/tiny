@@ -1,5 +1,6 @@
 import "std:fs"
 import "std:strings"
+import "std:memory"
 fn main() i32 {
     // 1. len/cap：字节长度
     var s: string = "hello"

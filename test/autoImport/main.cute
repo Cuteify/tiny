@@ -1,0 +1,15 @@
+// 自动导入收窄正例：
+// - builtin 仍可直接调用（编译器插入函数）
+// - string == 的 intrinsic lowering 不依赖用户 import
+fn main() int {
+    var a: string = "abc"
+    var b: string = "abc"
+    if a != b {
+        ret 1
+    }
+    if a == b {
+        println("autoImport: ALL PASS")
+        ret 42
+    }
+    ret 2
+}
