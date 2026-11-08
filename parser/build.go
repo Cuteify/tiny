@@ -17,6 +17,7 @@ type Build struct {
 	UseMoreStack bool
 	OS           []string
 	Archs        []string
+	Bits         []int // bits(32)/bits(64)：目标指针位宽
 	Ignore       bool
 	Link         string
 	// Align 打包对齐上限（Wave L）：build align(N)，noalign = 1。
@@ -48,79 +49,111 @@ func (b *Build) Parse(p *Parser) {
 
 		// 自动向前查找 FuncBlock 并展开变量替换
 		b.expandAsmWithFuncArgs(p)
-	case "ext":
-		if p.FindEndCursor() <= p.Lexer.Cursor {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
-		}
-		b.Ext = p.Lexer.Text[p.Lexer.Cursor:p.FindEndCursor()]
-		p.Lexer.SetCursor(p.FindEndCursor())
-		b.Type = "ext"
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
-		default:
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "ext only in func")
-		}
-	case "extret":
-		if p.FindEndCursor() <= p.Lexer.Cursor {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
-		}
-		b.ExtRet = p.Lexer.Text[p.Lexer.Cursor:p.FindEndCursor()]
-		p.Lexer.SetCursor(p.FindEndCursor())
-		b.Type = "extret"
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
-		default:
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "extret only in func")
-		}
-	case "os":
+	case "ext", "extret":
+		// build ext("name") / build extret("name")：只接受一个符号名。
+		// 旧实现直接截取到行末（含括号与引号），生成的 call 目标带上
+		// `("name")`，实际无法链接；这里按 token 解析。
 		p.Lexer.Skip('(')
-		stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
-		for p.Lexer.Cursor < stopToken {
-			osName := p.Lexer.Next()
-			switch osName.Type {
-			case lexer.SEPARATOR:
-				if osName.Value == ")" {
-					break
-				}
-				if osName.Value != "," {
-					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
-				}
-			case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
-				b.OS = append(b.OS, osName.Value)
-			}
-		}
-		b.Type = "os"
-		b.checkOSMatch()
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
+		nameToken := p.Lexer.Next()
+		switch nameToken.Type {
+		case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
 		default:
+			p.Error.MissError("Syntax Error", nameToken.Cursor, "build "+tmp.Value+" needs a symbol name")
 		}
-	case "arch":
-		p.Lexer.Skip('(')
-		stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
-		for p.Lexer.Cursor < stopToken {
-			archName := p.Lexer.Next()
-			switch archName.Type {
-			case lexer.SEPARATOR:
-				if archName.Value == ")" {
-					break
+		closeToken := p.Lexer.Next()
+		if closeToken.Type != lexer.SEPARATOR || closeToken.Value != ")" {
+			p.Error.MissError("Syntax Error", closeToken.Cursor, "build "+tmp.Value+" needs )")
+		}
+		kind := tmp.Value
+		if kind == "ext" {
+			b.Ext = nameToken.Value
+		} else {
+			b.ExtRet = nameToken.Value
+		}
+		b.Type = kind
+		fn, ok := p.ThisBlock.Value.(*FuncBlock)
+		if !ok {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, kind+" only in func")
+		}
+		p.validateExtFunc(fn, kind)
+		fn.BuildFlags = append(fn.BuildFlags, b)
+	case "os", "arch", "bits":
+		switch tmp.Value {
+		case "os":
+			p.Lexer.Skip('(')
+			stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
+			for p.Lexer.Cursor < stopToken {
+				osName := p.Lexer.Next()
+				switch osName.Type {
+				case lexer.SEPARATOR:
+					if osName.Value == ")" {
+						break
+					}
+					if osName.Value != "," {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
+					}
+				case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
+					b.OS = append(b.OS, osName.Value)
 				}
-				if archName.Value != "," {
-					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
-				}
-			case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
-				b.Archs = append(b.Archs, archName.Value)
 			}
+			b.Type = "os"
+			b.checkOSMatch()
+		case "arch":
+			p.Lexer.Skip('(')
+			stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
+			for p.Lexer.Cursor < stopToken {
+				archName := p.Lexer.Next()
+				switch archName.Type {
+				case lexer.SEPARATOR:
+					if archName.Value == ")" {
+						break
+					}
+					if archName.Value != "," {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
+					}
+				case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
+					b.Archs = append(b.Archs, archName.Value)
+				}
+			}
+			b.Type = "arch"
+			b.checkArchMatch()
+		case "bits":
+			p.Lexer.Skip('(')
+			stopToken := p.Has(lexer.Token{Value: ")", Type: lexer.SEPARATOR}, p.FindEndCursor())
+			for p.Lexer.Cursor < stopToken {
+				bitToken := p.Lexer.Next()
+				switch bitToken.Type {
+				case lexer.SEPARATOR:
+					if bitToken.Value == ")" {
+						break
+					}
+					if bitToken.Value != "," {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need ,")
+					}
+				case lexer.NUMBER:
+					n, atoiErr := strconv.Atoi(strings.ReplaceAll(bitToken.Value, "_", ""))
+					if atoiErr != nil || (n != 32 && n != 64) {
+						p.Error.MissError("Syntax Error", bitToken.Cursor, "build bits supports 32 or 64")
+					}
+					b.Bits = append(b.Bits, n)
+				default:
+					p.Error.MissError("Syntax Error", bitToken.Cursor, "build bits supports 32 or 64")
+				}
+			}
+			if len(b.Bits) == 0 {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "build bits needs 32 or 64")
+			}
+			b.Type = "bits"
+			b.checkBitsMatch()
 		}
-		b.Type = "arch"
-		b.checkArchMatch()
-		switch p.ThisBlock.Value.(type) {
-		case *FuncBlock:
-			p.ThisBlock.Value.(*FuncBlock).BuildFlags = append(p.ThisBlock.Value.(*FuncBlock).BuildFlags, b)
-		default:
+		// 函数体内的 os/arch 直接挂到当前函数；顶层只记录 pending，
+		// 由紧随其后的 func/type/var 声明消费（import 不打断）。
+		if p.attachFuncBuild(b) {
+			return
+		}
+		if p.ThisBlock == p.Block {
+			p.PendingBuilds = append(p.PendingBuilds, b)
+			return
 		}
 	case "link":
 		b.Type = "link"
@@ -140,6 +173,28 @@ func (b *Build) Parse(p *Parser) {
 		default:
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "link only in func")
 		}
+	case "export":
+		// build export("alias")：把当前函数以别名导出（仅在函数体内）。
+		p.Lexer.Skip('(')
+		nameToken := p.Lexer.Next()
+		switch nameToken.Type {
+		case lexer.STRING, lexer.NAME, lexer.RAW, lexer.CHAR:
+			b.Export = nameToken.Value
+		default:
+			p.Error.MissError("Syntax Error", nameToken.Cursor, "build export needs an alias name")
+		}
+		closeToken := p.Lexer.Next()
+		if closeToken.Type != lexer.SEPARATOR || closeToken.Value != ")" {
+			p.Error.MissError("Syntax Error", closeToken.Cursor, "build export needs )")
+		}
+		b.Type = "export"
+		fn, ok := p.ThisBlock.Value.(*FuncBlock)
+		if !ok {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "export only in func")
+		}
+		fn.BuildFlags = append(fn.BuildFlags, b)
+		// export 只作为函数属性存在，别名标签由 compileRootTail 统一生成。
+		return
 	case "align":
 		// build align(N)：设置打包对齐上限，作用于紧随其后的 struct
 		b.Type = "align"
@@ -168,6 +223,64 @@ func (b *Build) Parse(p *Parser) {
 		return
 	}
 	p.ThisBlock.AddChild(&Node{Value: b})
+}
+
+// attachFuncBuild 把函数体内的 build os/arch/bits 挂到当前函数。
+// 顶层 build 走 PendingBuilds，由下一个声明消费。
+func (p *Parser) attachFuncBuild(b *Build) bool {
+	if fb, ok := p.ThisBlock.Value.(*FuncBlock); ok {
+		fb.BuildFlags = append(fb.BuildFlags, b)
+		return true
+	}
+	return false
+}
+
+// validateExtFunc 校验 build ext/extret 的调用边界（v1）：
+// 最多 6 个整数/指针参数，不支持浮点/容器/结构体。
+func (p *Parser) validateExtFunc(fn *FuncBlock, kind string) {
+	if fn == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "build "+kind+" only in func")
+	}
+	if len(fn.Args) > 6 {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"build "+kind+" supports at most 6 arguments")
+	}
+	for _, arg := range fn.Args {
+		if arg != nil && arg.Type != nil && !isExtScalarType(arg.Type) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"build "+kind+" supports only integer/pointer arguments (got "+arg.Type.String()+")")
+		}
+	}
+	if kind == "extret" {
+		if len(fn.Return) != 1 || fn.Return[0] == nil || !isExtScalarType(fn.Return[0]) {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"build extret requires a single integer/pointer return value")
+		}
+		return
+	}
+	if len(fn.Return) > 1 {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"build ext supports at most one return value")
+	}
+	if len(fn.Return) == 1 && fn.Return[0] != nil && fn.Return[0].Kind() == "float" {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"build ext does not support floating-point return values")
+	}
+}
+
+// isExtScalarType 判断类型能否直接放进一个整数寄存器传给外部函数。
+func isExtScalarType(t typeSys.Type) bool {
+	if t == nil {
+		return false
+	}
+	if t.IsPointer() || t.Type() == "ptr" {
+		return true
+	}
+	switch t.Kind() {
+	case "int", "uint", "bool", "byte":
+		return t.Size() > 0 && t.Size() <= 8
+	}
+	return false
 }
 
 // attachPendingAlign 检查当前作用域最后一个子节点是否为 align Build
@@ -204,6 +317,16 @@ func (b *Build) checkArchMatch() {
 	for _, arch := range b.Archs {
 		arch = strings.TrimSpace(arch)
 		if arch == currentArch {
+			return
+		}
+	}
+	b.Ignore = true
+}
+
+func (b *Build) checkBitsMatch() {
+	currentBits := typeSys.TargetPointerSize * 8
+	for _, bits := range b.Bits {
+		if bits == currentBits {
 			return
 		}
 	}

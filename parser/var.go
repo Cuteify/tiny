@@ -151,12 +151,13 @@ func (v *VarBlock) Parse(p *Parser) {
 	v.ParseVar(p)
 	if p.ThisBlock == p.Block && v.IsDefine {
 		v.IsGlobal = true
-		// 注册到全局变量表，供同包其它文件及跨包解析期/编译期查找
-		if p.Package != nil && p.Package.Path != "" && v.Name.Length() > 0 {
+		// 注册到全局变量表，供同包其它文件及跨包解析期/编译期查找。
+		// 被顶层 build 过滤的声明不注册。
+		if p.Package != nil && p.Package.Path != "" && v.Name.Length() > 0 && !p.pendingDeclIgnored() {
 			packageFmt.RegisterGlobalVar(p.Package.Path, v.Name.Last(), v)
 		}
 	}
-	p.AddChild(&Node{Value: v})
+	p.addDeclNode(&Node{Value: v})
 }
 
 // ParseVar 根据下一个token类型选择解析方式

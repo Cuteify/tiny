@@ -76,8 +76,9 @@ func (t *TypeBlock) Parse(p *Parser) {
 			t.Alias = typeSys.NewAlias(name.String(), t.Alias, false)
 		}
 	}
-	// 注册到全局类型表，供同包其它文件（及跨包）解析期引用
-	if p.Package != nil && p.Package.Path != "" {
+	// 注册到全局类型表，供同包其它文件（及跨包）解析期引用。
+	// 被顶层 build 过滤的声明不注册，避免其它文件解析到本平台不存在的类型。
+	if p.Package != nil && p.Package.Path != "" && !p.pendingDeclIgnored() {
 		packageFmt.RegisterType(p.Package.Path, name.String(), t.Type())
 	}
 }

@@ -1,0 +1,102 @@
+// 顶层 build bits/arch 过滤 + ext/extret/export 指令测试。
+// 同名的平台分支由紧随其后的 build 决定是否进入重载表与代码生成。
+
+build bits(64)
+fn bitsValue() int {
+    ret 64
+}
+
+build bits(32)
+fn bitsValue() int {
+    ret 32
+}
+
+build arch(x86_64)
+fn archValue() int {
+    ret 1
+}
+
+build arch(x86)
+fn archValue() int {
+    ret 2
+}
+
+build bits(32, 64)
+fn bothBits() int {
+    ret 3
+}
+
+// 顶层 build 同样作用于紧随其后的全局变量声明。
+build bits(64)
+var bitsGlobal: int = 6400
+
+build bits(32)
+var bitsGlobal: int = 3200
+
+// 外部 C 函数：参数按声明宽度装载，返回 i32。
+fn abs32(x i32) i32 {
+    build ext("labs")
+}
+
+// 外部 C 函数 + 直接返回：调用后跳函数出口。
+fn absRet(x i32) i32 {
+    build extret("labs")
+}
+
+// 以别名导出，nm 应能看到 cute_exported。
+fn exported(x int) int {
+    build export("cute_exported")
+    ret x + 10
+}
+
+build bits(64)
+fn main() int {
+    if bitsValue() != 64 {
+        ret 1
+    }
+    if archValue() != 1 {
+        ret 2
+    }
+    if bothBits() != 3 {
+        ret 3
+    }
+    if bitsGlobal != 6400 {
+        ret 7
+    }
+    if abs32(-7) != 7 {
+        ret 4
+    }
+    if absRet(-9) != 9 {
+        ret 5
+    }
+    if exported(5) != 15 {
+        ret 6
+    }
+    ret 0
+}
+
+build bits(32)
+fn main() int {
+    if bitsValue() != 32 {
+        ret 1
+    }
+    if archValue() != 2 {
+        ret 2
+    }
+    if bothBits() != 3 {
+        ret 3
+    }
+    if bitsGlobal != 3200 {
+        ret 7
+    }
+    if abs32(-7) != 7 {
+        ret 4
+    }
+    if absRet(-9) != 9 {
+        ret 5
+    }
+    if exported(5) != 15 {
+        ret 6
+    }
+    ret 0
+}

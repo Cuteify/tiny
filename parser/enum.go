@@ -22,6 +22,7 @@ import (
 // 当前不支持 `TokenType.NONE` 作用域限定访问。
 func (p *Parser) processEnumToken() {
 	startCursor := p.Lexer.Cursor
+	ignored := p.pendingDeclIgnored()
 
 	nameToken := p.Lexer.Next()
 	if nameToken.Type != lexer.NAME {
@@ -101,13 +102,13 @@ func (p *Parser) processEnumToken() {
 		Alias:       enumType,
 		StartCursor: startCursor,
 	}
-	if p.Package != nil && p.Package.Path != "" {
+	if p.Package != nil && p.Package.Path != "" && !ignored {
 		packageFmt.RegisterType(p.Package.Path, enumName, typeBlock.Type())
 	}
-	p.AddChild(&Node{Value: typeBlock})
+	p.addDeclNode(&Node{Value: typeBlock})
 
 	for _, member := range members {
-		p.addEnumMember(member.name, member.value, member.cursor, enumType)
+		p.addEnumMember(member.name, member.value, member.cursor, enumType, ignored)
 	}
 }
 
@@ -152,7 +153,7 @@ func (p *Parser) parseEnumValue(enumName, member string) float64 {
 
 // addEnumMember 把一个枚举成员注册成和
 // `const NAME: EnumType = value` 等价的变量块，成员类型就是枚举类型。
-func (p *Parser) addEnumMember(name string, value float64, cursor int, enumType typeSys.Type) {
+func (p *Parser) addEnumMember(name string, value float64, cursor int, enumType typeSys.Type, ignored bool) {
 	block := &VarBlock{
 		Name:          NewName(name),
 		IsConst:       true,
@@ -166,8 +167,8 @@ func (p *Parser) addEnumMember(name string, value float64, cursor int, enumType 
 		},
 	}
 	block.IsGlobal = p.ThisBlock == p.Block
-	if block.IsGlobal && p.Package != nil && p.Package.Path != "" {
+	if block.IsGlobal && p.Package != nil && p.Package.Path != "" && !ignored {
 		packageFmt.RegisterGlobalVar(p.Package.Path, name, block)
 	}
-	p.AddChild(&Node{Value: block})
+	p.ThisBlock.AddChild(&Node{Value: block, BuildIgnored: ignored})
 }

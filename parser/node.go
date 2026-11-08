@@ -35,6 +35,11 @@ type Node struct {
 	Children []*Node
 	Ignore   bool
 
+	// BuildIgnored 表示该声明被顶层 build os/arch/bits 过滤。
+	// 与 Ignore 区分：Ignore 的变量节点仍必须参与 Check（handleName 用），
+	// BuildIgnored 声明完全不参与 Check/查找/代码生成。
+	BuildIgnored bool
+
 	Checked bool
 	Parser  *Parser
 }
@@ -46,6 +51,10 @@ type Node struct {
 // 它们的类型永远停留在 nil，到后端 GenVarAddr 才 panic。
 // 有子节点未通过时不置 Checked，留给下一轮 Check 重试。
 func (n *Node) Check() bool {
+	if n.BuildIgnored {
+		n.Checked = true
+		return true
+	}
 	if n.Checked && n.Father != nil {
 		return true
 
@@ -135,7 +144,7 @@ func (n *Node) AddChild(node *Node) {
 			break
 		}
 	}
-	if checker, ok := node.Value.(Checker); ok {
+	if checker, ok := node.Value.(Checker); ok && !node.BuildIgnored {
 		checker.Check(node.Parser)
 	}
 	// 跨文件变量前向引用在解析期不可见（同包其它文件尚未合并），

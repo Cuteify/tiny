@@ -87,7 +87,7 @@ func (c *Compiler) collectLinkSyms(node *parser.Node) {
 	}
 	if fb, ok := node.Value.(*parser.FuncBlock); ok {
 		for _, bf := range fb.BuildFlags {
-			if bf.Type == "link" && bf.Link != "" {
+			if bf.Type == "link" && bf.Link != "" && !bf.Ignore {
 				if c.stringSyms == nil {
 					c.stringSyms = map[string]bool{}
 				}
@@ -107,7 +107,7 @@ func (c *Compiler) collectExports(node *parser.Node) {
 	}
 	if fb, ok := node.Value.(*parser.FuncBlock); ok {
 		for _, bf := range fb.BuildFlags {
-			if bf.Type == "export" && bf.Export != "" {
+			if bf.Type == "export" && bf.Export != "" && !bf.Ignore {
 				if c.Ctx.Exports == nil {
 					c.Ctx.Exports = make(map[string]string)
 				}
@@ -244,6 +244,9 @@ func (c *Compiler) compileRoot(node *parser.Node, code string) string {
 func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 	var bssCode, dataCode string
 	for _, ch := range node.Children {
+		if ch.BuildIgnored {
+			continue
+		}
 		vb, ok := ch.Value.(*parser.VarBlock)
 		if !ok || !vb.IsGlobal || !vb.IsDefine {
 			continue
@@ -300,7 +303,7 @@ func (c *Compiler) generateGlobalSection(node *parser.Node) string {
 func (c *Compiler) compileChildren(node *parser.Node, code string) string {
 	for i := 0; i < len(node.Children); i++ {
 		n := node.Children[i]
-		if n.Ignore {
+		if n.Ignore || n.BuildIgnored {
 			continue
 		}
 		c.Ctx.Now = n
@@ -1190,8 +1193,18 @@ func (c *Compiler) getStringLabel(val string) string {
 
 func (c *Compiler) hasMainFunction(node *parser.Node) bool {
 	for _, ch := range node.Children {
+		if ch.BuildIgnored {
+			continue
+		}
 		if fb, ok := ch.Value.(*parser.FuncBlock); ok {
-			if fb.Name.String() == "main" {
+			ignored := false
+			for _, bf := range fb.BuildFlags {
+				if bf.Ignore {
+					ignored = true
+					break
+				}
+			}
+			if !ignored && fb.Name.String() == "main" {
 				return true
 			}
 		}

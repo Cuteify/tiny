@@ -1,4 +1,4 @@
-build os(windows)
+build os(linux)
 import "std:fs"
 
 fn windowsFunc() int {
@@ -18,5 +18,11 @@ fn multiOSFunc() int {
 }
 
 fn main() int {
+    if linuxFunc() != 2 {
+        ret 1
+    }
+    if multiOSFunc() != 3 {
+        ret 2
+    }
     ret 0
 }

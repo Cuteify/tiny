@@ -24,7 +24,44 @@ type Parser struct {
 	CurTypeParams     map[string]typeSys.Type // 当前泛型函数的类型参数（fn f[T]{} 体内 T 解析为 TypeParam）
 	FileImports       []ImportItem            // 文件级 import 声明（Wave L，仅记录，别名注册在 package 层）
 	FinalCheck        bool                    // 包合并后的最终 Check：此时“查不到/无匹配”才是真错误
+	PendingBuilds     []*Build                // 顶层 build os/arch/bits，等待下一个声明消费
 	exprStop          int                     // 表达式解析的临时停止点（0 表示未设置），用于 for post 等场景
+}
+
+// takePendingBuilds 取走并清空待消费的顶层 build。
+func (p *Parser) takePendingBuilds() []*Build {
+	if len(p.PendingBuilds) == 0 {
+		return nil
+	}
+	builds := p.PendingBuilds
+	p.PendingBuilds = nil
+	return builds
+}
+
+func buildsIgnored(builds []*Build) bool {
+	for _, b := range builds {
+		if b != nil && b.Ignore {
+			return true
+		}
+	}
+	return false
+}
+
+// pendingDeclIgnored 报告紧随其后的声明是否被顶层 build 过滤。
+func (p *Parser) pendingDeclIgnored() bool {
+	if p.ThisBlock != p.Block {
+		return false
+	}
+	return buildsIgnored(p.PendingBuilds)
+}
+
+// addDeclNode 添加声明节点；顶层声明同时消费 PendingBuilds，
+// 被过滤的声明挂 BuildIgnored（不能复用 Ignore：变量节点 Ignore 仍要 Check）。
+func (p *Parser) addDeclNode(node *Node) {
+	if p.ThisBlock == p.Block {
+		node.BuildIgnored = buildsIgnored(p.takePendingBuilds())
+	}
+	p.ThisBlock.AddChild(node)
 }
 
 // ParsePhase 为 true 表示各包/各文件尚未合并成同一棵树。
@@ -40,6 +77,31 @@ func (p *Parser) Next() (finish bool) {
 
 	if code.IsEmpty() {
 		return p.handleEmptyToken(beforeCursor)
+	}
+
+	// 顶层 build 只作用于紧随其后的声明：遇到非声明 token 即作废。
+	// import 不打断（文件头 build + import + fn 是 std 包的常见形状），
+	// FUNC/TYPE/VAR 由各自处理器消费，BUILD 继续累积。
+	if p.ThisBlock == p.Block {
+		clear := true
+		switch code.Type {
+		case lexer.FUNC, lexer.TYPE, lexer.VAR, lexer.BUILD, lexer.IMPORT:
+			clear = false
+		case lexer.NAME:
+			// 省略 var 的顶层声明 `x: T = v` / 多返回值 `q, r := f()`：
+			// 下一 token 是 ':' 或 ',' 才保留 pending。
+			save := p.Lexer.Cursor
+			next := p.Lexer.Next()
+			p.Lexer.SetCursor(save)
+			clear = !(next.Type == lexer.SEPARATOR && (next.Value == ":" || next.Value == ","))
+		case lexer.SEPARATOR:
+			if code.Value == "\n" || code.Value == "\r" || code.Value == ";" {
+				clear = false
+			}
+		}
+		if clear {
+			p.PendingBuilds = nil
+		}
 	}
 
 	if code.Value == "}" && code.Type == lexer.SEPARATOR {
@@ -370,7 +432,7 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 		p.Lexer.SetCursor(beforeCursor)
 		block := &VarBlock{}
 		block.ParseKeywordVar(p, lexer.Token{Type: lexer.VAR, Value: "VAR"}, p.FindEndCursor())
-		p.AddChild(&Node{Value: block})
+		p.addDeclNode(&Node{Value: block})
 	case ",":
 		// 多返回值声明：q, r := divide(17, 5)
 		p.parseMultiDeclare(beforeCursor)
@@ -433,7 +495,7 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 		// rootNode.Check() 在包合并后重试（否则后续引用只剩一个空壳）。
 		vb.Unresolved = true
 	}
-	p.AddChild(&Node{Value: vb})
+	p.addDeclNode(&Node{Value: vb})
 }
 
 // fieldExpr 解析字段访问表达式（如 a.b.c），返回表达式节点。
@@ -520,7 +582,7 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 	case "type":
 		block := &TypeBlock{}
 		block.Parse(p)
-		p.AddChild(&Node{Value: block})
+		p.addDeclNode(&Node{Value: block})
 	case "struct":
 		// struct Name { ... } 与 type Name struct { ... } 等价：统一构造 TypeBlock。
 		// 若只挂一个裸 StructBlock，p.Find(name, FindTypeType) 认不出它
@@ -544,16 +606,16 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 		p.CurStructName = savedName
 		p.CurStructType = savedType
 		block.EndCursor = block.Struct.EndCursor
-		if p.Package != nil && p.Package.Path != "" {
+		if p.Package != nil && p.Package.Path != "" && !p.pendingDeclIgnored() {
 			packageFmt.RegisterType(p.Package.Path, block.Name.String(), block.Type())
 		}
 		// build align(N)/noalign 紧随其后才生效（严格紧随：隔了其他声明即孤儿）
 		p.attachPendingAlign(&block.Struct.Type)
-		p.AddChild(&Node{Value: block})
+		p.addDeclNode(&Node{Value: block})
 	case "interface":
 		block := &InterfaceDef{}
 		block.Parse(p)
-		p.AddChild(&Node{Value: block})
+		p.addDeclNode(&Node{Value: block})
 	case "enum":
 		p.processEnumToken()
 	default:

@@ -240,7 +240,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		}
 		for i := 0; i < len(nowBlock.Children); i++ {
 			child := nowBlock.Children[i]
-			if child.Value == nil || child.Ignore == true {
+			if child.Value == nil || child.Ignore == true || child.BuildIgnored {
 				continue
 			}
 
@@ -567,7 +567,7 @@ func findGlobalVar(p *Parser, name Name) (*Node, *VarBlock) {
 	}
 	for i := len(children) - 1; i >= 0; i-- {
 		child := children[i]
-		if child.Value == nil {
+		if child.Value == nil || child.BuildIgnored {
 			continue
 		}
 		if vb, ok := child.Value.(*VarBlock); ok {

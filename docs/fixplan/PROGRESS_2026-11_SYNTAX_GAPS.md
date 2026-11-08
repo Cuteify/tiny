@@ -108,10 +108,30 @@
 
 ## P6 build 指令
 
-- [ ] os/arch/bits pending
-- [ ] export
-- [ ] ext/extret
-- [ ] 测试与提交
+- [x] os/arch/bits pending
+  - `parser/build.go`：`Build.Bits`；`bits(32/64)` 按 `TargetPointerSize*8` 判定；`os/arch/bits` 在根作用域只记 `Parser.PendingBuilds`，由下一个 func/type/var 声明消费（import 不打断，非声明 token 清空）
+  - `parser/parser.go`：`PendingBuilds`、`takePendingBuilds`、`buildsIgnored`、`pendingDeclIgnored`、`addDeclNode`
+  - `parser/func.go`：声明点消费并挂 `FuncBlock.BuildFlags`（在 `registerOverload` 前）；被过滤函数节点设 `BuildIgnored`
+  - `parser/type.go`/`var.go`/`enum.go`：被过滤声明不注册全局表；enum 成员同步忽略
+  - `parser/node.go`：`Node.BuildIgnored`；`Check`/eager Checker 跳过；`parser/finder.go` 的 `Find`/`findGlobalVar` 跳过
+  - `package/package.go`：根包移除文件级 `preFilterBuild`（非根 std/子包保留）；无源文件显式报错
+  - `compile/compiler.go`：`compileChildren`/`generateGlobalSection`/`hasMainFunction` 跳过 `BuildIgnored`；`collectExports`/`collectLinkSyms`/`markLinkProviders` 跳过 `Ignore`
+- [x] export
+  - 函数体内 `build export("alias")` → `FuncBlock.BuildFlags`；`collectExports` 预扫描输出 `global`，`compileRootTail` 生成 `alias: jmp <mangled>`
+- [x] ext/extret
+  - `parser/build.go`：`ext/extret` 改为 token 解析符号名（旧实现截到行尾，call 目标带 `("name")`）
+  - v1 边界：最多 6 个整数/指针参数；`extret` 要求单整数/指针返回；浮点/容器/结构体显式报错
+  - `compile/build.go`：SysV 按声明宽度装载（8B 整槽；4B 有符号 `movsxd`/无符号 `mov r32`；2/1B `movsx`/`movzx`）
+  - cdecl 使用 `arg.Offset`，8 字节参数先高后低压栈；ESP 保存改用 callee-saved EBX（EDX 会被外部函数破坏）
+  - `extret` 调用后 `jmp func_end_<mangled>`
+- [x] P4 收尾：`pkg/fs`、`pkg/sort` 补 `import "std:memory"`（收窄自动导入后依赖包不得再依赖根包导入解析）
+- [x] 测试
+  - `test/buildDirective`：bits(64)/bits(32) 同名分支、arch(x86_64)/arch(x86)、bits(32,64)、`ext("labs")`、`extret("labs")`、`export("cute_exported")`；x86_64/x86 exit=0
+  - `test/buildKeyword`：Linux 下跳过 windowsFunc、调用 linuxFunc/multiOSFunc；x86_64/x86 exit=0
+  - `nm` 验证 `cute_exported` 为全局符号并跳转到 `exported`（x86_64/x86）
+  - `test/derefTest` x86_64/x86 exit=7（修复被过滤函数的函数体仍被 Check 的问题）
+  - 全量 `-S` 扫描与基线一致：x86_64 仅 `fnptr_test`/`iface_dispatch`/`stringUtils`；x86 额外既有失败 `convertFloat`、`sortStrOnly`、`sortTest`
+- [x] 提交：`实现: build 指令`
 
 ## P7 string 重复
 

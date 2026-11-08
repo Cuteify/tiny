@@ -424,6 +424,12 @@ func (f *FuncBlock) Parse(p *Parser) {
 	// 返回类型
 	f.ParseRetType(p)
 
+	// 顶层 build os/arch/bits 作用于紧随其后的函数：统一在声明点消费。
+	// 必须在 registerOverload 之前挂上，否则被过滤函数仍会进重载表。
+	if namedFunc && p.ThisBlock == p.Block {
+		f.BuildFlags = append(f.BuildFlags, p.takePendingBuilds()...)
+	}
+
 	// 注册重载信息（参数个数已知）：同名不同参 → MangledName 追加参数个数
 	registerOverload(f)
 
@@ -431,23 +437,10 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 	if namedFunc {
 		nodeTmp := &Node{Value: f}
-		// 顶层 build os(...)/arch(...) 作用于紧随其后的函数：
-		// 回溯连续的 os/arch 指令挂到该函数上，Ignore 才能生效。
-		// 否则这些 Build 只是根节点下的孤儿，编译期等于没有平台过滤。
-		for i := len(p.ThisBlock.Children) - 1; i >= 0; i-- {
-			b, ok := p.ThisBlock.Children[i].Value.(*Build)
-			if !ok {
-				break
-			}
-			if b.Type == "align" {
-				// build align 对函数透明：跳过继续回溯，不挂在函数上，
-				// 留待紧随其后的 struct 消费（attachPendingAlign）。
-				continue
-			}
-			if b.Type != "os" && b.Type != "arch" {
-				break
-			}
-			f.BuildFlags = append(f.BuildFlags, b)
+		// 被顶层 build 过滤的函数：整节点跳过 Check/查找/代码生成，
+		// 但 BuildFlags 仍保留（重载注册、link/export 预扫描按标志判断）。
+		if p.ThisBlock == p.Block && funcBuildIgnored(f) {
+			nodeTmp.BuildIgnored = true
 		}
 		// 将函数添加到当前作用域
 		p.ThisBlock.AddChild(nodeTmp)

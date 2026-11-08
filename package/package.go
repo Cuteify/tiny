@@ -6,6 +6,7 @@ import (
 	"cuteify/parser"
 	typeSys "cuteify/type"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -275,15 +276,18 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		}
 		if path.Ext(file.Name()) == ".cute" {
 			cuteFile := path.Join(packagePath, file.Name())
-			// 解析前预检文件级 build arch/os 指令，不匹配当前目标则跳过文件。
-			// 避免不匹配架构的文件参与解析（其引用的跨文件类型/函数可能在
-			// 本包其他文件解析后才有定义，导致 "type not found"）。
-			keep, err := preFilterBuild(cuteFile)
-			if err != nil {
-				return nil, err
-			}
-			if !keep {
-				continue
+			// 非根包（std/子包）保留文件级 build arch/os 过滤：这些文件通常
+			// 整文件同架构（memory_x86.cute / memory_x86_64.cute）。
+			// 根包不能整文件过滤：顶层 build 只作用于紧随其后的声明，
+			// 同一文件可能混有多个平台函数（test/buildKeyword）。
+			if !isRoot {
+				keep, err := preFilterBuild(cuteFile)
+				if err != nil {
+					return nil, err
+				}
+				if !keep {
+					continue
+				}
 			}
 			// Wave L：注册文件级 import（别名进包导入表 + 加载被导入包），
 			// 须在解析前完成——解析期的别名查找依赖包导入表。
@@ -295,17 +299,6 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			p.Block.Parser = p
 			p.Package = packageInfo
 			p.Parse()
-			// 文件级 build arch/os 过滤：顶层声明不匹配当前目标则跳过整个文件
-			fileSkipped := false
-			for _, child := range p.Block.Children {
-				if b, ok := child.Value.(*parser.Build); ok && b.Type == "arch" && b.Ignore {
-					fileSkipped = true
-					break
-				}
-			}
-			if fileSkipped {
-				continue
-			}
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
 					switch v := p.Block.Children[i].Value.(type) {
@@ -378,6 +371,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 
 	if isRoot {
 		rootNode := packageInfo.AST.(*parser.Node)
+		if rootNode.Parser == nil {
+			return nil, fmt.Errorf("no .cute source files found in %s", packagePath)
+		}
 		for _, info := range packages {
 			tmp := info.AST.(*parser.Node)
 			for _, child := range tmp.Children {
