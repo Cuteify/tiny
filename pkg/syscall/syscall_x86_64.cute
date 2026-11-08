@@ -133,9 +133,9 @@ fn getenv(name ptr, namelen u64) ptr {
     // Wave M 正名：旧实现 `memory.ptrToStringHeader(path) + 16` 是悬空调用
     // （编译器对未解析函数静默折叠——S0-3 实锤机制）+ A6 旧序 data@16 残迹，
     // 从未真正运转。现 P11 stdlib 通道读 path 数据指针（Go 序 p@0）。
-    var sp0: *string = &path
-    var sp: ptr = unsafe.cast[ptr](sp0)
-    var sv: *strView = unsafe.cast[*strView](sp)
+    // 注意：不能先 unsafe.cast[ptr](*string) 再转 *strView —— 该路径会
+    // 把 string 头写坏（path.p 被长度覆盖），open 收到长度当指针（EFAULT）。
+    var sv: *strView = unsafe.cast[*strView](&path)
     var fd: i32 = open(sv.p, 0, 0)
     if fd < 0 {
         ret 0

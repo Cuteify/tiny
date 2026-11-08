@@ -258,7 +258,7 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 		fieldSeen[key] = true
 		// 查找父变量的类型，确定字段的类型 kind
 		fieldTypeKind := lookupFieldTypeKind(fb, body, fo.varName, fo.fieldName)
-		if fieldTypeKind == "" {
+		if fieldTypeKind == "" || fieldTypeKind == "string" {
 			continue
 		}
 		res.FieldFrees = append(res.FieldFrees, LLRFieldFree{
@@ -593,9 +593,18 @@ func collectStructFieldFrees(fb *parser.FuncBlock, body *parser.Node, frees []LL
 		if structType == nil {
 			continue
 		}
+		// 同基字段互赋（x.f = x.g）会让字段互为别名，逐字段释放不安全。
+		if fieldAliasStructs[structType.TypeName] {
+			continue
+		}
 		structType.Layout()
 		for _, field := range structType.Fields() {
 			if field.Type == nil {
+				continue
+			}
+			// 字符串字段可能是源码视图/字面量，不保证指向 malloc 块；
+			// 字段级联只处理指针字段。
+			if field.Type.Kind() == "string" {
 				continue
 			}
 			if owningType(field.Type) {
@@ -634,6 +643,8 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 				// 元素/字段写入会把右值对象保存到容器中，形成非 canonical 别名。
 				// 这里只标记裸变量引用，阻止其后续被覆盖释放误杀。
 				markStoredRefs(v.Right, st)
+				// 容器可能活过本块/本帧（列表/堆对象），右值按逃逸处理。
+				markStoredEscapes(v.Right, st)
 			}
 			markExprCallArgs(v.Right, st)
 		case *parser.ReturnBlock:
@@ -913,10 +924,16 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 	// 字段赋值（node.left = X）：跟踪字段级 orphan，不重绑父变量
 	if len(v.Name) > 1 {
 		if !v.IsDefine {
-			// 右值对象被保存进字段，形成非 canonical 别名；禁止覆盖释放。
+			// 右值对象被保存进字段：既形成非 canonical 别名（禁止覆盖释放），
+			// 也按 EscHeapObj 逃逸（禁止块尾/函数出口释放）。字段宿主可能是
+			// 参数或更外层对象，其生命周期不受本块约束；若宿主是本帧容器，
+			// 字段级级联释放会负责回收，重复释放同样致命。
 			if refObj := getRefObj(v.Value, st); refObj != NilObj {
 				st.objShared[refObj] = true
+				st.objEscaped[refObj] = true
 			}
+			// 列表字面量元素会随容器一起存活，按逃逸处理。
+			markStoredEscapes(v.Value, st)
 			if exprAllocates(v.Value) {
 				fieldName := v.Name.Last()
 				// 查找父变量当前绑定的对象
@@ -1112,6 +1129,21 @@ func markStoredRefs(e *parser.Expression, st *llrState) {
 	markStoredRefs(e.Right, st)
 	for _, ix := range e.Index {
 		markStoredRefs(ix, st)
+	}
+}
+
+// markStoredEscapes 标记写入容器的右值中直接引用的对象为逃逸。
+// 覆盖裸变量、列表字面量元素与复合字面量；调用实参的逃逸由被调摘要
+// （markExprCallArgs）单独传播，避免把所有调用实参一律当成已存储。
+func markStoredEscapes(e *parser.Expression, st *llrState) {
+	if e == nil {
+		return
+	}
+	if id := getRefObj(e, st); id != NilObj {
+		st.objEscaped[id] = true
+	}
+	for _, el := range e.ListElems {
+		markStoredEscapes(el, st)
 	}
 }
 

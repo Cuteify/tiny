@@ -87,6 +87,7 @@ func analyzeBackend(root *parser.Node) {
 	a.tightenParams()
 
 	// LLR 分析：基于对象绑定的精确生命周期
+	markFieldAliasStructs(a.fns, a.nodes)
 	LLRResults = map[string]*LLRResult{}
 	for fnKey, fb := range a.fns {
 		fs := Table[fnKey]
@@ -273,6 +274,17 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 					a.changed = true
 				}
 			}
+			// 字段写入 p.f = v：v 被存进堆对象的字段，按 EscHeapObj 逃逸
+			// （反方向不成立：写字段只改容器内容，容器参数本身不逃逸）。
+			// 漏掉这条会让 astAdd(p, c) 这类“把节点挂进别人字段”的帮助函数
+			// 摘要全是 EscNone，调用方随后就把已挂树的节点释放掉。
+			if !v.IsDefine && len(v.Name) > 1 && v.Value != nil {
+				if v.Value.Type == nil || owningType(v.Value.Type) {
+					for _, pi := range refsTrackedParams(v.Value, fb) {
+						a.bumpParam(fs, pi, EscHeapObj, ModeOtherRef)
+					}
+				}
+			}
 			scanExpr(v.Value)
 		case *parser.CallBlock:
 			if v.IsBuiltinNewAlloc() && !fs.HasHeapAllocs {
@@ -282,6 +294,15 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 			a.applyCallee(key, fs, v, fb, body)
 		case *parser.Expression:
 			// 独立表达式语句（调用、赋值）里的分配与调用逃逸。
+			// 元素/解引用写入 s[i] = v、*p = v 同样把拥有值存进堆容器，
+			// 右值中引用的参数按 EscHeapObj 逃逸。
+			if v.Var == nil && (v.Separator == "[]=" || v.Separator == "=") && v.Right != nil {
+				if v.Right.Type == nil || owningType(v.Right.Type) {
+					for _, pi := range refsTrackedParams(v.Right, fb) {
+						a.bumpParam(fs, pi, EscHeapObj, ModeOtherRef)
+					}
+				}
+			}
 			scanExpr(v)
 		case *parser.IfBlock:
 			scanExpr(v.Condition)

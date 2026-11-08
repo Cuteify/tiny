@@ -79,71 +79,31 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content collapsible" data-id="1">
     <span class="toggle">▾</span>
     <span class="tag tag-func">fn</span>
-    <span class="node-name">print</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(s: string)</span>
+    <span class="node-name">main</span>
+    <span class="node-type">→ int</span>
+    <span class="node-detail">()</span>
   </span>
   <ul class="children">
 <li class="node">
   <span class="node-content" data-id="2">
-    <span class="tag tag-return">ret</span>
-    <span class="node-detail">syscall.write( = 1,  = strings.toCstring( = s),  = strings.len( = s))</span>
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">a</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [1, 2, 3]</span>
   </span>
-</li>
-  </ul>
 </li>
 <li class="node">
-  <span class="node-content collapsible" data-id="3">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">println</span>
-    <span class="node-type">→ i32</span>
-    <span class="node-detail">(s: string)</span>
+  <span class="node-content" data-id="3">
+    <span class="tag tag-var">var:=</span>
+    <span class="node-name">b</span>
+    <span class="node-type">[]int</span>
+    <span class="node-detail">= [7, 8]</span>
   </span>
-  <ul class="children">
+</li>
 <li class="node">
   <span class="node-content" data-id="4">
-    <span class="tag tag-var">var:=</span>
-    <span class="node-name">n</span>
-    <span class="node-type">i32</span>
-    <span class="node-detail">= print(s = s)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="5">
     <span class="tag tag-return">ret</span>
-    <span class="node-detail">(n + syscall.write( = 1,  = strings.toCstring( = &#34;\n&#34;),  = 1))</span>
-  </span>
-</li>
-  </ul>
-</li>
-<li class="node">
-  <span class="node-content collapsible" data-id="6">
-    <span class="toggle">▾</span>
-    <span class="tag tag-func">fn</span>
-    <span class="node-name">panic</span>
-    <span class="node-detail">(msg: string)</span>
-  </span>
-  <ul class="children">
-<li class="node">
-  <span class="node-content" data-id="7">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">print</span>
-    <span class="node-detail">(s = msg)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="8">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">println</span>
-    <span class="node-detail">(s = 0)</span>
-  </span>
-</li>
-<li class="node">
-  <span class="node-content" data-id="9">
-    <span class="tag tag-call">call</span>
-    <span class="node-name">syscall.exit</span>
-    <span class="node-detail">( = 1)</span>
+    <span class="node-detail">copy( = a,  = b)</span>
   </span>
 </li>
   </ul>
@@ -151,7 +111,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">10 nodes · 3 functions · 1 variables</div>
+<div class="subtitle" style="margin-top:20px">5 nodes · 1 functions · 2 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{
