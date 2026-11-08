@@ -22,6 +22,84 @@ func isPtrLike(t typeSys.Type) bool {
 	return t.IsPointer() || t.Type() == "ptr"
 }
 
+// isAssignSeparator 判断是否为赋值类运算符。
+func isAssignSeparator(sep string) bool {
+	switch sep {
+	case "=", ":=", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=":
+		return true
+	}
+	return false
+}
+
+// isBuiltinIndexKind 判断类型是否由编译器内建索引/切片路径处理。
+func isBuiltinIndexKind(t typeSys.Type) bool {
+	if t == nil {
+		return false
+	}
+	switch t.Kind() {
+	case "list", "string", "array", "map":
+		return true
+	}
+	return false
+}
+
+// intLiteral 构造 int 字面量表达式（供切片缺省边界使用）。
+func intLiteral(v int) *Expression {
+	return &Expression{Num: float64(v), Type: typeSys.GetSystemType("int")}
+}
+
+// lowerMethodCall 把当前表达式改写成接收者上的方法调用。
+// receiver 必须是左值（VarBlock）；args 是除接收者外的实参。
+// 找不到候选时返回 false，由调用方决定是否报错。
+func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method string, args []*Expression) bool {
+	if receiver == nil || receiver.Type == nil {
+		return false
+	}
+	if receiver.Var == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"operator receiver of type "+receiver.Type.Type()+" must be an lvalue")
+		return false
+	}
+	candidates := methodCandidates(receiver.Type, method)
+	if len(candidates) == 0 {
+		return false
+	}
+	call := &CallBlock{
+		Name:    NewName(receiver.Type.Type(), method),
+		ThisVar: receiver.Var,
+		Args:    make([]*ArgBlock, 0, len(args)),
+	}
+	for _, arg := range args {
+		call.Args = append(call.Args, &ArgBlock{Value: arg, Type: arg.Type})
+	}
+	sel, _, ambiguous := selectCallCandidate(call, candidates)
+	if sel == nil {
+		if ambiguous {
+			p.Error.MissError("Call Error", p.Lexer.Cursor,
+				"ambiguous operator method "+receiver.Type.Type()+"."+method)
+		}
+		return false
+	}
+	call.Func = sel
+	sel.Useful = true
+	if !call.Check(p) {
+		return false
+	}
+	// 改写成普通调用表达式：generate 先按 Separator 分派，必须清空索引形状。
+	exp.Call = call
+	exp.Separator = ""
+	exp.Left = nil
+	exp.Right = nil
+	exp.Var = nil
+	exp.Index = [3]*Expression{}
+	exp.IndexSlice = false
+	exp.Type = nil
+	if len(sel.Return) > 0 {
+		exp.Type = sel.Return[0]
+	}
+	return true
+}
+
 // Check 表达式语义检查入口：类型推导 + 常量折叠。
 // 按优先级分发：变量引用 → 函数调用 → 运算符检查 → 常量。
 func (exp *Expression) Check(p *Parser) bool {
@@ -128,8 +206,12 @@ func (exp *Expression) checkOp(p *Parser) bool {
 		}
 	}
 
-	// 递归检查子节点
-	if exp.Left != nil {
+	// 递归检查子节点。
+	// 赋值表达式的 LHS 是索引时不能在这里 Check：checkIndex 会把 v[i] 提前
+	// lower 成 get 调用，checkAssign/checkIndexAssign 就看不到原始索引形状了。
+	// 由 checkIndexAssign 自己检查接收者与索引表达式，再决定内建 []= 或 set。
+	skipLeft := isAssignSeparator(exp.Separator) && exp.Left != nil && exp.Left.Separator == "[]"
+	if exp.Left != nil && !skipLeft {
 		if !exp.Left.Check(p) {
 			if os.Getenv("CUTE_DEBUG_CHK") != "" {
 				fmt.Fprintf(os.Stderr, "CHKOP RET-L sep=%s\n", exp.Separator)
@@ -193,15 +275,21 @@ func (exp *Expression) checkLogic(p *Parser) bool {
 	return true
 }
 
-// checkAssign 检查赋值运算符类型兼容性。若左子为索引表达式则转换为 []=，
-// 若左子为解引用表达式则转换为 deref=。
+// checkAssign 检查赋值运算符类型兼容性。若左子为索引表达式则交给
+// checkIndexAssign 统一处理（内建 []= 或自定义 set），若左子为解引用表达式
+// 则转换为 deref=。
 func (exp *Expression) checkAssign(p *Parser) bool {
 	if os.Getenv("CUTE_DEBUG_CHK") != "" {
-		fmt.Fprintf(os.Stderr, "CHKASSIGN sep=%s l.sep=%s l.L=%v l.R.var=%v\n", exp.Separator, exp.Left.Separator, exp.Left.Left != nil, exp.Left.Right.Var != nil)
+		lsep, lright := "", false
+		if exp.Left != nil {
+			lsep = exp.Left.Separator
+			lright = exp.Left.Right != nil
+		}
+		fmt.Fprintf(os.Stderr, "CHKASSIGN sep=%s l.sep=%s l.L=%v l.R=%v\n", exp.Separator, lsep, exp.Left != nil && exp.Left.Left != nil, lright)
 	}
-	// 索引赋值转换：arr[i] = val → arr[]=[i, val]
+	// 索引赋值：arr[i] = val / arr[i] op= val，由 checkIndexAssign 决定
+	// 走内建 []= 还是自定义类型的 set 方法。
 	if exp.Left != nil && exp.Left.Separator == "[]" {
-		exp.Separator = "[]="
 		return exp.checkIndexAssign(p)
 	}
 
@@ -246,26 +334,83 @@ func (exp *Expression) checkAssign(p *Parser) bool {
 	return true
 }
 
-// checkIndexAssign 检查索引赋值 arr[index] = value。
+// lowerOperator 把运算符 lowering 到 receiver.method(args)。
+// 没有候选方法或候选不匹配时报告 opName 在该类型上不可用。
+func (exp *Expression) lowerOperator(p *Parser, receiver *Expression, method string, args []*Expression, opName string) bool {
+	if receiver == nil || receiver.Type == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "operator "+opName+" has no operand type")
+		return false
+	}
+	if len(methodCandidates(receiver.Type, method)) == 0 {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"operator "+opName+" not defined for type "+receiver.Type.Type())
+		return false
+	}
+	if !exp.lowerMethodCall(p, receiver, method, args) {
+		// lowerMethodCall 已报告非左值/歧义；候选存在但签名不匹配时在这里补报。
+		if receiver.Var != nil {
+			p.Error.MissError("Call Error", p.Lexer.Cursor,
+				"no matching overload for operator "+opName+" on type "+receiver.Type.Type())
+		}
+		return false
+	}
+	return true
+}
+
+// checkIndexAssign 检查索引赋值 arr[index] = value / arr[index] op= value。
 // 节点形状：exp.Left 是 [] 索引节点，exp.Right 是右值。
-// 历史实现把 exp.Right 当成被索引对象（list 检查因此长期未真正生效）；
-// 本波为 map 增加类型判定时按真实形状读取，list 旧路径不改，避免扩大行为面。
+// 内建 list/string/array/map 保持原 []= 路径；自定义类型 lowering 成
+// receiver.set(index, value)。复合赋值展开成 set(index, get(index) op value)。
 func (exp *Expression) checkIndexAssign(p *Parser) bool {
+	idxNode := exp.Left
 	value := exp.Right
 	if value != nil {
 		if !value.Check(p) {
 			return false
 		}
 	}
-	idxNode := exp.Left
-	if idxNode != nil {
-		if !idxNode.Check(p) {
-			return false
-		}
+	if idxNode == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "index assignment has no left operand")
+		return false
+	}
+	receiver := idxNode.Right
+	if receiver == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "index assignment has no receiver")
+		return false
+	}
+	if !receiver.Check(p) {
+		return false
+	}
+	if receiver.Type == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "index assignment receiver has no type")
+		return false
 	}
 
-	if idxNode != nil && idxNode.Separator == "[]" && idxNode.Right != nil &&
-		idxNode.Right.Type != nil && idxNode.Right.Type.Kind() == "map" {
+	// 自定义类型：不调用 idxNode.Check（那会把 LHS lower 成 get）。
+	if !isBuiltinIndexKind(receiver.Type) {
+		if idxNode.IndexSlice {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "cannot assign to slice expression")
+			return false
+		}
+		for i := 0; i < 3; i++ {
+			if idxNode.Index[i] != nil {
+				if !idxNode.Index[i].Check(p) {
+					return false
+				}
+			}
+		}
+		if idxNode.Index[0] == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "index assignment is empty")
+			return false
+		}
+		return exp.lowerCustomIndexAssign(p, idxNode, value)
+	}
+
+	if !idxNode.Check(p) {
+		return false
+	}
+
+	if idxNode.Right.Type != nil && idxNode.Right.Type.Kind() == "map" {
 		mt, ok := idxNode.Right.Type.(*typeSys.MapType)
 		if !ok || mt.Elem() == nil {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "invalid map type in index assignment")
@@ -279,7 +424,33 @@ func (exp *Expression) checkIndexAssign(p *Parser) bool {
 		}
 	}
 
+	// codegen 的 indexSet 依赖 []= 形状。
+	exp.Separator = "[]="
 	return true
+}
+
+// lowerCustomIndexAssign 把自定义类型索引赋值改写成 set 调用。
+// 简单赋值：v[i] = x       → v.set(i, x)
+// 复合赋值：v[i] += x      → v.set(i, v.get(i) + x)
+func (exp *Expression) lowerCustomIndexAssign(p *Parser, idxNode *Expression, value *Expression) bool {
+	receiver := idxNode.Right
+	index := idxNode.Index[0]
+	simple := exp.Separator == "=" || exp.Separator == ":="
+	if !simple && isAssignSeparator(exp.Separator) {
+		op := strings.TrimSuffix(exp.Separator, "=")
+		// get 与 set 复用同一个已检查的接收者/索引表达式；接收者必须是
+		// 变量（lowerMethodCall 会再次校验），重复求值不会产生副作用。
+		getNode := &Expression{Separator: "[]", Right: receiver, Index: idxNode.Index}
+		if !getNode.Check(p) {
+			return false
+		}
+		bin := &Expression{Separator: op, Left: getNode, Right: value}
+		if !bin.Check(p) {
+			return false
+		}
+		return exp.lowerOperator(p, receiver, "set", []*Expression{index, bin}, "[]=")
+	}
+	return exp.lowerOperator(p, receiver, "set", []*Expression{index, value}, "[]=")
 }
 
 // checkDerefAssign 检查解引用赋值 *addr = value（节点形状 deref=(值, 指针)）。
@@ -331,41 +502,34 @@ func (exp *Expression) checkIncDec(p *Parser) bool {
 	return true
 }
 
-// checkOverload 检查运算符重载方法，通过 FindFunc 查找 TypeName.method 方法。
+// checkOverload 检查运算符重载方法，把表达式 lowering 成方法调用。
+// 二元运算符接收者是 Left，一元运算符接收者是 Right（此时 Left 为 nil）。
 func (exp *Expression) checkOverload(p *Parser) bool {
-	if exp.Left == nil || exp.Left.Type == nil {
-		return false
+	operand := exp.Left
+	unary := false
+	if operand == nil {
+		operand = exp.Right
+		unary = true
 	}
-
-	leftTypeName := exp.Left.Type.Type()
-	if leftTypeName == "" {
+	if operand == nil || operand.Type == nil {
 		return false
 	}
 
 	methodName := ""
-	if exp.Left != nil && exp.Right != nil {
-		methodName = opMethodMap[exp.Separator]
-	} else {
+	var args []*Expression
+	if unary {
 		methodName = unaryOpMethodMap[exp.Separator]
+	} else {
+		methodName = opMethodMap[exp.Separator]
+		if exp.Right != nil {
+			args = []*Expression{exp.Right}
+		}
 	}
-
 	if methodName == "" {
 		return false
 	}
 
-	methodFullName := NewName(leftTypeName, methodName)
-	results := p.Find(methodFullName, FindTypeFunc)
-
-	if len(results) > 0 {
-		if funcBlock, ok := results[0].Value.(*FuncBlock); ok {
-			exp.Type = funcBlock.Return[0]
-			return true
-		}
-	}
-
-	p.Error.MissError("Type Error", p.Lexer.Cursor,
-		"operator "+exp.Separator+" not defined for type "+leftTypeName)
-	return false
+	return exp.lowerOperator(p, operand, methodName, args, exp.Separator)
 }
 
 // checkIndex 检查列表索引/切片，推导元素类型或列表类型。
@@ -449,8 +613,29 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 		return true
 
 	default:
-		// 自定义类型，尝试运算符重载
-		return exp.checkOverload(p)
+		// 自定义类型：lowering 成 get/slice 方法调用。
+		if exp.IndexSlice {
+			start := exp.Index[0]
+			if start == nil {
+				start = intLiteral(0)
+			}
+			end := exp.Index[1]
+			if end == nil {
+				end = intLiteral(-1)
+			}
+			step := exp.Index[2]
+			if step == nil {
+				step = intLiteral(1)
+			}
+			return exp.lowerOperator(p, indexed, "slice",
+				[]*Expression{start, end, step}, "[::]")
+		}
+		if exp.Index[0] == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "index is empty")
+			return false
+		}
+		return exp.lowerOperator(p, indexed, "get",
+			[]*Expression{exp.Index[0]}, "[]")
 	}
 }
 
@@ -546,10 +731,11 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 		}
 
 	case "~":
-		if !typeSys.CheckKind(exp.Right.Type, "int") {
+		// 位取反适用于所有整数类型（含 uint/byte）；float 才走运算符重载。
+		if !typeSys.IsNum(exp.Right.Type) || typeSys.CheckKind(exp.Right.Type, "float") {
 			return exp.checkOverload(p)
 		}
-		exp.Type = typeSys.GetSystemType("int")
+		exp.Type = exp.Right.Type
 		if exp.Right.IsConst() {
 			exp.Num = float64(^int64(exp.Right.Num))
 			exp.foldNum(exp.Num)
@@ -702,6 +888,16 @@ func (exp *Expression) checkEq(p *Parser) bool {
 	// 必须在通用三槽比较与常量折叠之前改写；字面量仍本地折叠。
 	if exp.tryIntrinsicStringEq(p) {
 		return true
+	}
+
+	// 自定义类型：同类型时优先调用 eq/ne 方法；没有方法则回退原生比较。
+	if exp.Left != nil && exp.Right != nil && exp.Left.Type != nil && exp.Right.Type != nil &&
+		!isTypeParam(exp.Left.Type) && !isTypeParam(exp.Right.Type) &&
+		typeSys.TypeEqual(exp.Left.Type, exp.Right.Type) {
+		method := opMethodMap[exp.Separator]
+		if len(methodCandidates(exp.Left.Type, method)) > 0 {
+			return exp.lowerOperator(p, exp.Left, method, []*Expression{exp.Right}, exp.Separator)
+		}
 	}
 
 	// nil 与任意指针类型（ptr / *T）比较恒合法

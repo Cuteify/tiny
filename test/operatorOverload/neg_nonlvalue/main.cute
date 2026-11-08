@@ -1,0 +1,18 @@
+// 负例：非左值接收者不能 lowering 成方法调用
+type Vec struct {
+    data: []int
+}
+
+fn Vec.get(i int) int {
+    ret self.data[i]
+}
+
+fn makeVec() Vec {
+    var v: Vec
+    v.data = []int{1, 2, 3}
+    ret v
+}
+
+fn main() int {
+    ret makeVec()[0]
+}

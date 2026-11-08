@@ -1,0 +1,123 @@
+// 自定义类型运算符重载：[] / []= / [::] / eq / ne / 一元 / 二元 / 复合赋值
+
+type Vec struct {
+    data: []int
+    n: int
+}
+
+fn Vec.get(i int) int {
+    ret self.data[i]
+}
+
+fn Vec.set(i int, v int) {
+    self.data[i] = v
+}
+
+// 返回 start/end/step 的编码，便于验证 lowering 与缺省边界
+fn Vec.slice(start int, end int, step int) int {
+    ret start * 10000 + end * 100 + step
+}
+
+type Val struct {
+    v: int
+}
+
+fn Val.eq(other Val) bool {
+    ret self.v == other.v
+}
+
+fn Val.ne(other Val) bool {
+    ret self.v != other.v
+}
+
+fn Val.neg() int {
+    ret -self.v
+}
+
+fn Val.not() bool {
+    ret self.v == 0
+}
+
+fn Val.bnot() int {
+    ret ~self.v
+}
+
+fn Val.add(other Val) int {
+    ret self.v + other.v
+}
+
+fn main() int {
+    var failures: int = 0
+
+    var v: Vec
+    v.data = []int{1, 2, 3}
+    v.n = 3
+
+    // get
+    if v[1] != 2 {
+        failures += 1
+    }
+
+    // set
+    v[1] = 7
+    if v[1] != 7 {
+        failures += 1
+    }
+
+    // 复合赋值：set(1, get(1) + 5)
+    v[1] += 5
+    if v[1] != 12 {
+        failures += 1
+    }
+
+    // slice：显式边界
+    if v[0:3:2] != 302 {
+        failures += 1
+    }
+
+    // slice：省略 start / end / step
+    if v[:2] != 201 {
+        failures += 1
+    }
+    if v[1:] != 9901 {
+        failures += 1
+    }
+    if v[:] != -99 {
+        failures += 1
+    }
+
+    // 相等 / 不等：走 eq/ne 方法
+    var a: Val
+    a.v = 5
+    var b: Val
+    b.v = 5
+    var c: Val
+    c.v = 6
+    if !(a == b) {
+        failures += 1
+    }
+    if !(a != c) {
+        failures += 1
+    }
+
+    // 一元
+    if -a != -5 {
+        failures += 1
+    }
+    if c.not() {
+        failures += 1
+    }
+    if ~a != -6 {
+        failures += 1
+    }
+
+    // 二元
+    if a + c != 11 {
+        failures += 1
+    }
+
+    if failures == 0 {
+        ret 42
+    }
+    ret failures
+}

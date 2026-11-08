@@ -30,10 +30,22 @@
 
 ## P2 运算符重载 lowering
 
-- [ ] get/set/slice lowering
-- [ ] 一元与 eq/ne
-- [ ] 复合索引赋值
-- [ ] 测试与提交
+- [x] get/set/slice lowering
+  - `checkIndex`：自定义类型 `v[i]` → `v.get(i)`；`v[a:b:c]` → `v.slice(a,b,c)`，缺省边界 `0/-1/1`
+  - `checkIndexAssign`：自定义 `v[i] = x` → `v.set(i,x)`；切片赋值显式报错
+  - 接收者 v1 限定 `VarBlock`；非左值报 `operator receiver of type <T> must be an lvalue`
+- [x] 一元与 eq/ne
+  - `checkOverload` 支持一元（Right 为接收者）与二元 lowering
+  - `checkEq` 同类型自定义类型优先 `eq/ne`，无方法回退原生比较
+  - `checkUnary` 的 `~` 扩展到所有整数类型（含 `uint`/`byte`），保留操作数类型
+- [x] 复合索引赋值
+  - `v[i] op= x` → `v.set(i, v.get(i) op x)`
+  - `checkOp` 对赋值 LHS 索引跳过递归 Check，避免 `checkIndex` 提前 lower 成 get
+  - 内建 list/string/array/map 保持原 `[]=` 形状
+- [x] 测试与提交
+  - `test/operatorOverload`：get/set/复合赋值/slice 显式与缺省边界/eq/ne/一元 `- ! ~`/二元 `+`；x86_64 与 x86 均 exit=42
+  - `test/operatorOverload/neg_nonlvalue`：负例编译失败，错误含 `operator receiver of type Vec must be an lvalue`
+  - 回归与基线一致：overload 42、overload_types 通过、controlFlow 39、complexTest 17、for_range_test 139、stringUtils 编译失败、gcRetFree 3/0、fullSyntaxTest 1、structValue 11、structMethod 45、enum 42、iface_generic 0、mp_map 74；comprehensive 为既有不稳定测试
 
 ## P3 数值转换
 
