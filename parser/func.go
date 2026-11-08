@@ -3,7 +3,6 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -895,7 +894,7 @@ func funcCheckMark(n *Node) func() {
 func (f *FuncBlock) Check(p *Parser) bool {
 	// 计算参数起始偏移量
 	argCount := 8
-	if os.Getenv("CUTE_ARCH") == "x86_64" {
+	if typeSys.TargetArch() == "x86_64" {
 		argCount = 16
 	}
 

@@ -2,11 +2,10 @@ package parser
 
 import (
 	"cuteify/lexer"
-	"os"
+	typeSys "cuteify/type"
 	"runtime"
 	"strconv"
 	"strings"
-	typeSys "cuteify/type"
 )
 
 type Build struct {
@@ -201,10 +200,7 @@ func (b *Build) checkOSMatch() {
 }
 
 func (b *Build) checkArchMatch() {
-	currentArch := os.Getenv("CUTE_ARCH")
-	if currentArch == "" {
-		currentArch = "x86"
-	}
+	currentArch := typeSys.TargetArch()
 	for _, arch := range b.Archs {
 		arch = strings.TrimSpace(arch)
 		if arch == currentArch {

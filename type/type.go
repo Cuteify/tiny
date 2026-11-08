@@ -2,14 +2,31 @@ package typeSys
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"unsafe"
 )
 
 var TargetPointerSize int = 4
 
+// TargetArch 返回目标架构。CUTE_ARCH 优先；未设置时按宿主 GOARCH 映射，
+// 避免 build arch、参数偏移与 TargetPointerSize 各自使用不同默认值。
+func TargetArch() string {
+	if v := os.Getenv("CUTE_ARCH"); v != "" {
+		return v
+	}
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x86_64"
+	case "386":
+		return "x86"
+	default:
+		return runtime.GOARCH
+	}
+}
+
 func init() {
-	if os.Getenv("CUTE_ARCH") == "x86_64" {
+	if TargetArch() == "x86_64" {
 		TargetPointerSize = 8
 	}
 }

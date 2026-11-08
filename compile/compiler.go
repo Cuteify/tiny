@@ -17,8 +17,8 @@ import (
 var GoArch = "x86"
 
 func init() {
-	if v := os.Getenv("CUTE_ARCH"); v != "" {
-		GoArch = v
+	GoArch = typeSys.TargetArch()
+	if os.Getenv("CUTE_ARCH") != "" {
 		fmt.Println("Using target arch:", GoArch)
 	}
 }

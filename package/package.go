@@ -4,6 +4,7 @@ import (
 	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	"cuteify/parser"
+	typeSys "cuteify/type"
 	"encoding/json"
 	"os"
 	"path"
@@ -43,10 +44,7 @@ func preFilterBuild(pkgPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	currentArch := os.Getenv("CUTE_ARCH")
-	if currentArch == "" {
-		currentArch = "x86"
-	}
+	currentArch := typeSys.TargetArch()
 	if m := reBuildArch.FindStringSubmatch(string(content)); m != nil {
 		matched := false
 		for _, n := range splitNames(m[1]) {
