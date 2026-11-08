@@ -83,8 +83,8 @@
 | `for` | ✅ | 传统 for 与 range |
 | `range` | ✅ | 仅 `for ... range` 上下文 |
 | `return` / `ret` | ✅ | 两者等价 |
-| `break` | ✅ | 支持 `break`、`break N`、`break(N)` |
-| `switch` / `case` / `default` | ✅ | 带目标、单值 case 可用 |
+| `break` | ✅ | 支持 `break`、`break N`、`break(N)`；同时统计 for 与 switch |
+| `switch` / `case` / `default` | ✅ | 带目标、单值 case 可用；支持 `break` 与 `fallthrough` |
 | `type` | ✅ | 别名、结构体、接口 |
 | `struct` | ✅ | 结构体声明 |
 | `interface` | ⚠️ | 仅 `type X interface { ... }` 形式 |
@@ -98,12 +98,12 @@
 | `true` / `false` | ✅ | 布尔字面量 |
 | `nil` | ✅ | 空指针常量（词法上归入 BOOL） |
 | `self` | ✅ | 词法表中登记为 NAME（普通标识符）；仅方法接收者位置有特殊含义 |
-| `continue` | ❌ | 关键字被 parser 静默丢弃，等价于空语句 |
+| `continue` | ✅ | 支持 `continue`、`continue N`、`continue(N)`；只统计 for 循环 |
 | `defer` | ❌ | 关键字被 parser 静默丢弃；后续调用按普通语句立即执行 |
-| `while` | ❌ | 无 parser 分支；`while false` 报 `Miss false` |
-| `try` / `except` / `finally` | ❌ | 无 parser 分支；`try` 报 `Miss {` |
+| `while` | ✅ | `while cond { ... }`；复用 for 代码生成 |
+| `try` / `except` / `finally` | ❌ | 关键字保留；遇到时显式报 `'try' is not supported yet`（不会静默跳过） |
 | `pub` | ❌ | **不是关键字**；结构体字段前会被跳过（`pub x: int` 可用但无导出语义），顶层 `pub fn` / `pub var` 报 `'pub' is not a valid expression` |
-| `fallthrough` | ❌ | **不是关键字**；会被当表达式解析并报 `'fallthrough' is not a valid expression` |
+| `fallthrough` | ✅ | 仅允许作为 switch case 的最后一条语句；最后一个 case 禁止使用 |
 
 ### 1.5 字面量
 
@@ -538,7 +538,30 @@ type MyInt2 int       // 新类型（底层 int）
 | `f64 → int` 声明初始化 | ⚠️ | 能编译，但实测 `5.0 → 0`、`6.9 → 154`，结果错误 |
 | `[]T` / `[N]T` / `map` / 结构体之间 | ❌ | 不做隐式转换 |
 
-**重要**：声明初始化 `var y: T = x` 在 `parser/var.go` 里把 `IsConst` 硬编码为 `true`，因此比普通赋值宽松；这只是实现差异，不应作为“跨 Kind 转换可用”的依据。
+**显式数值转换**：用与目标类型同名的函数调用，语义是数值转换（截断/扩展/舍入），不是 `unsafe.cast` 的位重解释。
+
+```cute
+int(x)   uint(x)
+i8(x)    i16(x)   i32(x)   i64(x)
+u8(x)    u16(x)   u32(x)   u64(x)
+int8(x)  int16(x) int32(x) int64(x)
+uint8(x) uint16(x) uint32(x) uint64(x)
+byte(x)  f32(x)   f64(x)
+```
+
+| 转换 | 状态 | 说明 |
+|---|---|---|
+| 整数 → 更窄整数 | ✅ | 截断低位，如 `u8(300) == 44`、`i8(200) == -56` |
+| 窄整数 → 更宽整数 | ✅ | 按源类型符号扩展/零扩展，如 `int(i8(200)) == -56`、`u16(i8(-1)) == 65535` |
+| 浮点 → 整数 | ✅（x86_64） | 向零截断，如 `int(3.9) == 3`、`int(-3.9) == -3` |
+| 整数 → 浮点 | ✅（x86_64） | 数值转换，如 `f64(7) == 7.0` |
+| `f32 ↔ f64` | ✅（x86_64） | 精度收窄/扩展 |
+| 常量/变量作为源 | ✅ | 两种形态都支持 |
+| `bool` / `string` / 容器作为源 | ❌ | 报 `cannot convert ...` |
+| x86（32 位）浮点转换 | ❌ | 显式报 `floating-point conversion ... is not supported on 32-bit target` |
+| x86（32 位）64 位标量转换 | ❌ | 显式报 `64-bit conversion ... is not supported on 32-bit target` |
+
+**重要**：声明初始化 `var y: T = x` 在 `parser/var.go` 里把 `IsConst` 硬编码为 `true`，因此比普通赋值宽松；这只是实现差异，不应作为“跨 Kind 转换可用”的依据。需要跨 Kind 转换时一律写显式转换（如 `var y: f64 = f64(x)`）。
 
 ### 5.5 byte 与 u8 的区别 ⚠️
 
@@ -860,9 +883,9 @@ for i := 0; i < 3; i++ {
 | `for i := 0; i < 3; i++ { }` | ✅ | 标准形式 |
 | `for i = 0; i < 3; i++ { }` | ✅ | `i` 需已声明 |
 | `for var i: int = 0; ...` | ❌ | init 只能是表达式；报 `unexpected token: var` |
-| post `i = i + 1` | ❌ | 失败 |
-| post `i += 1` | ❌ | 失败 |
-| post `i++` / `i--` | ✅ | 唯一可用的 post 形式 |
+| post `i = i + 1` | ✅ | 普通赋值表达式 |
+| post `i += 1` | ✅ | 复合赋值 |
+| post `i++` / `i--` | ✅ | 自增/自减 |
 | `for ... \n {` | ❌ | `{` 必须与 for 头部同行；报 `for loop must end by '{'` |
 | 整个 body 写在同一行 | ❌ | `for ... { stmt }` 报 `expected right operand` |
 | `{` 后同行写语句、`}` 另起一行 | ✅ | 可用 |
@@ -914,39 +937,41 @@ default:
 | 带目标 `switch x` | ✅ | |
 | int case | ✅ | |
 | string case | ✅ | |
-| `default` | ✅ | |
+| `default` | ✅ | 按源码顺序编译，可以出现在中间 |
 | 无匹配 | ✅ | 继续执行 switch 之后 |
+| `break` | ✅ | 只退出当前 switch；`break N` 可继续向外跳出 |
+| `fallthrough` | ✅ | 跳到下一个 case body；必须是 case 最后一条语句，最后一个 case 禁用 |
 | 多值 `case 1, 2:` | ❌ | 编译期 nil pointer panic |
 | 无目标 `switch {` | ❌ | 编译期 nil pointer panic |
-| `fallthrough` | ❌ | 不是关键字 |
 | case body 单行 | ✅ | `case 1: ret 1` 可用 |
 
-`break` 在 switch 里的语义是**错误的**：它只查找外层 `ForBlock`。
-
-- 没有外层循环：`break` 是 no-op，不会退出 switch。
-- 有外层循环：`break` 会退出外层循环，而不是只退出 switch。
-- 想在 case 内提前结束，请用 `return` 重构，或避免依赖 `break`。
+`break` 在 switch 内按 Go 语义退出 switch：`compileBreakBlock` 按祖先顺序同时统计
+`ForBlock` 与 `SwitchBlock`，`break` 命中最近的 switch/for，`break N` 逐层向外。
+`fallthrough` 不执行任何运行期代码，只由 `compileSwitchBlock` 在 case 末尾发跳转。
 
 ### 9.6 break ✅
 
 | 形式 | 状态 | 说明 |
 |---|---|---|
-| `break` | ✅ | 退出最内层 for |
-| `break N` | ✅ | 退出 N 层 for |
+| `break` | ✅ | 退出最内层 for 或 switch |
+| `break N` | ✅ | 退出 N 层 for/switch |
 | `break(N)` | ✅ | 同上，括号形式 |
-| 循环外 `break` | ⚠️ | no-op（不报错） |
-| switch 内 `break` | ❌ | 语义错误，见 §9.5 |
+| 循环/switch 外 `break` | ❌ | 显式报 `'break' outside of loop or switch` |
+| 层级过深 | ❌ | 显式报 `break level N exceeds enclosing loop/switch depth M` |
 
 嵌套循环验证：`break 2` / `break(2)` 可跳出两层。
 
-### 9.7 continue / defer ❌
+### 9.7 continue / defer
 
 | 关键字 | 状态 | 实际行为 |
 |---|---|---|
-| `continue` | ❌ | 被 parser 静默丢弃；循环体继续执行，等价空语句 |
+| `continue` | ✅ | 跳到当前循环的继续点（块级释放之后、增量/索引自增之前） |
+| `continue N` / `continue(N)` | ✅ | 只统计 for 循环；switch 不构成 continue 目标 |
+| 循环外 `continue` | ❌ | 显式报 `'continue' outside of loop` |
+| 层级过深 | ❌ | 显式报 `continue level N exceeds enclosing loop depth M` |
 | `defer` | ❌ | 被 parser 静默丢弃；后续调用按普通语句立即执行，顺序与源码相同 |
 
-`test/controlFlow` 期望 38，实际 39，就是 `continue` 被丢弃导致的。
+`test/controlFlow` 中 `continue` 生效后退出码由 39 变为 **37**。
 `test/defer_test` 输出 `cleanup1cleanup2main`，说明 `defer` 没有延迟执行。
 
 `compile/defer.go` 里有 `DeferBlock` 收集逻辑，但 parser 从未构造 `DeferBlock`，属于死代码。
@@ -977,9 +1002,9 @@ default:
 
 | 语句 | 状态 | 现象 |
 |---|---|---|
-| `while` | ❌ | `Miss false` |
-| `try` / `except` / `finally` | ❌ | `Miss {` |
-| `fallthrough` | ❌ | `'fallthrough' is not a valid expression` |
+| `while cond { ... }` | ✅ | 等价 `for cond { ... }` |
+| `try` / `except` / `finally` | ❌ | 显式报 `'try' is not supported yet`（关键字保留，不会静默跳过） |
+| `fallthrough` | ✅ | 仅 switch case 内，见 §9.5 |
 | 独立块 `{ ... }` | ❌ | `Miss {` |
 | 标签语句 / `goto` | ❌ | 无实现 |
 
@@ -1024,7 +1049,7 @@ default:
 |---|---|---|
 | `+` | 数值加；string 拼接；指针 + 整数 | ✅ |
 | `-` | 数值减；指针 - 整数 | ✅ |
-| `*` | 数值乘；string * int 重复（仅常量折叠可靠） | ✅ / ⚠️ |
+| `*` | 数值乘；`string * int` 重复 | ✅ |
 | `/` | 整数除法（向零截断）；浮点除法 ⚠️ | ✅ / ⚠️ |
 | `%` | 整数取模 | ✅ |
 | `^` | 按位异或 | ✅ |
@@ -1053,7 +1078,7 @@ default:
 | 运算 | 状态 | 说明 |
 |---|---|---|
 | `+` 拼接 | ✅ | `"ab" + "cd"` |
-| `*` 重复 | ⚠️ | 仅字面量常量折叠可靠：`"ab" * 3` 得 len 6；运行期变量 `s * n` 长度错误（`a * 1` 实测 len 32） |
+| `*` 重复 | ✅ | `s * n`；常量在编译期折叠，运行期 lowering 到 `std:strings.repeatN`；`n <= 0` 返回空串 |
 | `==` / `!=` | ✅ | 内容比较（lowering 到 `std:strings.eq/ne`） |
 | `<` / `>` 等 | ❌ | 不支持 |
 | `len(s)` | ✅ | 变量可用 |
@@ -1064,6 +1089,8 @@ default:
 | `len("literal")` | ❌ | 直接传字面量返回 0；先存变量 |
 | `cap("literal")` | ❌ | 同上 |
 | `s.len()` | ❌ | 返回值错误（实测 56）；用 `len(s)` |
+
+重复只支持 `string * int`；反向 `int * string` 未实现。运行期的负数/零次数与常量折叠一致，均返回空串，不会 panic。
 
 ### 10.5 指针运算
 
@@ -1175,11 +1202,16 @@ default:
 |---|---|---|
 | `V.add` | ✅ | `a + b` 调用成功（exit 7） |
 | `V.eq` | ✅ | `a == b` 调用成功（exit 7） |
-| `V.get`（`[]`） | ❌ | 运行段错误（exit 139） |
-| `V.set`（`[]=`） | ❌ | `v[2] = 5` 报 `expected right operand` |
-| `V.slice`（`[::]`） | ⚠️ | 映射存在，未验证到可用路径 |
+| `V.get`（`[]`） | ✅ | `v[i]` 改写为 `v.get(i)`；接收者必须是左值 |
+| `V.set`（`[]=`） | ✅ | `v[i] = x` 改写为 `v.set(i, x)`；支持 `v[i] += x` |
+| `V.slice`（`[::]`） | ✅ | `v[lo:hi:step]` 改写为 `v.slice(lo, hi, step)`；缺省 start=0、end=-1、step=1 |
 
-注意：`^` 的内建语义是异或，但重载方法名叫 `pow`（历史命名）；不要据此认为 `^` 是幂运算。
+注意：
+
+- `[]` / `[]=` / `[::]` lowering 只对非内建自定义类型生效；`[]T`、`string`、`map` 仍走原有内建路径。
+- 接收者必须是可寻址左值。`makeVec()[0]` 这类非左值接收者会显式报错，不会生成错误代码。
+- 复合赋值 `v[i] += x` 展开为 `v.set(i, v.get(i) + x)`。
+- `^` 的内建语义是异或，但重载方法名叫 `pow`（历史命名）；不要据此认为 `^` 是幂运算。
 
 ---
 
@@ -1198,6 +1230,7 @@ default:
 | `cap(x)` | ✅ | string/list 变量；字面量直接传不可靠 |
 | `copy(dst, src)` | ✅ | 返回复制的元素数（`min(len(dst), len(src))`，实测 2） |
 | `unsafe.cast[T](x)` | ⚠️ | 位级重解释，不是数值转换 |
+| `int(x)` / `i64(x)` / `f64(x)` 等 | ✅ | 显式数值转换，见 §5.4；x86 限制浮点/64 位标量 |
 | `print(s)` | ✅ | 来自 `std:builtin` |
 | `println(s)` | ✅ | 仅接受一个 string 参数 |
 | `panic(msg)` | ✅ | 来自 `std:builtin` |
@@ -1234,48 +1267,52 @@ unsafe.cast[T](x)
 
 - 是**位级重解释**（no-op 地址/位模式传递），不是数值转换。
 - `unsafe.cast[int](1.5)` 得 0。
-- 把整数转成 `byte`：`unsafe.cast[byte](x)`。
+- 把整数转成 `byte`：`unsafe.cast[byte](x)`；只想要数值截断时用 `byte(x)`。
 - 指针/地址互转：`unsafe.cast[ptr](p)`、`unsafe.cast[*T](addr)`。
-- ❌ 没有 `int(x)` / `i64(x)` / `f64(x)` 这类显式数值转换函数；调用会报 `not found function 'int'`。
+- 数值转换请用 §5.4 的显式转换函数（`int(x)` / `i64(x)` / `f64(x)` 等），不要用 `unsafe.cast` 代替。
 
 ### 11.4 自动 std 包与 intrinsic 表 ✅
 
-根包加载时（未设置 `CUTE_NO_INTRINSIC`）会自动预加载：
-
-- `std:strings`
-- `std:maps`
-- `std:slices`
-
-因此可以无 import 使用：
+根包加载时只自动导入 `builtin`（`print` / `println` / `panic` 可无 import 调用）。
+`std:strings`、`std:maps`、`std:slices` 会被**预加载**，但仅用于 `intrinsicTable`
+的 lowering，不写入根包 import 别名、也不提供用户命名空间回退：
 
 ```cute
-strings.len("abc")      // 3
-slices.make[int](4)
+// 没有 import 时：
+strings.len("abc")      // ❌ not found function 'strings.len'
+slices.make[int](4)     // ❌ not found function 'slices.make'
+
+// 需要显式导入：
+import "std:strings"
+strings.len("abc")      // ✅
 ```
 
 | 规则 | 说明 |
 |---|---|
-| 自动包不占用 import 别名 | 用户变量/别名优先 |
+| 自动包只有 `builtin` | `strings` / `maps` / `slices` 必须显式 import 才能按名字调用 |
+| 预加载不占用 import 别名 | 用户变量/导入别名优先 |
 | 显式 import 别名优先 | `import my "std:strings"` 后用 `my.len` |
-| `CUTE_NO_INTRINSIC=1` | 关闭预加载与 string 内容比较 lowering |
-| 局部变量优先 | 函数内先查局部/参数/字段，再走包回退 |
+| `CUTE_NO_INTRINSIC=1` | 关闭预加载以及 string 内容比较/重复 lowering |
+| 局部变量优先 | 函数内先查局部/参数/字段，再走包路径 |
 
 intrinsic 映射（唯一事实源 `parser/intrinsic.go`）：
 
-| Kind | 操作 | 实现 | 形态 |
-|---|---|---|---|
-| `string` | `==` / `!=` | `std:strings.eq` / `ne` | parser lowering |
-| `string` | `+` | 编译器内建 | Native |
-| `string` | `len` / `cap` | 编译器内建 | Native |
-| `string` | `s[i]` / `s[lo:hi:step]` | 编译器内建 | Native |
-| `map` | `len(m)` | 编译器内建 | Native |
-| `map` | `m[k]` | `std:maps.get` | codegen |
-| `map` | `m[k] = v` | `std:maps.set` | codegen |
-| `list` | `len` / `cap` | 编译器内建 | Native |
-| `list` | `s[i]` / `s[i] = v` | 编译器内建 | Native |
-| `list` | `s[lo:hi:step]` | 编译器内建 | Native |
+| Kind | 操作 | 实现 | 形态 | 保留 Native 的原因 |
+|---|---|---|---|---|
+| `string` | `==` / `!=` | `std:strings.eq` / `ne` | parser lowering | — |
+| `string` | `*` | `std:strings.repeatN` | parser lowering | — |
+| `string` | `+` | 编译器内建 | Native | 拼接要分配新缓冲并构造三槽头 |
+| `string` | `len` / `cap` | 编译器内建 | Native | 直接读字符串头 |
+| `string` | `s[i]` / `s[lo:hi:step]` | 编译器内建 | Native | 索引返回 `byte`，切片要分配/按步长拷贝 |
+| `map` | `len(m)` | 编译器内建 | Native | nil 安全地读 header `count` |
+| `map` | `m[k]` | `std:maps.get` | codegen | 需要临时出参地址 |
+| `map` | `m[k] = v` | `std:maps.set` | codegen | 需要左值地址与 nil 自动初始化 |
+| `list` | `len` / `cap` | 编译器内建 | Native | 需要左值/地址读切片头 |
+| `list` | `s[i]` / `s[i] = v` | 编译器内建 | Native | 需要地址做越界检查/写入 |
+| `list` | `s[lo:hi:step]` | 编译器内建 | Native | 视图或新建缓冲，见 `docs/stdplan/TYPE_INTRINSIC.md` §4 |
 
-`std:slices` 的 `len/cap/push/get/set/...` 作为命名 API 可用，但不替换 `[]T` 的内建操作。
+`std:slices` 的 `len/cap/push/get/set/...` 在显式 import 后作为命名 API 可用，
+但不替换 `[]T` 的内建操作。
 
 ---
 
@@ -1286,14 +1323,15 @@ intrinsic 映射（唯一事实源 `parser/intrinsic.go`）：
 | 指令 | 状态 | 位置 | 说明 |
 |---|---|---|---|
 | `build asm { ... }` | ✅ | 函数内 | 内联 NASM；`$var` 替换为栈偏移 |
-| `build ext("sym")` | ✅ | 函数内 | 调用外部 SysV/Cdecl 函数；x86_64 只传前 6 个整数参数；返回值被忽略 |
-| `build extret("sym")` | ⚠️ | 函数内 | 仅解析；无代码生成效果 |
+| `build ext("sym")` | ✅ | 函数内 | 调用外部 SysV/Cdecl 函数；最多 6 个整数/指针参数；返回值被忽略 |
+| `build extret("sym")` | ✅ | 函数内 | 调用外部函数并直接返回其标量结果 |
 | `build link("sym")` | ✅ | 函数内 | 注册符号提供者/别名标签 |
 | `build align(N)` | ✅ | 顶层 | 仅对紧随其后的 struct 生效 |
 | `build noalign` | ✅ | 顶层 | 等价 `align(1)` |
-| `build os(...)` | ⚠️ | 顶层/函数 | 匹配时过滤；不匹配时有已知 panic |
-| `build arch(...)` | ⚠️ | 顶层/函数 | 不匹配时跳过整个文件 |
-| `build export("alias")` | ❌ | — | parser 无 `export` 分支，报 `Miss (` |
+| `build os(...)` | ✅ | 顶层/函数 | 顶层过滤下一个声明；函数内挂到当前函数 |
+| `build arch(...)` | ✅ | 顶层/函数 | 同上 |
+| `build bits(32\|64)` | ✅ | 顶层/函数 | 按目标指针位宽过滤 |
+| `build export("alias")` | ✅ | 函数内 | 以别名导出全局符号 |
 
 ### 12.1 build asm ✅
 
@@ -1312,20 +1350,29 @@ fn main() int {
 - 替换宽度按变量大小选择 `BYTE` / `WORD` / `DWORD` / `QWORD`。
 - `test/asmTest` 退出 0。
 
-### 12.2 build ext / extret ⚠️
+### 12.2 build ext / extret ✅
 
 ```cute
+// 返回值忽略：适合 puts 这类只需要副作用的调用
 fn my_puts(s: ptr) {
     build ext("puts")
 }
+
+// 直接返回外部函数结果（单个整数/指针）
+fn abs_ret(x: i32) i32 {
+    build extret("labs")
+}
 ```
 
-- 仅在函数内可用；顶层报 `ext only in func`。
-- x86_64 只把当前函数的前 6 个参数按整数寄存器 `RDI` / `RSI` / `RDX` / `RCX` / `R8` / `R9` 传入；浮点参数不会进 `xmm0`–`xmm7`。
-- x86 走 cdecl 压栈。
-- **返回值被忽略**；调用方拿不到外部函数的返回值。
-- `extret` 只解析，不生成代码。
-- 需要链接外部库时用 `-l` 参数（如 `-lm`）。
+v1 边界（parser 期显式校验，不满足直接报错）：
+
+- 仅在函数内可用；顶层报 `ext only in func` / `extret only in func`。
+- 最多 6 个参数，且只能是整数/指针；浮点、容器、结构体会报错。
+- `ext` 的返回值被忽略；需要返回值时用 `extret`。
+- `extret` 要求函数只有一个整数/指针返回值，否则显式报错。
+- x86_64 按 SysV 传递：前 6 个参数进 `RDI` / `RSI` / `RDX` / `RCX` / `R8` / `R9`，按声明宽度装载，有符号用 `movsx`/`movsxd`，无符号用 `movzx`/32 位 `mov`。
+- x86 走 cdecl 压栈；8 字节参数先压高 32 位、再压低 32 位。
+- 需要链接外部库时用 `-l` 参数（如 `-lm`），`extret` 的返回值直接作为函数返回值。
 
 ### 12.3 build link ✅
 
@@ -1343,7 +1390,7 @@ fn test_link() i32 {
 
 见 §6.8。严格紧随语义：align 与 struct 之间隔了任何声明，align 成为孤儿，不生效。
 
-### 12.5 build os / arch ⚠️
+### 12.5 build os / arch / bits ✅
 
 语法：
 
@@ -1353,29 +1400,51 @@ build os(linux, windows)
 build os("linux")
 build arch(x86_64)
 build arch(x86, x86_64)
+build bits(64)
+build bits(32, 64)
 ```
 
 - 支持裸名字、字符串、RAW、CHAR；逗号分隔列表。
 - `build os` 用 `runtime.GOOS` 比较。
 - `build arch` 用 `CUTE_ARCH` 比较；未设置时默认 `x86`（**不是**宿主架构）。
 - 因此 x86_64 构建必须显式设置 `CUTE_ARCH=x86_64`。
+- `build bits` 比较 `TargetPointerSize * 8`；只接受 32/64。
 
-已知问题：
+作用范围：
 
-| 场景 | 状态 | 现象 |
-|---|---|---|
-| `build arch` 不匹配 | ❌ | 整个文件被跳过（`fileSkipped`）；若 `main` 在同文件，后续空指针 panic |
-| `build os` 不匹配 | ❌ | 指令挂到紧随函数并标记 `Ignore`，但被忽略函数仍参与最终 Check，当前会 nil parser panic |
-| `build os` 匹配 | ✅ | 正常 |
-| `test/buildKeyword` | ❌ | 当前编译 panic |
+| 位置 | 行为 |
+|---|---|
+| 顶层，紧邻 `fn` / `type` / `var` | 只过滤紧随其后的那一个声明；不匹配时该节点标记 `BuildIgnored`，不进入重载表/查找/代码生成 |
+| 顶层，后接 `import` | 不打断 pending，继续等待下一个声明 |
+| 顶层，后接其它 token | 作废 pending（避免误挂到无关声明） |
+| 函数体内 | 挂到当前函数（`FuncBlock.BuildFlags`），不匹配时整个函数被忽略 |
+| 非根包（std/子包）文件头 | 保留整文件级 `build os/arch` 预过滤（如 `memory_x86.cute`） |
 
-结论：平台过滤只在“匹配”路径可靠；不匹配路径是已知缺陷，不能作为跨平台分片的安全机制。
+根包不做整文件过滤，因此同一文件可以混写多个平台分支：
 
-### 12.6 build export ❌
+```cute
+build arch(x86_64)
+fn archValue() int { ret 1 }
 
-- `compile/build.go` 有 `Export` 字段和代码生成分支。
-- 但 `parser/build.go` 的 `Build.Parse` 没有 `export` 分支，写 `build export("alias")` 会落到 `default: return`，随后报 `Miss (`。
-- 结论：不可用。
+build arch(x86)
+fn archValue() int { ret 2 }
+```
+
+`test/buildKeyword` 与 `test/buildDirective` 均通过（含 `bits`/`arch` 过滤、
+`ext`/`extret`、`export`）。
+
+### 12.6 build export ✅
+
+```cute
+fn exported(x: int) int {
+    build export("cute_exported")
+    ret x + 10
+}
+```
+
+- 仅在函数内可用；顶层报 `export only in func`。
+- 别名以 `global` 符号输出，并生成 `alias: jmp <mangled>` 跳板。
+- `nm` 可看到 `cute_exported`。
 
 ---
 
@@ -1443,13 +1512,16 @@ import (
 | 负索引 `a[-1]` | 运行期 `a[len-1]` | ✅（x86_64） |
 | 负步长 `a[::-1]` | 反向切片 | ✅（列表/字符串） |
 | `s + t` | string 拼接 | ✅ |
-| `s * n` | string 重复 | ⚠️（仅字面量常量折叠） |
+| `s * n` | string 重复（常量折叠 / 运行期 `strings.repeatN`） | ✅ |
 | `s == t` | 内容比较（lowering 到 `strings.eq`） | ✅ |
 | 整数字面量自动拓宽 | 超过 int32 自动 `i64` | ✅ |
 | 换行/`;` 分隔语句 | 无需分号 | ✅ |
-| 自动 std 包 | 无 import 用 `strings`/`maps`/`slices` | ✅ |
+| 自动导入 | 仅 `builtin` 可无 import 调用；`strings`/`maps`/`slices` 需显式 import | ✅ |
 | `x++` / `x--` | 自增/自减语句 | ✅ |
-| `break(N)` | `break N` | ✅ |
+| `break(N)` / `continue(N)` | `break N` / `continue N` | ✅ |
+| `while cond` | `for cond` | ✅ |
+| `fallthrough` | switch case 内跳下一个 body | ✅ |
+| `int(x)` / `f64(x)` 等 | 显式数值转换 | ✅（x86 有限制） |
 | 字符字面量 | 按 `int` 常量 | ✅ |
 | import 默认别名 | 路径末段 | ✅ |
 | `type A = B` / `type A B` | 两种别名写法都接受 | ✅（整数/结构体） |
@@ -1484,15 +1556,11 @@ import (
 | map 字面量 | 不支持 | 声明后逐项 `m[k] = v` |
 | 多值 case `case 1, 2:` | 编译期 nil pointer panic | 拆成多个 case |
 | 无目标 `switch {` | 编译期 nil pointer panic | 用 `switch true` 也不可靠；改用 if 链 |
-| `fallthrough` | 不是关键字 | 用 return/if 重构 |
 | `pub fn` / `pub var` | `'pub' is not a valid expression` | 去掉 `pub` |
-| `while` | `Miss false` | 用 `for` |
-| `try` / `except` / `finally` | `Miss {` | 用返回码/panic |
+| `try` / `except` / `finally` | `'try' is not supported yet` | 用返回码/panic |
 | `import` 在函数内 | `import is only allowed at top level` | 提到文件顶层 |
 | 点导入 `.` | `dot import is not supported yet` | 用别名 |
 | 反引号 import 路径 | `import path must be a quoted string` | 用双引号 |
-| `build export(...)` | `Miss (` | 不可用 |
-| `int(x)` / `i64(x)` / `f64(x)` | `not found function 'int'` | 用声明初始化或 `unsafe.cast`（注意语义） |
 | `sizeof[T]` 不带括号 | 返回伪值 56 | 写 `sizeof[T]()` |
 | `sizeof[[]T]()` / `sizeof[[N]T]()` | `unexpected '['` | 先起别名 |
 | `new([]T)` 不传长度 | 汇编 `invalid combination of opcode and operands` | 传长度 |
@@ -1515,9 +1583,7 @@ import (
 | 数组 range 求和 `sum += a[i]` | 结果错误（应 60 得 1） | 用传统 for |
 | 列表字面量 range | 0 次迭代 | 先赋给变量再 range |
 | map range | 0 次迭代 | 用显式键列表/其他结构 |
-| `continue` | 被丢弃，循环继续执行 | 用 if 反向包裹 |
 | `defer` | 被丢弃，调用立即执行 | 手动在返回前调用 |
-| switch 内 `break` | 不退出 switch；可能退出外层循环 | 用 return/if 重构 |
 | `const` 重新赋值 | 允许，值改变 | 不要依赖只读 |
 | 泛型字符串实例化 | 结果错误 | 泛型只用于数值 |
 | 泛型多类型参数 | 编译挂起 | 拆成单类型参数函数 |
@@ -1525,25 +1591,20 @@ import (
 | 泛型结构体 | `name contains invalid characters` | 用具体结构体 |
 | `byte` 字面量赋值 | `need type byte, not int` | 用 `u8` 或 `unsafe.cast[byte]` |
 | `byte` 算术回赋 | 结果提升为 int | 显式 `unsafe.cast[byte]` |
-| int↔float 声明转换 | 能编译但值错误（5.0→0，6.9→154） | 不要依赖浮点转换 |
+| int↔float 隐式声明初始化 | 能编译但值错误（5.0→0，6.9→154） | 写显式转换 `f64(x)` / `int(x)` |
 | 运行期浮点除法 | 除零 SIGFPE（136） | 避免运行期浮点除零 |
 | `m.len()` | 返回错误值（1 项→4） | 用 `len(m)` |
 | `m[k] += v` | 结果错误（3 而非 8） | 用 `m[k] = m[k] + v` |
 | `s.len()` | 返回错误值（56） | 用 `len(s)` |
-| 运行期 string 重复 `s * n` | 长度/内容错误（`a * 1` 得 len 32） | 只用字面量常量重复，或循环拼接 |
 | `len("literal")` / `cap("literal")` | 返回 0 | 先赋给 string 变量 |
 | `len(array)` | 不支持 | 用常量 N 或 `sizeof[Arr]()/elemSize` |
 | `newRC([]T, n)` | 列表读写错误 | 用 `new([]T, n)` |
-| 运算符 `[]` 重载 | 段错误（139） | 用命名方法 |
-| 运算符 `[]=` 重载 | 语法错误 | 用命名方法 |
 | `error` 接口 | `e == nil` 报错；`e.Error()` 值错误 | 用整数返回码/panic |
 | 结构体继承/嵌入 | 仅解析，不生效 | 手动复制字段或组合 |
 | 字段默认值 | 仅解析，运行时为 0 | 在 `new` 后手动赋值 |
 | 字段标签 | 仅解析 | 不要依赖反射/标签 |
 | 访问修饰符 `!`/`?`/`_` | 不强制 | 自行约束 |
 | 字段前 `pub` | 被忽略，无导出语义 | 不要依赖可见性 |
-| `build os` 不匹配 | nil parser panic | 避免不匹配路径 |
-| `build arch` 不匹配 | 跳过整个文件；main 同文件时 panic | 把 main 放到不参与过滤的文件 |
 | 大整数常量 | 超过 int64 精度丢失 | 避免超大常量 |
 | 空源文件 | lexer panic | 保持文件非空 |
 
@@ -1554,8 +1615,6 @@ import (
 | `test/fullSyntaxTest` | 全通过 | exit 1 | 覆盖面广，仍有未收口项（切片等） |
 | `test/iface_dispatch` | exit 0 | 编译失败 | `d.age = 5` 处报 `need type Stringer, not Dog` |
 | `test/for_range_test` | exit 0 | exit 139 | 双变量 range 段错误 |
-| `test/buildKeyword` | exit 0 | 编译 panic | build os 忽略函数 + 自动导入组合 |
-| `test/controlFlow` | 38 | 39 | `continue` 被丢弃 |
 | `test/defer_test` | 延迟顺序 | `cleanup1cleanup2main` | `defer` 被丢弃 |
 | `test/neg_index_step` | 通过 | 未确认 | 探针环境 nasm SIGBUS；不作为可用性证据 |
 
@@ -1571,14 +1630,14 @@ import (
 |---|---|---|
 | `for ; i < n; { ... }` | `for ; i < n; { ... }` 仍可用 | ✅ 不变 |
 | “无 i++ 自运算” | `i++` / `i--` 实际可用 | ❌ 过期 |
-| “步进=显式 i = i + 1” | post 只接受 `i++`/`i--`；`i = i + 1` 失败 | ❌ 过期，方向相反 |
+| “步进=显式 i = i + 1” | post 接受 `i = i + 1`、`i += 1`、`i++`/`i--` | ✅ 已支持 |
 | `int/uint = arch word` | 正确（x86_64 8B / x86 4B） | ✅ 不变 |
 | `ptr = arch word` | 正确 | ✅ 不变 |
 | `bool 1B` | 正确 | ✅ 不变 |
 | `string = 24B 头 {p@0,n@8/4,c@16/8}` | 正确 | ✅ 不变 |
 | 切片头 data@0/len@8/4/cap@16/8 | 正确 | ✅ 不变 |
-| `unsafe.cast[T]` 强转 | 可用，但是位重解释，不是数值转换 | ⚠️ 表述过宽 |
-| `build arch("x86"\|x86_64)` 分片头 | 可用；但 `CUTE_ARCH` 默认 `x86`，不匹配会跳过整个文件 | ⚠️ 需补充默认值/缺陷 |
+| `unsafe.cast[T]` 强转 | 可用，但是位重解释；数值转换用 `int(x)` / `f64(x)` 等 | ⚠️ 表述过宽 |
+| `build arch("x86"\|x86_64)` 分片头 | 可用；`CUTE_ARCH` 默认 `x86`；根包按声明过滤，非根包按文件过滤 | ✅ 已完善 |
 | `import "std:xxx"` | 可用，且还有别名/空导入/分组/第三方前缀 | ✅ 不完整 |
 | `enum Name { A, B = 10 }` 独立命名类型、成员 typed | 正确 | ✅ 不变 |
 | 无 `Name.MEMBER` 作用域访问 | 正确 | ✅ 不变 |

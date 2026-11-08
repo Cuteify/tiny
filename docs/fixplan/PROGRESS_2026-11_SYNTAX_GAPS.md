@@ -173,6 +173,17 @@
 
 ## P9 文档
 
-- [ ] LANGUAGE.md
-- [ ] TYPE_INTRINSIC.md
-- [ ] 总验收与提交
+- [x] LANGUAGE.md
+  - 同步 for post 三种形式（`i = i + 1` / `i += 1` / `i++`/`i--`）、`while`/`continue`/多级跳转/`fallthrough` 语义与错误行为
+  - 补全显式数值转换（`int(x)`/`f64(x)` 等）与 x86_64/x86 限制，明确 `unsafe.cast` 为位级重解释
+  - 更新自定义类型 `[]`/`[]=`/`[::]` lowering、左值接收者限制与复合索引赋值展开
+  - 更新自动导入收窄（仅 `builtin` 无 import；`strings`/`maps`/`slices` 需显式 import）、string `*` 运行期 lowering
+  - 更新 `build os/arch/bits/export/ext/extret` 行为、作用范围与 v1 边界；`try/except/finally` 显式暂不支持
+  - 清理过期缺陷/基线条目（`continue` 丢弃、switch `break` 语义错误、`build export` 不可用、运行期 string 重复错误等）
+- [x] TYPE_INTRINSIC.md
+  - 已在 `7603f0b` 同步 string `*` → `std:strings.repeatN` 与自动导入/Native 例外说明；本轮复核与实现一致
+- [x] 总验收与提交
+  - `go build ./...`：通过
+  - x86_64 正例（手工 nasm/gcc/link/run，规避环境 nasm 间歇 bus error）：`syntaxGaps` 42、`operatorOverload` 42、`controlFlow2` 42、`buildDirective` 0、`convert` 42、`convertFloat` 42、`autoImport` 42、`autoImport/pos_strings` 42、`autoImport/pos_slices` 42
+  - 负例编译失败且报错符合预期：`autoImport/neg_strings`（`not found function 'strings.len'`）、`autoImport/neg_slices`（`not found function 'slices.make'`）、`operatorOverload/neg_nonlvalue`（`operator receiver of type Vec must be an lvalue`）、`CUTE_ARCH=x86` 下 `convertFloat/neg32_float`/`neg32_i64`（32 位目标不支持浮点/64 位转换）
+  - 回归（x86_64）：`controlFlow` 37（P8 后新基线）、`buildKeyword` 0（P6 修复）、`overload` 42、`complexTest` 17
