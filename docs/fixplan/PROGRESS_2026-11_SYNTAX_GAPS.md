@@ -135,9 +135,15 @@
 
 ## P7 string 重复
 
-- [ ] lowering
-- [ ] 负数折叠
-- [ ] 测试与提交
+- [x] lowering
+  - `parser/intrinsic.go`：`string * int` → `std:strings.repeatN`（P5 已落表）
+  - `parser/exp_check.go`：运行期 `checkMul` 走 `tryIntrinsicStringMul`，改写为普通调用；`repeatN` 内 `count <= 0` 返回 `""`
+- [x] 负数折叠
+  - 常量 `n <= 0` 直接折叠为空串，不再调用 `strings.Repeat`（负数会编译期 panic）
+- [x] 测试与提交
+  - `test/syntaxGaps/string_mul.cute`：`"ab"*3`、`"ab"*0`、`"ab"*-1`；运行期变量次数、0、负数
+  - `test/syntaxGaps` x86_64/x86 exit=42
+  - 回归：`strings` 60、`stringOperations` 50、`intrinsic_string` 42、`convert` 42；`stringUtils` 仍为基线 `strings.join` 无匹配重载
 
 ## P8 控制流
 

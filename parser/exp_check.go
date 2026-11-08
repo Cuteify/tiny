@@ -832,7 +832,14 @@ func (exp *Expression) checkMul(p *Parser) bool {
 	case typeSys.CheckKind(exp.Left.Type, "string") && typeSys.CheckKind(exp.Right.Type, "int"):
 		exp.Type = typeSys.GetSystemType("string")
 		if exp.Left.IsConst() && exp.Right.IsConst() {
-			exp.StringVal = strings.Repeat(exp.Left.StringVal, int(exp.Right.Num))
+			// 常量折叠：n <= 0 与 repeatN 语义一致，返回空串。
+			// 不能把负数直接交给 strings.Repeat，否则编译期 panic。
+			n := int(exp.Right.Num)
+			if n <= 0 {
+				exp.StringVal = ""
+			} else {
+				exp.StringVal = strings.Repeat(exp.Left.StringVal, n)
+			}
 			exp.foldBin()
 			return true
 		}

@@ -7,6 +7,12 @@ fn main() int {
     for i := 0; i < 5; i += 1 {
         sum2 += i
     }
+    if stringMulConst() != 0 {
+        ret 2
+    }
+    if stringMulRuntime() != 0 {
+        ret 3
+    }
     if sum == 10 && sum2 == 10 {
         ret 42
     }

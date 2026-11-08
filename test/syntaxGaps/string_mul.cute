@@ -1,0 +1,38 @@
+// string * int 重复测试（P7）
+// 常量折叠要求 n <= 0 返回空串；运行期走 std:strings.repeatN lowering。
+
+fn stringMulConst() int {
+    var a: string = "ab" * 3
+    if a != "ababab" {
+        ret 1
+    }
+    var b: string = "ab" * 0
+    if b != "" {
+        ret 2
+    }
+    var c: string = "ab" * -1
+    if c != "" {
+        ret 3
+    }
+    ret 0
+}
+
+fn stringMulRuntime() int {
+    var s: string = "ab"
+    var n: int = 3
+    var r: string = s * n
+    if r != "ababab" {
+        ret 1
+    }
+    var z: int = 0
+    var rz: string = s * z
+    if rz != "" {
+        ret 2
+    }
+    var neg: int = -2
+    var rn: string = s * neg
+    if rn != "" {
+        ret 3
+    }
+    ret 0
+}
