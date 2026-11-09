@@ -5,16 +5,16 @@ type Vec struct {
     n: int
 }
 
-fn Vec.get(i int) int {
-    ret self.data[i]
+fn Vec.get(recv: *Vec, i int) int {
+    ret recv.data[i]
 }
 
-fn Vec.set(i int, v int) {
-    self.data[i] = v
+fn Vec.set(recv: *Vec, i int, v int) {
+    recv.data[i] = v
 }
 
 // 返回 start/end/step 的编码，便于验证 lowering 与缺省边界
-fn Vec.slice(start int, end int, step int) int {
+fn Vec.slice(recv: *Vec, start int, end int, step int) int {
     ret start * 10000 + end * 100 + step
 }
 
@@ -22,28 +22,28 @@ type Val struct {
     v: int
 }
 
-fn Val.eq(other Val) bool {
-    ret self.v == other.v
+fn Val.eq(recv: *Val, other Val) bool {
+    ret recv.v == other.v
 }
 
-fn Val.ne(other Val) bool {
-    ret self.v != other.v
+fn Val.ne(recv: *Val, other Val) bool {
+    ret recv.v != other.v
 }
 
-fn Val.neg() int {
-    ret -self.v
+fn Val.neg(recv: *Val) int {
+    ret -recv.v
 }
 
-fn Val.not() bool {
-    ret self.v == 0
+fn Val.not(recv: *Val) bool {
+    ret recv.v == 0
 }
 
-fn Val.bnot() int {
-    ret ~self.v
+fn Val.bnot(recv: *Val) int {
+    ret ~recv.v
 }
 
-fn Val.add(other Val) int {
-    ret self.v + other.v
+fn Val.add(recv: *Val, other Val) int {
+    ret recv.v + other.v
 }
 
 fn main() int {

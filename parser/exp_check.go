@@ -84,10 +84,11 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 		return false
 	}
 	call := &CallBlock{
-		Name:    NewName(receiver.Type.Type(), method),
-		ThisVar: receiver.Var,
-		Args:    make([]*ArgBlock, 0, len(args)),
+		Name: NewName(receiver.Type.Type(), method),
+		Args: make([]*ArgBlock, 0, len(args)+1),
 	}
+	// 接收者作为第一个参数显式传入（新 ABI：编译器自动传入第一个参数）。
+	call.Args = append(call.Args, &ArgBlock{Value: receiver, Name: NewName("_receiver"), Type: receiver.Type})
 	for _, arg := range args {
 		call.Args = append(call.Args, &ArgBlock{Value: arg, Type: arg.Type})
 	}
@@ -99,6 +100,7 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 		}
 		return false
 	}
+	applyReceiverConversion(call, sel, receiver)
 	call.Func = sel
 	sel.Useful = true
 	if !call.Check(p) {

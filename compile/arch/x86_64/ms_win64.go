@@ -79,11 +79,7 @@ func (a *Win64) Prologue(fn *parser.FuncBlock) (code string) {
 
 	// 将寄存器参数保存到栈上(Win64 ABI: RCX, RDX, R8, R9)
 	argRegIdx := 0
-	if fn.Class != nil {
-		// 如果有this指针,第一个寄存器是this，保存到 ctx.ThisHomeOffset()（[rbp+16] shadow space）
-		code += utils.Format("mov QWORD " + rbpOffset(a.ctx.ThisHomeOffset()) + ", " + win64ArgRegs[0] + "; this pointer")
-		argRegIdx = 1
-	}
+	// 方法接收者是显式第一个参数（走正常参数通道），没有隐式 this 占用。
 
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]

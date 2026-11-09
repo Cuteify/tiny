@@ -21,31 +21,31 @@ type Circle struct {
 }
 
 // 结构体方法
-fn Point.distanceToOrigin() int {
-    ret self.x * self.x + self.y * self.y
+fn Point.distanceToOrigin(recv: *Point) int {
+    ret recv.x * recv.x + recv.y * recv.y
 }
 
-fn Point.translate(dx int, dy int) {
-    self.x += dx
-    self.y += dy
+fn Point.translate(recv: *Point, dx int, dy int) {
+    recv.x += dx
+    recv.y += dy
 }
 
-fn Rectangle.area() int {
-    ret self.width * self.height
+fn Rectangle.area(recv: *Rectangle) int {
+    ret recv.width * recv.height
 }
 
-fn Rectangle.perimeter() int {
-    ret 2 * (self.width + self.height)
+fn Rectangle.perimeter(recv: *Rectangle) int {
+    ret 2 * (recv.width + recv.height)
 }
 
-fn Circle.area() int {
+fn Circle.area(recv: *Circle) int {
     // 简化的圆面积计算：3 * r * r
-    ret 3 * self.radius * self.radius
+    ret 3 * recv.radius * recv.radius
 }
 
-fn Circle.circumference() int {
+fn Circle.circumference(recv: *Circle) int {
     // 简化的圆周长计算：2 * 3 * r
-    ret 2 * 3 * self.radius
+    ret 2 * 3 * recv.radius
 }
 
 fn main() int {

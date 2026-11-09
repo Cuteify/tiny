@@ -713,9 +713,6 @@ func (a *x86Ops) varDecl64(varBlock *parser.VarBlock) string {
 // 调用端栈布局与参数表不耦合（见 arch/x86_64/ops.go setArgsOffset 槽位约定注释）。
 func setArgsOffset(fn *parser.FuncBlock) {
 	argOffset := 8
-	if fn.Class != nil {
-		argOffset += 4
-	}
 	if arch.FuncReturnsLarge(fn) {
 		argOffset += 4
 	}
@@ -828,9 +825,6 @@ func (a *x86Ops) epilogue(fn *parser.FuncBlock, cleanup string, stdcallCleanup b
 		argSize := 0
 		if a.ctx.CurrentFunc != nil {
 			argSize = arch.CalcArgsSize(a.ctx.CurrentFunc, 4)
-			if a.ctx.CurrentFunc.Class != nil {
-				argSize += 4
-			}
 		}
 		if argSize > 0 {
 			code += utils.Format("ret " + strconv.Itoa(argSize) + "; stdcall: 被调者清理参数栈")

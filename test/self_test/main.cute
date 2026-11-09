@@ -1,11 +1,11 @@
-// Test: struct + method with self
+// Test: struct + method with recv
 struct Dog {
     name: string
     age: int
 }
 
-fn Dog.stringify() string {
-    ret self.name
+fn Dog.stringify(recv: *Dog) string {
+    ret recv.name
 }
 
 fn main() int {

@@ -149,14 +149,8 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	// 将寄存器参数保存到栈上（SysV ABI: RDI, RSI, RDX, RCX, R8, R9）
 	// 保存到 callee 自己的局部变量区（如 C/Rust），不写入调用者栈帧
 	argRegIdx := 0
-	// 新 ABI：this 经寄存器传入（RDI），调用者不再压 this 栈槽，
-	// 第 7+ 个参数从调用者栈参数区 [rbp+16] 起排（CtxThisHome 只影响 callee 自己的局部区）
+	// 新 ABI：方法接收者是显式第一个参数（走正常参数通道），没有隐式 this 占用。
 	stackArgBase := 16
-	if fn.Class != nil {
-		// this 指针保存到 ctx.ThisHomeOffset()（[rbp-48]，callee 局部变量区顶部）
-		code += utils.Format("mov QWORD " + rbpOffset(a.ctx.ThisHomeOffset()) + ", " + sysvArgRegs[0] + "; this pointer")
-		argRegIdx = 1
-	}
 
 	// 先搬移栈参数（SysV 第 7+ 个）：其原始位置一律从 [rbp+16] 起（新 ABI 下 this 占
 	// 寄存器槽不占栈槽，调用者栈参数区不受 this 存在与否影响），搬到 callee 局部变量区的

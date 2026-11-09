@@ -13,13 +13,13 @@ type Point struct {
     y:int
 }
 
-fn Point.distance() int {
-    ret self.x + self.y
+fn Point.distance(recv: *Point) int {
+    ret recv.x + recv.y
 }
 
-fn Point.move(dx int, dy int) {
-    self.x += dx
-    self.y += dy
+fn Point.move(recv: *Point, dx int, dy int) {
+    recv.x += dx
+    recv.y += dy
 }
 
 // List type struct
@@ -28,8 +28,8 @@ type Container struct {
     count : int
 }
 
-fn Container.add(item int) {
-    self.items.len = self.items.len + 1
+fn Container.add(recv: *Container, item int) {
+    recv.items.len = recv.items.len + 1
 }
 
 // Main function

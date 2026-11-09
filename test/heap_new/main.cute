@@ -9,8 +9,8 @@ type Node struct {
     next: *Node
 }
 
-fn Point.distance() int {
-    ret self.x * self.x + self.y * self.y
+fn Point.distance(recv: *Point) int {
+    ret recv.x * recv.x + recv.y * recv.y
 }
 
 fn main() int {
@@ -30,7 +30,7 @@ fn main() int {
     if q.x == 5 && q.y == 6 {
         ok = ok + 1
     }
-    // 3. 堆对象方法调用（this 指针）
+    // 3. 堆对象方法调用（recv 指针）
     if q.distance() == 61 {
         ok = ok + 1
     }

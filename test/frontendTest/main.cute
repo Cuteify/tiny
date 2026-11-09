@@ -68,20 +68,20 @@ fn neg(a: int) int {
     ret -a
 }
 
-fn Point.add(other: Point) int {
-    ret this.x + other.x
+fn Point.add(recv: *Point, other: Point) int {
+    ret recv.x + other.x
 }
 
-fn Point.sub(other: Point) int {
-    ret this.x - other.x
+fn Point.sub(recv: *Point, other: Point) int {
+    ret recv.x - other.x
 }
 
-fn Point.eq(other: Point) bool {
-    ret this.x == other.x
+fn Point.eq(recv: *Point, other: Point) bool {
+    ret recv.x == other.x
 }
 
-fn Point.getX() int {
-    ret this.x
+fn Point.getX(recv: *Point) int {
+    ret recv.x
 }
 
 fn main() i32 {

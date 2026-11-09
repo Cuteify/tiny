@@ -22,9 +22,6 @@ func IsListLikeType(t typeSys.Type) bool {
 // x86(32 位) 参数在 ebp+8 正区、Win64 Prologue 无预扣，均不消费此值。
 func ArgSaveBytes(fn *parser.FuncBlock) int {
 	save := 0
-	if fn != nil && fn.Class != nil {
-		save += typeSys.TargetPointerSize // this 指针占满一个槽
-	}
 	if fn != nil {
 		for i := 0; i < len(fn.Args); i++ {
 			size := fn.Args[i].Type.Size()
@@ -115,9 +112,6 @@ func SetArgsOffset(fn *parser.FuncBlock, align int) (size int) {
 
 	// 计算函数参数offset
 	argOffset := 8
-	if fn.Class != nil {
-		argOffset += 4
-	}
 
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]

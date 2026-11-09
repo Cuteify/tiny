@@ -7,7 +7,7 @@ struct Foo {
     val u64
 }
 
-fn Foo.stringify() string {
+fn Foo.stringify(recv: *Foo) string {
     ret "Foo"
 }
 

@@ -3,6 +3,7 @@ package parser
 import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
+	"cuteify/utils"
 )
 
 // CallBlock 函数调用结构体
@@ -65,6 +66,21 @@ func appendUniqueFuncs(dst []*FuncBlock, fbs ...*FuncBlock) []*FuncBlock {
 	return dst
 }
 
+// receiverNameCheckable 报告路径的每个段都是合法标识符（可交给 ParseDefine 解析）。
+// /home/.../pkg.fn 这类包路径含 '/' 的段不合法——跳过，避免 CheckName 报错；
+// 带 Slice 的段（a[0].m() 作为列表元素接收者）合法，交给 Find/codegen 的索引链处理。
+func receiverNameCheckable(name Name) bool {
+	for _, part := range name {
+		if part.Name == "" {
+			return false
+		}
+		if !utils.CheckName(part.Name) {
+			return false
+		}
+	}
+	return true
+}
+
 // methodCandidates 收集接收者类型上所有同名方法（含重载）。
 // enterTypeFind 只返回 Methods() 里第一个命中项，无法支撑同 arity 方法重载。
 func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
@@ -85,6 +101,43 @@ func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
 		}
 	}
 	return out
+}
+
+// applyReceiverConversion 按选中候选的接收者形态做 P ↔ *P 转换（编译器自动取址/解引用）。
+func applyReceiverConversion(call *CallBlock, sel *FuncBlock, receiver *Expression) {
+	if call == nil || sel == nil || receiver == nil || len(sel.Args) == 0 || len(call.Args) == 0 {
+		return
+	}
+	want := sel.Args[0].Type
+	recvT := receiver.Type
+	if want == nil || recvT == nil || want.IsPointer() == recvT.IsPointer() {
+		return
+	}
+	if want.IsPointer() {
+		// 方法要 *T，接收者是 T（路径 lvalue）→ 取地址
+		call.Args[0].Value = &Expression{Separator: "&", Right: receiver, Type: want}
+		call.Args[0].Type = want
+		return
+	}
+	// 方法要 T（值），接收者是 *T → 解引用
+	call.Args[0].Value = &Expression{Separator: "*", Right: receiver, Type: want}
+	call.Args[0].Type = want
+}
+
+// recvPtrCompatible 报告 P ↔ *P 接收者形态是否匹配（按元素类型名比较）。
+func recvPtrCompatible(at, dt typeSys.Type) bool {
+	if at == nil || dt == nil {
+		return false
+	}
+	if at.IsPointer() == dt.IsPointer() {
+		return false // 同形：走 AutoType
+	}
+	if at.IsPointer() {
+		elem := at.Elem()
+		return elem != nil && elem.Type() == dt.Type()
+	}
+	elem := dt.Elem()
+	return elem != nil && elem.Type() == at.Type()
 }
 
 func absInt(x int) int {
@@ -153,6 +206,12 @@ func matchCallCandidate(c *CallBlock, fb *FuncBlock) (ok bool, score int) {
 			continue
 		}
 		if !typeSys.AutoType(at, dt, true) {
+			// 接收者位置允许 P ↔ *P 互转：方法调用是隐式取址/解引用的，
+			// 按“可赋值”记分（精确形态由 sameTypeShape 分支继续打分）。
+			if i == 0 && fb.Class != nil && recvPtrCompatible(at, dt) {
+				score += callScoreAssignable
+				continue
+			}
 			return false, 0
 		}
 		switch {
@@ -249,56 +308,69 @@ func (c *CallBlock) Check(p *Parser) bool {
 		}
 	}
 
-	// 方法调用（候选属于类型）：设置 ThisVar 为接收者。
+	// 方法调用（候选属于类型）：接收者 = 点号左边的路径（a.b.m() → a.b）。
+	// 调用点把接收者作为第一个参数显式传入（编译器自动传入第一个参数）。
+	// 列表内建 len/cap/ptr 不走本路径：保留 ThisVar 通道（arch 按 ThisVar.Kind()=="list" 直分派）。
+	// 非路径接收者（如 f().m()）无法取地址/重入，保持原路（按普通名报错）。
+	var receiverExp *Expression
 	if c.Func == nil && c.ThisVar == nil && c.Name.IsPath() {
-		hasClass := false
-		for _, fb := range candidates {
-			if fb.Class != nil {
-				hasClass = true
-				break
-			}
-		}
+		methodName := c.Name.Last()
 		receiverName := c.Name.Fork()
 		receiverName = receiverName[:len(receiverName)-1]
-		if hasClass {
-			c.ThisVar = &VarBlock{Name: receiverName}
-			c.ThisVar.ParseDefine(p)
-		} else if len(candidates) == 0 && !receiverName.IsPath() {
-			// 接收者必须为简单名：FixPkgNamePaths 固定的完整包路径（如
-			// /home/.../pkg/memory.store64）不是方法调用，跳过 ParseDefine
-			//（CheckName 会因路径段中的 '/' 报 "name is not valid"）。
-			c.ThisVar = &VarBlock{Name: receiverName}
-			c.ThisVar.ParseDefine(p)
+		if receiverName.Length() > 0 && receiverNameCheckable(receiverName) {
+			// 注：包路径（/home/.../memory.store64）含 '/' → IsPath()==true，
+			// 不会走进这里；本分支只处理 "a.b.m" 形式中的 a.b。
+			recv := &VarBlock{Name: receiverName}
+			recv.ParseDefine(p)
+			receiverExp = &Expression{Var: recv}
+			receiverExp.Check(p) // 填充 Type（仅供打分/方法查找；失败不致命）
+			recvType := receiverExp.Type
+			if recvType == nil {
+				// 跨文件/跨包未解析：报告 nil（ref 可能是变量而非包路径）——
+				// 退化为普通名解析（后续 Argument 检查会对齐报错）。
+				results := p.Find(receiverExp.Var.Name, FindTypeVar|FindTypeItem)
+				if len(results) > 0 {
+					if vb, ok := results[0].Value.(*VarBlock); ok {
+						receiverExp.Var = vb
+						recvType = vb.Type
+					} else if arg, ok := results[0].Value.(*ArgBlock); ok {
+						receiverExp.Var = &VarBlock{Name: arg.Name, Type: arg.Type}
+						recvType = arg.Type
+					}
+				}
+			}
+			switch {
+			case recvType != nil && recvType.Kind() == "list":
+				switch methodName {
+				case "len", "cap", "ptr":
+					// 列表内建：保持旧的 ThisVar 通道（arch 直分派到 __list_*）
+					c.ThisVar = receiverExp.Var
+					if len(candidates) == 0 {
+						c.Func = &FuncBlock{
+							Return: []typeSys.Type{typeSys.GetSystemType("int")},
+							Name:   NewName("__list_" + methodName),
+						}
+					}
+					receiverExp = nil
+				}
+			case recvType == nil:
+				receiverExp = nil
+			}
+			if receiverExp != nil {
+				ms := methodCandidates(recvType, methodName)
+				if len(ms) == 0 {
+					receiverExp = nil // 不是方法调用：按普通名解析（pkg.fn 或报错）
+				} else {
+					candidates = appendUniqueFuncs(candidates, ms...)
+				}
+			}
 		}
 	}
 
-	if c.Func == nil && c.ThisVar != nil {
-		results := p.Find(c.ThisVar.Name, FindTypeVar|FindTypeItem)
-		if len(results) > 0 {
-			if vb, ok := results[0].Value.(*VarBlock); ok {
-				c.ThisVar = vb
-			} else if arg, ok := results[0].Value.(*ArgBlock); ok {
-				c.ThisVar = &VarBlock{
-					Name: arg.Name,
-					Type: arg.Type,
-				}
-			}
-		}
-		// 方法重载：enterTypeFind 只返回第一个同名方法，这里按接收者类型
-		// 把该类型上所有同名方法都收进候选，供类型消歧使用。
-		if c.Func == nil && c.ThisVar.Type != nil && c.Name.IsPath() {
-			candidates = appendUniqueFuncs(candidates, methodCandidates(c.ThisVar.Type, c.Name.Last())...)
-		}
-		if len(candidates) == 0 && c.ThisVar.Type != nil && c.ThisVar.Type.Kind() == "list" {
-			methodName := c.Name.Last()
-			switch methodName {
-			case "len", "cap", "ptr":
-				c.Func = &FuncBlock{
-					Return: []typeSys.Type{typeSys.GetSystemType("int")},
-					Name:   NewName("__list_" + methodName),
-				}
-			}
-		}
+	// 接收者作为第一个参数显式传入（编译器自动传入第一个参数）。
+	if receiverExp != nil {
+		arg := &ArgBlock{Value: receiverExp, Name: receiverExp.Var.Name, Type: receiverExp.Type}
+		c.Args = append([]*ArgBlock{arg}, c.Args...)
 	}
 
 	if c.Func == nil && len(candidates) > 0 {
@@ -327,9 +399,11 @@ func (c *CallBlock) Check(p *Parser) bool {
 			return false
 		}
 		c.Func = sel
-		if sel.Class == nil {
-			c.ThisVar = nil
+		if receiverExp != nil && sel.Class != nil && len(sel.Args) > 0 && len(c.Args) > 0 {
+			// 按选中候选的接收者形态做 P ↔ *P 转换（编译器自动取址/解引用）。
+			applyReceiverConversion(c, sel, receiverExp)
 		}
+		c.ThisVar = nil
 	}
 
 	if c.Func == nil {

@@ -17,7 +17,6 @@ type FuncBlock struct {
 	Useful          bool                    // 是否有用（用于优化）
 	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
-	PtrReceiver     int                     // 指针接收者深度：0=值接收者；1=`self *P`；2=`self **P` 等
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
 }
 
@@ -392,24 +391,11 @@ func (f *FuncBlock) Parse(p *Parser) {
 				}
 			}
 		}
-	} else if code.Value == "(" { // 匿名函数/闭包，或方法简写 fn (self Type) name(...)
+	} else if code.Value == "(" { // 方法接收者简写 fn (self T) name(...) —— 已废弃
 		p.Lexer.SetCursor(code.Cursor)
-		if recvType, methodName, ptrDepth, ok := p.parseSelfReceiver(); ok {
-			// 归一化成标准的 fn Type.methodName(...) 形式：
-			// Name 两段 + Class 绑定 + AddMethod，与上面的分支完全一致。
-			// 指针接收者 fn (self *P) m()：方法表挂在元素类型上，
-			// 与值接收者一致；记录 ptrDepth 供后续区分（见 FuncBlock.PtrReceiver）。
-			f.Name = NewName(recvType, methodName)
-			f.PtrReceiver = ptrDepth
-			namedFunc = true
-			results := p.Find(NewName(recvType), FindTypeType)
-			if len(results) > 0 {
-				if typeBlock, ok2 := results[0].Value.(typeSys.Type); ok2 {
-					f.Class = typeBlock
-					typeSys.ToRType(typeBlock).AddMethod(f)
-				}
-			}
-		}
+		p.Error.MissError("Syntax Error", code.Cursor,
+			"method receiver syntax fn (self T) is not supported; declare the receiver as the first parameter instead, e.g. fn T.name(p: T, ...) or fn T.name(p: *T, ...)")
+		return
 	} else {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need Function name")
 	}
@@ -427,6 +413,36 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 	// 返回类型
 	f.ParseRetType(p)
+
+	// 方法：接收者必须是第一个参数，类型为所属类型 T 或 *T；
+	// 调用点由编译器自动传入接收者，参数名不允许使用 self/this。
+	if f.Class != nil && len(f.Args) > 0 {
+		first := f.Args[0]
+		recName := ""
+		if first != nil && first.Name != nil && first.Name.Length() > 0 {
+			recName = first.Name.Last()
+		}
+		if recName == "self" || recName == "this" {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"method receiver parameter must not be named 'self' or 'this'; name it explicitly (e.g. p)")
+		}
+		if first != nil && first.Type != nil {
+			wantName := f.Class.Type()
+			gotName := first.Type.Type()
+			if first.Type.IsPointer() {
+				if elem := first.Type.Elem(); elem != nil {
+					gotName = elem.Type()
+				}
+			}
+			if gotName != wantName {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+					"method on '"+wantName+"' requires its first parameter to be of type '"+wantName+"' or '*"+wantName+"' (got '"+first.Type.Type()+"')")
+			}
+		}
+	} else if f.Class != nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"method on '"+f.Class.Type()+"' requires a first parameter of type '"+f.Class.Type()+"' or '*"+f.Class.Type()+"' (the receiver)")
+	}
 
 	// 顶层 build os/arch/bits 作用于紧随其后的函数：统一在声明点消费。
 	// 必须在 registerOverload 之前挂上，否则被过滤函数仍会进重载表。
@@ -454,83 +470,6 @@ func (f *FuncBlock) Parse(p *Parser) {
 	}
 
 	// TODO: 处理编译标志
-}
-
-// parseSelfReceiver 识别方法简写 fn (self Type) name(args...)。
-// 扫描首组括号：内容必须是 self Type，且配对 ')' 之后紧跟 "name("。
-// 命中则消费接收者部分并返回 (类型名, 方法名)，否则不消费任何 token。
-func (p *Parser) parseSelfReceiver() (recvType, methodName string, ptrDepth int, ok bool) {
-	saved := p.Lexer.Cursor
-
-	// 找到配对的 ')'
-	matched := false
-	depth := 0
-	for !matched {
-		t := p.Lexer.Next()
-		if t.IsEmpty() {
-			break
-		}
-		if t.Type != lexer.SEPARATOR {
-			continue
-		}
-		switch t.Value {
-		case "(":
-			depth++
-		case ")":
-			depth--
-			if depth == 0 {
-				matched = true
-			}
-		case "\n", "\r", ";":
-			// 接收者与方法名必须写在同一行，换行即判定为匿名函数
-			p.Lexer.SetCursor(saved)
-			return "", "", 0, false
-		}
-	}
-	if !matched {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-
-	// ')' 之后必须紧跟 name(
-	t1 := p.Lexer.Next()
-	t2 := p.Lexer.Next()
-	if t1.Type != lexer.NAME || t2.Type != lexer.SEPARATOR || t2.Value != "(" {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-
-	// 回到开头解析 "(self Type)"，然后消费方法名
-	p.Lexer.SetCursor(saved)
-	if p.Lexer.Next().Value != "(" {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-	if tok := p.Lexer.Next(); tok.Type != lexer.NAME || tok.Value != "self" {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-	x := p.Lexer.Next()
-	ptrDepth = 0
-	for x.Type == lexer.SEPARATOR && x.Value == "*" {
-		ptrDepth++
-		x = p.Lexer.Next()
-	}
-	if x.Type != lexer.NAME {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-	recvType = x.Value
-	if p.Lexer.Next().Value != ")" {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-	m := p.Lexer.Next()
-	if m.Type != lexer.NAME {
-		p.Lexer.SetCursor(saved)
-		return "", "", 0, false
-	}
-	return recvType, m.Value, ptrDepth, true
 }
 
 // parseTypeParams 解析泛型类型参数列表 [T, U]（fn f[T](x: T) T {...}）。

@@ -149,12 +149,12 @@ type Counter struct {
     value: int
 }
 
-fn Counter.increment() {
-    self.value += 1
+fn Counter.increment(recv: *Counter) {
+    recv.value += 1
 }
 
-fn Counter.add(n int) {
-    self.value += n
+fn Counter.add(recv: *Counter, n int) {
+    recv.value += n
 }
 
 fn methodChain() int {

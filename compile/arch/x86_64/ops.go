@@ -649,10 +649,6 @@ func (a *x86_64Ops) exp(e *parser.Expression, result, desc string) string {
 func setArgsOffset(fn *parser.FuncBlock) {
 	// callee-saved regs 占 [rbp-8]..[rbp-40]，参数从 [rbp-48] 开始往下排
 	argOffset := -48
-	if fn.Class != nil {
-		// this 指针占 [rbp-48]，参数从 [rbp-56] 开始
-		argOffset = -56
-	}
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
 		size := arg.Type.Size()

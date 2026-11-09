@@ -13,8 +13,8 @@ type Node struct {
     next: *Node
 }
 
-fn Point.distanceToOrigin() int {
-    ret self.x * self.x + self.y * self.y
+fn Point.distanceToOrigin(recv: *Point) int {
+    ret recv.x * recv.x + recv.y * recv.y
 }
 
 fn main() int {
@@ -49,10 +49,10 @@ fn main() int {
     var qp: *Point = &q
     var qs: int = qp.x + qp.y
 
-    // 5. 堆对象方法调用（this 传指针值）
+    // 5. 堆对象方法调用（recv 传指针值）
     var heapDist: int = p.distanceToOrigin()
 
-    // 6. 堆对象上的方法修改字段（self.x 写入 heap）
+    // 6. 堆对象上的方法修改字段（recv.x 写入 heap）
     var r: *Point = memory.malloc(16)
     r.x = 1
     r.y = 2

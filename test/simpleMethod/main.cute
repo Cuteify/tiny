@@ -3,12 +3,12 @@ struct Point {
     y: int
 }
 
-fn Point.GetX() int {
+fn Point.GetX(recv: *Point) int {
     ret 42
 }
 
-fn Point.SetX(x: int) {
-    self.x = x
+fn Point.SetX(recv: *Point, x: int) {
+    recv.x = x
 }
 
 fn main() int {

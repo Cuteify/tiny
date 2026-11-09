@@ -9,7 +9,7 @@ type Dog struct {
     age: int
 }
 
-fn Dog.stringify() string {
+fn Dog.stringify(recv: *Dog) string {
     ret "dog"
 }
 
