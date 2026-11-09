@@ -48,7 +48,7 @@
 |---|---|---|
 | 源文件编码 | ✅ | UTF-8 文本；空文件会触发 lexer panic（`Lexer:Text is empty`） |
 | 行注释 `// ...` | ✅ | 注释持续到行末 |
-| 块注释 `/* ... */` | ❌ | `/*` 会报 `Miss /`；当前没有块注释 |
+| 块注释 `/* ... */` | ✅ | 非嵌套（C 风格）；允许跨行；`*/` 结束 |
 | 续行 | ❌ | 没有反斜杠续行；语句在换行处结束 |
 
 ### 1.2 空白与语句分隔
@@ -102,7 +102,7 @@
 | `defer` | ❌ | 关键字被 parser 静默丢弃；后续调用按普通语句立即执行 |
 | `while` | ✅ | `while cond { ... }`；复用 for 代码生成 |
 | `try` / `except` / `finally` | ❌ | 关键字保留；遇到时显式报 `'try' is not supported yet`（不会静默跳过） |
-| `pub` | ❌ | **不是关键字**；结构体字段前会被跳过（`pub x: int` 可用但无导出语义），顶层 `pub fn` / `pub var` 报 `'pub' is not a valid expression` |
+| `pub` | ❌ | **不是关键字**；结构体字段名前 `pub field: T` 现在显式报错（`'pub' field modifier is not supported`）；顶层 `pub fn` / `pub var` 报 `'pub' is not a valid expression` |
 | `fallthrough` | ✅ | 仅允许作为 switch case 的最后一条语句；最后一个 case 禁止使用 |
 
 ### 1.5 字面量
@@ -144,7 +144,7 @@
 
 - 语法：`` `...` ``，内容原样保留，不处理转义。
 - 单行原始字符串可用。
-- **跨行原始字符串当前编译失败**（报 `Miss ...`，后缀随内容变化）；`docs/SELFHOST.md` §5 也记录了跨行 RAW 支持不完整。需要换行时请用运行时拼接。
+- 跨行原始字符串可用（编译后运行）：`FindEndCursor` 现在能正确识别被引号包裹的换行，多行 RAW 字符串（包括内含反引号分隔符外的内容）不再触发 `Miss ...` 崩溃。
 
 #### 字符字面量 ✅
 
@@ -171,7 +171,7 @@ lexer 登记的运算符/标点：
 " ' ` \
 ```
 
-其中 `->` 与 `...` 能被词法切出，但当前没有可用的语法入口（`...` 变参不支持，`->` 无 parser 分支）。
+其中 `->` 目前没有 parser 分支。`...` 只在参数列表末尾用于变参形参与实参（`xs ...int`），其它位置无语法入口。
 
 ---
 
@@ -186,8 +186,10 @@ lexer 登记的运算符/标点：
 | 常量 | ✅ | `const c: int = 7` |
 | 类型别名/定义 | ✅ | `type MyInt = int` / `type MyInt int` |
 | 结构体 | ✅ | `struct P { x: int }` 或 `type P struct { x: int }` |
-| 接口 | ⚠️ | 仅 `type I interface { ... }` |
+| 接口 | ✅ | `type I interface { ... }` 或裸 `interface I { ... }` |
 | 枚举 | ✅ | `enum Color { Red; Green = 5 }` |
+| 分组声明 | ✅ | `var ( ... )` / `const ( ... )` / `let ( ... )` / `type ( ... )` |
+| 推断声明 | ✅ | `var x = 5` / `const x = 5`（按值推断） |
 | 导入 | ✅ | `import "std:memory"` |
 | 编译指令 | ✅ | `build arch("x86_64")` |
 | 顶层 `:=` | ✅ | `g := 5` |
@@ -196,16 +198,17 @@ lexer 登记的运算符/标点：
 
 顶层声明之间用换行或 `;` 分隔。
 
-### 2.2 不支持的顶层形式
+### 2.2 顶层形式（已支持）
 
 | 形式 | 状态 | 现象 |
 |---|---|---|
-| `var x = 5`（省略类型） | ❌ | `need :` |
-| `const x = 5`（省略类型） | ❌ | `need :` |
-| `var ( ... )` 分组 | ❌ | 不支持 |
-| `const ( ... )` 分组 | ❌ | 不支持 |
-| `type ( ... )` 分组 | ❌ | 不支持 |
-| 裸 `interface I { ... }` | ❌ | 接口只能跟在 `type` 后面 |
+| `var x = 5`（省略类型） | ✅ | 类型按值推断；初始化省略时才报错 |
+| `const x = 5`（省略类型） | ✅ | 同上 |
+| `var ( ... )` 分组 | ✅ | 多条逐行声明，语法与单行一致 |
+| `const ( ... )` 分组 | ✅ | 同上 |
+| `type ( ... )` 分组 | ✅ | 多条类型逐行声明 |
+| `let ( ... )` 分组 | ✅ | 同 `var` 分组，`let` 会发警告 |
+| 裸 `interface I { ... }` | ✅ | 等价于 `type I interface { ... }` |
 | `pub` 导出 | ❌ | 顶层 `pub fn` / `pub var` 编译报错；字段前的 `pub` 被忽略 |
 
 ### 2.3 声明顺序与前向引用
@@ -246,10 +249,10 @@ fn f(a: int, b: string) int { ret a }
 fn f(a int, b string) int { ret a }
 ```
 
-- 每个参数都必须单独写类型。
-- ❌ 不支持 `a, b: int` 或 `a, b int` 这种合并写法（报 `need type`）。
-- ❌ 不支持默认参数：`fn f(a: int, b: int = 10)` 报 `need ','`；带逗号/多个默认值时还可能挂起编译。
-- ❌ 不支持变参：`fn f(xs: ...int)` 报 `name contains invalid characters`；请用 `[]T`。
+- 每个参数都必须写类型（单飞形式）；可在最后一个具名参数上统一类型：`fn f(a, b int)` 和 `fn f(a, b: int)`。
+- ✅ 默认参数支持：`fn f(a: int, b: int = 10, c: string = "x")`；默认参数必须位于必带参数之后（`non-default parameter follows default parameter`）。多个默认参数可用。
+- ✅ 变参支持：`fn f(xs ...int)`；调用时额外传入的参数打包成 `[]int` 传给函数（代码生成已支持打包）。
+- 默认参数按小端传参的位置处理；调用方也可省略默认参数并直接写 `f(1)`。
 - 参数类型可以是内建类型、别名、结构体、`[]T`、`[N]T`、`map[K]V`、`*T`、`fn(...) R`。
 
 ### 3.3 返回值 ✅
@@ -288,7 +291,7 @@ fn (self P) set(v: int) {
 - `self` 是接收者名字，方法体内可用。
 - 方法可以带参数和返回值。
 - 方法体可以多行；单行体也能用，但若最后一条是字段赋值，需要在 `}` 前加 `;`（`fn P.set(v: int) { self.x = v; }`），否则报 `expected right operand`。
-- 指针接收者 ❌：`fn (self *P) m()` 报 `type not found`。
+- 指针接收者 ✅：`fn (self *P) m()` 可用（方法注册到元素类型 P，值/指针接收者同表）。
 - `this` ❌：不是合法接收者名；使用会导致编译期/代码生成空指针 panic。
 - 通过值调用方法 ✅；通过 `*P` 调用方法 ✅：
 
@@ -392,9 +395,9 @@ fn main() int {
 | `name: T = expr` | ✅ | `x: int = 5` | 省略 `var` |
 | `const name: T = expr` | ✅ | `const c: int = 5` | 只读不强制 |
 | `let name: T = expr` | ⚠️ | `let x: int = 5` | 可用，但告警 |
-| `var name = expr` | ❌ | `var x = 5` | `need :` |
-| `const name = expr` | ❌ | `const x = 5` | `need :` |
-| 分组声明 | ❌ | `var ( ... )` | 不支持 |
+| `var name = expr` | ✅ | `var x = 5` | 类型推断；无初始化必须写类型 |
+| `const name = expr` | ✅ | `const x = 5` | 同上 |
+| 分组声明 | ✅ | `var ( ... )` / `const ( ... )` / `let ( ... )` / `type ( ... )` | 多条逐行，语法与单行一致 |
 
 顶层也支持 `g := 5` 和 `let g: int = 5`。
 
@@ -538,6 +541,8 @@ type MyInt2 int       // 新类型（底层 int）
 | `f64 → int` 声明初始化 | ⚠️ | 能编译，但实测 `5.0 → 0`、`6.9 → 154`，结果错误 |
 | `[]T` / `[N]T` / `map` / 结构体之间 | ❌ | 不做隐式转换 |
 
+**推断声明**：`var x = expr` / `const x = expr` 不写类型注解时，类型按 `expr` 推断。整数字面量超出 `int32` 范围自动提升为 `i64`；其余表达式按自身类型取整。无初始化值（`var x`）必须写类型，否则报错。
+
 **显式数值转换**：用与目标类型同名的函数调用，语义是数值转换（截断/扩展/舍入），不是 `unsafe.cast` 的位重解释。
 
 ```cute
@@ -631,7 +636,7 @@ struct P {
 | `_field: T` | `AccessPrivate` | ❌ 不强制 |
 | `!field: T` | `AccessReadOnly` | ❌ 不强制 |
 | `?field: T` | `AccessWriteOnly` | ❌ 不强制 |
-| `pub field: T` | `pub` 被跳过，字段按普通字段解析 | ❌ 无导出语义 |
+| `pub field: T` | 现在显式报错 `'pub' field modifier is not supported; use _field for private, or remove` | ❌ 无导出语义且意义不明确，不再静默忽略 |
 
 结论：这些标记只写入 `StructField.Access`，编译期/运行期都不做读写检查（探针 `p_access` 退出 0）。
 
@@ -673,16 +678,17 @@ struct P {
 | RAW 标签 `` `json:"y"` `` | ⚠️ | 解析进 `field.Tags`，不参与运行/反射 |
 | 普通字符串标签 | ⚠️ | 同上 |
 
-### 6.6 构造：new ✅
+### 6.6 构造 ✅
 
-结构体字面量 ❌：
+结构体字面量 ✅：
 
 ```cute
-var p: P = P{}          // expected right operand
-var p: P = P{x: 3}      // expected right operand
+var p: *P = P{}             // 零值（所有字段 0）
+var p: *P = P{x: 3, y: 4}   // 按名称匹配字段；未给出的字段零值
 ```
 
-改用 `new`：
+语义接近 `new(P, ...)`：堆分配 + 零填充 + 按字段声明顺序填值。匿名嵌入字段不能出现在字面量中。
+也可以写 `new`：
 
 ```cute
 var p: *P = new(P)          // 零值
@@ -702,7 +708,7 @@ var q: *P = new(P, 7, 8)    // 按字段顺序初始化
 
 - 方法注册在结构体类型上，按方法名查找。
 - 通过指针调用值接收者方法可用。
-- 指针接收者不可用（`fn (self *P)` 报 `type not found`）。
+- 指针接收者可用（`fn (self *P)`）；方法注册到元素类型，传参 RDI（统一地址传）。
 - 方法内可用 `self`，不可用 `this`。
 
 ### 6.8 对齐控制 ✅
@@ -737,7 +743,7 @@ struct Pack2 {
 
 ### 7.1 声明 ⚠️
 
-只支持 `type X interface { ... }` 形式：
+支持 `type X interface { ... }` 和裸 `interface X { ... }` 两种等价形式：
 
 ```cute
 type Stringer interface {
@@ -748,7 +754,7 @@ type Stringer interface {
 | 形式 | 状态 |
 |---|---|
 | `type I interface { ... }` | ✅ 解析 |
-| 裸 `interface I { ... }` | ❌ 不支持 |
+| 裸 `interface I { ... }` | ✅ 解析 |
 | 接口字段 | ❌ 不支持 |
 | 接口嵌入其他接口 | ❌ 不支持 |
 
@@ -828,7 +834,7 @@ enum Color {
 ### 9.1 语句分隔与块
 
 - 语句之间用换行或 `;` 分隔。
-- `{ ... }` 是块，但**函数内不能写独立块**：
+- `{ ... }` 是独立作用域块（块尾释放与 if/else 体一致），函数内可用：
 
 ```cute
 fn main() int {
@@ -838,8 +844,6 @@ fn main() int {
     ret 7
 }
 ```
-
-报 `Miss {`。块只能作为 `if` / `for` / `switch` / 函数体的一部分。
 
 ### 9.2 if / else ✅
 
@@ -882,8 +886,9 @@ for i := 0; i < 3; i++ {
 | `for ; ; { }` | ✅ | 等价 `for {}` |
 | `for i := 0; i < 3; i++ { }` | ✅ | 标准形式 |
 | `for i = 0; i < 3; i++ { }` | ✅ | `i` 需已声明 |
-| `for var i: int = 0; ...` | ❌ | init 只能是表达式；报 `unexpected token: var` |
+| `for var i: int = 0; ...` | ✅ | init 可以是 `var` 声明（单条语句）；`for (var i: int = 0)` 括号形式也支持 |
 | post `i = i + 1` | ✅ | 普通赋值表达式 |
+| `for (var i: int = 0)` | ✅ | init 是 var 声明时需 `()` 包裹 |
 | post `i += 1` | ✅ | 复合赋值 |
 | post `i++` / `i--` | ✅ | 自增/自减 |
 | `for ... \n {` | ❌ | `{` 必须与 for 头部同行；报 `for loop must end by '{'` |
@@ -941,8 +946,8 @@ default:
 | 无匹配 | ✅ | 继续执行 switch 之后 |
 | `break` | ✅ | 只退出当前 switch；`break N` 可继续向外跳出 |
 | `fallthrough` | ✅ | 跳到下一个 case body；必须是 case 最后一条语句，最后一个 case 禁用 |
-| 多值 `case 1, 2:` | ❌ | 编译期 nil pointer panic |
-| 无目标 `switch {` | ❌ | 编译期 nil pointer panic |
+| 多值 `case 1, 2:` | ✅ | 值列表独立比较，`je` 跳转到 case 体 |
+| 无目标 `switch {` | ✅ | 每个 case 按布尔条件独立判断（`test/jnz` 直跳）；等价 Go `switch {}` |
 | case body 单行 | ✅ | `case 1: ret 1` 可用 |
 
 `break` 在 switch 内按 Go 语义退出 switch：`compileBreakBlock` 按祖先顺序同时统计
@@ -1005,7 +1010,7 @@ default:
 | `while cond { ... }` | ✅ | 等价 `for cond { ... }` |
 | `try` / `except` / `finally` | ❌ | 显式报 `'try' is not supported yet`（关键字保留，不会静默跳过） |
 | `fallthrough` | ✅ | 仅 switch case 内，见 §9.5 |
-| 独立块 `{ ... }` | ❌ | `Miss {` |
+| 独立块 `{ ... }` | ✅ | 顺序编译为普通块；块尾释放与 if/else 体一致 |
 | 标签语句 / `goto` | ❌ | 无实现 |
 
 ---
@@ -1165,7 +1170,7 @@ default:
 | 链式字段访问 | ✅ | `a.b.c` |
 | 包限定名 | ✅ | `pkg.Func`、`pkg.Var`、`pkg.Type` |
 | 函数指针变量调用 | ❌ | `not found function 'f'` |
-| 结构体字面量调用 | ❌ | 见 §6.6 |
+| 结构体字面量 | ✅ | 见 §6.6 |
 
 ### 10.9 运算符重载 ⚠️
 
@@ -1506,6 +1511,9 @@ import (
 | `ret` | `return` | ✅ |
 | `x := v` | `var x: T = v`（类型推断） | ✅ |
 | `x: T = v` | `var x: T = v` | ✅ |
+| `var x = v` | `var x: T = v`（T 推断） | ✅ |
+| `var ( ... )` | 多条 `var/const/let/type x: T = v` | ✅ |
+| `interface I { ... }` | `type I interface { ... }` | ✅ |
 | 参数 `a int` | `a: int` | ✅ |
 | 方法 `fn P.m()` | 接收者 `self` 自动可用 | ✅ |
 | 枚举裸成员 `Red` | `Color.Red`（但后者不支持） | ✅ |
@@ -1540,22 +1548,13 @@ import (
 
 | 项目 | 现象 | 规避 |
 |---|---|---|
-| `var x = 5` / `const x = 5` | `need :` | 补类型 |
-| `var (...)` / `const (...)` / `type (...)` | 不支持分组 | 逐条声明 |
 | `a, b = f()` | `need ':=' in multi-value declaration` | 用 `:=` |
-| 函数内独立块 `{ ... }` | `Miss {` | 合并到函数体或条件/循环体 |
 | 嵌套函数 | `Function can't be defined in Function` | 提到顶层 |
 | 匿名函数/闭包 | `unexpected token: fn` | 用顶层函数 + 显式参数 |
-| 默认参数 | `need ','`；带逗号可能挂起 | 用重载或显式传参 |
-| 变参 `...int` | `name contains invalid characters` | 用 `[]T` |
 | 函数指针变量调用 | `not found function 'f'` | 直接调用函数名，或传地址给外部 API |
-| 指针接收者 `fn (self *P)` | `type not found` | 用值接收者 |
 | `this` | 编译期/代码生成空指针 panic | 用 `self` |
-| 结构体字面量 `P{}` / `P{x:1}` | `expected right operand` | 用 `new(P, ...)` |
 | 接口赋值 `var s: I = d` | `need type I, not Dog` | 直接调用具体类型方法 |
 | map 字面量 | 不支持 | 声明后逐项 `m[k] = v` |
-| 多值 case `case 1, 2:` | 编译期 nil pointer panic | 拆成多个 case |
-| 无目标 `switch {` | 编译期 nil pointer panic | 用 `switch true` 也不可靠；改用 if 链 |
 | `pub fn` / `pub var` | `'pub' is not a valid expression` | 去掉 `pub` |
 | `try` / `except` / `finally` | `'try' is not supported yet` | 用返回码/panic |
 | `import` 在函数内 | `import is only allowed at top level` | 提到文件顶层 |
@@ -1686,3 +1685,5 @@ echo "EXIT=$?"
 ---
 
 *本文以当前 HEAD 的 Go 编译器行为为准；自举 parser 的差异请查阅 [`SELFHOST.md`](SELFHOST.md)。*
+
+*2026-11-10 更新：块注释、跨行 RAW、分组/默认/变参参数、指针接收者、结构体字面量、for var 初始化、独立块、多值 case、无目标 switch、`a, b = f()`（脱糖）、`var x = expr` 推断、pub field 错误、真别名 list 赋值等条目已与实现一致。*

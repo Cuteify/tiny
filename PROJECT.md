@@ -1,6 +1,8 @@
 # PROJECT.md —— 子代理强制快照
 
 > **CLAUDE.md「Agent Execution Rules」强制项**：所有子代理/新会话开工第一件事是读本文件。
+> 另 **2026-11-10 用户增补**：`.cute` 语法问题以 [`docs/LANGUAGE.md`](docs/LANGUAGE.md) 为准——
+> 当前实现逐条核对过的唯一第一事实源（先读它再动语法/改代码）。
 > 已浓缩全部命令/基线/缺陷态/路径/纪律——**严禁自行重新探索项目结构与已知信息**（侦察成本耗尽免费额度，两轮实证）。
 > 手头任务只需再 grep 本任务相关目录即可。
 > **更新责任**：收口时把变化的命令/基线/缺陷态/新钉子即时写回本文件（保持实时）；与现实不符时先修本文件再干。
@@ -115,7 +117,8 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 - **快照规则（用户拍板 2026-10-31）**：子代理强制本文件，不自行重新探索。
 
 ## 8. 语言参考（CUTE 速记）
-- 变量 var x: type = expr；if/for/blocks 均花括号制；for `for ; i < n; { ... }`（无 i++ 自运算；步进=显式 i = i + 1）
+> **⚠️ 2026-11-10 起：本节为过期速记，已由 [`docs/LANGUAGE.md`](docs/LANGUAGE.md) 取代。** 与 LANGUAGE.md 冲突时以 LANGUAGE.md 为准。速记仅保留作历史参考。
+- 变量 var x: type = expr；if/for/blocks 均花括号制；for `for i := 0; i < n; i = i + 1`（`for init; cond; step` post 可 `i++`/`i += 1`/`i = i + 1`）
 - 类型宽：int/uint=arch word（x64 8B / x86 4B）、u8/u16/i16 等宽、ptr=arch word、bool 1B、string=24B 头{p@0,n@8/4,c@16/8}、切片头 data@0/len@8/4/cap@16/8
-- unsafe.cast[T] 强转；build arch("x86"|x86_64) 分片头；import "std:xxx"
+- unsafe.cast[T] 位重解释；显式数值转换 int(x)/f64(x) 等；build arch("x86"|x86_64) 分片头；file-level `import "std:xxx"`
 - enum `Name { A, B = 10 }`：独立命名类型、成员 typed；无 `Name.MEMBER` 作用域访问
