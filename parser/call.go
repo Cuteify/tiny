@@ -14,6 +14,7 @@ type CallBlock struct {
 	Node         *Node
 	ThisVar      *VarBlock
 	NewType      typeSys.Type // new(T) 的目标类型（内建堆对象创建）
+	NewTypes     []typeSys.Type // 泛型调用的显式类型实参 f[T, U](…)；单类型退化为 NewType 同表
 	ConvertType  typeSys.Type // int(x)/f64(x) 等显式数值转换的目标类型
 	IsRC         bool         // 是否为 RC（引用计数）调用
 	IsVariadic   bool         // 调用是否包含变参参数
@@ -847,6 +848,17 @@ func (cb *CallBlock) typeSubst() map[string]typeSys.Type {
 		return nil
 	}
 	subst := map[string]typeSys.Type{}
+	if len(cb.NewTypes) > 0 {
+		for i, t := range cb.NewTypes {
+			if i < len(cb.Func.TypeParams) && t != nil {
+				subst[cb.Func.TypeParams[i].Name] = t
+			}
+		}
+	} else if cb.NewType != nil {
+		for _, tp := range cb.Func.TypeParams {
+			subst[tp.Name] = cb.NewType
+		}
+	}
 	bind := func(declared, actual typeSys.Type) {
 		if declared == nil || actual == nil {
 			return

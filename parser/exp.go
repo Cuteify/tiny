@@ -598,8 +598,8 @@ func (p *Parser) isGenericCallAhead() bool {
 				next := p.Lexer.Next()
 				return next.Type == lexer.SEPARATOR && next.Value == "("
 			}
-		case "*", ".":
-			// 类型表达式成分：*T、pkg.Type
+		case "*", ".", ",":
+			// 类型表达式成分：*T、pkg.Type、f[T, U](x) 的逗号分隔
 		default:
 			return false
 		}
@@ -634,13 +634,35 @@ func (p *Parser) handleName() *Expression {
 				return lit
 			}
 		case "[":
-			// 泛型调用 f[T](args)：只有配对 ']' 之后紧跟 '(' 才是类型参数列表。
+			// 泛型结构体字面量 Box[T]{...}。
+			if lit := p.tryParseGenericStructLiteral(name); lit != nil {
+				return lit
+			}
+			// 泛型调用 f[T, U](args)：只有配对 ']' 之后紧跟 '(' 才是类型参数列表。
 			// 否则保持变量引用原样返回，交回 ParseExp 走 handleIndex 处理普通索引。
 			if p.isGenericCallAhead() {
 				callBlock := &CallBlock{Name: name}
 				p.Lexer.Skip('[')
-				callBlock.NewType = p.parseTypeRef()
+				for {
+					t := p.parseTypeRef()
+					if t == nil {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+							"expected type in generic type arguments")
+						break
+					}
+					callBlock.NewTypes = append(callBlock.NewTypes, t)
+					peek := p.Lexer.Next()
+					if peek.Type == lexer.SEPARATOR && peek.Value == "," {
+						continue
+					}
+					p.Lexer.SetCursor(peek.Cursor)
+					break
+				}
 				p.Lexer.Skip(']')
+				if len(callBlock.NewTypes) == 1 {
+					// 单类型实参：保留 NewType，兼容既有读取点（IsBuiltinNewAlloc 等）
+					callBlock.NewType = callBlock.NewTypes[0]
+				}
 				callBlock.ParseCall(p)
 				exp.Call = callBlock
 				return exp

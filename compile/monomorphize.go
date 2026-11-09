@@ -2,6 +2,7 @@ package compile
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"cuteify/compile/arch"
@@ -33,13 +34,18 @@ func newGenericRegistry() *genericRegistry {
 var generics = newGenericRegistry()
 
 // buildGenericLabel 根据函数名和类型替换映射生成唯一的 NASM 标签名。
-// 例如 max__int、max__string、swap__i32。
+// 例如 max__int、max__string、swap__i32。按参数名排序，保证确定性。
 func buildGenericLabel(funcName string, subst map[string]typeSys.Type) string {
 	var parts []string
 	parts = append(parts, funcName)
 	// 按参数名排序，确保确定性
-	for paramName, concreteType := range subst {
-		parts = append(parts, paramName+"__"+concreteType.Type())
+	keys := make([]string, 0, len(subst))
+	for paramName := range subst {
+		keys = append(keys, paramName)
+	}
+	sort.Strings(keys)
+	for _, paramName := range keys {
+		parts = append(parts, paramName+"__"+subst[paramName].Type())
 	}
 	return strings.Join(parts, "__")
 }
@@ -60,16 +66,8 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 		return ""
 	}
 
-	// 优先使用显式 [Type] 语法指定的类型参数（如 leadingZeros[u32](1)）
-	substMap := make(map[string]typeSys.Type)
-	if call.NewType != nil && len(fn.TypeParams) > 0 {
-		for _, tp := range fn.TypeParams {
-			substMap[tp.Name] = call.NewType
-		}
-	} else {
-		// 否则从调用参数推断类型参数的具体类型
-		substMap = c.inferTypeParams(fn, call)
-	}
+	// 优先使用显式 [Type]/[T, U] 语法指定的类型参数（如 leadingZeros[u32](1)）
+	substMap := c.inferTypeParams(fn, call)
 	if substMap == nil {
 		return ""
 	}
@@ -77,6 +75,7 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 	// Cache: check by FuncBlock pointer (handles fn.Name mutation by compileCallBlock/exp.go)
 	for _, inst := range generics.specializations {
 		if inst.Original == fn && typeSubstMapEq(inst.SubstMap, substMap) {
+			call.Func = inst.Specialized
 			return inst.FuncLabel
 		}
 	}
@@ -84,6 +83,7 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 	origName := fn.Name.String()
 	key := buildGenericLabel(origName, substMap)
 	if inst, ok := generics.specializations[key]; ok {
+		call.Func = inst.Specialized
 		return inst.FuncLabel
 	}
 
@@ -106,6 +106,9 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 		FuncLabel:   label,
 		Specialized: specialized,
 	}
+	// 调用点换成特化后的 FuncBlock：返回类型/参数已替换成具体类型，
+	// FuncReturnsLarge / ArgSlots / 大值装载等后续按具体类型分派。
+	call.Func = specialized
 	// Store under both original name key and pointer key for future lookups
 	generics.specializations[key] = inst
 
@@ -138,7 +141,22 @@ func (c *Compiler) inferTypeParams(fn *parser.FuncBlock, call *parser.CallBlock)
 	}
 
 	subst := make(map[string]typeSys.Type)
+	// 优先用显式 [T, U] 的类型实参（按位置绑定；未提供的再从实参推断）
+	if len(call.NewTypes) > 0 {
+		for i, t := range call.NewTypes {
+			if i < len(fn.TypeParams) && t != nil {
+				subst[fn.TypeParams[i].Name] = t
+			}
+		}
+	} else if call.NewType != nil && len(fn.TypeParams) > 0 {
+		for _, tp := range fn.TypeParams {
+			subst[tp.Name] = call.NewType
+		}
+	}
 	for _, tp := range fn.TypeParams {
+		if _, ok := subst[tp.Name]; ok {
+			continue
+		}
 		// 遍历所有参数，对比定义类型和实参类型
 		for j := 0; j < len(fn.Args) && j < len(call.Args); j++ {
 			defType := fn.Args[j].Type
@@ -158,10 +176,8 @@ func (c *Compiler) inferTypeParams(fn *parser.FuncBlock, call *parser.CallBlock)
 	}
 
 	// 确保所有类型参数都被解析
-	for _, tp := range fn.TypeParams {
-		if _, ok := subst[tp.Name]; !ok {
-			return nil
-		}
+	if len(subst) < len(fn.TypeParams) {
+		return nil
 	}
 	return subst
 }

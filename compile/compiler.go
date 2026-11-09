@@ -884,14 +884,11 @@ func (c *Compiler) compileCallBlock(n *parser.Node) string {
 		cuteExp.BindDanglingCall(c.Ctx, callBlock)
 	}
 
-	// 检查是否为泛型函数调用
+	// 检查是否为泛型函数调用：单态化生成/复用特化副本，MonomorphizeIfNeeded
+	// 已把 Func 指向特化 FuncBlock（Name/MangledOverride = 特化标签），
+	// arch.Call 直接发调用（Func 必须非 nil，否则 isContainerRet/大值装载全废）。
 	if IsGenericFunction(callBlock.Func) {
-		specializedLabel := c.MonomorphizeIfNeeded(callBlock)
-		if specializedLabel != "" {
-			// 将调用重定向到特化后的函数
-			callBlock.Func.Name = parser.NewName(specializedLabel)
-			callBlock.Func = nil // 防止重复单态化
-		}
+		c.MonomorphizeIfNeeded(callBlock)
 	}
 
 	return c.Ctx.Arch.Call(callBlock)
