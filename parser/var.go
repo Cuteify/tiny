@@ -145,6 +145,20 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 	return nil
 }
 
+// ParseGroupedVar 解析 var/const/let 分组内的一条条目。
+// 分组结束符 `)` 之前的每条条目都没有关键字前缀，按 kind 合成关键字：
+//   - "VAR"   → 合成 `var` 声明
+//   - "CONST" → 合成 `const` 声明
+//   - "LET"   → 合成 `let` 声明
+func (v *VarBlock) ParseGroupedVar(p *Parser, kind string) {
+	switch kind {
+	case "VAR", "CONST", "LET":
+		v.ParseKeywordVar(p, lexer.Token{Type: lexer.VAR, Value: kind}, p.FindEndCursor())
+	default:
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "internal: unsupported var group keyword "+kind)
+	}
+}
+
 // Parse 解析变量声明/定义并添加到当前作用域
 // 这是入口函数，会调用ParseVar然后将自身添加到语法树
 func (v *VarBlock) Parse(p *Parser) {
@@ -293,11 +307,24 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 	}
 	v.parseVarName(p, code)
 
-	// 解析类型注解（支持 :Type）
-	p.Lexer.Skip(':')
-	v.Type = p.parseTypeRef()
-	if v.Type == nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+	// 解析类型注解。支持两种形式：
+	//   var x : T          （冒号风格，显式类型）
+	//   var x = expr       （无类型注解，按值推断）
+	hasType := false
+	next := p.Lexer.PeekToken()
+	if next.Type == lexer.SEPARATOR && next.Value == ":" {
+		p.Lexer.SetCursor(next.Cursor)
+		p.Lexer.Skip(':')
+		v.Type = p.parseTypeRef()
+		if v.Type == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+		}
+		hasType = true
+	} else if next.Type == lexer.SEPARATOR && next.Value == "=" {
+		// 无注解：紧跟初始化值，类型按值推断
+		// 游标不动，交给下方初始化逻辑消费
+	} else {
+		p.Error.MissError("Syntax Error", next.Cursor, "need ':' or '=' after variable name")
 	}
 
 	// 解析初始化值
@@ -307,8 +334,19 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 		v.Value = p.ParseExp(stopCursor)
 		if v.Value != nil {
 			v.Value.Check(p)
-			// 如果字面量值超出 int32 范围，将变量类型提升为 i64
-			// 避免 x86 上 mov DWORD[mem], imm 溢出问题
+			// 无显式类型：按值推断。int 字面量超出 int32 时提升为 i64，
+			// 避免 x86 上 mov DWORD[mem], imm 溢出问题。
+			if v.Type == nil {
+				if v.Value.IsConst() && v.Value.Type != nil && v.Value.Type.Type() == "i64" {
+					if v.Value.Num > 2147483647 || v.Value.Num < -2147483648 {
+						v.Type = typeSys.GetSystemType("i64")
+					} else {
+						v.Type = typeSys.GetSystemType("int")
+					}
+				} else if v.Value.Type != nil {
+					v.Type = v.Value.Type
+				}
+			}
 			if v.Value != nil && v.Value.IsConst() && v.Type != nil &&
 				v.Value.Type != nil && v.Value.Type.Type() == "i64" &&
 				v.Type.Type() == "int" {
@@ -317,11 +355,14 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 				}
 			}
 		}
-	} else {
-		v.IsInitialized = false
-		// 回退词法分析器到"="之后的位置
-		p.Lexer.SetCursor(code.Cursor)
+		return
 	}
+	v.IsInitialized = false
+	if !hasType {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+	}
+	// 回退词法分析器到"="之后的位置
+	p.Lexer.SetCursor(code.Cursor)
 }
 
 // setVarConst 根据关键字设置常量和警告

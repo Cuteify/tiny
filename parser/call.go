@@ -87,6 +87,13 @@ func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
 	return out
 }
 
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 const (
 	callScoreExactArity = 1 << 20
 	callScoreExactType  = 100
@@ -102,11 +109,22 @@ func matchCallCandidate(c *CallBlock, fb *FuncBlock) (ok bool, score int) {
 		return false, 0
 	}
 	n := len(c.Args)
-	if n > len(fb.Args) {
+	last := len(fb.Args) - 1
+	isVariadic := last >= 0 && fb.Args[last] != nil && fb.Args[last].IsVariadic
+	var elemType typeSys.Type
+	if isVariadic {
+		if lt, ok := fb.Args[last].Type.(*typeSys.ListType); ok {
+			elemType = lt.Elem()
+		}
+	}
+	if n > len(fb.Args) && !isVariadic {
 		return false, 0
 	}
-	// 缺少的形参必须有默认值。
+	// 缺少的形参必须有默认值；变参形参可以整体省略
 	for i := n; i < len(fb.Args); i++ {
+		if i == last && isVariadic {
+			continue
+		}
 		if fb.Args[i] == nil || fb.Args[i].Default == nil {
 			return false, 0
 		}
@@ -114,14 +132,23 @@ func matchCallCandidate(c *CallBlock, fb *FuncBlock) (ok bool, score int) {
 	if n == len(fb.Args) {
 		score += callScoreExactArity
 	} else {
-		score -= (len(fb.Args) - n) * 1000
+		score -= (absInt(len(fb.Args)-n)) * 1000
 	}
 	for i := 0; i < n; i++ {
 		arg := c.Args[i]
-		if arg == nil || arg.Value == nil || i >= len(fb.Args) || fb.Args[i] == nil {
+		if arg == nil || arg.Value == nil {
 			continue
 		}
-		at, dt := arg.Value.Type, fb.Args[i].Type
+		at := arg.Value.Type
+		var dt typeSys.Type
+		switch {
+		case i < last || (i == last && !isVariadic):
+			if i < len(fb.Args) && fb.Args[i] != nil {
+				dt = fb.Args[i].Type
+			}
+		default:
+			dt = elemType
+		}
 		if at == nil || dt == nil {
 			continue
 		}
@@ -325,26 +352,49 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	c.Func.Useful = true
 
-	// 检查参数个数是否匹配（考虑默认参数）
-	if len(c.Args) > len(c.Func.Args) {
-		p.Error.MissError("Call Error", p.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
-		return false
+	// 检查参数个数是否匹配（考虑默认参数与变参形参）
+	if len(c.Func.Args) > 0 {
+		last := len(c.Func.Args) - 1
+		if !(c.Func.Args[last] != nil && c.Func.Args[last].IsVariadic) && len(c.Args) > len(c.Func.Args) {
+			p.Error.MissError("Call Error", p.Lexer.Cursor, "too many arguments in call to "+c.Name.String())
+			return false
+		}
 	}
 
 	// 处理默认参数
-	if len(c.Args) < len(c.Func.Args) {
-		for i := len(c.Args); i < len(c.Func.Args); i++ {
-			if c.Func.Args[i].Default == nil {
-				p.Error.MissError("Call Error", p.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
-				return false
+	if len(c.Func.Args) > 0 {
+		last := len(c.Func.Args) - 1
+		variadicLast := c.Func.Args[last] != nil && c.Func.Args[last].IsVariadic
+		if len(c.Args) < len(c.Func.Args) {
+			for i := len(c.Args); i < len(c.Func.Args); i++ {
+				if i == last && variadicLast {
+					// 变参整体省略：留空
+					break
+				}
+				if c.Func.Args[i].Default == nil {
+					p.Error.MissError("Call Error", p.Lexer.Cursor, "not enough arguments in call to "+c.Name.String())
+					return false
+				}
+				// 添加默认参数
+				c.Args = append(c.Args, &ArgBlock{
+					Value:  c.Func.Args[i].Default,
+					Defind: c.Func.Args[i],
+					Name:   c.Func.Args[i].Name,
+					Type:   c.Func.Args[i].Type,
+				})
 			}
-			// 添加默认参数
-			c.Args = append(c.Args, &ArgBlock{
-				Value:  c.Func.Args[i].Default,
-				Defind: c.Func.Args[i],
-				Name:   c.Func.Args[i].Name,
-				Type:   c.Func.Args[i].Type,
-			})
+		}
+	}
+	// 变参拆分：把超出固定形参数量的实参收进 VariadicArgs
+	if len(c.Func.Args) > 0 {
+		last := len(c.Func.Args) - 1
+		if c.Func.Args[last] != nil && c.Func.Args[last].IsVariadic && len(c.Args) > last {
+			c.IsVariadic = true
+			if lt, ok := c.Func.Args[last].Type.(*typeSys.ListType); ok {
+				c.VariadicType = lt.Elem()
+			}
+			c.VariadicArgs = c.Args[last:]
+			c.Args = c.Args[:last]
 		}
 	}
 

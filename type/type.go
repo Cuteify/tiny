@@ -468,6 +468,17 @@ func IsKindOf(t Type, kinds ...string) bool {
 }
 
 func AutoType(before, after Type, IsConst bool) (ok bool) {
+	// 真别名（type A = B）与底层完全可互换：全路径都走 unwrap 后的类型。
+	if before != nil {
+		if ba, ok := before.(*AliasType); ok && ba.IsTrueAlias {
+			before = ba.Unwrap()
+		}
+	}
+	if after != nil {
+		if ba, ok := after.(*AliasType); ok && ba.IsTrueAlias {
+			after = ba.Unwrap()
+		}
+	}
 	if before != nil && after != nil {
 		// TypeParam (generic type parameter) accepts any type
 		if _, isTP := before.(*TypeParam); isTP {

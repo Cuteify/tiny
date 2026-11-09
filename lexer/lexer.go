@@ -209,6 +209,16 @@ func (l *Lexer) handleSep(word string) (Token, error) {
 			}
 		}
 		return Token{}, io.EOF
+	case "/*":
+		// 块注释 /* ... */，允许跨行；不嵌套。
+		for i := l.Cursor; i+1 < l.TextLength; i++ {
+			if l.Text[i] == '*' && l.Text[i+1] == '/' {
+				l.SetCursor(i + 2)
+				return l.GetToken()
+			}
+		}
+		l.Error.MissError("Lexer Error", startCursor, "expected '*/' to close block comment")
+		return Token{}, io.EOF
 	default:
 		return Token{
 			Type:      SEPARATOR,
@@ -348,6 +358,14 @@ func (l *Lexer) numberToken(start, end int) Token {
 		Cursor:    start,
 		EndCursor: end,
 	}
+}
+
+// PeekToken 查看下一条 token 但不推进游标。返回的 Token 与 Next() 的消费结果一致。
+func (l *Lexer) PeekToken() Token {
+	save := l.Cursor
+	tok := l.Next()
+	l.SetCursor(save)
+	return tok
 }
 
 func (l *Lexer) Next() Token {

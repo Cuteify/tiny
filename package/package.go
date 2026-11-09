@@ -401,6 +401,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		}
 		fixParser(rootNode)
 
+		// 合并完成，所有包可见：此后未解析的名称就是真错误了（不再是“跨文件前向引用”）。
+		parser.ParsePhase = false
+
 		// 重载注册表必须在合并后的完整树上重建：解析期只见过当前文件，
 		// 跨文件前向引用和跨包函数都要靠这一次统一登记。
 		parser.RebuildOverloadRegistry(rootNode)

@@ -356,6 +356,12 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		// fallthrough 本身不生成代码；是否跳到下一个 case 由
 		// compileSwitchBlock 根据 case 末尾节点决定。
 		return ""
+	case *parser.ElseBlock:
+		// 独立作用域块：零槽 → 顺序编译 → 块尾释放（同 then/else 块形态）
+		code := c.emitGCZeroSlots(n, c.blockFreesOf(n))
+		code += c.Compile(n)
+		code += c.emitBlockFrees(n)
+		return code
 	case *parser.SwitchBlock:
 		return c.compileSwitchBlock(n)
 	case *parser.CaseBlock:
@@ -709,6 +715,12 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 		for _, val := range sc.Values {
 			// 编译 case 值到寄存器
 			code += c.Ctx.Arch.Exp(val, scratchReg2, "case value")
+			if switchBlock.Target == nil {
+				// 无目标 switch：每个 case 值按布尔条件独立判断
+				code += utils.Format("test " + scratchReg2 + ", " + scratchReg2)
+				code += utils.Format("jnz " + caseLabel)
+				continue
+			}
 			// 保存左操作数（如果有 callee-save 可用）
 			leftSavedReg := c.Ctx.Reg.AllocCalleeSaveBind(val, c.Ctx.Arch.CalleeSaveRegs(), c.Ctx.Arch.CalleeSaveReg())
 			if leftSavedReg != "" {

@@ -21,6 +21,15 @@ type CaseBlock struct {
 
 // Parse 解析 switch 语句头部，进入作用域后返回（主循环继续解析 body）
 func (s *SwitchBlock) Parse(p *Parser) {
+	// switch { ... }：无目标条件 switch —— 每个 case 按布尔条件独立判断。
+	if peek := p.Lexer.PeekToken(); peek.Type == lexer.SEPARATOR && peek.Value == "{" {
+		s.Target = nil
+		p.Lexer.Skip('{')
+		n := &Node{Value: s}
+		p.AddChild(n)
+		p.ThisBlock = n
+		return
+	}
 	// 获取条件表达式
 	stopCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: "{"}, p.FindEndCursor())
 	s.Target = p.ParseExp(stopCursor - 1)
@@ -78,13 +87,13 @@ func (c *CaseBlock) Parse(p *Parser) {
 			p.Lexer.SetCursor(lastSep)
 			c.Values = append(c.Values, p.ParseExp(t.Cursor))
 			p.Lexer.SetCursor(t.EndCursor)
+			lastSep = t.EndCursor
 		}
 
 		if t.Value == ":" {
 			break
 		}
 	}
-
 	if sw, ok := p.ThisBlock.Value.(*SwitchBlock); ok {
 		sw.Cases = append(sw.Cases, c)
 		c.Switch = sw
@@ -104,10 +113,24 @@ func (c *CaseBlock) Parse(p *Parser) {
 
 // Check 检查 case 语句的有效性
 func (c *CaseBlock) Check(p *Parser) bool {
+	// 无目标 switch：case 值是条件表达式，不做目标类型相等检查
+	if c.Switch.Target == nil {
+		for i := 0; i < len(c.Values); i++ {
+			if !c.Values[i].Check(p) {
+				return false
+			}
+		}
+		return true
+	}
 	// 检查表达式
 	for i := 0; i < len(c.Values); i++ {
-		if !c.Values[i].Check(p) || !typeSys.KindEqual(c.Switch.Target.Type, c.Values[i].Type) {
+		if !c.Values[i].Check(p) {
 			return false
+		}
+		if c.Switch.Target != nil && c.Switch.Target.Type != nil && c.Values[i].Type != nil {
+			if !typeSys.KindEqual(c.Switch.Target.Type, c.Values[i].Type) {
+				return false
+			}
 		}
 	}
 	return true

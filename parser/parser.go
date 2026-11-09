@@ -7,7 +7,6 @@ import (
 	typeSys "cuteify/type"
 	"os"
 	"strconv"
-	"strings"
 )
 
 type Parser struct {
@@ -60,6 +59,10 @@ func (p *Parser) pendingDeclIgnored() bool {
 func (p *Parser) addDeclNode(node *Node) {
 	if p.ThisBlock == p.Block {
 		node.BuildIgnored = buildsIgnored(p.takePendingBuilds())
+		if vb, ok := node.Value.(*VarBlock); ok && vb.IsDefine && p.Package != nil && p.Package.Path != "" &&
+			vb.Name.Length() > 0 && !node.BuildIgnored {
+			packageFmt.RegisterGlobalVar(p.Package.Path, vb.Name.Last(), vb)
+		}
 	}
 	p.ThisBlock.AddChild(node)
 }
@@ -69,6 +72,9 @@ func (p *Parser) addDeclNode(node *Node) {
 // 不立即报错，标记 Unresolved 留给 rootNode.Check 重试；
 // 合并完成后 package 包会把它置 false，此后再查不到才是真错误。
 var ParsePhase = true
+
+// multiAssignCounter 为多返回值赋值生成唯一临时变量名（a, b = f() 的展开）。
+var multiAssignCounter int
 
 // Next 解析下一个语法单元，返回是否结束
 func (p *Parser) Next() (finish bool) {
@@ -129,7 +135,7 @@ func (p *Parser) Next() (finish bool) {
 	case lexer.NAME:
 		p.processNameToken(code, beforeCursor)
 	case lexer.VAR:
-		p.processVarToken(beforeCursor)
+		p.processVarToken(beforeCursor, code)
 	case lexer.TYPE:
 		p.processTypeToken(code)
 	case lexer.BUILD:
@@ -140,6 +146,13 @@ func (p *Parser) Next() (finish bool) {
 		// *p = v / *p 解引用语句（以 * 开头的语句）
 		if code.Type == lexer.SEPARATOR && code.Value == "*" {
 			p.processDerefStmt(beforeCursor)
+			return
+		}
+		// 独立作用域块：{ stmts }。等价于一个不带条件的 ElseBlock
+		if code.Type == lexer.SEPARATOR && code.Value == "{" {
+			block := &ElseBlock{}
+			p.ThisBlock.AddChild(&Node{Value: block})
+			p.ThisBlock = p.ThisBlock.Children[len(p.ThisBlock.Children)-1]
 			return
 		}
 		p.processDefaultToken(code)
@@ -476,14 +489,14 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 	}
 }
 
-// parseMultiDeclare 解析多返回值声明 `a, b := f(...)`。
-// 只生成一个 owner VarBlock：栈槽由它的 MultiOffsets 统一分配，
-// 所有名字都命中这个 owner（见 multiNameHit），引用处按自己在
-// MultiNames 中的下标 MultiIndex 取对应槽位（见 GenVarAddr）。
+// parseMultiDeclare 解析多返回值声明/赋值。
+// := 模式：新建 owner VarBlock（MultiNames 为源码名）。
+// = 模式（a, b = f()）：语义等价于先 tmp1, tmp2 := f()，再逐个 a = tmp1; b = tmp2。
 func (p *Parser) parseMultiDeclare(beforeCursor int) {
 	p.Lexer.SetCursor(beforeCursor)
 
 	var names []Name
+	var op string
 	for {
 		name, _ := p.ParseName(false)
 		if name.Length() != 1 {
@@ -494,10 +507,11 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 		if code.Value == "," {
 			continue
 		}
-		if code.Value == ":=" {
+		if code.Value == ":=" || code.Value == "=" {
+			op = code.Value
 			break
 		}
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ':=' in multi-value declaration")
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need ':=' or '=' in multi-value assignment")
 	}
 
 	exp := p.ParseExp(p.FindEndCursor())
@@ -508,20 +522,52 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 	// 每个槽位的具体类型由 VarBlock.Check 在 Func 解析出来后填充。
 	exp.SetStmt()
 
-	vb := &VarBlock{
-		Name:          names[0],
+	if op == ":=" {
+		vb := &VarBlock{
+			Name:          names[0],
+			IsDefine:      true,
+			IsInitialized: true,
+			Value:         exp,
+			MultiNames:    names,
+		}
+		if !vb.Check(p) {
+			// 跨包被调函数在解析期尚未合并进当前树，右侧调用无法绑定，
+			// 多返回值类型自然也算不出来。节点不能丢：标记未解析，等
+			// rootNode.Check() 在包合并后重试（否则后续引用只剩一个空壳）。
+			vb.Unresolved = true
+		}
+		p.addDeclNode(&Node{Value: vb})
+		return
+	}
+
+	// "=" 模式：a, b = f() → tmp1, tmp2 := f(); a = tmp1; b = tmp2
+	multiAssignCounter++
+	tmpNames := make([]Name, len(names))
+	for i := range names {
+		tmpNames[i] = NewName("__mvt" + itoa(multiAssignCounter) + "_" + itoa(i))
+	}
+	tmpVar := &VarBlock{
+		Name:          tmpNames[0],
 		IsDefine:      true,
 		IsInitialized: true,
 		Value:         exp,
-		MultiNames:    names,
+		MultiNames:    tmpNames,
 	}
-	if !vb.Check(p) {
-		// 跨包被调函数在解析期尚未合并进当前树，右侧调用无法绑定，
-		// 多返回值类型自然也算不出来。节点不能丢：标记未解析，等
-		// rootNode.Check() 在包合并后重试（否则后续引用只剩一个空壳）。
-		vb.Unresolved = true
+	if !tmpVar.Check(p) {
+		tmpVar.Unresolved = true
 	}
-	p.addDeclNode(&Node{Value: vb})
+	p.addDeclNode(&Node{Value: tmpVar})
+
+	for i, name := range names {
+		rhs := &Expression{Var: &VarBlock{Name: tmpNames[i]}}
+		rhs.Var.ParseDefine(p)
+		as := &VarBlock{
+			Name:  name,
+			Value: rhs,
+		}
+		as.Check(p)
+		p.addDeclNode(&Node{Value: as})
+	}
 }
 
 // fieldExpr 解析字段访问表达式（如 a.b.c），返回表达式节点。
@@ -597,13 +643,41 @@ func (p *Parser) fieldExprFromExp(left *Expression) *Expression {
 	return exp
 }
 
-func (p *Parser) processVarToken(beforeCursor int) {
+func (p *Parser) processVarToken(beforeCursor int, code lexer.Token) {
+	p.Lexer.SetCursor(beforeCursor)
+	// 游标位于关键字首字节：先读过关键字，再看下一 token 是否为 "("
+	kw := p.Lexer.Next()
+	if next := p.Lexer.Next(); next.Type == lexer.SEPARATOR && next.Value == "(" {
+		switch kw.Value {
+		case "var", "VAR":
+			p.parseGroupedDecl("VAR")
+		case "const", "CONST":
+			p.parseGroupedDecl("CONST")
+		case "let", "LET":
+			p.parseGroupedDecl("LET")
+		default:
+			p.Error.MissError("Syntax Error", kw.Cursor, "expected var/const/let")
+		}
+		return
+	}
 	p.Lexer.SetCursor(beforeCursor)
 	block := &VarBlock{}
 	block.Parse(p)
 }
 
 func (p *Parser) processTypeToken(code lexer.Token) {
+	// 分组形式：type ( ... )
+	save := p.Lexer.Cursor
+	if code.Value == "type" {
+		if next := p.Lexer.Next(); next.Type == lexer.SEPARATOR && next.Value == "(" {
+			if p.ThisBlock != p.Block {
+				p.Error.MissError("Syntax Error", next.Cursor, "type declaration is only allowed at top level")
+			}
+			p.parseGroupedDecl("TYPE")
+			return
+		}
+		p.Lexer.SetCursor(save)
+	}
 	switch code.Value {
 	case "type":
 		block := &TypeBlock{}
@@ -639,8 +713,14 @@ func (p *Parser) processTypeToken(code lexer.Token) {
 		p.attachPendingAlign(&block.Struct.Type)
 		p.addDeclNode(&Node{Value: block})
 	case "interface":
-		block := &InterfaceDef{}
-		block.Parse(p)
+		if p.ThisBlock != p.Block {
+			p.Error.MissError("Syntax Error", code.Cursor, "interface declaration is only allowed at top level")
+		}
+		nameToken := p.Lexer.Next()
+		if nameToken.Type != lexer.NAME {
+			p.Error.MissError("Syntax Error", nameToken.Cursor, "need interface name")
+		}
+		block := p.newInterfaceBlock(p.Lexer.Cursor, nameToken)
 		p.addDeclNode(&Node{Value: block})
 	case "enum":
 		p.processEnumToken()
@@ -727,13 +807,61 @@ func (p *Parser) Need(value string) []lexer.Token {
 	}
 }
 
-// FindEndCursor 查找当前行末尾的光标位置
+// FindEndCursor 查找当前语句末尾的光标位置（下一行的 LineFeed 起点；行尾是 EOF 则返回 len-1）。
+// 对字符串字面量具备感知能力："" / '' / `` 包裹的换行不被视为语句结束，
+// 因此 `"a\nb"`（字面含义）与跨行的裸字符串都能正确定位到语句尾。
 func (p *Parser) FindEndCursor() int {
-	tmp := strings.Index(p.Lexer.Text[p.Lexer.Cursor:], p.Lexer.LineFeed)
-	if tmp == -1 {
-		return len(p.Lexer.Text) - 1
+	text := p.Lexer.Text
+	lineFeed := p.Lexer.LineFeed
+	n := len(text)
+	i := p.Lexer.Cursor
+	for i < n {
+		c := text[i]
+		switch c {
+		case '"':
+			// 普通字符串：跳过到闭合引号（含反斜杠转义跳过）
+			i++
+			for i < n && text[i] != '"' {
+				if text[i] == '\\' {
+					i++ // 跳过转义字符
+				}
+				i++
+			}
+			if i < n {
+				i++ // 跳过闭合引号
+			}
+			continue
+		case '`':
+			// 裸字符串：原样到下一个反引号
+			i++
+			for i < n && text[i] != '`' {
+				i++
+			}
+			if i < n {
+				i++
+			}
+			continue
+		case '\'':
+			// 字符字面量（含转义）
+			i++
+			for i < n && text[i] != '\'' {
+				if text[i] == '\\' {
+					i++
+				}
+				i++
+			}
+			if i < n {
+				i++
+			}
+			continue
+		default:
+			if i+len(lineFeed) <= n && text[i:i+len(lineFeed)] == lineFeed {
+				return i
+			}
+			i++
+		}
 	}
-	return tmp + p.Lexer.Cursor
+	return n - 1
 }
 
 // Wait 等待并跳过直到遇到指定值，返回经过的 Token 数量

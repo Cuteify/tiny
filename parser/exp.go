@@ -628,6 +628,11 @@ func (p *Parser) handleName() *Expression {
 				exp.Type = typeSys.MakePointer(callBlock.NewType)
 			}
 			return exp
+		case "{":
+			// 结构体字面量 P{field: expr, ...} —— 按字段声明顺序 lowering 为 new(P, ...)
+			if lit := p.parseStructLiteral(name); lit != nil {
+				return lit
+			}
 		case "[":
 			// 泛型调用 f[T](args)：只有配对 ']' 之后紧跟 '(' 才是类型参数列表。
 			// 否则保持变量引用原样返回，交回 ParseExp 走 handleIndex 处理普通索引。

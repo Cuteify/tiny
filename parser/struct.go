@@ -69,6 +69,8 @@ func (s *StructBlock) parseLine(p *Parser) {
 	}
 
 	switch {
+	case token.Value == "pub":
+		p.Error.MissError("Struct Error", token.Cursor, "'pub' field modifier is not supported; use _field for private, or remove")
 	case token.Value == "@":
 		parentName, _ := p.ParseName(false)
 		s.Type.StructFields = append(s.Type.StructFields, &typeSys.StructField{

@@ -17,6 +17,7 @@ type FuncBlock struct {
 	Useful          bool                    // 是否有用（用于优化）
 	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
+	PtrReceiver     int                     // 指针接收者深度：0=值接收者；1=`self *P`；2=`self **P` 等
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
 }
 
@@ -393,10 +394,13 @@ func (f *FuncBlock) Parse(p *Parser) {
 		}
 	} else if code.Value == "(" { // 匿名函数/闭包，或方法简写 fn (self Type) name(...)
 		p.Lexer.SetCursor(code.Cursor)
-		if recvType, methodName, ok := p.parseSelfReceiver(); ok {
+		if recvType, methodName, ptrDepth, ok := p.parseSelfReceiver(); ok {
 			// 归一化成标准的 fn Type.methodName(...) 形式：
 			// Name 两段 + Class 绑定 + AddMethod，与上面的分支完全一致。
+			// 指针接收者 fn (self *P) m()：方法表挂在元素类型上，
+			// 与值接收者一致；记录 ptrDepth 供后续区分（见 FuncBlock.PtrReceiver）。
 			f.Name = NewName(recvType, methodName)
+			f.PtrReceiver = ptrDepth
 			namedFunc = true
 			results := p.Find(NewName(recvType), FindTypeType)
 			if len(results) > 0 {
@@ -455,7 +459,7 @@ func (f *FuncBlock) Parse(p *Parser) {
 // parseSelfReceiver 识别方法简写 fn (self Type) name(args...)。
 // 扫描首组括号：内容必须是 self Type，且配对 ')' 之后紧跟 "name("。
 // 命中则消费接收者部分并返回 (类型名, 方法名)，否则不消费任何 token。
-func (p *Parser) parseSelfReceiver() (recvType, methodName string, ok bool) {
+func (p *Parser) parseSelfReceiver() (recvType, methodName string, ptrDepth int, ok bool) {
 	saved := p.Lexer.Cursor
 
 	// 找到配对的 ')'
@@ -480,12 +484,12 @@ func (p *Parser) parseSelfReceiver() (recvType, methodName string, ok bool) {
 		case "\n", "\r", ";":
 			// 接收者与方法名必须写在同一行，换行即判定为匿名函数
 			p.Lexer.SetCursor(saved)
-			return "", "", false
+			return "", "", 0, false
 		}
 	}
 	if !matched {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
 
 	// ')' 之后必须紧跟 name(
@@ -493,35 +497,40 @@ func (p *Parser) parseSelfReceiver() (recvType, methodName string, ok bool) {
 	t2 := p.Lexer.Next()
 	if t1.Type != lexer.NAME || t2.Type != lexer.SEPARATOR || t2.Value != "(" {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
 
 	// 回到开头解析 "(self Type)"，然后消费方法名
 	p.Lexer.SetCursor(saved)
 	if p.Lexer.Next().Value != "(" {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
-	if x := p.Lexer.Next(); x.Type != lexer.NAME || x.Value != "self" {
+	if tok := p.Lexer.Next(); tok.Type != lexer.NAME || tok.Value != "self" {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
 	x := p.Lexer.Next()
+	ptrDepth = 0
+	for x.Type == lexer.SEPARATOR && x.Value == "*" {
+		ptrDepth++
+		x = p.Lexer.Next()
+	}
 	if x.Type != lexer.NAME {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
 	recvType = x.Value
 	if p.Lexer.Next().Value != ")" {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
 	m := p.Lexer.Next()
 	if m.Type != lexer.NAME {
 		p.Lexer.SetCursor(saved)
-		return "", "", false
+		return "", "", 0, false
 	}
-	return recvType, m.Value, true
+	return recvType, m.Value, ptrDepth, true
 }
 
 // parseTypeParams 解析泛型类型参数列表 [T, U]（fn f[T](x: T) T {...}）。
@@ -570,6 +579,17 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	// 状态
 	bracketCount := 0
 	argTmp := &ArgBlock{}
+	// 分组类型：`a, b int` / `a, b: int` —— 类型写在最后统一作用于前面所有未绑定类型的名字
+	var pending []*ArgBlock
+	flushPending := func(t typeSys.Type) {
+		for _, pa := range pending {
+			if pa.Type == nil {
+				pa.Type = t
+			}
+			f.Args = append(f.Args, pa)
+		}
+		pending = nil
+	}
 
 	// 存入第一个参数的名字
 	if token.Type != lexer.NAME {
@@ -592,6 +612,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			if argTmp.Type == nil {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 			}
+			flushPending(argTmp.Type)
 			token = p.Lexer.Next()
 			continue
 		}
@@ -614,6 +635,12 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		if token.Value == ")" {
 			if bracketCount == 0 {
 				// 参数列表结束；token 已由 Next 读入，游标已越过 ')'
+				if argTmp.Type != nil {
+					flushPending(argTmp.Type)
+				}
+				if len(pending) > 0 {
+					p.Error.MissError("Syntax Error", token.Cursor, "need type")
+				}
 				if !argTmp.Name.IsEmpty() {
 					f.Args = append(f.Args, argTmp)
 				}
@@ -631,6 +658,24 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			if argTmp.Type == nil {
 				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
 			}
+			token = p.Lexer.Next()
+			continue
+		}
+
+		// 变参：xs ...T。元素类型包成 []T，最后一个参数；调用方代码生成已支持。
+		if token.Value == "..." && bracketCount == 0 {
+			if argTmp.Name.IsEmpty() {
+				p.Error.MissError("Syntax Error", token.Cursor, "variadic parameter needs a name")
+			}
+			if len(pending) > 0 {
+				p.Error.MissError("Syntax Error", token.Cursor, "variadic parameter cannot be grouped with other parameters")
+			}
+			elemType := p.parseTypeAnnotation()
+			if elemType == nil {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "variadic element type expected")
+			}
+			argTmp.Type = typeSys.NewList(elemType)
+			argTmp.IsVariadic = true
 			token = p.Lexer.Next()
 			continue
 		}
@@ -668,6 +713,7 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 					token = p.Lexer.Next()
 					continue
 				}
+				flushPending(argTmp.Type)
 			}
 
 			// TODO: 处理指针类型（token.Value == "*"）
@@ -676,17 +722,61 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			// }
 
 			if token.Value == "=" {
-				oldCursor := token.Cursor
-				p.Wait(",")
-				stopCursor := token.Cursor
-				p.Lexer.SetCursor(oldCursor)
-				// 处理默认值
-				argTmp.Default = p.ParseExp(stopCursor - 1)
+				savedCursor := p.Lexer.Cursor
+				depth := 0
+				stopCursor := -1
+				for {
+					tok := p.Lexer.Next()
+					if tok.IsEmpty() {
+						stopCursor = p.Lexer.Cursor
+						break
+					}
+					switch tok.Value {
+					case "(", "[", "{":
+						depth++
+					case ")", "]", "}":
+						if depth == 0 {
+							stopCursor = tok.Cursor
+						} else {
+							depth--
+							continue
+						}
+					case ",":
+						if depth == 0 {
+							stopCursor = tok.Cursor
+						} else {
+							continue
+						}
+					case "\n", "\r":
+						if depth == 0 {
+							stopCursor = tok.Cursor
+						} else {
+							continue
+						}
+					default:
+						continue
+					}
+					p.Lexer.SetCursor(stopCursor)
+					goto doneDefault
+				}
+			doneDefault:
+				p.Lexer.SetCursor(savedCursor)
+				argTmp.Default = p.ParseExp(stopCursor)
+				// ParseExp 结束后游标停在 stopCursor（终止符起始处），
+				// 外层循环末尾的 token = p.Lexer.Next() 会接住终止符
 			}
 
 			if token.Value == "," {
+				if argTmp.IsVariadic {
+					p.Error.MissError("Syntax Error", token.Cursor, "variadic parameter must be the last")
+				}
 				if argTmp.Type == nil {
-					p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+					pending = append(pending, argTmp)
+					argTmp = &ArgBlock{}
+					n, _ := p.ParseName(false)
+					if !n.IsEmpty() {
+						argTmp.Name = n
+					}
 					token = p.Lexer.Next()
 					continue
 				}
@@ -698,6 +788,21 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 			}
 		}
 		token = p.Lexer.Next()
+	}
+
+	// 默认参数必须跟在必填参数之后（Go 语义）
+	seenDefault := false
+	for _, a := range f.Args {
+		if a == nil {
+			continue
+		}
+		if a.Default != nil {
+			seenDefault = true
+			continue
+		}
+		if seenDefault {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "non-default parameter follows default parameter")
+		}
 	}
 }
 

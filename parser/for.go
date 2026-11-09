@@ -150,6 +150,35 @@ func (f *ForBlock) parseRange(p *Parser) bool {
 
 // parseInit 解析 for 循环的初始化部分
 func (f *ForBlock) parseInit(p *Parser) {
+	// for var i: int = 0; cond; incr { ... }
+	// 或 for (var i: int = 0); cond; incr { ... }
+	// 初始化用非表达式（var 声明）时按普通变量声明语句处理：
+	// 在 p.ThisBlock 上先插入一个 VarBlock（与 for 块同级、之前），
+	// Init 保持为空。括号包裹也允许（供显式分组）。
+	if p.ThisBlock != nil {
+		var peek = p.Lexer.PeekToken()
+		if peek.Type == lexer.VAR {
+			initBlock := &VarBlock{}
+			initBlock.Parse(p) // parse var statement and add as sibling (before for block)
+			p.Lexer.Skip(';')
+			// var statement consumed through its own ';' or EOL; the original ';' is the separator for init
+			return
+		}
+		if peek.Type == lexer.SEPARATOR && peek.Value == "(" {
+			save := p.Lexer.Cursor
+			p.Lexer.SetCursor(peek.EndCursor)
+			next := p.Lexer.PeekToken()
+			if next.Type == lexer.VAR {
+				initBlock := &VarBlock{}
+				initBlock.Parse(p)
+				p.Lexer.Skip(')')
+				p.Lexer.Skip(';')
+				return
+			}
+			p.Lexer.SetCursor(save)
+		}
+	}
+
 	sepCursor := p.Has(lexer.Token{Type: lexer.SEPARATOR, Value: ";"}, p.FindEndCursor())
 	switch sepCursor {
 	case -1: // 只有条件部分
