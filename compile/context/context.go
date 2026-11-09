@@ -112,7 +112,7 @@ type Context struct {
 	// Monomorphize callback: set by Compiler, called by expression compiler for generic calls.
 	MonomorphizeCall func(call *parser.CallBlock) string
 
-	// 悬空调用惰性绑定（第四根因修复，见 docs/fixplan/PROBLEMS.md）：
+	// 悬空调用惰性绑定（第四根因修复）：
 	// parser Check 因内建/未解析提前返回时，嵌套调用的 Func 未绑定（配合伪 ThisVar
 	// 残留），arch.Call 对 Func==nil 静默返回空——call 指令整个消失。
 	// FuncBlockCache 在首次绑定前构建一次（根树 DFS 全量 FuncBlock 名单）。

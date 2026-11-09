@@ -4,7 +4,7 @@
 
 ## 2026-11-07（类型内建映射 + 函数重载 Phase 1–4 收口 ✅）
 
-- **范围**：按 `PLAN_TYPE_INTRINSIC_OVERLOAD.md` 实施 Go 编译器侧；自举侧只留
+- **范围**：按 `PLAN.md` §4.8（原 PLAN_TYPE_INTRINSIC_OVERLOAD.md，已并入）实施 Go 编译器侧；自举侧只留
   待办，见 `SELFHOST.md` §4.11。用户可读规则落到新增
   `docs/stdplan/TYPE_INTRINSIC.md`。
 - **Phase 1 string**：新增 `parser/intrinsic.go` 表与 `resolveIntrinsicFunc`；

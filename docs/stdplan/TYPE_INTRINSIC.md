@@ -1,7 +1,7 @@
 # 类型内建映射（Type Intrinsic）与函数重载
 
 > 状态：**Go 编译器 Phase 1–4 已实施**（2026-11-07）；自举编译器后续按同一张表对齐。
-> 计划与验收记录：[`PLAN_TYPE_INTRINSIC_OVERLOAD.md`](PLAN_TYPE_INTRINSIC_OVERLOAD.md)。
+> 计划与验收记录：[`PLAN.md`](PLAN.md) §4.8（原 PLAN_TYPE_INTRINSIC_OVERLOAD.md，已并入）。
 > 关联：[`PLAN.md`](PLAN.md) §6、[`../SELFHOST.md`](../SELFHOST.md) §4.11。
 
 本文描述“某类型的某操作由哪个 std 实现承载”的规则。唯一事实源是

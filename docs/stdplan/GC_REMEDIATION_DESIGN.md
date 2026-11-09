@@ -988,7 +988,7 @@ if st.objBlockID[refObj] == st.currentBlockID && st.currentBlockID != 0 {
 ## 11. 证据与引用
 
 - 审计报告：`docs/stdplan/GC_ANALYSIS_AUDIT.md`
-- 理论分析：`DOC_gc_ownership_analysis.md`
+- 理论分析：`docs/GC_MEMORY_MANAGEMENT.md`（对象级所有权/LLR 当前实现说明）
 - 当前实现：
   - `compile/gc/analyze.go:236`（`bumpParams`）
   - `compile/gc/analyze.go:184`（`applyCallee`）

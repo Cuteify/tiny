@@ -68,7 +68,7 @@ Phase 1 对拍发现两个真实问题：
 
 - [x] `docs/gc_api.md` 三态 → 五态（Scope / Field / Inplace / RC / Borrow）
 - [x] `docs/gc_frontend_design.md` 更新 §3.4 / §3.5 / §5 基线
-- [x] `docs/gc_migration_plan.md` 更新 Phase 1 数字与字段 cascade 状态
+- [x] `docs/GC_MEMORY_MANAGEMENT.md` 记录 Phase 1 数字与字段 cascade 状态（原 gc_migration_plan，已并入）
 - [x] `docs/GC_MEMORY_MANAGEMENT.md` 更新“一个对象至多一个释放点”的表述
 - [x] `gcfe/plan.go` 的 `Disposal` / `FieldPlan` 注释同步五态
 

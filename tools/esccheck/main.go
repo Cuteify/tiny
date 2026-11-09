@@ -1,7 +1,7 @@
 // esccheck — 前端 GC 五态基线检查。
 //
 // 用法：esccheck ./test/xxx
-// 基线：泄漏=0  提前释放=0  HolderBad=0；五态计数见 docs/gc_migration_plan.md。
+// 基线：泄漏=0  提前释放=0  HolderBad=0；五态计数见 docs/GC_MEMORY_MANAGEMENT.md。
 package main
 
 import (

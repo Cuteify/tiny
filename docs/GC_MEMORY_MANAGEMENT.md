@@ -1510,9 +1510,9 @@ fn resetLeakTracker()
 
 - `docs/gc_frontend_design.md`：对象级五态模型的设计论证；
   该模型目前只服务诊断，代码生成权威仍是语句级 LLR。
-- `docs/gc_migration_plan.md`：GC 收拢到 `gc` 包的迁移记录、各阶段基线与差异归因。
+- `docs/GC_MEMORY_MANAGEMENT.md`（本文）：GC 当前实现与已知缺口的唯一用户可读参考。
 - `docs/gc_api.md`：`gc.Analyze` 的调用流程与 API。
 - `docs/backend.md`：后端总体结构、架构抽象、调用约定。
 - `PROJECT.md`：当前验收基线、farm 矩阵、提交纪律。
-- `docs/stdplan/GC_REMEDIATION_DESIGN.md`、`GC_REMEDIATION_PLAN.md`：
-  LLR 改造的历史设计与执行记录。
+- `docs/stdplan/GC_REMEDIATION_DESIGN.md`：
+  LLR 改造的历史设计与证据归因。

@@ -192,7 +192,7 @@ func lo8(name string) string {
 // InstBinary 的 push 惯用法（保护 RAX / 暂存乘除数 / 暂存移位计数）会平移 rsp，
 // 而调用参数 buffer 槽 "[rsp+N]" 是 rsp 相对地址 —— push 窗口内按原文本读写会
 // 错位到相邻槽（实证：power(2,10) even 路径的 idiv 商写进 buf[0] 把 base 覆成 0，
-// (rdi=0, rsi=10) 无限递归 8MB 栈耗尽 SIGSEGV，见 docs/fixplan/PROBLEMS.md）。
+// (rdi=0, rsi=10) 无限递归 8MB 栈耗尽 SIGSEGV）。
 // 仅当寻址形式为 [rsp] / [rsp+N] / [rsp-N]（可带 QWORD/DWORD 宽度前缀）时改写偏移；
 // 寄存器与 rbp 相对寻址原样返回。delta = 该次发射时已 outstanding 的 push 字节数
 // （只统计本窗口自己的 push；不用 R10/R11 作暂存 —— 它们在 regmgr 分配池内且
@@ -638,7 +638,7 @@ func (a *x86_64Ops) exp(e *parser.Expression, result, desc string) string {
 
 // setArgsOffset 设置参数偏移（callee 栈帧内，rbp-48 起；如 C/Rust 保存到 callee 自己的局部变量区）
 //
-// 槽位约定（第五根因修复，见 docs/fixplan/PROBLEMS.md）：
+// 槽位约定（第五根因修复）：
 // 偏移一律"从高向低"预留；参数槽向下生长（param0 最高，paramN 最低）。
 // 容器参数（string/大结构体，Size>8）占用 size 字节的完整条带，字段在条带内
 // 向上展开：arg.Offset = 条带最低槽，j 号字段地址 = Offset+j*8。

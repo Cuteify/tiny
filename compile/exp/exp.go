@@ -55,8 +55,8 @@ var danglingBuiltinNames = map[string]bool{
 // Func==nil 首行返回空串 → call 指令整体消失，寄存器复用陈旧值，运行期空指针写。
 //
 // 修复语义逐条复刻 parser.CallBlock.Check 的成功绑定路径：
-//   - 候选匹配优先全名 Eq；否则唯一 Last() 相等（corpus 无同名重载，
-//     docs/fixplan/W3_NOTES.md；多候选/零候选保守不绑，宁可漏发不乱绑）
+//   - 候选匹配优先全名 Eq；否则唯一 Last() 相等（corpus 无同名重载；
+//     多候选/零候选保守不绑，宁可漏发不乱绑）
 //   - BuildFlags.Ignore 的候选跳过（build 别名壳）
 //   - fb.Useful = true；绑定后若 fb.Class == nil 清除伪 ThisVar
 //     （"包名被方法分支误判为接收者时，清除伪 ThisVar"）
