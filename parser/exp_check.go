@@ -743,14 +743,24 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 		}
 
 	case "!":
-		if !typeSys.CheckKind(exp.Right.Type, "bool") {
-			return exp.checkOverload(p)
+		if typeSys.CheckKind(exp.Right.Type, "bool") {
+			exp.Type = typeSys.GetSystemType("bool")
+			if exp.Right.IsConst() {
+				exp.Bool = !exp.Right.Bool
+				exp.foldBin()
+			}
+			return true
 		}
-		exp.Type = typeSys.GetSystemType("bool")
-		if exp.Right.IsConst() {
-			exp.Bool = !exp.Right.Bool
-			exp.foldBin()
+		// 整数按真值取反（!0 为真，!n 为假）；代码生成按与 0 比较处理。
+		if typeSys.IsNum(exp.Right.Type) {
+			exp.Type = typeSys.GetSystemType("bool")
+			if exp.Right.IsConst() {
+				exp.Bool = exp.Right.Num == 0
+				exp.foldBin()
+			}
+			return true
 		}
+		return exp.checkOverload(p)
 
 	case "~":
 		// 位取反适用于所有整数类型（含 uint/byte）；float 才走运算符重载。

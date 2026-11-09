@@ -240,12 +240,27 @@ func (c *ECompiler) thisMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
 
 // needPtrMem 判断字段访问是否需要指针间接寻址（p.x / head.next.x 等）。
 // 路径中存在指针中间层（除最后一个目标字段类型外）时返回 true。
+// Path 项可能是变量/参数/字段/类型本身——逐结构判它是不是指针语义。
+func pathEntryIsPointer(e any) bool {
+	switch t := e.(type) {
+	case typeSys.Type:
+		return t != nil && t.IsPointer()
+	case *parser.VarBlock:
+		return t.Type != nil && t.Type.IsPointer()
+	case *parser.ArgBlock:
+		return t.Type != nil && t.Type.IsPointer()
+	case *typeSys.StructField:
+		return t.Type != nil && t.Type.IsPointer()
+	}
+	return false
+}
+
 func needPtrMem(v *parser.VarBlock) bool {
 	if v == nil || len(v.Name) <= 1 || isThisField(v) || v.Define.Node == nil || len(v.Define.Path) < 2 {
 		return false
 	}
 	for i := 0; i < len(v.Define.Path)-1; i++ {
-		if t, ok := v.Define.Path[i].(typeSys.Type); ok && t != nil && t.IsPointer() {
+		if pathEntryIsPointer(v.Define.Path[i]) {
 			return true
 		}
 	}
@@ -531,11 +546,10 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 			BindDanglingCall(c.ctx, exp.Call)
 		}
 		// Monomorphize generic function calls
+		// 单态化：生成/复用特化副本，Func 直接指向特化 FuncBlock
+		// （Name/MangledOverride = 特化标签；返回类型已是具体类型）。
 		if c.ctx.MonomorphizeCall != nil && exp.Call.Func != nil && len(exp.Call.Func.TypeParams) > 0 {
-			if label := c.ctx.MonomorphizeCall(exp.Call); label != "" {
-				exp.Call.Func.Name = parser.NewName(label)
-				exp.Call.Func.MangledOverride = label
-			}
+			c.ctx.MonomorphizeCall(exp.Call)
 		}
 		// DEBUG: trace call.Func before arch.Call
 		if exp.Call.Func != nil && exp.Call.Func.Name.NASM() == "" {
@@ -1531,11 +1545,10 @@ func (c *ECompiler) loadContainerPair(exp *parser.Expression, r0, r1 string) str
 	}
 	if exp.Call != nil {
 		// Monomorphize generic function calls
+		// 单态化：生成/复用特化副本，Func 直接指向特化 FuncBlock
+		// （Name/MangledOverride = 特化标签；返回类型已是具体类型）。
 		if c.ctx.MonomorphizeCall != nil && exp.Call.Func != nil && len(exp.Call.Func.TypeParams) > 0 {
-			if label := c.ctx.MonomorphizeCall(exp.Call); label != "" {
-				exp.Call.Func.Name = parser.NewName(label)
-				exp.Call.Func.MangledOverride = label
-			}
+			c.ctx.MonomorphizeCall(exp.Call)
 		}
 		code := c.arch.Call(exp.Call)
 		retBase := c.arch.FramePtr() + strconv.Itoa(c.ctx.RetSlot)
@@ -3870,15 +3883,27 @@ func (c *ECompiler) builtinStringSlotCall(arg *parser.Expression, sym string, re
 	// 与普通容器实参一致的三槽传递（RDI/RSI/RDX = ptr/len/cap，
 	// 或 32 位栈上 cap/len/ptr 右到左压栈），被调方按标准约定溢出/读取
 	base := stripOuterBrackets(c.arch.VarAddr(arg.Var))
+	// 指针基字段/this 字段：VarAddr 是栈槽（基础变量的槽），三槽都读不到
+	// 正确的头位置——必须先加载指针、再按 [reg+0/8/16] 读。
+	pre := ""
+	if needPtrMem(arg.Var) {
+		var reg *regmgr.Reg
+		pre, base, reg = c.ptrMem(arg.Var)
+		defer c.freeTmpReg(reg)
+	} else if isThisField(arg.Var) {
+		var reg *regmgr.Reg
+		pre, base, reg = c.thisMem(arg.Var)
+		defer c.freeTmpReg(reg)
+	}
 	// S0-2（P11）：三字段布局消费查表化（data/len/cap 经 listFields）
 	// 直接以内存操作数装载三槽（无需地址寄存器，避免与目标寄存器同名冲突）
 	_, lenOff, capOff := c.listFields()
 	if ps == 8 {
-		code += utils.Format("mov RDI, " + ln + " [" + base + "]")
+		code += pre + utils.Format("mov RDI, " + ln + " [" + base + "]")
 		code += utils.Format("mov RSI, " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "]")
 		code += utils.Format("mov RDX, " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "]")
 	} else {
-		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "]")
+		code += pre + utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "]")
 		code += utils.Format("push " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "]")
 		code += utils.Format("push " + ln + " [" + base + "]")
 	}
@@ -3901,6 +3926,35 @@ func (c *ECompiler) builtinStringSlotCall(arg *parser.Expression, sym string, re
 
 func (c *ECompiler) listFieldRead(arg *parser.Expression, off int, result string) string {
 	ln := c.arch.LengthName(c.arch.PointerSize())
+	// 指针基字段/this 字段：先加载基础指针、再间接寻址（与 Var 分支同构）。
+	if arg.Var != nil && needPtrMem(arg.Var) {
+		pre, addr, reg := c.ptrMem(arg.Var)
+		addr = addr + "+" + strconv.Itoa(off)
+		var code string
+		if result == "push" {
+			code = utils.Format("push " + ln + " [" + addr + "]")
+		} else if strings.Contains(result, "[") {
+			code = c.derefLoad(ln, result, addr)
+		} else {
+			code = utils.Format("mov " + result + ", " + ln + " [" + addr + "]")
+		}
+		c.freeTmpReg(reg)
+		return pre + code
+	}
+	if arg.Var != nil && isThisField(arg.Var) {
+		pre, addr, reg := c.thisMem(arg.Var)
+		addr = addr + "+" + strconv.Itoa(off)
+		var code string
+		if result == "push" {
+			code = utils.Format("push " + ln + " [" + addr + "]")
+		} else if strings.Contains(result, "[") {
+			code = c.derefLoad(ln, result, addr)
+		} else {
+			code = utils.Format("mov " + result + ", " + ln + " [" + addr + "]")
+		}
+		c.freeTmpReg(reg)
+		return pre + code
+	}
 	if arg.Var != nil {
 		addr := stripOuterBrackets(c.arch.VarAddr(arg.Var)) + "+" + strconv.Itoa(off)
 		if result == "push" {
@@ -4456,6 +4510,11 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 			break
 		}
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
+			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
+			areg := c.allocTmpReg()
+			code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
+			code += c.loadMultiSlot(arg.Value, "["+areg.Name+"+"+strconv.Itoa(offs[i])+"]")
+			c.freeTmpReg(areg)
 			continue
 		}
 		areg := c.allocTmpReg()
@@ -4532,6 +4591,11 @@ func (c *ECompiler) builtinNewRC(exp *parser.Expression, call *parser.CallBlock,
 			break
 		}
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
+			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
+			areg := c.allocTmpReg()
+			code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
+			code += c.loadMultiSlot(arg.Value, "["+areg.Name+"+"+strconv.Itoa(offs[i])+"]")
+			c.freeTmpReg(areg)
 			continue
 		}
 		areg := c.allocTmpReg()
