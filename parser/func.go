@@ -813,7 +813,13 @@ func (f *FuncBlock) ParseRetType(p *Parser) {
 	results := p.Find(typName, FindTypeType)
 	if len(results) > 0 {
 		if tb, ok := results[0].Value.(typeSys.Type); ok {
-			f.Return = append(f.Return, tb)
+			if st := structOfType(tb); st != nil {
+				if inst := p.maybeInstantiateGenericStruct(st); inst != nil {
+					f.Return = append(f.Return, inst)
+				}
+			} else {
+				f.Return = append(f.Return, tb)
+			}
 		} else {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
 		}

@@ -133,9 +133,22 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 		results := p.Find(NewName(nameStr), FindTypeType)
 		if len(results) > 0 {
 			if tb, ok := results[0].Value.(*TypeBlock); ok {
-				return tb.Type()
+				t := tb.Type()
+				if st := structOfType(t); st != nil {
+					if inst := p.maybeInstantiateGenericStruct(st); inst != nil {
+						return inst
+					}
+					return nil
+				}
+				return t
 			}
 			if t, ok := results[0].Value.(typeSys.Type); ok {
+				if st := structOfType(t); st != nil {
+					if inst := p.maybeInstantiateGenericStruct(st); inst != nil {
+						return inst
+					}
+					return nil
+				}
 				return t
 			}
 		}

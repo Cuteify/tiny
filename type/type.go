@@ -467,6 +467,57 @@ func IsKindOf(t Type, kinds ...string) bool {
 	return false
 }
 
+// typeParamStructural 结构化匹配含 TypeParam 占位符的类型：形状一致，
+// 每个叶子要么是 TypeParam、要么落到常规 AutoType 规则兜底。
+// 只认容器/指针的 TypeParam 嵌套形态（[]T、[N]T、map[K]V、*T 及其嵌套）；
+// 结构体等其它形状返回 false，交回常规规则。
+func typeParamStructural(before, after Type) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	if _, ok := before.(*TypeParam); ok {
+		return true
+	}
+	if _, ok := after.(*TypeParam); ok {
+		return true
+	}
+	// 同形指针：逐层解引用
+	if before.IsPointer() || after.IsPointer() {
+		if before.IsPointer() != after.IsPointer() {
+			return false
+		}
+		return typeParamStructural(before.Elem(), after.Elem())
+	}
+	// list
+	if bl, ok := before.(*ListType); ok {
+		al, ok := after.(*ListType)
+		if !ok {
+			return false
+		}
+		return typeParamStructural(bl.Elem(), al.Elem())
+	}
+	// array
+	if ba, ok := before.(*ArrayType); ok {
+		aa, ok := after.(*ArrayType)
+		if !ok {
+			return false
+		}
+		if ba.Len() != aa.Len() {
+			return false
+		}
+		return typeParamStructural(ba.Elem(), aa.Elem())
+	}
+	// map
+	if bm, ok := before.(*MapType); ok {
+		am, ok := after.(*MapType)
+		if !ok {
+			return false
+		}
+		return typeParamStructural(bm.Key(), am.Key()) && typeParamStructural(bm.Elem(), am.Elem())
+	}
+	return false
+}
+
 func AutoType(before, after Type, IsConst bool) (ok bool) {
 	// 真别名（type A = B）与底层完全可互换：全路径都走 unwrap 后的类型。
 	if before != nil {
@@ -485,6 +536,11 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 			return true
 		}
 		if _, isTP := after.(*TypeParam); isTP {
+			return true
+		}
+		// 结构化 TypeParam：[]T / [N]T / map[K]V / *T / 嵌套容器里含
+		// TypeParam 占位符时，按形状逐层递归匹配（fn f[T](xs: []T)）。
+		if typeParamStructural(before, after) {
 			return true
 		}
 		beforeType := before.Type()

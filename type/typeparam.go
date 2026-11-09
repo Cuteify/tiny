@@ -51,5 +51,18 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 			return NewList(newElem)
 		}
 	}
+	if at, ok := t.(*ArrayType); ok {
+		newElem := SubstituteTypeParams(at.Elem(), subst)
+		if newElem != at.Elem() {
+			return NewArray(newElem, at.Len())
+		}
+	}
+	if mt, ok := t.(*MapType); ok {
+		newKey := SubstituteTypeParams(mt.Key(), subst)
+		newElem := SubstituteTypeParams(mt.Elem(), subst)
+		if newKey != mt.Key() || newElem != mt.Elem() {
+			return NewMapType(newKey, newElem)
+		}
+	}
 	return t
 }

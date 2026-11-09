@@ -232,8 +232,24 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 	// 再查找用户定义类型
 	results := p.Find(Name(typeName), FindTypeType)
 	if len(results) > 0 {
-		if tb, ok := results[0].Value.(typeSys.Type); ok {
-			return tb
+		if tb, ok := results[0].Value.(*TypeBlock); ok {
+			t := tb.Type()
+			if st := structOfType(t); st != nil {
+				if inst := p.maybeInstantiateGenericStruct(st); inst != nil {
+					return inst
+				}
+				return nil
+			}
+			return t
+		}
+		if t, ok := results[0].Value.(typeSys.Type); ok {
+			if st := structOfType(t); st != nil {
+				if inst := p.maybeInstantiateGenericStruct(st); inst != nil {
+					return inst
+				}
+				return nil
+			}
+			return t
 		}
 	}
 

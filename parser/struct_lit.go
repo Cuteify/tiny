@@ -29,7 +29,45 @@ func (p *Parser) parseStructLiteral(name Name) *Expression {
 		p.Lexer.SetCursor(saved)
 		return nil
 	}
+	return structLiteralFromType(p, st)
+}
 
+// tryParseGenericStructLiteral 尝试解析泛型结构体字面量 Box[T]{...}。
+// name 必须是已登记的泛型结构体模板；否则返回 nil（调用者走原有分支）。
+func (p *Parser) tryParseGenericStructLiteral(name Name) *Expression {
+	tmpl := lookupGenericStructTemplate(p, name.String())
+	if tmpl == nil {
+		return nil
+	}
+	saved := p.Lexer.Cursor
+	token := p.Lexer.Next()
+	if token.Type != lexer.SEPARATOR || token.Value != "[" {
+		p.Lexer.SetCursor(saved)
+		return nil
+	}
+	p.Lexer.SetCursor(saved)
+	args := p.parseGenericArgList()
+	if args == nil {
+		return nil
+	}
+	st := instantiateGenericStruct(tmpl, args)
+	if st == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"generic struct '"+tmpl.TypeName+"' expects "+itoa(len(tmpl.TypeParams))+" type arguments, got "+itoa(len(args)))
+		return nil
+	}
+	open := p.Lexer.Next()
+	if open.Type != lexer.SEPARATOR || open.Value != "{" {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"expected '{' after generic type arguments of '"+tmpl.TypeName+"'")
+		return nil
+	}
+	return structLiteralFromType(p, st)
+}
+
+// structLiteralFromType 解析结构体字面量字段并构造对应的 new(T, ...) 调用。
+// 调用前游标已位于 '{' 之后。
+func structLiteralFromType(p *Parser, st *typeSys.StructType) *Expression {
 	// 字段名 → 值表达式
 	pairs := map[string]*Expression{}
 	for {

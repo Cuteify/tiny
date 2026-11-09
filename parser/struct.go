@@ -18,8 +18,42 @@ func (s *StructBlock) Parse(p *Parser) {
 	}
 	s.Type.TypeName = nameToken.Value
 
-	// 检查是否有继承（: ParentStruct）
+	// 泛型参数列表 [T, U]：G[T, U] 里只能是裸名字；解析成 TypeParam 占位符，
+	// 字段/方法体内的 T 解析到占位类型。
+	saved := p.Lexer.Cursor
 	token := p.Lexer.Next()
+	if token.Type == lexer.SEPARATOR && token.Value == "[" {
+		var paramNames []string
+		for {
+			n, _ := p.ParseName(false)
+			if len(n) == 0 {
+				p.Error.MissError("Struct Error", p.Lexer.Cursor,
+					"expected type parameter name")
+				return
+			}
+			paramNames = append(paramNames, n[0].Name)
+			peek := p.Lexer.Next()
+			if peek.Type == lexer.SEPARATOR && peek.Value == "," {
+				continue
+			}
+			p.Lexer.SetCursor(peek.Cursor)
+			break
+		}
+		p.Lexer.Skip(']')
+		s.Type.TypeParams = paramNames
+		// 建立占位表并置 p.CurTypeParams（字段解析期间生效）
+		savedTypeParams := p.CurTypeParams
+		tpTable := map[string]typeSys.Type{}
+		for _, name := range paramNames {
+			tpTable[name] = typeSys.NewTypeParam(name)
+		}
+		p.CurTypeParams = tpTable
+		defer func() { p.CurTypeParams = savedTypeParams }()
+		token = p.Lexer.Next()
+	} else {
+		p.Lexer.SetCursor(saved)
+		token = p.Lexer.Next()
+	}
 	if token.Value == "struct" {
 		// type 声明形式（type Name struct），跳过 struct 关键字
 		token = p.Lexer.Next()

@@ -92,6 +92,10 @@ type StructType struct {
 	// 0 = 未指定（自然对齐，行为与引入前逐位一致）；noalign = 1。
 	// 由 parser 的 build align(N)/noalign 指令在紧随的 struct 上设置。
 	Align int
+	// TypeParams 非空时说明这是泛型结构体“模板”（struct Box[T]）。
+	// 模板本身不进代码生成；引用点 instantiateGenericStruct 按实参物化具体类型。
+	// 内容是类型参数名（声明顺序）。
+	TypeParams []string
 }
 
 func (s *StructType) Size() int {
