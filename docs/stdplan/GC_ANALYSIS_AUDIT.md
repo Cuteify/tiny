@@ -1,8 +1,10 @@
 # GC 分析产物最优性审计（2026-11-03）
 
 > 范围：只读审计。检查 `gc_summary.json` / `gc_llr.txt` 的覆盖率、逃逸/释放计划与当前
-> 语料的一致性；**不修改** `parser/*`、`compile/gc/*`、`type/struct.go` 或 `package/*.go`。
+> 语料的一致性；**不修改** `parser/*`、`gc/*`（原 `compile/gc/*`，已迁至根目录）、`type/struct.go` 或 `package/*.go`。
 > 审计对象是当前 `HEAD=91841e0` 下由 `/tmp/opencode/bin/w13` 生成/复核的产物。
+>
+> ⚠️ 路径注记：文内 `compile/gc/*.go` 旧前缀现已统一迁至根目录 `gc/`（行号均为审计时快照，已不反映现行代码）。
 
 ## 0. 结论先行
 

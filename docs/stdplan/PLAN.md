@@ -44,7 +44,7 @@
    text/template 切 std:maps。
 5. **内存管理器结构审阅完成**（§2）：分层健全、60 class 分级空闲链表 + boundary tag + RC 族，
    发现 6 项问题——3 修（RC_BIT / memset / gDbg 清理）进 Wave M，3 项文档化。
-6. 沿用铁律：`parser/*`、`compile/gc/*`、`type/struct.go` 冻结（Wave L 有限破冻，见 R6）；
+6. 沿用铁律：`parser/*`、`gc/*`（原 `compile/gc/*`，已迁至根目录）、`type/struct.go` 冻结（Wave L 有限破冻，见 R6）；
    失败铁律（零候选/多候选保守不绑）；esccheck 不变列（泄漏释放=6 · 泄漏=0 · 提前释放=0 · 转移=22）
    对后端改动逐位不变；编译/运行只在沙盒 /tmp/opencode/run。
 

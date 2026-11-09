@@ -1,8 +1,10 @@
 # GC 分析修复设计报告（2026-11-03）
 
 > 依据：`docs/stdplan/GC_ANALYSIS_AUDIT.md` 的只读审计结论。
-> 本报告只做方案设计，**不修改** `parser/*`、`compile/gc/*`、`type/struct.go`、
+> 本报告只做方案设计，**不修改** `parser/*`、`gc/*`（原 `compile/gc/*`，已迁至根目录）、`type/struct.go`、
 > `package/*.go` 或测试源码。文中的 `/tmp/opencode/*` 探针不属于仓库资产。
+>
+> ⚠️ 路径注记：文内 `compile/gc/*.go` 旧前缀现已统一迁至根目录 `gc/`（行号均为报告时快照，已不反映现行代码）。
 >
 > 对用户表述的落地假设：把“第二个写入文件专门标记一下 1”理解为——在 LLR 的第二个
 > 产物 `gc_llr.txt` 中，为 return 节点对应的释放点输出 `flag=1`，用于区分“函数出口

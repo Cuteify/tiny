@@ -1,7 +1,8 @@
 # 前端 GC 释放点修复计划（当前批次）
+> ⚠️ 状态注记：本批次已完成（2026-11-05），文档与路径为当时快照。现行说明见 `docs/GC_MEMORY_MANAGEMENT.md`；“前端 gcfe”架构已并入根目录 `gc/` 包。
 
 > 状态：2026-11-05 · 分支 `main` · 前端基线 `0a176cf` · 后端批次基线 `6841680`
-> 目标：在**不切换代码生成权威**的前提下，让前端 `gcfe` 的释放计划满足
+> 目标：在**不切换代码生成权威**的前提下，让前端（`parser` 侧释放计划，后迁至 `gc/plan.go`）的释放计划满足
 > “一个对象至多一个释放点”，把字段 cascade 缺口补到不再产生假泄漏，
 > 并修掉后端 §9.1 的出口释放可达性问题。
 > 验收口径：`泄漏=0`、`提前释放=0`、`HolderBad=0`，全语料逐目录对拍。
@@ -60,7 +61,7 @@ Phase 1 对拍发现两个真实问题：
 - [x] 容器必须是作用域释放（或递归地只被字段持有）；读槽无效/成环则放弃
 - [x] 容器读槽必须唯一且 `Holder.Life.Obj == 容器`；分支合流 / 别名放弃
 - [x] `parser.Disposal` 增加 `DisposalField`
-- [x] `gcfe/plan.go` 导出 `Field` / `FieldOwner` / `FieldName` / `Stale`
+- [x] `gc/plan.go` 导出 `Field` / `FieldOwner` / `FieldName` / `Stale`
 - [x] `esccheck` 单列字段释放，不计入泄漏
 - [x] `gcdiff` 把字段释放算作前端释放能力
 
@@ -70,7 +71,7 @@ Phase 1 对拍发现两个真实问题：
 - [x] `docs/gc_frontend_design.md` 更新 §3.4 / §3.5 / §5 基线
 - [x] `docs/GC_MEMORY_MANAGEMENT.md` 记录 Phase 1 数字与字段 cascade 状态（原 gc_migration_plan，已并入）
 - [x] `docs/GC_MEMORY_MANAGEMENT.md` 更新“一个对象至多一个释放点”的表述
-- [x] `gcfe/plan.go` 的 `Disposal` / `FieldPlan` 注释同步五态
+- [x] `gc/plan.go` 的 `Disposal` / `FieldPlan` 注释同步五态
 
 ### 1.5 后端 §9.1：出口释放挂到公共跳板（Batch D）
 
@@ -84,7 +85,7 @@ Phase 1 对拍发现两个真实问题：
       局部槽清零，覆盖“变量初始化前早退 `ret`”
 - [x] `Epilogue` 在 cleanup 前后成对保存/恢复返回值寄存器
       （x86_64：`RAX`/`RDX`；x86：`EAX`/`EDX`）
-- [x] `compile/gc/llr.go` 的 `FieldFrees` 只在容器自身属于 `res.Frees` 时生成，
+- [x] `gc/llr.go` 的 `FieldFrees` 只在容器自身属于 `res.Frees` 时生成，
       容器已 `ret` 给调用方时不再拆字段（避免 UAF）
 - [x] 修 x86 字段释放路径重复 `add esp, 4`：`Arch.Call` 已清理它看到的实参，
       重复清栈会让返回值寄存器读到错位槽
@@ -164,7 +165,7 @@ add rsp, 104
 
 | 项 | 结果 |
 |---|---|
-| `parser/gc_retsum.go` | 新增 `ReturnKind`（None/Fresh/Alias/Borrow/Unknown）与 `RetSourceOf` |
+| `gc/retsum.go` | 新增 `ReturnKind`（None/Fresh/Alias/Borrow/Unknown）与 `RetSourceOf` |
 | `freshAllocExpr` | 消费方从 `ReturnsOwned` 切到严格 Fresh 摘要 |
 | 全语料前端基线 | `对象=160 作用域=114 就地=7 字段=1 转移=30 RC=8 泄漏=0 提前=0 HolderBad=0` |
 | 对象增量 | 132→160（纯传递返回链被识别）；中间值 163 是 `newRC` 误判 Fresh，已回落到 160 |
@@ -223,7 +224,7 @@ add rsp, 104
 ## 4. 当前阻塞与不做的事
 
 - 本批次只改 `compile/` 的**出口释放可达性、入口清零、字段 cascade 宿主
-  约束与 x86 调用栈**；代码生成权威仍是 `compile/gc`，前端尚未接管生成；
+  约束与 x86 调用栈**；代码生成权威仍是 `gc` 包（原 `compile/gc`），前端尚未接管生成；
 - `Holder` 只保证“是该对象的绑定名且活到释放点”，不保证“释放那一刻槽里
   一定是它”（分支合流是合法场景）；接生成器时必须用清槽语义 `freeSlot`，
   并在 Phase 3 用汇编检查钉住；

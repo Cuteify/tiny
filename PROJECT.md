@@ -47,7 +47,7 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 - SIG 现场 gdb 尸检：先 `ulimit -Sc 0`，完整后恢复 `ulimit -Sc unlimited`
 
 ## 2. 提交与文件纪律
-- **禁改红线**：`parser/*`、`type/struct.go`（`compile/gc/*` 经用户授权用于本轮 GC 收口）；Go 改动只许明确授权的最小 diff
+- **禁改红线**：`parser/*`、`type/struct.go`（`gc/*` 经用户授权用于本轮 GC 收口）；Go 改动只许明确授权的最小 diff
 - .cute 域无红线但 commit 域用**显式路径**逐域 add（不 `git add -A`）
 - commit：`flock /tmp/opencode/lock git add <路径> && flock /tmp/opencode/lock git commit -m '一行简短中文带模块前缀'`；**不 push**
 - **不碰 docs/stdplan**（主会话收口时统一补账）；子代理战报写 `/tmp/opencode/subreport_<tag>.md`（verdict / diff 摘要 / farm rc 表 / 未竟项）
