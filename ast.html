@@ -88,22 +88,59 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   <span class="node-content" data-id="2">
     <span class="tag tag-var">var:=</span>
     <span class="node-name">a</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [1, 2, 3]</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= &#34;abc&#34;</span>
   </span>
 </li>
 <li class="node">
   <span class="node-content" data-id="3">
     <span class="tag tag-var">var:=</span>
     <span class="node-name">b</span>
-    <span class="node-type">[]int</span>
-    <span class="node-detail">= [7, 8]</span>
+    <span class="node-type">string</span>
+    <span class="node-detail">= &#34;abc&#34;</span>
   </span>
 </li>
 <li class="node">
-  <span class="node-content" data-id="4">
+  <span class="node-content collapsible" data-id="4">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">/home/gx/Desktop/______/tiny/pkg/strings.ne( = a,  = b)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="5">
     <span class="tag tag-return">ret</span>
-    <span class="node-detail">copy( = a,  = b)</span>
+    <span class="node-detail">1</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content collapsible" data-id="6">
+    <span class="toggle">▾</span>
+    <span class="tag tag-if">if</span>
+    <span class="node-detail">/home/gx/Desktop/______/tiny/pkg/strings.eq( = a,  = b)</span>
+  </span>
+  <ul class="children">
+<li class="node">
+  <span class="node-content" data-id="7">
+    <span class="tag tag-call">call</span>
+    <span class="node-name">println</span>
+    <span class="node-detail">(s = &#34;autoImport: ALL PASS&#34;)</span>
+  </span>
+</li>
+<li class="node">
+  <span class="node-content" data-id="8">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">42</span>
+  </span>
+</li>
+  </ul>
+</li>
+<li class="node">
+  <span class="node-content" data-id="9">
+    <span class="tag tag-return">ret</span>
+    <span class="node-detail">2</span>
   </span>
 </li>
   </ul>
@@ -111,7 +148,7 @@ h1{color:var(--accent);font-size:20px;font-weight:700;margin-bottom:4px;letter-s
   </ul>
 </li>
 </ul>
-<div class="subtitle" style="margin-top:20px">5 nodes · 1 functions · 2 variables</div>
+<div class="subtitle" style="margin-top:20px">10 nodes · 1 functions · 2 variables</div>
 <script>
 function toggleAll(collapse){
   document.querySelectorAll('.collapsible').forEach(n=>{
