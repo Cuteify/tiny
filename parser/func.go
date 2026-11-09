@@ -622,10 +622,11 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		// 处理其他部分
 		if bracketCount == 0 {
 			if token.Value == ":" {
-				// 指针/切片/映射参数（*T、[]T、map[K]V）走类型注解解析
+				// 指针/切片/映射/函数类型参数（*T、[]T、map[K]V、fn(...) R）走类型注解解析
 				nextTok := p.Lexer.Next()
 				if nextTok.Value == "*" || nextTok.Value == "[" ||
-					(nextTok.Type == lexer.NAME && nextTok.Value == "map") {
+					(nextTok.Type == lexer.NAME && nextTok.Value == "map") ||
+					nextTok.Type == lexer.FUNC {
 					p.Lexer.SetCursor(nextTok.Cursor)
 					argTmp.Type = p.parseTypeAnnotation()
 				} else {
@@ -787,6 +788,16 @@ func (f *FuncBlock) ParseRetType(p *Parser) {
 			}
 			p.Lexer.SetCursor(tok.Cursor)
 			break
+		}
+		return
+	}
+	// 函数类型返回：fn f() fn(int) int
+	if token.Type == lexer.FUNC {
+		p.Lexer.SetCursor(token.Cursor)
+		if t := p.parseTypeAnnotation(); t != nil {
+			f.Return = append(f.Return, t)
+		} else {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "type not found")
 		}
 		return
 	}
