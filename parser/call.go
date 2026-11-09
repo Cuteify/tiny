@@ -4,6 +4,7 @@ import (
 	"cuteify/lexer"
 	typeSys "cuteify/type"
 	"cuteify/utils"
+	"strconv"
 )
 
 // CallBlock 函数调用结构体
@@ -303,9 +304,37 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	// 内置包兜底：无命名空间调用（print(...)）→ 注册表直接定位函数块。
 	// 本地/用户函数优先：仅在上方查找失败后进入。
-	if c.Func == nil && len(candidates) == 0 && !c.Name.IsPath() {
+	if c.Func == nil && c.ThisVar == nil && len(candidates) == 0 && !c.Name.IsPath() {
 		if fb, ok := BuiltinFuncs[c.Name.First()]; ok && !funcBuildIgnored(fb) {
 			candidates = append(candidates, fb)
+		}
+	}
+
+	// 函数指针局部变量：f(x) —— 局部变量优先于同名函数。
+	// 绑定为 ThisVar（Type.Kind()=="func"），由 arch 走 isIndirect 间接调用；
+	// 合成 FuncFunc 形参表，让实参检查照常跑。
+	// 只认“真变量”（Define.Type ∈ {Var, Arg}）；裸函数名（Define.Type == Func）
+	// 也是 FuncType —— 那是函数引用，不是变量调用。
+	if c.Func == nil && c.ThisVar == nil && c.Name.Length() == 1 && !c.Name.IsPath() {
+		vb := &VarBlock{Name: c.Name}
+		vb.ParseDefine(p)
+		if vb.Type != nil && vb.Type.Kind() == "func" &&
+			(vb.Define.Type == FindTypeVar || vb.Define.Type == FindTypeArg) {
+			c.ThisVar = vb
+			// 合成函数签名（argType 来自 FuncType），供实参个数/类型检查使用
+			if fType, ok := vb.Type.(*typeSys.FuncType); ok {
+				fb := &FuncBlock{Name: c.Name, Return: append([]typeSys.Type{}, fType.Returns...)}
+				for i, a := range fType.Args {
+					fb.Args = append(fb.Args, &ArgBlock{Type: a, Name: NewName("arg" + strconv.Itoa(i))})
+				}
+				c.Func = fb
+				for _, arg := range c.Args {
+					if arg != nil && arg.Value != nil {
+						arg.Value.Check(p)
+					}
+				}
+				return c.finishCallCheck(p)
+			}
 		}
 	}
 
@@ -374,7 +403,7 @@ func (c *CallBlock) Check(p *Parser) bool {
 		c.Args = append([]*ArgBlock{arg}, c.Args...)
 	}
 
-	if c.Func == nil && len(candidates) > 0 {
+	if c.Func == nil && c.ThisVar == nil && len(candidates) > 0 {
 		// 消歧需要实参类型：先做 Check（幂等），跨文件未解析的类型保持 nil，
 		// 打分器会把它当作“未知”而不是“不匹配”。
 		for _, arg := range c.Args {
@@ -427,6 +456,11 @@ func (c *CallBlock) Check(p *Parser) bool {
 
 	c.Func.Useful = true
 
+	return c.finishCallCheck(p)
+}
+
+// finishCallCheck 参数个数/默认参数/变参拆分/逐参类型检查（普通调用与函数指针调用共用）。
+func (c *CallBlock) finishCallCheck(p *Parser) bool {
 	// 检查参数个数是否匹配（考虑默认参数与变参形参）
 	if len(c.Func.Args) > 0 {
 		last := len(c.Func.Args) - 1

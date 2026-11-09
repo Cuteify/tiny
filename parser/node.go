@@ -99,6 +99,9 @@ func IsScopeBlock(b Block) bool { return isScopeBlock(b) }
 // Replace 摊平进父节点）。只走 Children 会整个漏掉 else 分支 —— 里面的
 // 分配、赋值、作用域一个都看不见。
 func eachSubNode(n *Node, fn func(*Node)) {
+	if n == nil {
+		return
+	}
 	for _, c := range n.Children {
 		fn(c)
 	}
