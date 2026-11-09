@@ -1,0 +1,16 @@
+// P-new 新语法特性回归（块注释、跨行 RAW、分组/默认/变参、指针接收者、for var、struct 字面量）
+fn main() int {
+    var sum: int = 0
+    for var i: int = 0; i < 3; i = i + 1 {
+        sum += i
+    }
+    if sum != 3 {
+        ret 1
+    }
+    var s: string = `a
+b`
+    if len(s) != 3 {
+        ret 2
+    }
+    ret 42
+}
