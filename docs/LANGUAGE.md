@@ -452,7 +452,7 @@ q, r := divide(17, 5)
 ```
 
 - ✅ `:=` 接收多返回值。
-- ❌ `=` 接收多返回值报 `need ':=' in multi-value declaration`。
+- ✅ `=` 接收多返回值：`a, b = f()` 与 `a, b := f()` 均可用，槽位按返回顺序装载。
 - ⚠️ `_` 不是特殊丢弃符，只是普通标识符；`q, _ := f()` 能工作，但 `_` 会被当作真实变量声明（range 里的 `_` 见 §9.4）。
 
 ### 4.4 赋值、复合赋值、自增自减
@@ -547,9 +547,9 @@ type MyInt2 int       // 新类型（底层 int）
 | `type MyInt int` | ✅ | 与 `int` 互操作（整数按 Kind 放宽） |
 | `type P2 = P` / `type P2 P`（结构体） | ✅ | 可用于声明变量/参数 |
 | `type MyList = []int` 声明 | ✅ | 零值、`len` 可用 |
-| 把 `[]int{...}` 赋给 `MyList` | ❌ | 报 `need type MyList, not []int` |
+| 把 `[]int{...}` 赋给 `MyList` | ✅ | `[]T` 可按别名初始化；`len` 可用 |
 | 别名作为 `sizeof` 参数 | ✅ | 推荐用法 |
-| 内联 `sizeof[[]int]()` | ❌ | 见 §11.1 |
+| 内联 `sizeof[[]int]()` | ✅ | `sizeof[T]` 及 `sizeof[[]T]()`、`sizeof[[N]T]()` 均可（类型形参位置按类型解析） |
 
 ### 5.4 类型兼容与隐式转换
 
@@ -610,8 +610,8 @@ byte(x)  f32(x)   f64(x)
 
 - 推荐写法：`sizeof[T]()`，必须带括号。
 - `sizeof[T]`（不带括号）会返回一个伪值（实测 56），不要使用。
-- 参数必须是**具名类型或别名**；`sizeof[[]int]()`、`sizeof[[3]int]()` 会报 `unexpected '['`。
-- 定长数组宽度需要先起别名：
+- `sizeof[T]()` 的 `T` 可以是具名类型、别名、指针类型、`[]T` 以及定长数组 `[N]T`。
+- 类型形参的 `[N]T` 和 `[]T` 可直接写，例如 `sizeof[[3]int]()`、`sizeof[[]int]()`；也可以使用别名：
 
 ```cute
 type Arr3 = [3]int
@@ -1254,7 +1254,7 @@ default:
 | `new(T, v...)` | ✅ | 堆分配；返回 `*T`；结构体按字段顺序填值 |
 | `new([]T, len[, cap])` | ⚠️ | 必须传 len；不传 len 汇编失败 |
 | `newRC(T, v...)` | ⚠️ | RC 分配；`newRC(int, 7)` 正常，`newRC([]T, n)` 列表读写错误 |
-| `sizeof[T]()` | ✅ | 必须带括号；参数必须是具名类型/别名 |
+| `sizeof[T]()` | ✅ | 必须带括号；类型实参可为具名类型、别名、`[]T`、`[N]T` |
 | `sizeof[T]` | ❌ | 不带括号返回伪值（56） |
 | `len(x)` | ✅ | string/list/map 变量；数组不支持；字面量直接传不可靠 |
 | `cap(x)` | ✅ | string/list 变量；字面量直接传不可靠 |
@@ -1580,9 +1580,10 @@ import (
 | `try` / `except` / `finally` | `'try' is not supported yet` | 用返回码/panic |
 | `import` 在函数内 | `import is only allowed at top level` | 提到文件顶层 |
 | 点导入 `.` | `dot import is not supported yet` | 用别名 |
+| 内联 `sizeof[[]int]()` | ✅ 已支持 | 类型形参位置按类型解析 |
 | 反引号 import 路径 | `import path must be a quoted string` | 用双引号 |
 | `sizeof[T]` 不带括号 | 返回伪值 56 | 写 `sizeof[T]()` |
-| `sizeof[[]T]()` / `sizeof[[N]T]()` | `unexpected '['` | 先起别名 |
+| `sizeof[[]T]()` / `sizeof[[N]T]()` | ✅ 已支持 | 类型形参直接接受 `[]T` 及 `[N]T` |
 | `new([]T)` 不传长度 | 汇编 `invalid combination of opcode and operands` | 传长度 |
 | 嵌套列表字面量 | `unexpected '['` | 逐层构造或先声明变量 |
 | 跨行 RAW 字符串 | 报 `Miss ...` | 单行 RAW 或运行时拼接 |
