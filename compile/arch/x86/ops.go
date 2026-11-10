@@ -279,27 +279,22 @@ func (a *x86Ops) VarDecl(varBlock *parser.VarBlock) string {
 	if _, isIface := varBlock.Type.(*typeSys.InterfaceType); isIface {
 		return exppkg.New(a.ctx).BoxInterface(varBlock)
 	}
-	// 函数指针赋值：将函数名地址存入变量
-	if ft, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
-		// 函数名直接赋值（含重载）：标签必须与函数定义一致，优先走 FuncBlock。
-		if varBlock.Value.Var != nil {
+	// 函数指针赋值：fn 值统一为闭包对象 {code, env}（间接调用 ABI）
+	if _, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
+		varAddr := genVarAddr(a.ctx, varBlock)
+		// 函数名直接赋值：堆分配 {code, env=0}
+		if varBlock.Value != nil && varBlock.Value.Var != nil {
 			if fb, ok := varBlock.Value.Var.Define.Value.(*parser.FuncBlock); ok && fb != nil {
-				varAddr := genVarAddr(a.ctx, varBlock)
-				return utils.Format("mov dword " + varAddr + ", " + fb.MangledName() + "; 设置函数指针变量" + varBlock.Name.String())
+				objCode := exppkg.New(a.ctx).EmitClosureObjectFor(fb, fb.Env, a.ctx.Arch.ReturnReg())
+				return objCode + utils.Format("mov dword " + varAddr + ", " + a.ctx.Arch.ReturnReg() + "; 设置闭包对象地址" + varBlock.Name.String()) +
+					"\n"
 			}
-		}
-		if varBlock.Value.Var != nil && varBlock.Value.Var.Type != nil {
-			// 变量引用：加载变量地址
-			addr := genVarAddr(a.ctx, varBlock.Value.Var)
-			varAddr := genVarAddr(a.ctx, varBlock)
-			return utils.Format("lea eax, "+addr+"; 函数指针地址\n") +
-				utils.Format("mov dword "+varAddr+", eax; 设置函数指针变量"+varBlock.Name.String())
-		}
-		// 函数名引用：直接加载函数地址
-		if varBlock.Value.Var != nil {
-			fnName := formatFuncNameRaw(varBlock.Value.Var.Name.NASM(), len(ft.Args))
-			varAddr := genVarAddr(a.ctx, varBlock)
-			return utils.Format("mov dword " + varAddr + ", " + fnName + "; 设置函数指针变量" + varBlock.Name.String())
+			// 值是另一个 fn 变量：复制闭包对象指针
+			if vt := varBlock.Value.Var.Type; vt != nil && vt.Kind() == "func" {
+				addr := genVarAddr(a.ctx, varBlock.Value.Var)
+				return utils.Format("mov dword " + varAddr + ", dword " + addr + "; 设置闭包对象地址" + varBlock.Name.String()) +
+					"\n"
+			}
 		}
 	}
 	return exppkg.New(a.ctx).Assign(varBlock)
@@ -718,6 +713,9 @@ func setArgsOffset(fn *parser.FuncBlock) {
 	}
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
+		// 隐藏 env 不在 Args 里（fn.EnvParam 只是 callee 口令）：可见参数
+		// 从 ebp+8 起按 cdecl push 序逐 dword 槽排列，与普通函数一致，
+		// callee 前序代码从 EBX 装 env 到自己的隐藏槽 [ebp-8]。
 		arg.Offset = argOffset
 		size := arg.Type.Size()
 		if size > 4 {
@@ -749,8 +747,18 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 	for _, regName := range csRegs {
 		code += utils.Format("push " + regName + "; 保存" + regName)
 	}
+	// 隐藏 env 槽（闭包与具名嵌套函数）：[ebp-8] 专用槽。
+	// EBX 是唯一 callee-save 寄存器（[ebp-4] 为 EBX 的保存位）——env 绝不
+	// 覆盖它；可见参数不占此槽。局部变量游标统一后移 4B 至 [ebp-8] 起。
+	if fn.EnvParam {
+		code += utils.Format("mov DWORD [ebp-8], EBX; 保存闭包 env（隐藏槽）")
+	}
 
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -4*len(csRegs))
+	stackStart := -4 * len(csRegs)
+	if fn.EnvParam {
+		stackStart -= 4
+	}
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, stackStart)
 
 	// 预留大值返回槽：容器 12B；结构体按槽数（Size/4）；+ 隐藏参数地址保存 4B
 	retBytes := 12

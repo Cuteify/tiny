@@ -462,26 +462,31 @@ func (a *x86_64Ops) VarDecl(varBlock *parser.VarBlock) string {
 	if _, isIface := varBlock.Type.(*typeSys.InterfaceType); isIface {
 		return exppkg.New(a.ctx).BoxInterface(varBlock)
 	}
-	// 函数指针赋值：将函数名地址存入变量
+	// 函数指针赋值：函数值统一为闭包对象 {code, env}（间接调用 ABI）
 	if ft, isFuncPtr := varBlock.Type.(*typeSys.FuncType); isFuncPtr {
-		// 函数名直接赋值（含重载）：标签必须与函数定义一致，优先走 FuncBlock。
-		if varBlock.Value.Var != nil {
+		varAddr := GenVarAddr(a.ctx, varBlock)
+		ln := "QWORD"
+		if a.PointerSize() == 4 {
+			ln = "DWORD"
+		}
+		// 函数名直接赋值（含重载）：堆分配 {code, env=0}
+		if varBlock.Value != nil && varBlock.Value.Var != nil {
 			if fb, ok := varBlock.Value.Var.Define.Value.(*parser.FuncBlock); ok && fb != nil {
-				varAddr := GenVarAddr(a.ctx, varBlock)
-				return utils.Format("mov QWORD "+varAddr+", "+fb.MangledName()+"; 设置函数指针变量"+varBlock.Name.String())
+				env := fb.Env // 具名/匿名闭包 FB：宿主 env 槽指针；裸 FB 为 nil → env=0
+				objCode := exppkg.New(a.ctx).EmitClosureObjectFor(fb, env, a.ctx.Arch.ReturnReg())
+				return objCode + utils.Format("mov "+ln+" "+varAddr+", "+a.ctx.Arch.ReturnReg()+"; 设置闭包对象地址"+varBlock.Name.String()) +
+					"\n"
+			}
+			// 值是另一个 fn 变量：复制闭包对象指针
+			if vt := varBlock.Value.Var.Type; vt != nil && vt.Kind() == "func" {
+				addr := GenVarAddr(a.ctx, varBlock.Value.Var)
+				return utils.Format("mov "+ln+" "+varAddr+", "+ln+" "+addr+"; 设置闭包对象地址"+varBlock.Name.String()) +
+					"\n"
 			}
 		}
-		if varBlock.Value.Var != nil && varBlock.Value.Var.Type != nil {
-			addr := GenVarAddr(a.ctx, varBlock.Value.Var)
-			varAddr := GenVarAddr(a.ctx, varBlock)
-			return utils.Format("lea rax, "+addr+"; 函数指针地址\n") +
-				utils.Format("mov QWORD "+varAddr+", rax; 设置函数指针变量"+varBlock.Name.String())
-		}
-		if varBlock.Value.Var != nil {
-			fnName := formatFuncNameRaw(varBlock.Value.Var.Name.NASM(), len(ft.Args))
-			varAddr := GenVarAddr(a.ctx, varBlock)
-			return utils.Format("mov QWORD " + varAddr + ", " + fnName + "; 设置函数指针变量" + varBlock.Name.String())
-		}
+		// 其他形态（匿名字面量、调用返回等）：走通用 exppkg.Assign，
+		// 通用 expression codegen 会把匿名字面量落成闭包对象，赋值直接存 RAX。
+		_ = ft
 	}
 	return exppkg.New(a.ctx).Assign(varBlock)
 }
@@ -617,6 +622,9 @@ func (a *x86_64Ops) GenerateStartEntry() string {
 
 // formatFuncName 生成汇编函数名（非 main 函数使用 MangledName）
 func formatFuncName(fb *parser.FuncBlock) string {
+	if fb == nil {
+		panic("internal: formatFuncName(nil)")
+	}
 	if fb.Name.NASM() == "main" {
 		return "main"
 	}
@@ -647,8 +655,13 @@ func (a *x86_64Ops) exp(e *parser.Expression, result, desc string) string {
 // [rbp-40/-32]）——string 转值参数的函数系统性读写错位（console.println 的
 // len 错误即源于此）。
 func setArgsOffset(fn *parser.FuncBlock) {
-	// callee-saved regs 占 [rbp-8]..[rbp-40]，参数从 [rbp-48] 开始往下排
+	// callee-saved regs 占 [rbp-8]..[rbp-40]，参数从 [rbp-48] 开始往下排。
+	// 隐藏 env（fn.EnvParam）走 [rbp-48] 固定槽，不参与 Args 计数，
+	// 普通参数从 [rbp-56] 起。
 	argOffset := -48
+	if fn.EnvParam {
+		argOffset = -56
+	}
 	for i := 0; i < len(fn.Args); i++ {
 		arg := fn.Args[i]
 		size := arg.Type.Size()

@@ -1373,7 +1373,10 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	//optimizer.OptimizeRecursion(c.Ctx.Now)           // 尝试优化递归函数
 	//optimizer.ConvertRecursionToIteration(c.Ctx.Now) // 实际转换递归为迭代
 
-	// 设置当前函数上下文
+	// 设置当前函数上下文（保存宿主函数后恢复，嵌套函数编译完毕后
+	// 回到外层函数，而不是置空——外层函数体的后续子节点仍需要它）
+	savedCurrentFunc := c.Ctx.CurrentFunc
+	savedCurrentFuncKey := c.currentFuncKey
 	c.Ctx.CurrentFunc = funcBlock
 	c.currentFuncKey = funcBlock.Name.String()
 
@@ -1386,8 +1389,8 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	}
 
 	defer func() {
-		c.Ctx.CurrentFunc = nil
-		c.currentFuncKey = ""
+		c.Ctx.CurrentFunc = savedCurrentFunc
+		c.currentFuncKey = savedCurrentFuncKey
 		c.Ctx.TypeSubst = origTypeSubst // 恢复 TypeSubst
 	}()
 

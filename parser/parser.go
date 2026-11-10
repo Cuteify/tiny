@@ -121,6 +121,11 @@ func (p *Parser) Next() (finish bool) {
 			}
 			return
 		}
+		// 宿主具名函数关闭：把宿主内的闭包提升到包根（不能提升嵌套命名函数）
+		// 只在被关闭的是宿主具名函数时触发；嵌套或匿名单元在父闭包触发时一起提升。
+		if fb, ok := p.ThisBlock.Value.(*FuncBlock); ok && fb != nil && !fb.Anon && p.ThisBlock.Father == p.Block {
+			hoistClosures(p, p.ThisBlock)
+		}
 		p.Back(1)
 		return
 	}

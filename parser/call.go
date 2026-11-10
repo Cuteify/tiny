@@ -40,7 +40,9 @@ func collectCallCandidates(p *Parser, name Name) []*FuncBlock {
 	seen := map[*FuncBlock]bool{}
 	for _, node := range p.Find(name, FindTypeFunc) {
 		fb, ok := node.Value.(*FuncBlock)
-		if !ok || fb == nil || funcBuildIgnored(fb) || seen[fb] {
+		if !ok || fb == nil || funcBuildIgnored(fb) || fb.Lifted || seen[fb] {
+			// Lifted：宿主帧嵌套具名函数提升后的 FB，用户代码不直接调用它
+			// （调用走宿主 frame 内创建的 binding VarBlock）。
 			continue
 		}
 		seen[fb] = true
@@ -294,6 +296,33 @@ func (c *CallBlock) Check(p *Parser) bool {
 		return true
 	}
 
+	// 函数指针局部变量优先于同名函数：fn 类型局部变量 / fn 类型参数
+	// 对同名 FB 的调用走 f(x) 间接调用（经闭包对象，env 经 RBX/EBX 传递）。
+	// 捕获变量的引用在提升阶段已改写为 __env.f 形式，故不强制单段名。
+	// 本阶段位于候选解析之前：捕获闭包/嵌套具名函数提升后，绑定变量是唯一正确入口。
+	if c.Func == nil && c.ThisVar == nil {
+		if fvb := resolveFnVarName(p, c.Name); fvb != nil {
+			c.ThisVar = fvb
+			// 合成函数签名（argType 来自 FuncType），供实参个数/类型检查使用
+			if fType, ok := fvb.Type.(*typeSys.FuncType); ok {
+				fb := &FuncBlock{Name: c.Name, Return: append([]typeSys.Type{}, fType.Returns...)}
+				for i, a := range fType.Args {
+					fb.Args = append(fb.Args, &ArgBlock{Type: a, Name: NewName("arg" + strconv.Itoa(i))})
+				}
+				c.Func = fb
+				for _, arg := range c.Args {
+					if arg != nil && arg.Value != nil {
+						arg.Value.Check(p)
+					}
+				}
+				return c.finishCallCheck(p)
+			}
+			// ThisVar 路径（Type.Kind()=="func"）从此接管“间接调用”；
+			// ThisVar 缺省可经 Kind=="func" 判定走 isIndirect。
+			return c.finishCallCheck(p)
+		}
+	}
+
 	// 函数重载 Phase 2：先收集全部同名候选，再按 arity / 实参类型选择。
 	// 不能像旧实现那样“取第一个并顺手把所有同名函数标 Useful”，
 	// 否则同名不同 arity 的调用会绑定到错误定义，或产生重复汇编标签。
@@ -309,35 +338,6 @@ func (c *CallBlock) Check(p *Parser) bool {
 			candidates = append(candidates, fb)
 		}
 	}
-
-	// 函数指针局部变量：f(x) —— 局部变量优先于同名函数。
-	// 绑定为 ThisVar（Type.Kind()=="func"），由 arch 走 isIndirect 间接调用；
-	// 合成 FuncFunc 形参表，让实参检查照常跑。
-	// 只认“真变量”（Define.Type ∈ {Var, Arg}）；裸函数名（Define.Type == Func）
-	// 也是 FuncType —— 那是函数引用，不是变量调用。
-	if c.Func == nil && c.ThisVar == nil && c.Name.Length() == 1 && !c.Name.IsPath() {
-		vb := &VarBlock{Name: c.Name}
-		vb.ParseDefine(p)
-		if vb.Type != nil && vb.Type.Kind() == "func" &&
-			(vb.Define.Type == FindTypeVar || vb.Define.Type == FindTypeArg) {
-			c.ThisVar = vb
-			// 合成函数签名（argType 来自 FuncType），供实参个数/类型检查使用
-			if fType, ok := vb.Type.(*typeSys.FuncType); ok {
-				fb := &FuncBlock{Name: c.Name, Return: append([]typeSys.Type{}, fType.Returns...)}
-				for i, a := range fType.Args {
-					fb.Args = append(fb.Args, &ArgBlock{Type: a, Name: NewName("arg" + strconv.Itoa(i))})
-				}
-				c.Func = fb
-				for _, arg := range c.Args {
-					if arg != nil && arg.Value != nil {
-						arg.Value.Check(p)
-					}
-				}
-				return c.finishCallCheck(p)
-			}
-		}
-	}
-
 	// 方法调用（候选属于类型）：接收者 = 点号左边的路径（a.b.m() → a.b）。
 	// 调用点把接收者作为第一个参数显式传入（编译器自动传入第一个参数）。
 	// 列表内建 len/cap/ptr 不走本路径：保留 ThisVar 通道（arch 按 ThisVar.Kind()=="list" 直分派）。
@@ -469,7 +469,6 @@ func (c *CallBlock) finishCallCheck(p *Parser) bool {
 			return false
 		}
 	}
-
 	// 处理默认参数
 	if len(c.Func.Args) > 0 {
 		last := len(c.Func.Args) - 1
@@ -927,4 +926,60 @@ func (cb *CallBlock) typeSubst() map[string]typeSys.Type {
 		return nil
 	}
 	return subst
+}
+
+// resolveFnVarName 解析 f(x) 或 __env.f(x) 形式的函数指针调用：
+//   1) 优先按普通局部变量/参数/字段解析（多段路径同样能走通）；
+//   2) 失败则直接用 Find 按路径项/字段回落；
+//   3) 排除“裸函数名”（Define.Type == FindTypeFunc 且值是 *FuncBlock）——那是“函数引用”，
+//      不是 fn 值变量。
+func resolveFnVarName(p *Parser, name Name) *VarBlock {
+	if name.Length() == 0 {
+		return nil
+	}
+	vb := &VarBlock{Name: name}
+	vb.ParseDefine(p)
+	if vb.Type != nil && vb.Type.Kind() == "func" && !varIsFuncRef(vb) {
+		return vb
+	}
+	for _, r := range p.Find(name, FindTypeItem|FindTypeField|FindTypeSelf|FindTypeVar|FindTypeArg) {
+		if r.Value == nil {
+			continue
+		}
+		switch v := r.Value.(type) {
+		case *VarBlock:
+			if v.Type != nil && v.Type.Kind() == "func" {
+				return v
+			}
+		case *ArgBlock:
+			return &VarBlock{Name: v.Name, Type: v.Type}
+		case *typeSys.StructField:
+			if v.Type != nil && v.Type.Kind() == "func" {
+				return &VarBlock{Name: NewName(v.Name), Type: v.Type}
+			}
+		}
+	}
+	return nil
+}
+
+// varIsFuncRef 报告该变量是不是“裸函数引用”（Define.Type == FindTypeFunc，且 Value 是 *FuncBlock）。
+// 例外：由提升器为捕获闭包 / 嵌套命名函数创建的绑定 VarBlock
+// （binding.Value.Anon != nil）本质上是 fn 类型变量，走函数指针间接调用路径。
+func varIsFuncRef(vb *VarBlock) bool {
+	if vb == nil {
+		return false
+	}
+	if vb.Type == nil || vb.Type.Kind() != "func" {
+		return false
+	}
+	// 绑定型变量：其 Value 挂了 Anon（匿名 fb）——走 fn 变量路径
+	if vb.Value != nil && vb.Value.Anon != nil {
+		return false
+	}
+	if vb.Define.Type == FindTypeFunc {
+		if _, ok := vb.Define.Value.(*FuncBlock); ok {
+			return true
+		}
+	}
+	return false
 }

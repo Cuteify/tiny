@@ -17,6 +17,13 @@ type FuncBlock struct {
 	Useful          bool                    // 是否有用（用于优化）
 	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
+	// Anon 标记匿名函数（闭包）。EnvParam 标记隐藏的 __env 首参
+	// （载体约定由 RBX/EBX 传入，而不是 RDI/栈，避免平移实参）。
+	Anon            bool                    // 是否为匿名函数（闭包）
+	Lifted          bool                    // 已被提升过（collectAnonUnits 跳过）
+	EnvParam        bool                    // 是否有隐藏的 __env 参数（从 RBX/EBX 装载）
+	Env             *VarBlock               // 帧的 env 变量指针（提升后由 hoist 赋值；codegen 用）
+	Node            *Node                   // 该 FuncBlock 绑定的节点（提升后为包根节点）
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
 }
 
@@ -356,10 +363,8 @@ func (f *ArgBlock) Check(p *Parser) bool {
 // 语法格式: funcName(arg1 type1, arg2 type2) returnType { ... }
 // 或者: fn Type.methodName(arg1 type1, arg2 type2) returnType { ... }
 func (f *FuncBlock) Parse(p *Parser) {
-	// 检查函数是否嵌套定义（不支持）
-	if p.ThisBlock.Father != nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Function can't be defined in Function")
-	}
+	// 匿名函数/嵌套函数：允许出现在函数体内（提升到包根，Go 风格）。
+	// 顶层函数走普通具名函数路径。
 
 	oldCursor := p.Lexer.Cursor
 	// 判断有没有父类
@@ -401,48 +406,8 @@ func (f *FuncBlock) Parse(p *Parser) {
 	}
 
 	// 解析泛型类型参数列表 fn f[T, U](...)
-	f.parseTypeParams(p)
-
-	// 参数/返回类型/函数体中的 T 解析为 TypeParam 占位类型；
-	// 非泛型函数显式置 nil，避免继承上一个泛型函数的类型参数。
-	// 注意：此处不恢复旧值——函数体在本方法返回后才解析，需要保持生效。
-	p.CurTypeParams = f.typeParamTypes
-
-	// 解析参数
-	f.ParseArgs(p)
-
-	// 返回类型
-	f.ParseRetType(p)
-
-	// 方法：接收者必须是第一个参数，类型为所属类型 T 或 *T；
-	// 调用点由编译器自动传入接收者，参数名不允许使用 self/this。
-	if f.Class != nil && len(f.Args) > 0 {
-		first := f.Args[0]
-		recName := ""
-		if first != nil && first.Name != nil && first.Name.Length() > 0 {
-			recName = first.Name.Last()
-		}
-		if recName == "self" || recName == "this" {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-				"method receiver parameter must not be named 'self' or 'this'; name it explicitly (e.g. p)")
-		}
-		if first != nil && first.Type != nil {
-			wantName := f.Class.Type()
-			gotName := first.Type.Type()
-			if first.Type.IsPointer() {
-				if elem := first.Type.Elem(); elem != nil {
-					gotName = elem.Type()
-				}
-			}
-			if gotName != wantName {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-					"method on '"+wantName+"' requires its first parameter to be of type '"+wantName+"' or '*"+wantName+"' (got '"+first.Type.Type()+"')")
-			}
-		}
-	} else if f.Class != nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-			"method on '"+f.Class.Type()+"' requires a first parameter of type '"+f.Class.Type()+"' or '*"+f.Class.Type()+"' (the receiver)")
-	}
+	// 解析签名（同名匿名函数/闭包也走这一步）
+	p.parseFuncSignature(f, namedFunc)
 
 	// 顶层 build os/arch/bits 作用于紧随其后的函数：统一在声明点消费。
 	// 必须在 registerOverload 之前挂上，否则被过滤函数仍会进重载表。
@@ -455,8 +420,9 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 	p.Wait("{")
 
+	nodeTmp := &Node{Value: f}
+	f.Node = nodeTmp
 	if namedFunc {
-		nodeTmp := &Node{Value: f}
 		// 被顶层 build 过滤的函数：整节点跳过 Check/查找/代码生成，
 		// 但 BuildFlags 仍保留（重载注册、link/export 预扫描按标志判断）。
 		if p.ThisBlock == p.Block && funcBuildIgnored(f) {
@@ -467,9 +433,10 @@ func (f *FuncBlock) Parse(p *Parser) {
 
 		// 进入函数作用域
 		p.ThisBlock = nodeTmp
+	} else {
+		// 匿名函数（闭包）：节点在 hoist 时登记到根节点
+		nodeTmp.Father = p.ThisBlock
 	}
-
-	// TODO: 处理编译标志
 }
 
 // parseTypeParams 解析泛型类型参数列表 [T, U]（fn f[T](x: T) T {...}）。
@@ -967,4 +934,92 @@ func (f *FuncBlock) Check(p *Parser) bool {
 type TypeParamInfo struct {
 	Name string
 	Type typeSys.Type
+}
+
+// parseAnonFunc 解析匿名函数表达式 fn(x: T, ...) R { ... }。
+// 闭包体由本方法内部完整消费（这是临时的嵌套作用域，外层把它当作一个 token 单元）；
+// 提升到包根由外层宿主函数的收尾 hoist 完成。
+func (p *Parser) parseAnonFunc() *Expression {
+	fb := &FuncBlock{}
+	fb.Anon = true
+	fb.Useful = true
+
+	node := &Node{Value: fb}
+	fb.Node = node
+	savedBlock := p.ThisBlock
+	node.Father = savedBlock
+	p.ThisBlock = node
+
+	p.parseFuncSignature(fb, false)
+	p.Wait("{")
+
+	// 消费闭包体：持续 Next() 直到该节点的 "}" 把 ThisBlock 弹回 savedBlock
+	for p.ThisBlock == node {
+		if p.Next() {
+			break
+		}
+	}
+
+	// 如果已经 EOF 却没弹回：Syntax Error（缺少闭包的 }）
+	if p.ThisBlock != savedBlock {
+		p.ThisBlock = savedBlock
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "unterminated anonymous function")
+	}
+
+	argTypes := make([]typeSys.Type, 0, len(fb.Args))
+	for _, a := range fb.Args {
+		argTypes = append(argTypes, a.Type)
+	}
+	fnType := &typeSys.FuncType{
+		RType:   typeSys.RType{TypeName: "fn"},
+		Args:    argTypes,
+		Returns: append([]typeSys.Type{}, fb.Return...),
+	}
+	return &Expression{Anon: fb, Type: fnType}
+}
+
+// parseFuncSignature 解析泛型参数列表 + 参数 + 返回类型 + 方法接收者校验。
+// namedFunc 为 false 时跳过只对具名函数有意义的步骤。
+func (p *Parser) parseFuncSignature(f *FuncBlock, namedFunc bool) {
+	f.parseTypeParams(p)
+
+	// 参数/返回类型/函数体中的 T 解析为 TypeParam 占位类型；
+	// 非泛型函数显式置 nil，避免继承上一个泛型函数的类型参数。
+	p.CurTypeParams = f.typeParamTypes
+
+	// 解析参数
+	f.ParseArgs(p)
+
+	// 返回类型
+	f.ParseRetType(p)
+
+	// 方法：接收者必须是第一个参数，类型为所属类型 T 或 *T；
+	// 调用点由编译器自动传入接收者，参数名不允许使用 self/this。
+	if f.Class != nil && len(f.Args) > 0 {
+		first := f.Args[0]
+		recName := ""
+		if first != nil && first.Name != nil && first.Name.Length() > 0 {
+			recName = first.Name.Last()
+		}
+		if recName == "self" || recName == "this" {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"method receiver parameter must not be named 'self' or 'this'; name it explicitly (e.g. p)")
+		}
+		if first != nil && first.Type != nil {
+			wantName := f.Class.Type()
+			gotName := first.Type.Type()
+			if first.Type.IsPointer() {
+				if elem := first.Type.Elem(); elem != nil {
+					gotName = elem.Type()
+				}
+			}
+			if gotName != wantName {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+					"method on '"+wantName+"' requires its first parameter to be of type '"+wantName+"' or '*"+wantName+"' (got '"+first.Type.Type()+"')")
+			}
+		}
+	} else if f.Class != nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+			"method on '"+f.Class.Type()+"' requires a first parameter of type '"+f.Class.Type()+"' or '*"+f.Class.Type()+"' (the receiver)")
+	}
 }

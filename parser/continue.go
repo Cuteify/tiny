@@ -35,10 +35,14 @@ func (c *ContinueBlock) Parse(p *Parser) {
 
 	depth := 0
 	for b := p.ThisBlock; b != nil; b = b.Father {
-		if _, ok := b.Value.(*ForBlock); ok {
+		switch b.Value.(type) {
+		case *FuncBlock:
+			goto countDone // 闭包/函数体是独立边界，continue 不跨出去
+		case *ForBlock:
 			depth++
 		}
 	}
+countDone:
 	if depth == 0 {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'continue' outside of loop")
 		return

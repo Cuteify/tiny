@@ -28,6 +28,7 @@ type Expression struct {
 	Index     [3]*Expression // 列表索引
 	IndexSlice bool          // Index 是否来自切片 a[lo:hi:step]（含省略端点的情形）
 	ListElems []*Expression  // 列表字面量元素，Separator="list_lit"时有效
+	Anon      *FuncBlock     // 匿名函数（闭包），非nil时表示 fn(...) R { ... } 字面量
 }
 
 // SetStmt 标记该表达式位于语句位置（如 `slices.set[T](...)` 这样的裸调用语句）。
@@ -518,6 +519,11 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 			}
 		}
 		return exp
+
+	case lexer.FUNC:
+		// 匿名函数 / 闭包：f := fn(x: int) int { ... }
+		// 解析为 FuncBlock + 表达式标记；提升/改写/环境分配在函数解析结束时统一做。
+		return p.parseAnonFunc()
 
 	case lexer.CHAR:
 		r, err := parseCharLiteral(code.Value)

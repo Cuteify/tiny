@@ -200,9 +200,11 @@ normalCall:
 		code += utils.Format("push EAX; 大值返回槽地址")
 	}
 	if isIndirect {
-		// 间接调用：从变量加载函数指针到 EAX，然后 call eax
+		// 通用闭包 ABI：obj = {code@0, env@ptrSize}；env 传参进 EBX
 		addr := genVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("mov eax, dword " + addr + "; 加载函数指针")
+		code += utils.Format("mov eax, dword " + addr + "; 加载闭包对象")
+		code += utils.Format("mov ebx, dword [eax+4]; env 传递（闭包 __env）")
+		code += utils.Format("mov eax, dword [eax]; 加载代码指针")
 		code += utils.Format("call eax; 间接调用")
 	} else {
 		code += utils.Format("call " + name)

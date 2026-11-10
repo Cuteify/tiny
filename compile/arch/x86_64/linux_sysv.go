@@ -146,6 +146,12 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 		code += utils.Format("mov QWORD [rbp" + strconv.Itoa(a.ctx.RetSlot+retBytes) + "], R10; 保存返回槽地址")
 	}
 
+	// 隐藏 env 首参（闭包）：从 RBX 装入 [rbp-48]（不经过 RDI，不占用参数寄存器计数，
+	// 调用方不入参寄存器推入 env；由闭包调用点显式写入 RBX）。
+	if fn.EnvParam {
+		code += utils.Format("mov QWORD [rbp-48], RBX; 保存闭包 env（隐藏槽）")
+	}
+
 	// 将寄存器参数保存到栈上（SysV ABI: RDI, RSI, RDX, RCX, R8, R9）
 	// 保存到 callee 自己的局部变量区（如 C/Rust），不写入调用者栈帧
 	argRegIdx := 0
@@ -478,8 +484,12 @@ normalCall:
 	}
 
 	if isIndirect {
+		// 通用闭包 ABI：obj = {code@0, env@ptrSize}；调用点装 RBX=obj.env，
+		// 被调函数把 RBX 存到隐藏首参槽（if FuncBlock.EnvParam）。
 		thisAddr := GenVarAddr(a.ctx, call.ThisVar)
-		code += utils.Format("mov rax, QWORD " + thisAddr + "; 加载函数指针")
+		code += utils.Format("mov rax, QWORD " + thisAddr + "; 加载闭包对象")
+		code += utils.Format("mov rbx, QWORD [rax+8]; env 传递（闭包 __env）")
+		code += utils.Format("mov rax, QWORD [rax]; 加载代码指针")
 		code += utils.Format("call rax; 间接调用")
 	} else {
 		name := formatFuncName(fn)

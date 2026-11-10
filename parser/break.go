@@ -35,10 +35,13 @@ func (b *BreakBlock) Parse(p *Parser) {
 	depth := 0
 	for b := p.ThisBlock; b != nil; b = b.Father {
 		switch b.Value.(type) {
+		case *FuncBlock:
+			goto countDone // 闭包/函数体是独立边界，break 不跨出去
 		case *ForBlock, *SwitchBlock:
 			depth++
 		}
 	}
+countDone:
 	if depth == 0 {
 		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'break' outside of loop or switch")
 		return

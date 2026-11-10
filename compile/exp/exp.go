@@ -444,6 +444,11 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 		return ""
 	}
 
+	// 闭包字面量：f := fn(x: int) int { ... } —— 堆分配 {code, env} 对象。
+	if exp.Anon != nil {
+		return c.genClosureAnon(exp, result)
+	}
+
 	// 32 位架构：64 位标量（u64/i64）路由到 arch 的寄存器对实现（EAX:EDX）。
 	// f64 有独立浮点路径，不在此列。
 	if c.arch.PointerSize() == 4 && exp.Type != nil {
@@ -605,28 +610,24 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 	}
 
 	val := c.val(exp)
-	// 函数名作为值：lea eax/rax, [mangledName] 获取函数地址
+	// 函数名作为值：堆分配 {code, env} 闭包对象（env = fb.Env 指针；普通 FB 为 0）。
+	// 所有 fn 值都走间接调用 ABI —— 调用参数/返回值/复合赋值中的 fn 值
+	// 都按闭包对象 {code@0, env@ptrSize} 传递，不能只写原始代码标签进去。
 	if exp.Var != nil && exp.Var.Type != nil {
 		if _, isFunc := exp.Var.Type.(*typeSys.FuncType); isFunc {
 			if exp.Var.Define.Value != nil {
 				if fb, ok := exp.Var.Define.Value.(*parser.FuncBlock); ok {
-					mangled := fb.MangledName()
-					ps := c.arch.PointerSize()
-					regName := "rax"
-					if ps == 4 {
-						regName = "eax"
-					}
-					var code string
+					envVar := fb.Env
+					objCode := c.emitClosureObject(fb, envVar, c.arch.ReturnReg())
+					objReg := c.arch.ReturnReg()
 					if result == "push" {
-						code = utils.Format("lea " + regName + ", [" + mangled + "]")
-						code += utils.Format("push " + regName)
-					} else if result == "" {
-						code = utils.Format("lea " + regName + ", [" + mangled + "]")
-					} else {
-						code = utils.Format("lea " + regName + ", [" + mangled + "]")
-						code += utils.Format("mov " + result + ", " + regName)
+						code := objCode + utils.Format("push " + objReg)
+						return code
 					}
-					return code
+					if result == "" {
+						return objCode
+					}
+					return objCode + utils.Format("mov " + result + ", " + objReg)
 				}
 			}
 		}
@@ -700,6 +701,16 @@ func (c *ECompiler) leaf(exp *parser.Expression, result string) string {
 			case "BYTE", "WORD", "DWORD":
 				return utils.Format("mov EAX, "+val) +
 					utils.Format("push RAX")
+			}
+		} else {
+			// x86：push 只支持 16/32 位操作数；窄内存值经寄存器零扩展
+			switch memPrefix(val) {
+			case "BYTE":
+				return utils.Format("movzx EAX, "+val) +
+					utils.Format("push EAX")
+			case "WORD":
+				return utils.Format("movzx EAX, "+val) +
+					utils.Format("push EAX")
 			}
 		}
 		// 大立即数：push 只支持 32 位有符号立即数（符号扩展），超出必须经 RAX 中转
@@ -4962,4 +4973,90 @@ func isOwning(t typeSys.Type) bool {
 		return true
 	}
 	return false
+}
+
+// ============================== 闭包 ==============================
+// 闭包对象布局：{code@0, env@ptrSize}。code 是匿名函数标签；
+// env 是宿主帧的 __env 指针（零捕获时 env=0，RBX 不被闭包读取）。
+// 闭包调用约定见 arch/x86_64/linux_sysv.go 与 x86/cdecl.go 的 isIndirect 分支。
+
+// closureObjType 合成闭包对象类型 {code ptr, env *envSt}。
+// envSt 为空时 env 字段退化为系统 ptr。
+func closureObjType(envType *typeSys.StructType) *typeSys.StructType {
+	ptr := typeSys.GetSystemType("ptr")
+	envT := typeSys.Type(ptr)
+	if envType != nil {
+		envT = typeSys.MakePointer(envType)
+	}
+	st := &typeSys.StructType{RType: typeSys.RType{TypeName: "closureObj"}}
+	st.StructFields = []*typeSys.StructField{
+		{Name: "code", Type: ptr, Access: typeSys.AccessPublic},
+		{Name: "env", Type: envT, Access: typeSys.AccessPublic},
+	}
+	st.Layout()
+	return st
+}
+
+// EmitClosureObjectFor 供 arch 包 VarDecl 调用：堆分配 {code, env}（envVar 可空）。
+func (c *ECompiler) EmitClosureObjectFor(fb *parser.FuncBlock, envVar *parser.VarBlock, outReg string) string {
+	return c.emitClosureObject(fb, envVar, outReg)
+}
+
+// genClosureAnon 生成匿名函数字面量的闭包对象创建代码。
+func (c *ECompiler) genClosureAnon(exp *parser.Expression, result string) string {
+	fb := exp.Anon
+	var envVar *parser.VarBlock
+	if fb != nil && fb.Env != nil {
+		envVar = fb.Env
+	}
+	code := c.emitClosureObject(fb, envVar, c.arch.ReturnReg())
+	objReg := c.arch.ReturnReg()
+	if result == "push" {
+		code += utils.Format("push " + objReg)
+		return code
+	}
+	if result != "" {
+		code += utils.Format("mov " + result + ", " + objReg)
+	}
+	return code
+}
+
+// emitClosureObject 分配闭包对象 {code, env}（堆分配）。
+// envVar 非空时把它的当前值写进 env 槽；否则写 0。产出对象指针于返回寄存器。
+func (c *ECompiler) emitClosureObject(fb *parser.FuncBlock, envVar *parser.VarBlock, outReg string) string {
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+
+	var envType *typeSys.StructType
+	if envVar != nil && envVar.Type != nil && envVar.Type.IsPointer() {
+		if elem, ok := envVar.Type.Elem().(*typeSys.StructType); ok {
+			envType = elem
+		}
+	}
+	objType := closureObjType(envType)
+
+	call := &parser.CallBlock{Name: parser.NewName("new"), NewType: objType}
+	inner := &parser.Expression{Call: call, Type: typeSys.MakePointer(objType)}
+	code := c.generate(inner, outReg)
+
+	code += utils.Format("mov " + ln + " [" + outReg + "], " + formatFuncLabel(fb) + "; 闭包代码指针")
+
+	envReg := c.allocTmpReg()
+	if envVar != nil {
+		envAddr := stripOuterBrackets(c.arch.VarAddr(envVar))
+		code += utils.Format("mov " + envReg.Name + ", " + ln + " [" + envAddr + "]")
+	} else {
+		code += utils.Format("mov " + envReg.Name + ", 0")
+	}
+	code += utils.Format("mov " + ln + " [" + outReg + "+" + strconv.Itoa(ps) + "], " + envReg.Name)
+	c.freeTmpReg(envReg)
+	return code
+}
+
+// formatFuncLabel 闭包标签名（匿名函数直接以名字调用自己）。
+func formatFuncLabel(fb *parser.FuncBlock) string {
+	if fb == nil {
+		return "0"
+	}
+	return fb.MangledName()
 }
