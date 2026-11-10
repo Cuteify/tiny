@@ -99,8 +99,12 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	// 与旧 Σ裸 size 公式恒等（旧布局不漂移）；含窄参函数加深，局部槽不再
 	// 回咬参数槽带（病灶⑬第二半，见 arch/utils.go ArgSaveBytes 注释）。
 	argSaveBytes := arch.ArgSaveBytes(fn)
-
-	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs)-argSaveBytes)
+	envSlotBytes := 0
+	if fn.EnvParam {
+		// 隐藏 env 槽位 [rbp-48]：局部槽游标下沉 8B，避让隐藏 env 固定槽
+		envSlotBytes = 8
+	}
+	a.ctx.StackSize = arch.SetupVarOffsets(a.ctx.Now, a.ctx.StackAlignment, -8*len(csRegs)-argSaveBytes-envSlotBytes)
 
 	// 预留大值返回槽：容器 24B + R10 保存 8B；结构体按槽数（Size/8）计算
 	retBytes := 24
