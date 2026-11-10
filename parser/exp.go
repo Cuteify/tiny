@@ -590,9 +590,11 @@ func (p *Parser) isGenericCallAhead() bool {
 			return false
 		}
 		if token.Type != lexer.SEPARATOR {
-			if token.Type == lexer.NAME {
+			if token.Type == lexer.NAME || token.Type == lexer.NUMBER {
+				// 类型表达式成分：f[int](x)、f[T, U](x)、sizeof[[3]int]()
 				continue
 			}
+			// 字符串常量等其余非 NAME/SEPARATOR 记号：仍是非法的泛型实参
 			return false
 		}
 		switch token.Value {
