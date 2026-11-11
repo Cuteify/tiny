@@ -661,6 +661,31 @@ fn main() int {
     }
     strings.builderFree(bld2)
 
+    // x1：isDigit / isSpaceByte / isIntDigit / fromByte
+    if !strings.isDigit(unsafe.cast[byte](48)) { err = 110 }
+    if strings.isDigit(unsafe.cast[byte](58)) { err = 111 }
+    if !strings.isDigit(unsafe.cast[byte](57)) { err = 112 }
+    if strings.isDigit(unsafe.cast[byte](96)) { err = 113 }
+    if !strings.isSpaceByte(unsafe.cast[byte](32)) { err = 114 }
+    if !strings.isSpaceByte(unsafe.cast[byte](9)) { err = 115 }
+    if !strings.isSpaceByte(unsafe.cast[byte](10)) { err = 116 }
+    if !strings.isSpaceByte(unsafe.cast[byte](13)) { err = 117 }
+    if strings.isSpaceByte(unsafe.cast[byte](33)) { err = 118 }
+    if !strings.isIntDigit(unsafe.cast[byte](97), 16) { err = 120 } // 'a'
+    if strings.isIntDigit(unsafe.cast[byte](103), 16) { err = 121 } // 'g'
+    if !strings.isIntDigit(unsafe.cast[byte](66), 16) { err = 122 } // 'B'
+    if strings.isIntDigit(unsafe.cast[byte](71), 16) { err = 123 }  // 'G'
+    if strings.isIntDigit(unsafe.cast[byte](95), 16) { err = 124 }  // '_' 不是数字
+
+    // x2：fromByte（1 字节字符串构造）
+    var fb: string = strings.fromByte(10)
+    if strings.len(fb) != 1 { err = 130 }
+    if unsafe.cast[int](fb[0]) != 10 { err = 131 }
+    var fb9: string = strings.fromByte(9)
+    if unsafe.cast[int](fb9[0]) != 9 { err = 132 }
+    var fb65: string = strings.fromByte(65)
+    if unsafe.cast[int](fb65[0]) != 65 { err = 133 }
+
     if err > 0 {
         ret err
     }

@@ -779,6 +779,43 @@ fn isDigitByte(b u8) bool {
     ret b >= 48 && b <= 57
 }
 
+// isDigit 是否 ASCII 数字字节 '0'-'9'（byte 版；string[i] 索引直接可用）。
+fn isDigit(b byte) bool {
+    var bi: int = unsafe.cast[int](b)
+    ret bi >= 48 && bi <= 57
+}
+
+// isSpaceByte 是否空白字节（空格、Tab、LF、CR）。与 isDigit 一样按 byte 给出。
+fn isSpaceByte(b byte) bool {
+    var bi: int = unsafe.cast[int](b)
+    ret bi == 32 || bi == 9 || bi == 10 || bi == 13
+}
+
+// isIntDigit 是否 base 进制数字（base 2-16，大小写 a-f/A-F）；base 仅支持 2/8/10/16 语义调用方使用。
+fn isIntDigit(b byte, base uint) bool {
+    var d: uint = 0
+    var bi: int = unsafe.cast[int](b)
+    if bi >= 48 && bi <= 57 {
+        d = unsafe.cast[uint](bi - 48)
+    } else if bi >= 97 && bi <= 102 {
+        d = unsafe.cast[uint](bi - 97 + 10)
+    } else if bi >= 65 && bi <= 70 {
+        d = unsafe.cast[uint](bi - 65 + 10)
+    } else {
+        ret false
+    }
+    ret d < base
+}
+
+// fromByte 返回只含一个 u8 字节的字符串（用于将字节字面量/字符转字符串）。
+fn fromByte(b u8) string {
+    var buf: ptr = memory.malloc(2)
+    var bufu8: *u8 = buf
+    *bufu8 = b
+    *(bufu8 + 1) = unsafe.cast[u8](0)
+    ret makeString(buf, 1, 1)
+}
+
 // formatUint 把无符号整数按 base（2-36）转为字符串；逆向调用 n%base 求各位。
 fn formatUint(n uint, base uint) string {
     var digits: uint = 1
