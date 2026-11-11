@@ -61,8 +61,11 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 5. 多值返回不支持则照 slices 先例（哨兵独立 fn / ok 概念位）
 6. 双 arch 分片先例=P8 屏障（common+arch 文件；strings/slices 已分片；slice_x86_64.cute=直写全绿蓝本）
 7. x86 参数槽新语义（缺陷⑰②修后）：sub-4B 参数占 dword 槽（API 无感，系统级）
-8. **enum `Name { ... }` 创建独立命名类型**（`type Name int` 语义），成员常量带枚举类型；
-   支持 `= 负数/十六进制` 与后续自增；暂不支持 `Name.MEMBER` 作用域访问；
+8. **enum `Name [: Type] { ... }` 创建独立命名类型**（`type Name underlying` 语义），成员常量带枚举类型；
+   底层类型两分支：`enum Name: string { ... }` 显式底层（int/uint/i64/u64/string 白名单），
+   `enum Name { X = "str" }` 自动推断（全员字符串字面量 → string；否则默认 int，成员值超出 int32 退化 i64）；
+   支持 `= 负数/十六进制` 与显式值后续自增；`Name.MEMBER` 限定访问在表达式 / switch case / 函数实参 /
+   结构体字段位置均可用（跨包也支持，`import "std:foo"` 后 `foo.Color.RED`）；
    命名数值类型与内置数值类型仍可隐式互转（`test/enum` 双 arch RC=42 蓝本）
 
 ## 4. 缺陷台账快照（2026-11-02）
@@ -121,4 +124,4 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
 - 变量 var x: type = expr；if/for/blocks 均花括号制；for `for i := 0; i < n; i = i + 1`（`for init; cond; step` post 可 `i++`/`i += 1`/`i = i + 1`）
 - 类型宽：int/uint=arch word（x64 8B / x86 4B）、u8/u16/i16 等宽、ptr=arch word、bool 1B、string=24B 头{p@0,n@8/4,c@16/8}、切片头 data@0/len@8/4/cap@16/8
 - unsafe.cast[T] 位重解释；显式数值转换 int(x)/f64(x) 等；build arch("x86"|x86_64) 分片头；file-level `import "std:xxx"`
-- enum `Name { A, B = 10 }`：独立命名类型、成员 typed；无 `Name.MEMBER` 作用域访问
+- enum `Name [: Type] { A, B = 10 }`：独立命名类型、成员 typed；`Name.MEMBER` 限定访问可用（2026-11 起）

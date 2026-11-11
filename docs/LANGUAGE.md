@@ -831,26 +831,85 @@ enum Color {
     Green = 5
     Blue
 }
+
+enum Fruit: string {
+    Apple = "apple"
+    Banana = "banana"
+}
+
+enum Token {
+    Plus = "+"
+    Minus = "-"
+}
 ```
 
 - 成员默认从 0 开始自增。
-- 显式值必须是整数常量；支持十进制、十六进制、二进制、八进制和负号。
+- 整数成员的显式值必须是整数常量；支持十进制、十六进制、二进制、八进制和负号；
+  显式值后面的未指定成员从该值 +1 继续自增（`BLUE = 10` → 后续 `WHITE = 11`）。
+- 字符串成员（显式 `: string` 或自动推断为 string）必须**全部**显式给出字符串字面量常量，无自增。
 - 成员之间可用换行、逗号 `,` 或分号 `;` 分隔。
-- 重复成员报 `duplicate enum member`。
+- 重复成员报 `duplicate enum member`；混合字符串和整数成员而未显式声明底层类型报错。
 
-### 8.2 访问与类型
+### 8.2 底层类型与自动推断 ✅
+
+| 写法 | 底层类型 |
+|---|---|
+| `enum E { A, B }` | `int`（arch 字长；成员值超出 int32 自动退化为 i64） |
+| `enum E { A = 4294967296 }` | `i64`（自动推断） |
+| `enum E: uint { BIG = 3000000000 }` | `uint`（显式；x86 上 4B） |
+| `enum E: i64 { A = 4294967296 }` | `i64` |
+| `enum E: string { A = "a" }` | `string`（必须全员显式字符串字面量） |
+| `enum E { A = "a", B = "b" }` | `string`（自动推断） |
+
+- 显式 `: 底层类型` 只接受 `int` / `uint` / `i64` / `u64` / `string`；
+  `i8`/`i16`/`u8`/`u16`/`byte`/`bool` 拒绝——全局 const 的 `.data` 发射仅支持 4/8 字节槽，
+  窄常量会读出 0；bool 同样因为写入/比较语义细节不提供。
+- 显式 `: string` 时成员必须全是字符串字面量；显式整数底层时成员必须全是整数常量。
+- 整数成员值按 int64 范围处理：落在 int64 之外的字面量会报“value must be an integer”；
+  数值字面量经 float64 解析，2^53（约 9.007e15）以下的整数都能精确表示。
+
+### 8.3 限定访问 `Enum.Member` ✅
+
+```cute
+enum Color {
+    RED
+    GREEN
+    BLUE = 10
+}
+
+var c: Color = Color.BLUE        // 与 BLUE 等价
+if Color.GREEN == 1 { ... }      // 表达式位置
+switch c {
+    case Color.RED: ret 1        // case 位置
+    case Color.BLUE: ret 2
+}
+fn pick(c: Color) Color { ret c }
+pick(Color.BLUE)                  // 函数实参 / 返回值
+if Color.BLUE != 10 { ... }      // 比较表达式
+```
+
+- `Color.Red` 限定访问在**数值/字符串比较、赋值、函数实参、结构体字段、switch case、if 条件**等任何
+  表达式位置均可使用，与裸成员名完全等价（都是对同一个 `.data` 槽的加载）。
+- 同包 `Color.Red`、跨包 `pkgpath.Color.Red`（如 `import "std:foo"` 后 `foo.Color.RED`）均可解析；
+  前提是成员确实被枚举登记（跨包解析走包路径合并的根树，与跨包常量机制一致）。
+- 未登记的成员名不做“未知标识符”诊断：与任何其他未解析名字一样，`Color.Nonexistent`
+  在代码生成阶段产出 `GenVarAddr: nil type` 恐慌（与 `asdfg` / `strings.NoSuchThing` 行为一致）。
+
+### 8.4 访问与类型
 
 | 能力 | 状态 | 说明 |
 |---|---|---|
 | 裸成员名访问 `Red` | ✅ | 成员注册为同作用域常量 |
-| `Color.Red` 限定访问 | ❌ | 不支持 |
+| `Color.Red` 限定访问 | ✅ | 表达式 / switch case / 函数实参 / 结构体字段 |
 | 赋给变量 | ✅ | `var c: Color = Red` |
 | 作为函数参数/返回值 | ✅ | |
 | 作为结构体字段 | ✅ | |
-| 用于 `switch case` | ✅ | |
-| 底层类型 | ✅ | 默认 `int`；成员值超出 `int32` 时底层变 `i64` |
+| 用于 `switch case` | ✅ | case 与 target 均可用裸/限定形式 |
+| 字符串成员比较 | ✅ | `=`/`!=` 走 `strings.ne`/`strings.eq`（与字符串字面量一致） |
+| 底层类型 | ✅ | 默认 `int`；成员值超出 `int32` 时底层变 `i64`；支持显式 `: int/uint/i64/u64/string` |
 
-枚举名注册为“非真别名”（`type Color int` 语义），成员常量类型就是该枚举类型。
+枚举名注册为“非真别名”（`type Color <底层>` 语义），成员常量类型就是该枚举类型。
+Kind 委托给底层（string/int/...），因此枚举直接参与对应底层的比较/算术/`strings.*` 调用。
 
 ---
 
