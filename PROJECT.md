@@ -106,7 +106,9 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
   `scripts/stdlib_matrix.sh x86_64 2` 与 HEAD 基线逐行一致；
   同批修死的编译器 bug：`&&`/`||` 只发左操作数结果（InstBinary 未处理该操作符）、`_memmove` 在 x86_64 按 CDECL 传参、
   列表多槽元素赋值/`new([]string)` 非 const 路径基址寄存器被右值/调用破坏、`unsafe.cast` 属 path-builtin 导致内嵌子树从未 Check、
-  列表返回槽拷贝覆盖基址、`<`/`>`/`<=`/`>=`/`==` 条件 `.Check` 失败时整条 if 被吞掉；
+  列表返回槽拷贝覆盖基址、`<`/`>`/`<=`/`>=`/`==` 条件 `.Check` 失败时整条 if 被吞掉、
+  `new(P,…)` 按位置写而非 ArgBlock 名匹配（跳过中间字段整体错位；struct 字面量 `P{x:1, y:2}` 首拍三连实锤）；
+  自举 lexer 内部活已迁入 std:strings（isDigit/isSpaceByte/fromByte/isIntDigit 返回对齐；Token 构造改用 struct 字面量 + 列表字面量静态表）；
   `selfhost/parse`、`cmd/{tokdump,parsedump}` 与 `lexer/`、`tools/gotokens/` 仍是旧 14 枚举模型，**本阶段停用**，待下游统一后恢复
 - SSOT：`docs/stdplan/PLAN.md`（计划）/ `docs/stdplan/PROGRESS.md`（执行日志+哨兵基线全表）
 - Wave St 假想攻坚台账：`/tmp/opencode/wave_st_progress.md`

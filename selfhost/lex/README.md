@@ -109,8 +109,9 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 | 3 | `unsafe.cast[int](b)` / `unsafe.cast[uint](...)` 替代 Go 数值转换 | byte 与 int 不直接比较；字面量只能是 `u8` 等可判大小类型，见 LANGUAGE.md §5.5 |
 | 4 | **Next 语义修复：弹出 makeToken 刚写入缓存的副本** | Go 参考 `makeToken` 既返回 token 又写预取缓存，`Next()` 纯循环会把每个词素返回 **两次**（与 `Prefetch()` 语义重复）。本移植让 `Next()` 是纯消费 API：扫描后弹出刚写入的缓存项，调用方得到每个词素一次；`Prefetch()` 行为不变（与 Go main.go 一致）。README 已登记 |
 | 5 | `RenderVisible` 恒等 | 当前测试不依赖 LF 可见转义；保持 API 契约 |
-| 6 | 关键字/分隔符表动态构造（`new([]string, N, N)` + 逐槽赋值） | 大列表字面量在当前编译器上存在指数级恶化（语言/编译器限制，与词法语义无关） |
+| 6 | 关键字/分隔符表用列表字面量直接构造 | 大列表字面量曾指数级恶化（2026-11-12 复测全部正常，0.4s 完成）；分隔符表 Tab/LF/CR 三个控制字节无可写字面量，占位后回写，见 #8 |
 | 7 | 切点：`byte` 与 `u8` 不互通 | `var b: byte = 65` 报错；需要 `unsafe.cast[byte]` |
+| 8 | 字符分类活已迁入 std:strings | `isDigit`/`isSpaceByte`/`isIntDigit`/`fromByte` 统一走 std:strings；Token 构造改用 struct 字面量（`T{...}`）
 
 ## 已知限制 / 与下游的衔接
 
@@ -122,4 +123,4 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 - 按字节扫描，不处理 Unicode（非 ASCII 字节进入 `NAME`）；
 - 词法错误直接 `panic`（与 Go 参考一致）；`Lexer.Err` 字段与 `Error` 类型保留用于下游上报，
   当前实现不写入；
-- 大分隔符表走 `new([]string, 58, 58)` 动态构造：静态大表会让编译时间暴涨（语言/编译器限制，非正确性问题）；
+- 分隔符表静态构造（`[]string{...}` + Tab/LF/CR 三处 `strings.fromByte(N)` 回写）；多行字面量不支持（换行是语句终结符），表必须写在单条语句里；
