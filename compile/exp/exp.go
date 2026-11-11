@@ -961,7 +961,10 @@ func (c *ECompiler) emitAddrOf(exp *parser.Expression, result string) string {
 // derefSet 编译解引用赋值 *addr = value（节点形状 deref=(值, 指针)）。
 func (c *ECompiler) derefSet(exp *parser.Expression) string {
 	ei := c.expInfo[exp]
-	calleeName := c.arch.CalleeSaveReg()
+	calleeName := c.pickCalleeSave()
+	if calleeName == "" {
+		calleeName = c.arch.CalleeSaveReg()
+	}
 
 	// 1. 计算值到 vReg
 	vReg := c.allocReg(exp.Left)
@@ -1110,8 +1113,20 @@ func stripOuterBrackets(addr string) string {
 }
 
 // isRegLike 判断字符串是否为寄存器名（常量/内存地址不会以 R/E 开头）。
+// 注意：宽松前缀判断会把 "RBP-112" 这类地址文本误判为寄存器，这里精确匹配。
 func isRegLike(name string) bool {
-	return strings.HasPrefix(name, "R") || strings.HasPrefix(name, "E")
+	return isBareReg(name)
+}
+
+// isBareReg 精确匹配 x86/x86_64 GPR 寄存器名（64 位、32 位两套）。
+func isBareReg(name string) bool {
+	switch strings.ToUpper(name) {
+	case "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RSP", "RBP",
+		"R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+		"EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "ESP", "EBP":
+		return true
+	}
+	return false
 }
 
 // genAddrOf 生成变量的原始地址（rbp+offset），不带内存引用。
@@ -1277,9 +1292,21 @@ func lo8(name string) string {
 }
 
 // binLR 先左后右
+// pickCalleeSave 挑一个当前空闲的 callee-save 寄存器（跨调用保活左值/右值用）。
+// 不硬占第一个（RBX）：外层 ptrMem 等可能已把它当作字段基址 держ住。
+// 全集都忙时返回 ""（调用方不保活，依赖外部内存目标）。
+func (c *ECompiler) pickCalleeSave() string {
+	for _, name := range c.arch.CalleeSaveRegs() {
+		if reg := c.getRegByName(name); reg != nil && reg.Free {
+			return name
+		}
+	}
+	return ""
+}
+
 func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) string {
 
-	calleeName := c.arch.CalleeSaveReg()
+	calleeName := c.pickCalleeSave()
 
 	// 左子：result 为寄存器/内存时就地计算到 result（左链只需 2 个寄存器），
 	// 避免每层额外占一个寄存器导致寄存器压力随深度增长；
@@ -1304,7 +1331,7 @@ func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) st
 	if inPlace {
 		lCode = c.generate(exp.Left, result)
 	} else {
-		lReg := c.allocRegAvoid(exp.Left, result)
+		lReg := c.allocRegAvoid(exp.Left, regNameFrom(result))
 		if lReg == nil {
 			lReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
 		}
@@ -1316,7 +1343,7 @@ func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) st
 	// allocRegAvoid 的后缀掩码依赖 BindIndex 预赋值，生成期懒赋值导致未来除法节点
 	// 的需求不可见，此处按 HardBindMask 兜底保护跨除法存活的左值。
 	callee := ""
-	if ei.Right.HasCall || ei.Right.HardBindMask&c.arch.NeedBindMask("/") != 0 {
+	if calleeName != "" && (ei.Right.HasCall || ei.Right.HardBindMask&c.arch.NeedBindMask("/") != 0) {
 		callee = calleeName
 		lCode += utils.Format("mov " + matchMemWidth(lVal, callee) + ", " + lVal)
 		// 先释放左子原寄存器，再绑定 callee 寄存器（值已转移到 callee）
@@ -1328,7 +1355,7 @@ func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) st
 	}
 
 	// 分配右子寄存器（避开 result 寄存器：emitBin 末尾会写 result）
-	rReg := c.allocRegAvoid(exp.Right, result)
+	rReg := c.allocRegAvoid(exp.Right, regNameFrom(result))
 	if rReg == nil {
 		rReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
 	}
@@ -1349,10 +1376,10 @@ func (c *ECompiler) binLR(exp *parser.Expression, result string, ei *ExpInfo) st
 // binRL 先右后左
 func (c *ECompiler) binRL(exp *parser.Expression, result string, ei *ExpInfo) string {
 
-	calleeName := c.arch.CalleeSaveReg()
+	calleeName := c.pickCalleeSave()
 
 	// 分配右子寄存器（避开 result 寄存器：左子就地写入 result）
-	rReg := c.allocRegAvoid(exp.Right, result)
+	rReg := c.allocRegAvoid(exp.Right, regNameFrom(result))
 	if rReg == nil {
 		rReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
 	}
@@ -1361,7 +1388,7 @@ func (c *ECompiler) binRL(exp *parser.Expression, result string, ei *ExpInfo) st
 	// 如果左子有调用或包含除法（强制占用 EAX/EDX），保存右子结果到 callee-save
 	callee := ""
 	rVal := rReg.Name
-	if ei.Left.HasCall || ei.Left.HardBindMask&c.arch.NeedBindMask("/") != 0 {
+	if calleeName != "" && (ei.Left.HasCall || ei.Left.HardBindMask&c.arch.NeedBindMask("/") != 0) {
 		callee = calleeName
 		rCode += utils.Format("mov " + matchMemWidth(rVal, callee) + ", " + rVal)
 		// 先释放右子原寄存器，再绑定 callee 寄存器（值已转移到 callee）
@@ -1401,7 +1428,7 @@ func (c *ECompiler) binRL(exp *parser.Expression, result string, ei *ExpInfo) st
 	if inPlace {
 		lCode = c.generate(exp.Left, result)
 	} else {
-		lReg := c.allocRegAvoid(exp.Left, result)
+		lReg := c.allocRegAvoid(exp.Left, regNameFrom(result))
 		if lReg == nil {
 			lReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
 		}
@@ -1431,6 +1458,7 @@ func (c *ECompiler) allocRegAvoid(exp *parser.Expression, avoidReg string) *regm
 	if exp == nil {
 		return nil
 	}
+
 	ei, ok := c.expInfo[exp]
 	if !ok || ei == nil {
 		ei = &ExpInfo{Exp: exp, MinPeak: 1}
@@ -1460,7 +1488,7 @@ func (c *ECompiler) allocRegAvoid(exp *parser.Expression, avoidReg string) *regm
 		}
 	}
 
-	return c.ctx.Reg.AllocPref(
+	reg := c.ctx.Reg.AllocPref(
 		exp,
 		mask,
 		prefer,
@@ -1469,6 +1497,33 @@ func (c *ECompiler) allocRegAvoid(exp *parser.Expression, avoidReg string) *regm
 		nil, // user 暂时为空
 		avoidReg,
 	)
+	return reg
+}
+
+// regNameFrom 从地址/寄存器文本中提取基址寄存器名（RBX+8 → RBX；
+// QWORD[rbx+0x18] → RBX；普通寄存器原样返回；无法识别返回 ""）。
+func regNameFrom(addr string) string {
+	s := stripMemPrefix(strings.TrimSpace(addr))
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	end := len(s)
+	for i := 0; i < len(s); i++ {
+		r := s[i]
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		end = i
+		break
+	}
+	base := strings.ToUpper(s[:end])
+	switch base {
+	case "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RSP", "RBP",
+		"R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+		"EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "ESP", "EBP":
+		return base
+	}
+	return ""
 }
 
 // getRegByName 根据寄存器名称获取寄存器对象
@@ -2373,17 +2428,27 @@ func (c *ECompiler) copySlots(dst, src string, size int) string {
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
 	base := stripOuterBrackets(src)
-	tmp := c.allocTmpReg()
-	code := utils.Format("lea " + tmp.Name + ", [" + base + "]")
+	// 不借助临时寄存器做 lea：源槽位可以直接拼入内存操作数
+	// （rbp-64+8 → [rbp-64+8]；rel __global_x+8 → [rel __global_x+8]）。
+	// 裸寄存器（堆上多槽对象指针）在第一次装载后会被覆盖，先搬进临时寄存器做基址。
+	var code string
+	var tmp *regmgr.Reg
+	if isRegLike(base) {
+		tmp = c.allocTmpReg()
+		code += utils.Format("mov " + tmp.Name + ", " + base + "; copySlots base")
+		base = tmp.Name
+	}
 	for off := 0; off < size; off += ps {
-		srcPart := tmp.Name
+		srcPart := base
 		if off != 0 {
 			srcPart += "+" + strconv.Itoa(off)
 		}
 		code += utils.Format("mov " + c.arch.ReturnReg() + ", " + ln + " [" + srcPart + "]")
 		code += utils.Format("mov " + ln + " [" + dst + "+" + strconv.Itoa(off) + "], " + c.arch.ReturnReg())
 	}
-	c.freeTmpReg(tmp)
+	if tmp != nil {
+		c.freeTmpReg(tmp)
+	}
 	return code
 }
 
@@ -3146,6 +3211,8 @@ func (c *ECompiler) indexAccessNegative(exp *parser.Expression, result string, e
 		addr := c.arch.VarAddr(src.Var)
 		if i := strings.Index(addr, "["); i > 0 {
 			addr = addr[i:]
+		} else if !strings.Contains(addr, "[") {
+			addr = "[" + addr + "]"
 		}
 		code += utils.Format("lea " + ptrReg.Name + ", " + addr + "; array base addr")
 	} else {
@@ -3301,6 +3368,8 @@ func (c *ECompiler) indexSetNegative(exp *parser.Expression, elemSize int) strin
 		addr := c.arch.VarAddr(src.Var)
 		if i := strings.Index(addr, "["); i > 0 {
 			addr = addr[i:]
+		} else if !strings.Contains(addr, "[") {
+			addr = "[" + addr + "]"
 		}
 		code += utils.Format("lea " + aReg.Name + ", " + addr + "; array base addr")
 	} else {
@@ -3663,6 +3732,8 @@ func (c *ECompiler) indexAccessGeneric(exp *parser.Expression, result string, el
 		// Strip size prefix (e.g., "DWORD ") to get pure [ebp+N]
 		if idx := strings.Index(addr, "["); idx > 0 {
 			addr = addr[idx:]
+		} else if !strings.Contains(addr, "[") {
+			addr = "[" + addr + "]"
 		}
 		ptrReg := c.allocReg(exp.Right)
 		if ptrReg == nil {
@@ -3865,9 +3936,16 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 	if elemSize > c.arch.PointerSize() {
 		// 多槽元素赋值：使用 _memmove 复制字节
 		// 1. 计算目标地址 (base + idx * elemSize) → aReg
-		aReg := c.allocRegAvoid(indexExpr.Right, "")
-		if aReg == nil {
-			aReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
+		// 目标地址要跨右值求值（可能含调用）保持：优先绑 callee-save；
+		// 池枯竭时退回普通分配（与旧行为一致）。
+		var aReg *regmgr.Reg
+		if csName := c.ctx.Reg.AllocCalleeSaveBind(indexExpr.Right, c.arch.CalleeSaveRegs()); csName != "" {
+			aReg = c.ctx.Reg.FindByName(csName)
+		} else {
+			aReg = c.allocRegAvoid(indexExpr.Right, "")
+			if aReg == nil {
+				aReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
+			}
 		}
 		isStackArray := indexExpr.Right.Type != nil && indexExpr.Right.Type.Kind() == "array" && indexExpr.Right.Var != nil
 		var code string
@@ -3875,6 +3953,8 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 			addr := c.arch.VarAddr(indexExpr.Right.Var)
 			if idx := strings.Index(addr, "["); idx > 0 {
 				addr = addr[idx:]
+			} else if !strings.Contains(addr, "[") {
+				addr = "[" + addr + "]"
 			}
 			code = utils.Format("lea " + aReg.Name + ", " + addr + "; array base addr")
 		} else {
@@ -3901,37 +3981,53 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 			code += utils.Format("add " + aReg.Name + ", " + iReg.Name)
 			c.ctx.Reg.Free(idxExpr)
 		}
-		// 2. 获取源地址 → sReg
-		sReg := c.allocRegAvoid(exp.Right, aReg.Name)
-		if sReg == nil {
-			sReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
-		}
+		// 2. 获取源地址 → sReg（仅变量右侧；非变量右侧直接按三槽装载到目标地址）
 		if exp.Right.Var != nil {
-			srcAddr := stripOuterBrackets(c.arch.VarAddr(exp.Right.Var))
+			sReg := c.allocRegAvoid(exp.Right, aReg.Name)
+			if sReg == nil {
+				sReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+			}
+			srcAddr := c.arch.VarAddr(exp.Right.Var)
 			if idx := strings.Index(srcAddr, "["); idx > 0 {
 				srcAddr = srcAddr[idx:]
+			} else if !strings.Contains(srcAddr, "[") {
+				srcAddr = "[" + srcAddr + "]"
 			}
 			code += utils.Format("lea " + sReg.Name + ", " + srcAddr + "; src addr")
-		} else {
-			code += c.generate(exp.Right, sReg.Name)
+			_ = sReg
+			sRegName := sReg.Name
+			psLoc := c.arch.PointerSize()
+			if psLoc == 8 {
+				code += utils.Format("mov rdi, " + aReg.Name)
+				code += utils.Format("mov rsi, " + sRegName)
+				code += utils.Format("mov rdx, " + strconv.Itoa(elemSize))
+				code += utils.Format("call _memmove")
+			} else {
+				lnLoc := c.arch.LengthName(psLoc)
+				code += utils.Format("push " + lnLoc + " " + strconv.Itoa(elemSize))
+				code += utils.Format("push " + sRegName)
+				code += utils.Format("push " + aReg.Name)
+				code += utils.Format("call _memmove")
+				code += utils.Format("add esp, " + strconv.Itoa(psLoc*3))
+			}
+			c.ctx.Reg.Free(exp.Right)
+			c.ctx.Reg.Free(indexExpr.Right)
+			return boundsPrepend + code
 		}
-		// 3. 调用 _memmove(aReg, sReg, elemSize)
-		ps := c.arch.PointerSize()
-		ln := c.arch.LengthName(ps)
-		code += utils.Format("push " + ln + " " + strconv.Itoa(elemSize))
-		code += utils.Format("push " + sReg.Name)
-		code += utils.Format("push " + aReg.Name)
-		code += utils.Format("call _memmove")
-		code += utils.Format("add esp, " + strconv.Itoa(ps*3))
-		c.ctx.Reg.Free(exp.Right)
-		c.ctx.Reg.Free(indexExpr.Right)
+		// 非变量右侧：直接装三槽到目标地址（避免对常量串做 memmove——其不是 24B 头）
+		code += c.generate(exp.Right, "["+aReg.Name+"]")
 		return boundsPrepend + code
 	}
 
-	// 1. 列表指针 → aReg
-	aReg := c.allocRegAvoid(indexExpr.Right, "")
-	if aReg == nil {
-		aReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
+	// 1. 列表指针 → aReg（跨右值求值保持：优先 callee-save）
+	var aReg *regmgr.Reg
+	if csName := c.ctx.Reg.AllocCalleeSaveBind(indexExpr.Right, c.arch.CalleeSaveRegs()); csName != "" {
+		aReg = c.ctx.Reg.FindByName(csName)
+	} else {
+		aReg = c.allocRegAvoid(indexExpr.Right, "")
+		if aReg == nil {
+			aReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
+		}
 	}
 	// For stack arrays, use lea to get the address
 	isStackArray := indexExpr.Right.Type != nil && indexExpr.Right.Type.Kind() == "array" && indexExpr.Right.Var != nil
@@ -3940,6 +4036,8 @@ func (c *ECompiler) indexSet(exp *parser.Expression) string {
 		addr := c.arch.VarAddr(indexExpr.Right.Var)
 		if idx := strings.Index(addr, "["); idx > 0 {
 			addr = addr[idx:]
+		} else if !strings.Contains(addr, "[") {
+			addr = "[" + addr + "]"
 		}
 		code = utils.Format("lea " + aReg.Name + ", " + addr + "; array base addr")
 	} else {
@@ -4777,7 +4875,10 @@ func (c *ECompiler) builtinAppend(call *parser.CallBlock, result string) string 
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
 	_, lenOff, capOff := c.listFields()
-	callee := c.arch.CalleeSaveReg()
+	callee := c.pickCalleeSave()
+	if callee == "" {
+		callee = c.arch.CalleeSaveReg()
+	}
 	base := stripOuterBrackets(c.arch.VarAddr(aExp.Var))
 	label := "append_" + strconv.Itoa(c.idx)
 
@@ -5104,8 +5205,39 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 	elemSize := lt.Elem().Size()
 	ps := c.arch.PointerSize()
 	ln := c.arch.LengthName(ps)
-	callee := c.arch.CalleeSaveReg()
+	callee := c.pickCalleeSave()
+	if callee == "" {
+		callee = c.arch.CalleeSaveReg()
+	}
 	label := "make_" + strconv.Itoa(c.idx)
+
+	// 从池里挑一个独立的 callee-save/通用临时寄存器（不与 buf=callee 和 RAX 冲突）
+	pickTmp := func(avoid ...string) *regmgr.Reg {
+		for _, reg := range c.ctx.Reg.Regs {
+			if !reg.Free || reg.Name == c.arch.ReturnReg() {
+				continue
+			}
+			skip := false
+			for _, a := range avoid {
+				if reg.Name == a {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			reg.Free = false
+			return reg
+		}
+		return &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+	log2ps := ps / 2
+	_ = log2ps
+	shift := 3
+	if ps == 4 {
+		shift = 2
+	}
 
 	// cap 值（常量/寄存器）→ size = align8(cap*es) → malloc
 	var code string
@@ -5120,6 +5252,9 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 			capReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
 		}
 		code += c.generate(capExp, capReg.Name)
+		// 保存 cap 原值（随后的 size 计算会销毁该寄存器）
+		tmpCap := pickTmp(callee, capReg.Name)
+		code += utils.Format("mov " + tmpCap.Name + ", " + capReg.Name)
 		// size = align8(cap*es)：(cap*es + 7) & ~7
 		code += utils.Format("imul " + capReg.Name + ", " + strconv.Itoa(elemSize))
 		code += utils.Format("add " + capReg.Name + ", 7")
@@ -5132,7 +5267,7 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 			code += utils.Format("push " + capReg.Name)
 			code += c.arch.Call(callMalloc)
 		}
-		capVal = capReg.Name
+		capVal = tmpCap.Name
 		c.ctx.Reg.Free(capExp)
 	}
 	code += utils.Format("mov " + callee + ", " + c.arch.ReturnReg() + "; list buffer")
@@ -5153,9 +5288,12 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 			lReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 1}
 		}
 		code += c.generate(lenExp, lReg.Name)
+		// 保存 len 原值（零填充循环会消耗该寄存器）
+		tmpLen := pickTmp(callee, lReg.Name)
+		code += utils.Format("mov " + tmpLen.Name + ", " + lReg.Name)
 		// 循环零填充：count = len*es/ps
 		code += utils.Format("imul " + lReg.Name + ", " + strconv.Itoa(elemSize))
-		code += utils.Format("shr " + lReg.Name + ", " + strconv.Itoa(ps/2))
+		code += utils.Format("shr " + lReg.Name + ", " + strconv.Itoa(shift))
 		code += utils.Format("mov " + c.arch.ReturnReg() + ", " + lReg.Name)
 		code += utils.Format("cmp " + c.arch.ReturnReg() + ", 0")
 		code += utils.Format("je " + label + "_zero_done")
@@ -5164,7 +5302,7 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 		code += utils.Format("sub " + c.arch.ReturnReg() + ", 1")
 		code += utils.Format("jnz " + label + "_zero_loop")
 		code += utils.Format(label + "_zero_done:")
-		lenVal = lReg.Name
+		lenVal = tmpLen.Name
 		c.ctx.Reg.Free(lenExp)
 	}
 
@@ -5271,7 +5409,10 @@ func (c *ECompiler) BoxInterface(varBlock *parser.VarBlock) string {
 	// RAX now holds the allocated data pointer
 
 	// 2. Save data pointer
-	callee := c.arch.CalleeSaveReg()
+	callee := c.pickCalleeSave()
+	if callee == "" {
+		callee = c.arch.CalleeSaveReg()
+	}
 	code += utils.Format("mov " + callee + ", " + c.arch.ReturnReg() + "; save data_ptr")
 
 	// 3. Copy concrete value to allocated memory
