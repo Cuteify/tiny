@@ -280,7 +280,6 @@ func selectCallCandidate(c *CallBlock, candidates []*FuncBlock) (sel *FuncBlock,
 // pathBuiltinCalls 由 codegen 直接分派、不绑定 FuncBlock 的路径名内建调用。
 // 这些名字没有对应的真实函数定义，最终 Check 不能按“未解析跨包调用”报错。
 var pathBuiltinCalls = map[string]bool{
-	"unsafe.cast":   true,
 	"memory.new":    true,
 	"memory.sizeof": true,
 }
@@ -672,6 +671,29 @@ func (c *CallBlock) checkConvertBuiltin(p *Parser, name string) bool {
 
 func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	name := c.Name.String()
+	if name == "unsafe.cast" {
+		// 类型重解释（位模式，非数值转换）。unsafe.cast[T](v)：
+		// 返回 T 类型的 v，参数表达式必须 Check，否则嵌套子表达式
+		// 拿不到 Type、IfBlock 条件 Check 失败、整个块被替换/抛弃
+		// （unsound：safe=faulty case here loses else branch entirely）。
+		// 合成 FuncBlock{Return:[NewType]} 让调用结果落地为 T。
+		retType := c.NewType
+		if retType == nil && len(c.Args) == 1 && c.Args[0] != nil && c.Args[0].Value != nil {
+			retType = c.Args[0].Value.Type
+		}
+		if retType == nil {
+			retType = typeSys.GetSystemType("int")
+		}
+		c.Func = &FuncBlock{
+			Return: []typeSys.Type{retType},
+		}
+		for _, arg := range c.Args {
+			if arg != nil && arg.Value != nil {
+				arg.Value.Check(p)
+			}
+		}
+		return true
+	}
 	if !c.Name.IsPath() {
 		if c.checkConvertBuiltin(p, name) {
 			return true
