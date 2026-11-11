@@ -405,8 +405,8 @@ fn main() int {
 
 | 形式 | 状态 | 说明 |
 |---|---|---|
-| `f := fn(x: int) int { ... }`（无显式 fn 注解的内联声明）| ❌ | 报 `unexpected token`；需写显式 `var f: fn(int) int = ...` |
-| env 跨帧捕获（闭包体中嵌套再创建闭包，捕获祖父帧变量） | ❌ | 祖父帧变量捕获不完整（每帧各自合成 env，不形成链表）|
+| `f := fn(x: int) int { ... }`（无显式 fn 注解的内联声明）| ✅ | 自动推断 `fn(int) int` 绑定到局部 |
+| env 跨帧捕获（闭包体中嵌套再创建闭包，捕获祖父帧变量） | ✅ | 每帧各自合成 env，闭包体对捕获名的引用改写为 `__env.<name>` |
 | 捕获变量在宿主帧内与局部嵌套块同名重定义 | ⚠️ | 走宿主帧 env（不重复分配独立局部槽）|
 | 匿名闭包/具名嵌套函数作为普通函数返回值/作为列表元素保存 | ⚠️ | 保存 fn 值正常；回调场景（fn 作参数、fn 作返回）均可用 |
 
@@ -525,7 +525,7 @@ q, r := divide(17, 5)
 |---|---|---|---|
 | 列表 | `[]T` | ✅ | 切片语义 |
 | 定长数组 | `[N]T` | ✅ | `N` 是正整数常量 |
-| map | `map[K]V` | ✅ | 索引读写可用；字面量不支持 |
+| map | `map[K]V` | ✅ | 索引读写可用；字面量可用（见 §10.7） |
 | 指针 | `*T` | ✅ | 取地址/解引用 |
 | 函数类型 | `fn(T1, T2) R` | ✅ | 可声明/赋值；函数指针变量可调用 `f(x)` |
 | 嵌套列表类型 | `[][]T` | ⚠️ | 类型可声明；字面量报 `unexpected '['` |
@@ -717,6 +717,11 @@ var p: *P = P{x: 3, y: 4}   // 按名称匹配字段；未给出的字段零值
 ```
 
 语义接近 `new(P, ...)`：堆分配 + 零填充 + 按字段声明顺序填值。匿名嵌入字段不能出现在字面量中。
+
+值语义位置（`var p: P = P{x: 41}`、`ret P{x: 41}`）：**仅对 ≤8 字节的结构体可用**——编译器
+会透明改写为“*new(...) → 读堆槽拷贝”；超过 8 字节的结构体不支持值拷贝
+（与 `var q: P = *p` 相同的全体字节复制限制），此时值位置会报
+`cannot dereference type P (size > 8, use field access instead)`；指针目标始终支持。
 也可以写 `new`：
 
 ```cute
@@ -976,7 +981,7 @@ for i := 0; i < 3; i++ {
 | post `i += 1` | ✅ | 复合赋值 |
 | post `i++` / `i--` | ✅ | 自增/自减 |
 | `for ... \n {` | ❌ | `{` 必须与 for 头部同行；报 `for loop must end by '{'` |
-| 整个 body 写在同一行 | ❌ | `for ... { stmt }` 报 `expected right operand` |
+| 整个 body 写在同一行 | ✅ | `for i := 0; i < 3; i = i + 1 { s = s + 14 }` |
 | `{` 后同行写语句、`}` 另起一行 | ✅ | 可用 |
 
 `for` 条件强制 bool：`for 1` / `for x`（int）报 `for loop condition must be boolean`。
@@ -1211,14 +1216,16 @@ default:
 | 形式 | 列表 | 字符串 | 定长数组 |
 |---|---|---|---|
 | `a[1:3:1]` | ✅ | ✅ | ❌ `cannot slice a fixed-size array` |
-| `a[1:3]`（无 step） | ❌ 取元素段错误（139）；`len` 可能正常 | ✅ | ❌ |
-| `a[2:]`（无 step） | ❌ 返回错误数据（len 0） | ✅ | ❌ |
-| `a[:]`（无 step） | ❌ 返回错误数据（len 0） | ✅ | ❌ |
+| `a[1:3]`（无 step） | ✅ | ✅ | ❌ |
+| `a[2:]`（无 step） | ✅ | ✅ | ❌ |
+| `a[:]`（无 step） | ✅ | ✅ | ❌ |
 | `a[::-1]` | ✅ | ✅ | ❌ |
 | `a[::2]` | ✅ | ✅ | ❌ |
 | 负边界 `a[-2:]` | ✅（建议带 step） | ✅ | ❌ |
 
-**重要**：列表切片目前只有“显式 step”路径可靠；无 step 的正边界/省略边界路径存在段错误或错误数据。字符串切片两条路径都可用。
+切片（无论有无 step）均以“视图语义”交付（ptr=基址+lo*elemSize，len=hi-lo，cap=原cap-lo）；
+非常量边界（如 `a[x:y]`）支持运行期归一化（`idx < 0 → idx += len`）；
+常量边界对容器已妥善拆解，非零常量基址也会按 `lo*elemSize` 折叠。
 
 #### 索引赋值
 
@@ -1236,11 +1243,29 @@ default:
 | 列表 | `[]T{1, 2, 3}` | ✅ | |
 | 空列表 | `[]T{}` | ✅ | |
 | 定长数组 | `[N]T{1, 2, 3}` | ✅ | 元素个数必须等于 N |
-| 嵌套列表 | `[][]T{[]T{...}}` | ❌ | `unexpected '['` |
-| map | `map[K]V{k: v}` | ❌ | 不支持 |
-| 结构体 | `P{x: 1}` | ❌ | `expected right operand` |
+| 嵌套列表 | `[][]T{[]T{...}}` | ✅ | 仅 x86_64（SysV）；内外层列表字面量、fn 实参位置也可用 |
+| 嵌套列表 3D | `[][][]T{[][]T{[]T{...}}}` | ✅ | 仅 x86_64（SysV）；任意深度 |
+| map | `map[K]V{k: v}` | ✅ | 仅 x86_64（SysV）；见 §10.7 |
+| 结构体 | `P{x: 1}` | ✅ | 指针位置直接用；值位置仅 ≤8 字节结构体（见 §6.6） |
 
 定长数组字面量元素个数不匹配时报 `array literal has N elements but wants M`。
+
+#### map 字面量 ✅
+
+```cute
+var m: map[string]int = map[string]int{"a": 1, "b": 2}
+m := map[int]int{1: 10, 2: 20}
+```
+
+语义与 `Go` 接近：编译期生成 `maps.new` + 逐对 `maps.set` 的单态化调用；
+未提供的键不存在。空字面量 `map[K]V{}` 合法。注意 map 值语义是单个 `mapHdr*`；
+非空字面量会先 `malloc` 一个独立暂存区，再 `maps.new` 建表、逐对插入后返回指针。
+map 索引读取走 `maps.get`，单独复用一个独立暂存缓冲区。
+
+**架构限制（x86_64 / SysV）**：map 字面量与 map 索引内建调用均使用 SysV staging 寄存器约定。
+在 x86（32 位 / cdecl）或 win64 目标下本编译器不支持这些内建，解析期报
+`map literal requires x86_64 (SysV) target`；**但 `maps.get` 等显式 API 调用在 x86 下仍可用**。
+同理，嵌套列表字面量在 x86 目标报 `nested list literal requires x86_64 (SysV) target`。
 
 ### 10.8 调用与字段访问
 
@@ -1634,7 +1659,6 @@ import (
 |---|---|---|
 | `a, b = f()` | ✅ 已支持 | `:=` 与 `=` 都允许（多返回值解构按返回槽装载） |
 | 接口赋值 `var s: I = d` | `need type I, not Dog` | 直接调用具体类型方法 |
-| map 字面量 | 不支持 | 声明后逐项 `m[k] = v` |
 | `pub fn` / `pub var` | `'pub' is not a valid expression` | 去掉 `pub` |
 | `try` / `except` / `finally` | `'try' is not supported yet` | 用返回码/panic |
 | `import` 在函数内 | `import is only allowed at top level` | 提到文件顶层 |
@@ -1644,7 +1668,6 @@ import (
 | `sizeof[T]` 不带括号 | 返回伪值 56 | 写 `sizeof[T]()` |
 | `sizeof[[]T]()` / `sizeof[[N]T]()` | ✅ 已支持 | 类型形参直接接受 `[]T` 及 `[N]T` |
 | `new([]T)` 不传长度 | 汇编 `invalid combination of opcode and operands` | 传长度 |
-| 嵌套列表字面量 | `unexpected '['` | 逐层构造或先声明变量 |
 | 跨行 RAW 字符串 | 报 `Miss ...` | 单行 RAW 或运行时拼接 |
 
 ### 15.2 能编译但运行结果错误/崩溃
@@ -1652,8 +1675,6 @@ import (
 | 项目 | 现象 | 规避 |
 |---|---|---|
 | `if init; cond` | 条件执行不正确（走进假分支） | 把 init 拆到 if 之前 |
-| 列表切片无 step `a[1:3]` | 取元素段错误（139）；len 可能正常 | 显式写 step：`a[1:3:1]` |
-| 列表切片无 step `a[2:]` / `a[:]` | 返回错误数据 | 显式 step 或先算索引 |
 | 定长数组切片 | `cannot slice a fixed-size array` | 手动复制到列表 |
 | 嵌套数组 `[2][3]int` | 运行段错误 | 用一维数组或列表 |
 | 双变量 range `for i, v := range` | 段错误（139） | 用单变量绑定索引，先 `var v: int = a[i]` 再使用 |
@@ -1768,3 +1789,11 @@ echo "EXIT=$?"
 *本文以当前 HEAD 的 Go 编译器行为为准；自举 parser 的差异请查阅 [`SELFHOST.md`](SELFHOST.md)。*
 
 *2026-11-10 更新：块注释、跨行 RAW、分组/默认/变参参数、指针接收者、结构体字面量、for var 初始化、独立块、多值 case、无目标 switch、`a, b = f()`（脱糖）、`var x = expr` 推断、pub field 错误、真别名 list 赋值等条目已与实现一致。*
+
+*2026-11-12 更新：**单行块体**（`if true { s = 1 }`、`for i := 0; i < 3; i = i + 1 { s = s + 14 }`）全面可用；
+**切片** `a[1:3]` / `a[2:]` / `a[:]`（无 step）修复（非常量 lo 走栈中转、寄存器结果与 `mmap get` 均正确交付；
+slice 作函数实参可用）；**嵌套列表字面量** `[][]T{...}` / `[][][]T{...}` 支持（FN 实参位置也可用）；
+**map 字面量** `map[K]V{k: v}` 支持（malloc 暂存区 + 独立 callee-save 暂存 map 头指针；索引读取 `m[k]`
+在返回值 / 二元表达式中正确交付）；**结构体字面量值语义**（≤8 字节结构体，值位置 `var p: P = P{...}` /
+`ret P{...}`）；**map 索引 intrinsic 修复**（map 值暂存区不再与 binLR 的左操作数 callee-save 暂存冲突，
+`m["a"]`、`m[k] + m[k2]`、与常量下标组合均正确）。*

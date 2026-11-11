@@ -67,6 +67,10 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
    支持 `= 负数/十六进制` 与显式值后续自增；`Name.MEMBER` 限定访问在表达式 / switch case / 函数实参 /
    结构体字段位置均可用（跨包也支持，`import "std:foo"` 后 `foo.Color.RED`）；
    命名数值类型与内置数值类型仍可隐式互转（`test/enum` 双 arch RC=42 蓝本）
+9. **slice 无 step 已修复**（`a[1:3]` / `a[2:]` / `a[:]`，非常量边界也支持）；
+   嵌套列表字面量（`[][]T{}`、`[][][]T{}`）可用；「整行 body」块体全面支持；
+   map 字面量（`map[K]V{k: v}`）可用；struct 字面量在指针位置直接用，值位置仅 ≤8 字节；
+   `m[k]` 在返回值 / 二元表达式位置正确（map 值暂存区与 binLR 左侧暂存不冲突）（2026-11-12）
 
 ## 4. 缺陷台账快照（2026-11-02）
 - ⑨a fn 类型形参 parser 死循环——⏸ 未修，绕行=禁用形态
