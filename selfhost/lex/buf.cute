@@ -85,115 +85,19 @@ fn RenderVisible(s string) string {
     ret s
 }
 
-// make1byte 返回只含一个 u8 字节的字符串（用于 Tab/LF/CR 字面量）。
-// u8 接受整数字面量赋值（`var b: u8 = 65`），byte 不接受——参数用 u8。
-fn make1byte(b u8) string {
-    var buf: ptr = memory.malloc(2)
-    var bufu8: *u8 = buf
-    *bufu8 = b
-    *(bufu8 + 1) = unsafe.cast[u8](0)
-    ret strings.makeString(buf, 1, 1)
-}
-
 // kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
-// 字面量 m 较大时当前编译器解析有指数级恶化，采用动态构造。
+// 全部为字符串常量：列表字面量直接构造（多行字面量本语言不支持，写成单条语句）。
 fn kwTable() []string {
-    var kws: []string = new([]string, 30, 30)
-    kws[0] = "break"
-    kws[1] = "build"
-    kws[2] = "case"
-    kws[3] = "const"
-    kws[4] = "continue"
-    kws[5] = "default"
-    kws[6] = "defer"
-    kws[7] = "else"
-    kws[8] = "enum"
-    kws[9] = "except"
-    kws[10] = "fallthrough"
-    kws[11] = "false"
-    kws[12] = "finally"
-    kws[13] = "fn"
-    kws[14] = "for"
-    kws[15] = "if"
-    kws[16] = "import"
-    kws[17] = "interface"
-    kws[18] = "let"
-    kws[19] = "nil"
-    kws[20] = "range"
-    kws[21] = "ret"
-    kws[22] = "return"
-    kws[23] = "struct"
-    kws[24] = "switch"
-    kws[25] = "true"
-    kws[26] = "try"
-    kws[27] = "type"
-    kws[28] = "var"
-    kws[29] = "while"
-    ret kws
+    ret []string{"break", "build", "case", "const", "continue", "default", "defer", "else", "enum", "except", "fallthrough", "false", "finally", "fn", "for", "if", "import", "interface", "let", "nil", "range", "ret", "return", "struct", "switch", "true", "try", "type", "var", "while"}
 }
 
 // delimTable 分隔符表（已排序；1~3 字符）。
-// 同 kwTable：大字面量在当前编译器上有指数级恶化，动态构造。
+// Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写。
 fn delimTable() []string {
-    var ds: []string = new([]string, 58, 58)
-    ds[0] = make1byte(9)    // \t
-    ds[1] = make1byte(10)   // \n
-    ds[2] = make1byte(13)   // \r
-    ds[3] = " "
-    ds[4] = "!"
-    ds[5] = "!="
-    ds[6] = `"`        // " 本身
-    ds[7] = "%"
-    ds[8] = "%="
-    ds[9] = "&"
-    ds[10] = "&&"
-    ds[11] = "&="
-    ds[12] = "'"
-    ds[13] = "("
-    ds[14] = ")"
-    ds[15] = "*"
-    ds[16] = "*="
-    ds[17] = "+"
-    ds[18] = "++"
-    ds[19] = "+="
-    ds[20] = ","
-    ds[21] = "-"
-    ds[22] = "--"
-    ds[23] = "-="
-    ds[24] = "->"
-    ds[25] = "."
-    ds[26] = "..."
-    ds[27] = "/"
-    ds[28] = "/*"
-    ds[29] = "//"
-    ds[30] = "/="
-    ds[31] = ":"
-    ds[32] = ":="
-    ds[33] = ";"
-    ds[34] = "<"
-    ds[35] = "<<"
-    ds[36] = "<<="
-    ds[37] = "<="
-    ds[38] = "="
-    ds[39] = "=="
-    ds[40] = ">"
-    ds[41] = ">="
-    ds[42] = ">>"
-    ds[43] = ">>="
-    ds[44] = "?"
-    ds[45] = "@"
-    ds[46] = "["
-    ds[47] = `\`        // \ 本身
-    ds[48] = "]"
-    ds[49] = "^"
-    ds[50] = "^="
-    ds[51] = "`"
-    ds[52] = "{"
-    ds[53] = "|"
-    ds[54] = "|="
-    ds[55] = "||"
-    ds[56] = "}"
-    ds[57] = "~"
+    var ds: []string = []string{"", "", "", " ", "!", "!=", `"`, "%", "%=", "&", "&&", "&=", "'", "(", ")", "*", "*=", "+", "++", "+=", ",", "-", "--", "-=", "->", ".", "...", "/", "/*", "//", "/=", ":", ":=", ";", "<", "<<", "<<=", "<=", "=", "==", ">", ">=", ">>", ">>=", "?", "@", "[", `\`, "]", "^", "^=", "`", "{", "|", "|=", "||", "}", "~"}
+    ds[0] = strings.fromByte(9)    // \t
+    ds[1] = strings.fromByte(10)   // \n
+    ds[2] = strings.fromByte(13)   // \r
     ret ds
 }
 

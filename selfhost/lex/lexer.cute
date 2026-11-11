@@ -9,10 +9,11 @@
 //      parseFloat），不重复写到应用层。
 //
 // 本文件按依赖顺序组织（callee 先于 caller，Cute 方法派发无前向解析）：
-// Error、Lexer、NewLexer、isDigit/isDigitByte/isSpace、TokenCoord、byteStr、
-// consume、makeToken、numberBase、isIntDigit、handleNumber、handleComment、
+// Error、Lexer、NewLexer、TokenCoord、
+// consume、makeToken、numberBase、handleNumber、handleComment、
 // handleString、Prefetch、Next。
-import "std:memory"
+// 字符分类助手（isDigit/isSpaceByte/isIntDigit）已迁入 std:strings；
+// 关键字/分隔符表见 buf.cute。
 import "std:strings"
 
 // prefetchCap 预取 FIFO 队列的固定长度（8）。队列满时新 token 不入队。
@@ -60,39 +61,9 @@ fn NewLexer(text string) *Lexer {
     ret l
 }
 
-// isDigit 是否十进制数字字节。
-fn isDigit(b byte) bool {
-    var bi: int = unsafe.cast[int](b)
-    ret bi >= 48 && bi <= 57
-}
-
-// isDigitByte 是否十进制数字字节。
-fn isDigitByte(b byte) bool {
-    var bi: int = unsafe.cast[int](b)
-    ret bi >= 48 && bi <= 57
-}
-
-// isSpace 是否空白字符（空格、Tab、LF、CR）。
-fn isSpace(b byte) bool {
-    var bi: int = unsafe.cast[int](b)
-    ret bi == 32 || bi == 9 || bi == 10 || bi == 13
-}
-
 // TokenCoord 构造 consume 用的 token 形态（仅 Pos/EndPos 生效）。
 fn TokenCoord(pos int, endPos int) *Token {
-    var t: *Token = new(Token)
-    t.Pos = pos
-    t.EndPos = endPos
-    ret t
-}
-
-// byteStr 把一字节转为单字符字符串（panic 消息用）。
-fn byteStr(b byte) string {
-    var p: ptr = memory.malloc(2)
-    var q: *byte = p
-    *q = b
-    *(q + 1) = unsafe.cast[byte](0)
-    ret strings.makeString(p, 1, 1)
+    ret Token{Pos: pos, EndPos: endPos}
 }
 
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
@@ -145,22 +116,6 @@ fn numberBase(text string, i int) uint {
     ret 0
 }
 
-// isIntDigit 是否 base 进制数字（base 仅支持 2/8/16）。
-fn isIntDigit(b byte, base uint) bool {
-    var d: uint = 0
-    var bi: int = unsafe.cast[int](b)
-    if bi >= 48 && bi <= 57 {
-        d = unsafe.cast[uint](bi - 48)
-    } else if bi >= 97 && bi <= 102 {
-        d = unsafe.cast[uint](bi - 97 + 10)
-    } else if bi >= 65 && bi <= 70 {
-        d = unsafe.cast[uint](bi - 65 + 10)
-    } else {
-        ret false
-    }
-    ret d < base
-}
-
 // handleNumber 扫描数字 token（0x/0b/0o 进制前缀、十进制、小数、科学计数法）。
 fn Lexer.handleNumber(l *Lexer) *Token {
     var text: string = l.Text
@@ -171,7 +126,7 @@ fn Lexer.handleNumber(l *Lexer) *Token {
     var base: uint = numberBase(text, unsafe.cast[int](i))
     if base != 0 {
         var e: uint = i + 2
-        for ; e < plen && (isIntDigit(text[e], base) || unsafe.cast[int](text[e]) == 95); {
+        for ; e < plen && (strings.isIntDigit(text[e], base) || unsafe.cast[int](text[e]) == 95); {
             e = e + 1
         }
         var rawText: string = strings.replaceAll(text[i+2:e], "_", "")
@@ -179,32 +134,23 @@ fn Lexer.handleNumber(l *Lexer) *Token {
             vu, vok := strings.parseUint(rawText, base)
             if vok {
                 var xnum: uint = vu
-                var t2: *Token = new(Token)
-                t2.Type = NUMBER
-                t2.Value = text[i:e]
-                t2.Number = f64(xnum)
-                t2.Pos = unsafe.cast[int](i)
-                t2.EndPos = unsafe.cast[int](e)
-                ret l.makeToken(t2)
+                ret l.makeToken(Token{Type: NUMBER, Value: text[i:e], Number: f64(xnum),
+                    Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
             }
         }
         // 进制前缀后无有效数字：退回 NAME（如 0x）
-        var t3: *Token = new(Token)
-        t3.Type = NAME
-        t3.Value = text[i:i+2]
-        t3.Pos = unsafe.cast[int](i)
-        t3.EndPos = unsafe.cast[int](i + 2)
-        ret l.makeToken(t3)
+        ret l.makeToken(Token{Type: NAME, Value: text[i:i+2],
+            Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](i + 2)})
     }
 
     // 十进制：整数 / 小数 / 科学计数法
     var e: uint = i
-    for ; e < plen && (isDigit(text[e]) || unsafe.cast[int](text[e]) == 95); {
+    for ; e < plen && (strings.isDigit(text[e]) || unsafe.cast[int](text[e]) == 95); {
         e = e + 1
     }
-    if e < plen && unsafe.cast[int](text[e]) == 46 && e + 1 < plen && isDigitByte(text[e + 1]) {
+    if e < plen && unsafe.cast[int](text[e]) == 46 && e + 1 < plen && strings.isDigit(text[e + 1]) {
         e = e + 2
-        for ; e < plen && (isDigit(text[e]) || unsafe.cast[int](text[e]) == 95); {
+        for ; e < plen && (strings.isDigit(text[e]) || unsafe.cast[int](text[e]) == 95); {
             e = e + 1
         }
     }
@@ -213,9 +159,9 @@ fn Lexer.handleNumber(l *Lexer) *Token {
         if m < plen && (unsafe.cast[int](text[m]) == 43 || unsafe.cast[int](text[m]) == 45) {
             m = m + 1
         }
-        if m < plen && isDigit(text[m]) {
+        if m < plen && strings.isDigit(text[m]) {
             m = m + 1
-            for ; m < plen && (isDigit(text[m]) || unsafe.cast[int](text[m]) == 95); {
+            for ; m < plen && (strings.isDigit(text[m]) || unsafe.cast[int](text[m]) == 95); {
                 m = m + 1
             }
             e = m
@@ -227,13 +173,8 @@ fn Lexer.handleNumber(l *Lexer) *Token {
     if vok {
         num = vf
     }
-    var t4: *Token = new(Token)
-    t4.Type = NUMBER
-    t4.Value = text[i:e]
-    t4.Number = num
-    t4.Pos = unsafe.cast[int](i)
-    t4.EndPos = unsafe.cast[int](e)
-    ret l.makeToken(t4)
+    ret l.makeToken(Token{Type: NUMBER, Value: text[i:e], Number: num,
+        Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
 }
 
 // handleComment 处理 // 与 /* */ 注释
@@ -279,28 +220,21 @@ fn Lexer.handleString(l *Lexer, delimiter string) *Token {
     var i: uint = start + dl
     for ; i < plen; {
         if unsafe.cast[int](q) != 96 && unsafe.cast[int](text[i]) == 10 {
-            panic(delimiter + byteStr(text[i]))
+            panic(delimiter + strings.fromByte(unsafe.cast[u8](text[i])))
         }
         if unsafe.cast[int](text[i]) == unsafe.cast[int](q) {
             var str: string = text[start + dl:i]
             if unsafe.cast[int](q) == 39 && len(str) != 1 && !(len(str) >= 1 && unsafe.cast[int](str[0]) == 92) {
                 panic("")
             }
-            var t: *Token = new(Token)
-            t.Type = STRING
-            t.Value = str
-            t.Pos = unsafe.cast[int](start)
-            t.EndPos = unsafe.cast[int](i + dl)
-            ret l.makeToken(t)
+            ret l.makeToken(Token{Type: STRING, Value: str,
+                Pos: unsafe.cast[int](start), EndPos: unsafe.cast[int](i + dl)})
         }
         i = i + 1
     }
     // 未闭合：消费到文件尾
     l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
-    var te: *Token = new(Token)
-    te.Type = NONE
-    te.Line = l.pfLine
-    te.Col = l.pfCol
+    var te: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
     ret te
 }
 
@@ -310,16 +244,13 @@ fn Lexer.Prefetch(l *Lexer) *Token {
 
     // 跳过空格（pfPos/pfLine/pfCol 一并推进）
     var i: uint = unsafe.cast[uint](l.pfPos)
-    for ; i < plen && isSpace(l.Text[i]); {
+    for ; i < plen && strings.isSpaceByte(l.Text[i]); {
         i = i + 1
     }
     l.consume(TokenCoord(l.pfPos, unsafe.cast[int](i)))
     if unsafe.cast[uint](l.pfPos) >= plen {
         // EOF
-        var t: *Token = new(Token)
-        t.Type = NONE
-        t.Line = l.pfLine
-        t.Col = l.pfCol
+        var t: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
         ret t
     }
 
@@ -330,7 +261,7 @@ fn Lexer.Prefetch(l *Lexer) *Token {
     if unsafe.cast[uint](l.pfPos) + 1 < plen {
         secondByte = l.Text[unsafe.cast[uint](l.pfPos) + 1]
     }
-    if isDigitByte(firstByte) || (unsafe.cast[int](firstByte) == 46 && unsafe.cast[uint](l.pfPos) + 1 < plen && isDigitByte(secondByte)) {
+    if strings.isDigit(firstByte) || (unsafe.cast[int](firstByte) == 46 && unsafe.cast[uint](l.pfPos) + 1 < plen && strings.isDigit(secondByte)) {
         ret l.handleNumber()
     }
 
@@ -376,26 +307,15 @@ fn Lexer.Prefetch(l *Lexer) *Token {
             if isKeyword(val) {
                 tokenTyp = KEYWORD
             }
-            var t2: *Token = new(Token)
-            t2.Type = tokenTyp
-            t2.Value = val
-            t2.Pos = l.pfPos
-            t2.EndPos = unsafe.cast[int](i)
-            ret l.makeToken(t2)
+            ret l.makeToken(Token{Type: tokenTyp, Value: val,
+                Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
         }
 
         // delimiter token
-        var t3: *Token = new(Token)
-        t3.Type = DELIMITER
-        t3.Value = delimiter
-        t3.Pos = l.pfPos
-        t3.EndPos = unsafe.cast[int](i + unsafe.cast[uint](delimLen))
-        ret l.makeToken(t3)
+        ret l.makeToken(Token{Type: DELIMITER, Value: delimiter,
+            Pos: l.pfPos, EndPos: unsafe.cast[int](i + unsafe.cast[uint](delimLen))})
     }
-    var te: *Token = new(Token)
-    te.Type = NONE
-    te.Line = l.pfLine
-    te.Col = l.pfCol
+    var te: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
     ret te
 }
 
