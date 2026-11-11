@@ -101,13 +101,13 @@ flock /tmp/opencode/lock -c "bash /tmp/opencode/run_dir.sh /tmp/opencode/bin/w14
   `matrix_x64_I1.log`/`matrix_x86_I1.log`（w11，json 仍消费）、`matrix_x64_I2.log`/`matrix_x86_I2.log`（w12，json 通道关闭）、
   `matrix_x64_I3.log`/`matrix_x86_I3.log`（w13，`json:"-"` 终态）、
   `matrix_x64_w14c.txt`/`matrix_x86_w14c.txt`（w14c，GC 收口 22 项对拍）
-- selfhost（2026-11-06 S2 收口）：`scripts/selfhost_test.sh x86_64`（S0，RC=42）；
-  `scripts/selfhost_dump.sh x86_64`（S1，`SELFHOST_DUMP_OK|x86_64|tokens=3851`，token 数随源码变）；
-  `scripts/selfhost_parity.sh x86_64`（`SELFHOST_PARITY_OK|x86_64|files=15|tokens=19160`）；
-  `scripts/selfhost_parse.sh x86_64`（S2，`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`；
-  全仓 247 个 `.cute` 247/247 `PARSE_OK`）；
-  drivers=`selfhost/cmd/tokdump/`、`selfhost/cmd/parsedump/`，Go 侧 token 对拍工具=`tools/gotokens/`；
-  S2 parser 只验证语法+计数、不建 AST；AST/Go parser 逐节点对拍=S3
+- selfhost（2026-11-12 S0 改用 Go 参考 `/home/gx/Downloads/dev/lexer` **1:1 移植**，6 token 枚举）：
+  `scripts/selfhost_test.sh x86_64`（S0，`SELFHOST_OK|x86_64|RC=42`）；
+  `scripts/stdlib_matrix.sh x86_64 2` 与 HEAD 基线逐行一致；
+  同批修死的编译器 bug：`&&`/`||` 只发左操作数结果（InstBinary 未处理该操作符）、`_memmove` 在 x86_64 按 CDECL 传参、
+  列表多槽元素赋值/`new([]string)` 非 const 路径基址寄存器被右值/调用破坏、`unsafe.cast` 属 path-builtin 导致内嵌子树从未 Check、
+  列表返回槽拷贝覆盖基址、`<`/`>`/`<=`/`>=`/`==` 条件 `.Check` 失败时整条 if 被吞掉；
+  `selfhost/parse`、`cmd/{tokdump,parsedump}` 与 `lexer/`、`tools/gotokens/` 仍是旧 14 枚举模型，**本阶段停用**，待下游统一后恢复
 - SSOT：`docs/stdplan/PLAN.md`（计划）/ `docs/stdplan/PROGRESS.md`（执行日志+哨兵基线全表）
 - Wave St 假想攻坚台账：`/tmp/opencode/wave_st_progress.md`
 

@@ -1,11 +1,12 @@
 # Cuteify 自举计划（SELFHOST）
 
-> 状态：**进行中，已完成 S0 词法分析器、S1 token 流 driver、S2 最小 parser 与 S3 canonical AST parser**。
-> 仓库当前没有自举编译器或自举代码生成器；S3 parser 已能构建与 Go parser 逐节点对拍的
-> canonical AST，但不做完整语义检查。
-> 入口目录：[`selfhost/`](../selfhost/README.md)。
-> 模块文档：[`selfhost/lex/README.md`](../selfhost/lex/README.md)、
-> [`selfhost/parse/README.md`](../selfhost/parse/README.md)。
+> 状态：**进行中。S0（token 模型 1:1 移植）已验收；S1–S3 相关脚本统一停用**。
+> 2026-11-12：S0 词法分析器以 `/home/gx/Downloads/dev/lexer`（Go 参考）
+> **逐行 1:1 移植**——token 枚举缩编为 `NONE/STRING/KEYWORD/DELIMITER/NUMBER/NAME`（6 枚举）。
+> S1–S3 与仓库内 `lexer/`（旧 14 枚举 Go 参考）、`tools/gotokens/` 以及
+> `scripts/selfhost_dump.sh` / `selfhost_parity.sh` / `selfhost_parse.sh` / `selfhost_ast_parity.sh`
+> 属旧 token 模型，**本阶段统一停用**，待下游统一 token 模型后恢复；
+> 本阶段验收 = `scripts/selfhost_test.sh x86_64` → `SELFHOST_OK|x86_64|RC=42`。
 
 本文是项目级自举说明；模块的 API、扫描规则、错误码以对应模块的 README 为准。
 
@@ -29,14 +30,14 @@
 
 | 阶段 | 内容 | 状态 | 验收 |
 |---|---|---|---|
-| S0 | 词法分析器（string 输入） | ✅ 0.1.0 | `BIN=... scripts/selfhost_test.sh x86_64` 返回 42 |
-| S1 | token 流 driver / 诊断输出 | ✅ 0.1.0 | `scripts/selfhost_dump.sh` 打印 `lex.cute` 的 token 序列（末尾 `EOF ... tokens=N`） |
-| S2 | 最小 parser（声明/表达式/语句子集） | ✅ 0.1.0 | `scripts/selfhost_parse.sh x86_64`：自测 `RC=42`、固定语料全部 `PARSE_OK` |
-| S3 | 完整自举 parser（canonical AST） | ✅ 0.2.0 | `scripts/selfhost_ast_parity.sh x86_64`：固定语料全部 `PARITY_OK`；`ALL=1` 全仓 214 一致 + 16 已知差异 |
+| S0 | 词法分析器（string 输入） | ✅ 0.2.0 | `BIN=... scripts/selfhost_test.sh x86_64` 返回 42（`/home/gx/Downloads/dev/lexer` 1:1 移植，6 枚举） |
+| S1 | token 流 driver / 诊断输出 | 停用（旧模型） | 自测输出与旧 token 枚举不一致，待统一后恢复 |
+| S2 | 最小 parser（声明/表达式/语句子集） | 停用（旧模型） | 同上 |
+| S3 | 完整自举 parser（canonical AST） | 停用（旧模型） | 同上 |
 | S4 | 自举代码生成/后端 | 计划中 | 与 Go 版汇编或运行结果对拍 |
 
-当前完成 S0、S1、S2、S3。S3 的 AST 以 Go parser 可观察形状为准，允许把 Go 侧
-实现噪声登记为已知差异；S3 仍不做完整语义检查，也不宣称自举编译器已完成。
+当前：S0 已以 Go 参考（1:1 移植）验收；S1–S3 属旧 token 模型，停用待下游统一后恢复。
+不做完整语义检查，也不宣称自举编译器已完成。
 
 ## 3. 目录与边界
 
@@ -356,21 +357,26 @@ ALL=1 BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_ast_parity.sh x86_64
 BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 ```
 
-当前基线（2026-11-07）：
+当前基线（2026-11-12）：
+
+- `selfhost/lex` 以 Go 参考逐行 1:1 移植（6 token 枚举）；
+  `scripts/stdlib_matrix.sh x86_64 2` 与 HEAD 基线逐行一致（无 stdlib 回归）；
+  `scripts/selfhost_test.sh x86_64`：`SELFHOST_OK|x86_64|RC=42`。
+- 仓库内 `lexer/`（旧 14 枚举 Go 参考）未动，因此 `selfhost_dump.sh` /
+  `selfhost_parity.sh` / `selfhost_parse.sh` / `selfhost_ast_parity.sh` 均**停用**；
+  下游统一 token 模型后再恢复并更新相应基线。
+
+历史基线（2026-11-07，旧 token 模型）：
 
 - `scripts/selfhost_ast_parity.sh x86_64`：`SELFHOST_AST_PARITY_OK|x86_64|ok=11|known=0|go_fail=0`
   （固定语料 7 个 AST 专项 + 3 个真实用例 + `pkg/slices/test`）。
 - `ALL=1 scripts/selfhost_ast_parity.sh x86_64`：`ok=214|known=16|go_fail=28`
   （258 个 tracked `.cute`；16 个已知差异见 §5，28 个 Go parser 单文件解析失败被跳过）。
 - `scripts/selfhost_test.sh x86_64`：连续 5 轮 `SELFHOST_OK|RC=42`。
-- `scripts/selfhost_dump.sh x86_64`：`SELFHOST_DUMP_OK|x86_64|tokens=3851`
-  （2026-11-06；token 数随 `lex.cute` 改动变化，判据是末尾 `EOF ... tokens=N`
-  且含 `IMPORT [import]` / `TYPE [enum]`）。
-- `scripts/selfhost_parity.sh x86_64`：`SELFHOST_PARITY_OK|x86_64|files=15|tokens=19160`
-  （2026-11-06；固定语料逐字节一致，语料清单见脚本）。
-- `scripts/selfhost_parse.sh x86_64`：`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`
-  （2026-11-06；自测覆盖 7 组正/负例，固定语料全部 `PARSE_OK`）。
-- S2/S3 自解析基线：
+- `scripts/selfhost_dump.sh x86_64`（**已停用**，2026-11-06）：`SELFHOST_DUMP_OK|x86_64|tokens=3851`。
+- `scripts/selfhost_parity.sh x86_64`（**已停用**，2026-11-06）：`SELFHOST_PARITY_OK|x86_64|files=15|tokens=19160`。
+- `scripts/selfhost_parse.sh x86_64`（**已停用**，2026-11-06）：`SELFHOST_PARSE_OK|x86_64|selftest=42|files=18`。
+- S2/S3 自解析基线（旧 `lex.cute`）：
   `selfhost/lex/lex.cute` → `PARSE_OK|decls=31|imports=2|builds=0|enums=1|structs=1|consts=4|vars=39|fns=23|stmts=449|exprs=954`；
   `selfhost/parse/parse.cute` → `PARSE_OK|decls=170|imports=2|builds=0|enums=0|structs=3|consts=44|vars=238|fns=121|stmts=1747|exprs=4258`。
   计数随源码改动变化，验收判据是 `PARSE_OK` / 自测 `RC=42`，不是固定数值。
@@ -389,9 +395,8 @@ BIN=/tmp/opencode/bin/selfhostc scripts/stdlib_matrix.sh x86_64 1
 
 - 自举测试必须独立于 `pkg/` 矩阵，不改变 `scripts/stdlib_matrix.sh` 的 22 个用例口径。
 - 修改 `selfhost/lex` 后至少跑一次 x86_64 测试；x86 只作为参考，不作为 Batch 4 之前的门槛。
-- 修改 `selfhost/lex` 后还要跑一次 `selfhost_dump.sh`，确认 token 流可完整打印且无
-  `ERROR` 行；token 数变化本身不是失败。
-- 修改任一侧 lexer 规则后跑 `selfhost_parity.sh`，固定语料必须全部 `PARITY_OK`。
+- 修改 `selfhost/lex` 后至少跑一次 x86_64 测试；`selfhost_dump.sh`/`selfhost_parity.sh`
+  现为停用口径，恢复前不用它们做验收。
 - 修改 `selfhost/parse` 后跑 `selfhost_parse.sh`：自测必须 `RC=42`，固定语料必须全部
   `PARSE_OK`；全仓扫描出现新失败时，先判断是语法子集缺口还是 parser 回归。
 - 修改 AST 形状/常量折叠后必须跑 `scripts/selfhost_ast_parity.sh`：固定语料全部
