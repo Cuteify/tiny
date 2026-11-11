@@ -1,0 +1,29 @@
+// sample.cute - tokdump demo source (lexer only, does not need to compile)
+// line comment: fn counts as keyword only outside strings
+fn add(a: int, b: int) int {
+	/* block comment
+	   can span lines */
+	ret a + b
+}
+
+var greeting: string = "hello\nworld"  // string does no escape processing
+var raw: string = `multi
+line
+raw string`
+var ch: int = '\n'
+var n: int = 1_000_000
+var pi: f64 = 3.1415
+var e: f64 = 1.5e-3
+var mask: int = 0xFF_00
+
+fn main() int {
+	var ok: bool = true
+	for i := 0; i < n; i = i + 1 {
+		if i % 2 == 0 {
+			continue
+		} else {
+			break
+		}
+	}
+	ret 0
+}

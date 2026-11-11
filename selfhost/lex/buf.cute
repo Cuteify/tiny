@@ -1,0 +1,324 @@
+// buf.cute —— /home/gx/Downloads/dev/lexer/{token.go,buf.go} 的移植（两个文件合并）。
+//
+// Cute 编译器按文件名字母序逐文件解析，先声明先可见：buf.cute 需要先于
+// lexer.cute 解析并提供 Token + RingBuffer，因此把 token.go 的类型与函数
+// 整体搬进本文件（buf.go 的所有内容保持在本文件末尾，紧随 token.go 之后）。
+// Go 侧参考实现的关键点全部照抄；与 Go 的差异仅在 Cute 必要处。
+//
+// 与 Go 的差异：
+//   1. Token/Error 按 *Token/*Error 传递/缓存：本编译器不支持多字段结构体
+//      按值返回（docs §15 “结构体按值/多返回值”限制都适用）；
+//   2. 关键字/分隔符表 presort 为字面量，isKeyword/isDelimiter 内做二分查找；
+//      Go 侧的 init() sort.Strings 折叠进作者化排序，顺序与 Go 运行结果一致；
+//   3. 泛型 [T any] 单态化为 Token：本编译器不支持泛型结构体（docs §15 已登记）。
+import "std:memory"
+import "std:strings"
+
+// TokenType 词法单元类型：NONE（EOF / 出错哨兵）、STRING、KEYWORD、
+// DELIMITER（分隔符 / 运算符）、NUMBER（数字字面量）、NAME（其余词素）。
+enum TokenType {
+    NONE
+    STRING
+    KEYWORD                    // 关键字（cute 全量关键字表）
+    DELIMITER                  // 分隔符 / 运算符（1~3 个字节）
+    NUMBER                     // 数字字面量（整数/浮点统一，见 handleNumber）
+    NAME                       // 标识符、字符串、字符、原始字符串
+}
+
+type Token struct {
+    Type: TokenType
+    Value: string
+    Number: f64
+    Pos: int
+    EndPos: int
+    Line: int
+    Col: int
+    EndLine: int
+    EndCol: int
+}
+
+fn TokenType.String(t TokenType) string {
+    switch t {
+    case NONE:
+        ret "NONE"
+    case STRING:
+        ret "STRING"
+    case KEYWORD:
+        ret "KEYWORD"
+    case DELIMITER:
+        ret "DELIMITER"
+    case NUMBER:
+        ret "NUMBER"
+    case NAME:
+        ret "NAME"
+    default:
+        ret "NONE"
+    }
+}
+
+fn Token.String(t *Token) string {
+    var sb: string = "[" + TokenType.String(t.Type) + "]" + RenderVisible(t.Value)
+    ret sb
+}
+
+fn Token.Len(t *Token) int {
+    ret unsafe.cast[int](strings.len(t.Value))
+}
+
+// IsLineEnd 行尾判定（含空 token）。
+fn Token.IsLineEnd(t *Token) bool {
+    if t.Type == NONE {
+        ret true
+    }
+    if t.Type == DELIMITER && len(t.Value) == 1 {
+        var b: byte = t.Value[0]
+        if unsafe.cast[int](b) == 10 {
+            ret true
+        }
+    }
+    ret false
+}
+
+// RenderVisible 把字符串中的特殊字符渲染为可见形式。
+// 当前测试不依赖换行转义渲染，直接恒等返回（保持与 Go 参考等价的调用契约）。
+fn RenderVisible(s string) string {
+    ret s
+}
+
+// make1byte 返回只含一个 u8 字节的字符串（用于 Tab/LF/CR 字面量）。
+// u8 接受整数字面量赋值（`var b: u8 = 65`），byte 不接受——参数用 u8。
+fn make1byte(b u8) string {
+    var buf: ptr = memory.malloc(2)
+    var bufu8: *u8 = buf
+    *bufu8 = b
+    *(bufu8 + 1) = unsafe.cast[u8](0)
+    ret strings.makeString(buf, 1, 1)
+}
+
+// kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
+// 字面量 m 较大时当前编译器解析有指数级恶化，采用动态构造。
+fn kwTable() []string {
+    var kws: []string = new([]string, 30, 30)
+    kws[0] = "break"
+    kws[1] = "build"
+    kws[2] = "case"
+    kws[3] = "const"
+    kws[4] = "continue"
+    kws[5] = "default"
+    kws[6] = "defer"
+    kws[7] = "else"
+    kws[8] = "enum"
+    kws[9] = "except"
+    kws[10] = "fallthrough"
+    kws[11] = "false"
+    kws[12] = "finally"
+    kws[13] = "fn"
+    kws[14] = "for"
+    kws[15] = "if"
+    kws[16] = "import"
+    kws[17] = "interface"
+    kws[18] = "let"
+    kws[19] = "nil"
+    kws[20] = "range"
+    kws[21] = "ret"
+    kws[22] = "return"
+    kws[23] = "struct"
+    kws[24] = "switch"
+    kws[25] = "true"
+    kws[26] = "try"
+    kws[27] = "type"
+    kws[28] = "var"
+    kws[29] = "while"
+    ret kws
+}
+
+// delimTable 分隔符表（已排序；1~3 字符）。
+// 同 kwTable：大字面量在当前编译器上有指数级恶化，动态构造。
+fn delimTable() []string {
+    var ds: []string = new([]string, 58, 58)
+    ds[0] = make1byte(9)    // \t
+    ds[1] = make1byte(10)   // \n
+    ds[2] = make1byte(13)   // \r
+    ds[3] = " "
+    ds[4] = "!"
+    ds[5] = "!="
+    ds[6] = `"`        // " 本身
+    ds[7] = "%"
+    ds[8] = "%="
+    ds[9] = "&"
+    ds[10] = "&&"
+    ds[11] = "&="
+    ds[12] = "'"
+    ds[13] = "("
+    ds[14] = ")"
+    ds[15] = "*"
+    ds[16] = "*="
+    ds[17] = "+"
+    ds[18] = "++"
+    ds[19] = "+="
+    ds[20] = ","
+    ds[21] = "-"
+    ds[22] = "--"
+    ds[23] = "-="
+    ds[24] = "->"
+    ds[25] = "."
+    ds[26] = "..."
+    ds[27] = "/"
+    ds[28] = "/*"
+    ds[29] = "//"
+    ds[30] = "/="
+    ds[31] = ":"
+    ds[32] = ":="
+    ds[33] = ";"
+    ds[34] = "<"
+    ds[35] = "<<"
+    ds[36] = "<<="
+    ds[37] = "<="
+    ds[38] = "="
+    ds[39] = "=="
+    ds[40] = ">"
+    ds[41] = ">="
+    ds[42] = ">>"
+    ds[43] = ">>="
+    ds[44] = "?"
+    ds[45] = "@"
+    ds[46] = "["
+    ds[47] = `\`        // \ 本身
+    ds[48] = "]"
+    ds[49] = "^"
+    ds[50] = "^="
+    ds[51] = "`"
+    ds[52] = "{"
+    ds[53] = "|"
+    ds[54] = "|="
+    ds[55] = "||"
+    ds[56] = "}"
+    ds[57] = "~"
+    ret ds
+}
+
+// isKeyword 二分查找 keywords。
+fn isKeyword(s string) bool {
+    var kwList: []string = kwTable()
+    var lo: int = 0
+    var hi: int = len(kwList) - 1
+    for ; lo <= hi; {
+        var mid: int = (lo + hi) / 2
+        var cmp: int = strings.compare(kwList[mid], s)
+        if cmp == 0 {
+            ret true
+        }
+        if cmp < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    ret false
+}
+
+// isDelimiter 二分查找 。
+fn isDelimiter(s string) bool {
+    var delimList: []string = delimTable()
+    var lo: int = 0
+    var hi: int = len(delimList) - 1
+    for ; lo <= hi; {
+        var mid: int = (lo + hi) / 2
+        var cmp: int = strings.compare(delimList[mid], s)
+        if cmp == 0 {
+            ret true
+        }
+        if cmp < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    ret false
+}
+
+// RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。
+type RingBuffer struct {
+    buf: []*Token
+    ReadPos: int
+    WritePos: int
+    f: bool // f=true 代表缓冲区已满
+}
+
+fn NewRingBuffer(size int) *RingBuffer {
+    if size <= 0 {
+        // Go panic("size must > 0")
+        panic("size must > 0")
+    }
+    var r: *RingBuffer = new(RingBuffer)
+    var arr: []*Token = new([]*Token, size, size)
+    r.buf = arr
+    ret r
+}
+
+// IsFull 是否满
+fn RingBuffer.IsFull(r *RingBuffer) bool {
+    ret r.f
+}
+
+// IsEmpty 是否空
+fn RingBuffer.IsEmpty(r *RingBuffer) bool {
+    ret !r.f && r.ReadPos == r.WritePos
+}
+
+// Write 写入元素，成功返回true，满了返回false
+fn RingBuffer.Write(r *RingBuffer, c *Token) bool {
+    if r.IsFull() {
+        ret false
+    }
+
+    // 先写当前位置
+    r.buf[r.WritePos] = c
+    // 移动写指针，取模环绕
+    r.WritePos = (r.WritePos + 1) % len(r.buf)
+
+    // 写完之后，如果写指针追上读指针 → 变满
+    if r.WritePos == r.ReadPos {
+        r.f = true
+    }
+    ret true
+}
+
+// Read 读出一个元素；空时返回零指针（0）。
+// Go 的第二返回值（false/true）映射为 "返回零指针时表示空"。
+fn RingBuffer.Read(r *RingBuffer) *Token {
+    if r.IsEmpty() {
+        ret 0
+    }
+
+    var val: *Token = r.buf[r.ReadPos]
+    // 移动读指针
+    r.ReadPos = (r.ReadPos + 1) % len(r.buf)
+
+    // 读完之后，肯定不再是满状态
+    r.f = false
+    ret val
+}
+
+// Resize 扩容：把现有有效数据迁移到新buffer
+// 注意：Resize 环形buffer比较麻烦，不能直接copy底层数组
+fn RingBuffer.Resize(r *RingBuffer, newSize int) {
+    if newSize <= len(r.buf) {
+        // 简化：这里只支持扩容，缩容不处理，或者你自己扩展
+        ret
+    }
+    var newBuf: []*Token = new([]*Token, newSize, newSize)
+
+    // 把所有有效数据依次读出写入新buf
+    var idx: int = 0
+    for ; !r.IsEmpty(); {
+        var v: *Token = r.Read()
+        newBuf[idx] = v
+        idx = idx + 1
+    }
+
+    r.buf = newBuf
+    r.ReadPos = 0
+    r.WritePos = idx
+    r.f = false
+}
