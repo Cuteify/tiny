@@ -28,6 +28,8 @@ type Expression struct {
 	Index     [3]*Expression // 列表索引
 	IndexSlice bool          // Index 是否来自切片 a[lo:hi:step]（含省略端点的情形）
 	ListElems []*Expression  // 列表字面量元素，Separator="list_lit"时有效
+	// 映射字面量键值对（Separator="map_lit" 时有效）。
+	MapElems  []MapEntry      // {key: value, ...}
 	Anon      *FuncBlock     // 匿名函数（闭包），非nil时表示 fn(...) R { ... } 字面量
 }
 
@@ -404,9 +406,10 @@ func (p *Parser) ParseExp(stopCursor int) *Expression {
 	}
 
 	if current != nil && current.Separator != "" && current.Right == nil {
-		// ++, -- can be postfix; list_lit / array_lit is a complete literal
+		// ++, -- can be postfix; list_lit / array_lit / map_lit is a complete literal
 		if current.Separator != "++" && current.Separator != "--" &&
-			current.Separator != "list_lit" && current.Separator != "array_lit" {
+			current.Separator != "list_lit" && current.Separator != "array_lit" &&
+			current.Separator != "map_lit" {
 			p.Error.MissError("Expression Error", p.Lexer.Cursor, "expected right operand")
 			return nil
 		}
@@ -563,7 +566,7 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 		p.Lexer.SetCursor(code.Cursor)
 		return p.handleName()
 	case lexer.SEPARATOR:
-		if code.Value == "\n" || code.Value == ";" || code.Value == "\r" {
+		if code.Value == "\n" || code.Value == ";" || code.Value == "\r" || code.Value == "}" {
 			p.Lexer.SetCursor(code.Cursor)
 			return nil
 		}
@@ -618,6 +621,15 @@ func (p *Parser) handleName() *Expression {
 	nameStart := p.Lexer.Cursor
 	name, _ := p.ParseName(false)
 	exp := &Expression{}
+
+	// map[K]V{k: v, ...} 字面量：'map' 是普通 NAME，以 [ 起头快速判定
+	if name.Length() == 1 && name[0].Name == "map" {
+		saved := p.Lexer.Cursor
+		if p.isMapLitAhead() {
+			return p.handleMapLit()
+		}
+		p.Lexer.SetCursor(saved)
+	}
 
 	// 尝试匹配(
 	token := p.Lexer.Next()
@@ -776,43 +788,58 @@ func (p *Parser) handleIndex() *Expression {
 // 也识别定长数组字面量 `[N]type{...}`（`[` 后是长度常量）。
 func (p *Parser) isListLitAfterBracket() bool {
 	savedCursor := p.Lexer.Cursor
+	defer p.Lexer.SetCursor(savedCursor)
 
-	// Must be `]`，或长度常量 `N]`
-	next := p.Lexer.Next()
-	if next.Type == lexer.NUMBER {
-		n, atoiErr := strconv.Atoi(next.Value)
-		if atoiErr != nil || n <= 0 {
-			p.Lexer.SetCursor(savedCursor)
+	// Must be `]`（空列表），或长度常量 `N]`（定长数组）
+	first := p.Lexer.Next()
+	if first.Type == lexer.NUMBER {
+		if _, err := strconv.Atoi(first.Value); err != nil {
 			return false
 		}
 		closer := p.Lexer.Next()
 		if closer.Type != lexer.SEPARATOR || closer.Value != "]" {
-			p.Lexer.SetCursor(savedCursor)
 			return false
 		}
-	} else if next.Type == lexer.SEPARATOR && next.Value == "]" {
+	} else if first.Type == lexer.SEPARATOR && first.Value == "]" {
 		// 空列表 `[]T{...}`
 	} else {
-		p.Lexer.SetCursor(savedCursor)
 		return false
 	}
 
-	// Must be followed by a type name
-	peek := p.Lexer.Next()
-	if peek.Type != lexer.NAME && !(peek.Type == lexer.SEPARATOR && peek.Value == "*") {
-		p.Lexer.SetCursor(savedCursor)
+	// 后面可以是任意类型表达式（`*T`、`[]T`、`[N]T`、`map[K]V`、嵌套组合等），
+	// 以深度计数跟踪内层 '['，遇到匹配的 '{'（深度 0）才确认是列表字面量。
+	depth := 0
+	for {
+		token := p.Lexer.Next()
+		if token.IsEmpty() {
+			return false
+		}
+		if token.Type == lexer.SEPARATOR {
+			switch token.Value {
+			case "[":
+				depth++
+				continue
+			case "]":
+				depth--
+				if depth < 0 {
+					return false
+				}
+				continue
+			case "*", ",", " ", "\t":
+				continue
+			case "{":
+				if depth == 0 {
+					return true
+				}
+				return false
+			}
+			return false
+		}
+		if token.Type == lexer.NAME || token.Type == lexer.NUMBER {
+			continue
+		}
 		return false
 	}
-
-	// Must be followed by `{`
-	after := p.Lexer.Next()
-	if after.Type != lexer.SEPARATOR || after.Value != "{" {
-		p.Lexer.SetCursor(savedCursor)
-		return false
-	}
-
-	p.Lexer.SetCursor(savedCursor)
-	return true
 }
 
 func (p *Parser) handleListLit() *Expression {

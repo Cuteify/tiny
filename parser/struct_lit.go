@@ -199,3 +199,43 @@ func findValueStop(p *Parser) int {
 		}
 	}
 }
+
+// derefIfStructLiteralTo 若 v 是结构体字面量调用（*CallBlock.NewType 非空）返回的 *S，
+// 且目标期望类型正好是值语义的结构体 S，则把表达式包装成 Deref（*v），
+// 值上下文即可直接使用堆对象中的结构体槽（与 var q: P = *p 同语义）。
+// 期待 *S（指针上下文）或目标非结构体时原样返回 v。
+func derefIfStructLiteralTo(v *Expression, target typeSys.Type) *Expression {
+	if v == nil || target == nil || v.Type == nil {
+		return v
+	}
+	st, ok := target.(*typeSys.StructType)
+	if !ok || st == nil {
+		return v
+	}
+	if v.Call == nil || v.Call.NewType == nil {
+		return v
+	}
+	litSt, ok := v.Call.NewType.(*typeSys.StructType)
+	if !ok || litSt != st {
+		return v
+	}
+	if !v.Type.IsPointer() || v.Type.Elem() != st {
+		return v
+	}
+	// 包装为 deref：*v，读取堆中结构体槽
+	return &Expression{
+		Separator: "*",
+		Right:     v,
+		Type:      st,
+	}
+}
+
+// findEnclosingFuncRet 向上遍历作用域找 enclosing FuncBlock 的返回类型列表（找不到返回 nil）。
+func findEnclosingFuncRet(p *Parser) []typeSys.Type {
+	for block := p.ThisBlock; block != nil; block = block.Father {
+		if fb, ok := block.Value.(*FuncBlock); ok {
+			return fb.Return
+		}
+	}
+	return nil
+}

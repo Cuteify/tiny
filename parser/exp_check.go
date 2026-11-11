@@ -215,6 +215,8 @@ func (exp *Expression) checkOp(p *Parser) bool {
 	switch exp.Separator {
 	case "list_lit", "array_lit":
 		return exp.checkListLiteral(p)
+	case "map_lit":
+		return exp.checkMapLiteral(p)
 	case "!", "~":
 		return exp.checkUnary(p)
 	case "*", "&":
@@ -661,8 +663,69 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 	}
 }
 
+// mapIntrinsicUnsupportedTarget 报告当前目标是否不支持手写的 SysV 寄存器 ABI
+// 内建（map 字面量、嵌套列表字面量的多层 callee-save 方案等）。
+// 32 位（x86/cdecl/stdcall）与 win64 的参数传递/保存寄存器布局不同，
+// 在这些目标上下文里本编译器的手写调用序列会静默产出错误字节码。
+func mapIntrinsicUnsupportedTarget() bool {
+	switch typeSys.TargetArch() {
+	case "x86_64", "x86_64.sysv":
+		return false
+	default:
+		return true
+	}
+}
+
+// checkMapLiteral 检查 map 字面量的键/值类型与声明保持一致。
+func (exp *Expression) checkMapLiteral(p *Parser) bool {
+	if mapIntrinsicUnsupportedTarget() {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"map literal requires x86_64 (SysV) target")
+		return false
+	}
+	mt, ok := exp.Type.(*typeSys.MapType)
+	if !ok {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"map literal has no map type")
+		return false
+	}
+	kt, vt := mt.Key(), mt.Elem()
+	for _, entry := range exp.MapElems {
+		if entry.Key == nil || entry.Value == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "malformed map entry")
+			return false
+		}
+		if !entry.Key.Check(p) {
+			return false
+		}
+		if entry.Key.Type != nil && !typeSys.AutoType(entry.Key.Type, kt, entry.Key.IsConst()) {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"cannot use "+entry.Key.Type.Type()+" as map key of type "+kt.Type())
+			return false
+		}
+		if !entry.Value.Check(p) {
+			return false
+		}
+		if entry.Value.Type != nil && !typeSys.AutoType(entry.Value.Type, vt, entry.Value.IsConst()) {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"cannot use "+entry.Value.Type.Type()+" as map value of type "+vt.Type())
+			return false
+		}
+	}
+	return true
+}
+
 // checkListLiteral 检查列表字面量元素类型。
 func (exp *Expression) checkListLiteral(p *Parser) bool {
+	if mapIntrinsicUnsupportedTarget() {
+		for _, elem := range exp.ListElems {
+			if elem != nil && elem.Type != nil && elem.Type.Kind() == "list" {
+				p.Error.MissError("Type Error", p.Lexer.Cursor,
+					"nested list literal requires x86_64 (SysV) target")
+				return false
+			}
+		}
+	}
 	// If type is not set, infer from first element
 	if exp.Type == nil {
 		if len(exp.ListElems) == 0 {

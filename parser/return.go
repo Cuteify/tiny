@@ -72,8 +72,19 @@ func (r *ReturnBlock) Parse(p *Parser) {
 
 // Check 检查 return 语句的有效性
 func (r *ReturnBlock) Check(p *Parser) bool {
-	for _, v := range r.Value {
-		if v != nil && !v.Check(p) {
+	returns := findEnclosingFuncRet(p)
+	for i, v := range r.Value {
+		if v == nil {
+			continue
+		}
+		// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望值返回类型为 P 时）
+		if returns != nil && i < len(returns) && returns[i] != nil {
+			if nv := derefIfStructLiteralTo(v, returns[i]); nv != v {
+				r.Value[i] = nv
+				v = nv
+			}
+		}
+		if !v.Check(p) {
 			return false
 		}
 	}

@@ -689,7 +689,11 @@ func (v *VarBlock) Check(p *Parser) bool {
 			if v.Type == nil {
 				v.Type = v.Value.Type
 			}
-			// 检查类型兼容性
+			// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望类型为值 P 时）
+			if v.Value != nil && v.Type != nil {
+				v.Value = derefIfStructLiteralTo(v.Value, v.Type)
+			}
+		// 检查类型兼容性
 			if !typeSys.AutoType(v.Value.Type, v.Type, true) {
 				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
 			}
@@ -720,6 +724,10 @@ func (v *VarBlock) Check(p *Parser) bool {
 		// 字段访问时需要检查字段类型
 		if v.Type == nil && len(v.Name) > 1 {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "field type not resolved for "+v.Name.String())
+		}
+		// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望类型为值 P 时）
+		if v.Value != nil && v.Type != nil {
+			v.Value = derefIfStructLiteralTo(v.Value, v.Type)
 		}
 		// 检查赋值类型兼容性
 		if v.Type != nil && v.Value.Type != nil {
