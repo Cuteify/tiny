@@ -4553,7 +4553,10 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 	case "unsafe.cast":
 		// unsafe.cast[T](addr) — 类型转换 no-op，直接返回 addr 值
 		if len(call.Args) == 1 && call.Args[0] != nil && call.Args[0].Value != nil {
-			return c.Compile(call.Args[0].Value, result, "unsafe.cast")
+			// 不能调用 Compile()：它会整体重建 expInfo，
+			// 外层 derefSet 已收集好的 q+1 等兄弟子树信息全被丢弃，
+			// 导致 deref= 语句的指针侧从此发射为空。
+			return c.generate(call.Args[0].Value, result)
 		}
 	}
 	return ""
