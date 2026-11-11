@@ -249,6 +249,28 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 				if (typ&FindTypeType) != 0 && v.Name.Eq(name) {
 					res = append(res, FindResult{Node: child, Value: v.Type(), Path: []any{v.Type()}, Type: FindTypeType})
 				}
+				// 枚举命名空间限定访问 `Enum.Member`：同作用域内按成员名匹配
+				// IsConst 的 VarBlock 子节点，直接命中 FindTypeVar，
+				// 与捕获-限定常量（跨包）走同一路径。
+				if (typ&FindTypeVar) != 0 && name.IsPath() && isEnumType(v.Type()) {
+					if n := name.Match(v.Name); n > 0 && n == len(v.Name) {
+						rest := name[n:]
+						if rest.Length() == 1 {
+							member := rest.First()
+							for _, sib := range nowBlock.Children {
+								sb, ok := sib.Value.(*VarBlock)
+								if !ok || !sb.IsConst || sb.Name.Length() != 1 {
+									continue
+								}
+								if sb.Name[0].Name == member {
+									res = append(res, FindResult{Node: sib, Value: sb,
+										Path: []any{v, sb}, Type: FindTypeVar})
+									break
+								}
+							}
+						}
+					}
+				}
 			case *FuncBlock:
 				if (typ&FindTypeFunc) != 0 && v.Name.Eq(name) {
 					res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeFunc})
@@ -328,6 +350,23 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		nowBlock = nowBlock.Father
 	}
 	return res
+}
+
+// isEnumType 报告 t 是否为枚举类型（含真别名展开后的枚举）。
+func isEnumType(t typeSys.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, ok := t.(*typeSys.EnumType); ok {
+		return true
+	}
+	if a, ok := t.(*typeSys.AliasType); ok && a.IsTrueAlias {
+		if u, ok := a.Unwrap().(*typeSys.EnumType); ok {
+			_ = u
+			return true
+		}
+	}
+	return false
 }
 
 func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {

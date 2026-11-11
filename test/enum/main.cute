@@ -1,7 +1,8 @@
 // Cute enum 语法测试。
 //
-// 覆盖：自增、显式值、十六进制值、负值、后续成员继续自增、
-// 枚举名作为独立命名类型用于变量、函数参数/返回值和结构体字段。
+// 覆盖：自增、显式值、十六进制值、负值、后续成员继续自增；
+// 枚举名作为独立命名类型用于变量、函数参数/返回值和结构体字段；
+// 限定访问 `Color.RED`；以及字符串枚举（显式底层类型和自动推断）。
 import "std:strings"
 
 enum Color {
@@ -15,6 +16,22 @@ enum Color {
 enum Small {
     A = 0x10
     B
+}
+
+enum Fruit: string {
+    Apple = "apple"
+    Banana = "banana"
+    Cherry = "cherry"
+}
+
+enum Token {
+    Plus = "+"
+    Minus = "-"
+    Star = "*"
+}
+
+enum ULarge: uint {
+    BIG = 3000000000
 }
 
 type Box struct {
@@ -42,6 +59,40 @@ fn main() int {
     var box: Box
     box.c = BLUE
     if box.c != 10 { ret 8 }
+
+    // 限定访问：`Enum.Member` 与裸成员名等价
+    if Color.BLUE != 10 { ret 9 }
+    if Color.WHITE != 11 { ret 10 }
+    if Small.B != 17 { ret 11 }
+
+    // 字符串枚举：显式底层类型 + 限定访问 + switch
+    var f: Fruit = Fruit.Banana
+    if f != "banana" { ret 12 }
+    if Fruit.Apple != "apple" { ret 13 }
+
+    var sum: int = 0
+    switch f {
+        case Fruit.Apple: sum = sum + 1
+        case Fruit.Banana: sum = sum + 40
+        case Fruit.Cherry: sum = sum + 2
+        default: ret 15
+    }
+    if sum != 40 { ret 16 }
+
+    // 字符串枚举：自动推断（成员全是字符串字面量，类型推为 string）
+    var tk: Token = Token.Plus
+    if tk != "+" { ret 17 }
+    if Token.Minus != "-" { ret 18 }
+    switch tk {
+        case Token.Plus: sum = sum + 2
+        case Token.Minus: sum = sum + 9
+        case Token.Star: sum = sum + 4
+        default: ret 19
+    }
+    if sum != 42 { ret 20 }
+
+    // uint 底层 + 数值超过 int32（显式底层类型，不退化的 i64）
+    if ULarge.BIG != 3000000000 { ret 21 }
 
     ret 42
 }
