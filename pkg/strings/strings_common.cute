@@ -604,3 +604,211 @@ fn hasSuffixAny(s string, suffixes string) bool {
     }
     ret false
 }
+
+// ============================================================================
+// 字符串替换与数字转换（标准库补充：应用层不应再为逐个 token 实现）
+// ============================================================================
+
+// replaceAll 把 s 中所有不重叠的 old 子串替换为 new，返回新串。
+// old 为空时原样返回（与 Go strings.ReplaceAll 一致）。
+fn replaceAll(s string, old string, new string) string {
+    if len(old) == 0 {
+        ret s
+    }
+    var sPtr: ptr = strings.toCstring(s)
+    var sU8: *u8 = sPtr
+    var sLen: uint = strings.len(s)
+    var oPtr: ptr = strings.toCstring(old)
+    var oLen: uint = strings.len(old)
+    var nPtr: ptr = strings.toCstring(new)
+    var nU8: *u8 = nPtr
+    var nLen: uint = strings.len(new)
+
+    // 先统计替换次数，再分配结果缓冲区
+    var cnt: uint = 0
+    var scan: uint = 0
+    var nf: uint = strings.notFound()
+    for ; true; {
+        var idx: uint = strings.indexFrom(sPtr, sLen, oPtr, oLen, scan)
+        if idx >= nf {
+            break
+        }
+        cnt = cnt + 1
+        scan = idx + oLen
+    }
+    var outLen: uint = sLen + cnt * (nLen - oLen)
+    var out: ptr = memory.malloc(outLen + 1)
+    var i: uint = 0
+    var o: uint = 0
+    scan = 0
+    var _oU8: *u8 = out
+    for ; true; {
+        var idx: uint = strings.indexFrom(sPtr, sLen, oPtr, oLen, scan)
+        if idx >= nf {
+            // 拷贝剩余部分
+            for ; scan < sLen; {
+                *(_oU8 + o) = *(sU8 + scan)
+                o = o + 1
+                scan = scan + 1
+            }
+            break
+        }
+        // 拷贝 idx 之前的部分
+        for ; scan < idx; {
+            *(_oU8 + o) = *(sU8 + scan)
+            o = o + 1
+            scan = scan + 1
+        }
+        // 写入 new
+        var j: uint = 0
+        for ; j < nLen; {
+            *(_oU8 + o) = *(nU8 + j)
+            o = o + 1
+            j = j + 1
+        }
+        scan = idx + oLen
+    }
+    *(_oU8 + o) = 0
+    ret strings.makeString(out, o, o)
+}
+
+// parseUint 按 base（2-36）解析无符号整数；等价于 strconv.ParseUint 的成功路径。
+// 空串或含非 base 数字返回 (0, false)；溢出不做检测（截断 wrap，
+// 与 std:strings.parse 的既有行为一致，主要消费者为 Lexer 源码字面量解析）。
+fn parseUint(s string, base uint) (uint, bool) {
+    var sLen: uint = strings.len(s)
+    if sLen == 0 {
+        ret 0, false
+    }
+    var p: ptr = strings.toCstring(s)
+    var pU8: *u8 = p
+    var v: uint = 0
+    var i: uint = 0
+    for ; i < sLen; {
+        var b: u8 = *(pU8 + i)
+        var d: uint = 0
+        if b >= 48 && b <= 57 {
+            d = b - 48
+        } else if b >= 97 && b <= 122 {
+            d = b - 97 + 10
+        } else if b >= 65 && b <= 90 {
+            d = b - 65 + 10
+        } else {
+            ret 0, false
+        }
+        if d >= base {
+            ret 0, false
+        }
+        v = v * base + d
+        i = i + 1
+    }
+    ret v, true
+}
+
+// parseFloat 按十进制解析 f64；等价于 strconv.ParseFloat 的成功路径。
+// 格式：[+-]digits[.digits][eE[+-]digits]（调用方已验证输入形状）。
+fn parseFloat(s string) (f64, bool) {
+    var sLen: uint = strings.len(s)
+    if sLen == 0 {
+        ret 0.0, false
+    }
+    var p: ptr = strings.toCstring(s)
+    var pU8: *u8 = p
+    var i: uint = 0
+    var sign: f64 = 1.0
+    if *(pU8 + i) == 43 {
+        i = i + 1
+    } else if *(pU8 + i) == 45 {
+        sign = -1.0
+        i = i + 1
+    }
+    var intPart: f64 = 0.0
+    var sawDigit: bool = false
+    for ; i < sLen && isDigitByte(*(pU8 + i)); {
+        intPart = intPart * 10.0 + f64(int(*(pU8 + i)) - 48)
+        sawDigit = true
+        i = i + 1
+    }
+    var frac: f64 = 0.0
+    var fracDiv: f64 = 1.0
+    if i < sLen && *(pU8 + i) == 46 {
+        i = i + 1
+        for ; i < sLen && isDigitByte(*(pU8 + i)); {
+            frac = frac * 10.0 + f64(int(*(pU8 + i)) - 48)
+            fracDiv = fracDiv * 10.0
+            sawDigit = true
+            i = i + 1
+        }
+    }
+    if !sawDigit {
+        ret 0.0, false
+    }
+    var v: f64 = intPart + frac / fracDiv
+    var expSign: int = 1
+    var expVal: int = 0
+    if i < sLen && (*(pU8 + i) == 101 || *(pU8 + i) == 69) {
+        i = i + 1
+        if i < sLen && *(pU8 + i) == 43 {
+            i = i + 1
+        } else if i < sLen && *(pU8 + i) == 45 {
+            expSign = -1
+            i = i + 1
+        }
+        if i >= sLen || !isDigitByte(*(pU8 + i)) {
+            ret 0.0, false
+        }
+        for ; i < sLen && isDigitByte(*(pU8 + i)); {
+            expVal = expVal * 10 + int(*(pU8 + i) - 48)
+            i = i + 1
+        }
+    }
+    var pow10: f64 = 1.0
+    var k: int = 0
+    for ; k < expVal && k < 308; {
+        pow10 = pow10 * 10.0
+        k = k + 1
+    }
+    if expSign < 0 {
+        ret sign * v / pow10, true
+    }
+    ret sign * v * pow10, true
+}
+
+// isDigitByte 是否十进制数字字节。
+fn isDigitByte(b u8) bool {
+    ret b >= 48 && b <= 57
+}
+
+// formatUint 把无符号整数按 base（2-36）转为字符串；逆向调用 n%base 求各位。
+fn formatUint(n uint, base uint) string {
+    var digits: uint = 1
+    var tmp: uint = n
+    for ; tmp >= base; {
+        tmp = tmp / base
+        digits = digits + 1
+    }
+    var buf: ptr = memory.malloc(digits + 1)
+    var bufU8: *u8 = buf
+    var v: uint = n
+    if v == 0 {
+        *bufU8 = 48
+        *(bufU8 + 1) = 0
+        ret strings.makeString(buf, 1, 1)
+    }
+    var i: uint = digits - 1
+    *(bufU8 + digits) = 0
+    for ; true; {
+        var digit: uint = v % base
+        var ch: uint = 0
+        if digit < 10 {
+            ch = digit + 48
+        } else {
+            ch = digit + 97 - 10
+        }
+        *(bufU8 + i) = unsafe.cast[u8](ch)
+        v = v / base
+        if i == 0 { break }
+        i = i - 1
+    }
+    ret strings.makeString(buf, digits, digits)
+}
