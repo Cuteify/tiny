@@ -64,6 +64,15 @@ func (c *ECompiler) collectRec(exp *parser.Expression) *ExpInfo {
 		}
 	}
 
+	// 内建生成的调用（map get / map 字面量 等）：不按 .Call 识别，
+	// 否则 binLR/binRL 不会给左子保活，嵌套出现右子求值覆盖左子结果的 bug。
+	if exp.Separator == "[]" && exp.Right != nil && exp.Right.Type != nil && exp.Right.Type.Kind() == "map" {
+		ei.HasCall = true
+	}
+	if exp.Separator == "map_lit" {
+		ei.HasCall = true
+	}
+
 	// 叶子节点
 	if exp.Separator == "" {
 		if exp.IsConst() {

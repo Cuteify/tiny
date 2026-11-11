@@ -76,6 +76,10 @@ type Context struct {
 	// 全局 string 变量（size=24，ptr+len+cap）：在 generateDataSection 阶段生成
 	GlobalStrings []*parser.VarBlock
 
+	// 列表字面量嵌套：每层各选一个独立的 callee-save 寄存器保存该层缓冲区，
+	// 避免嵌套列表字面量互相覆盖缓冲区指针。
+	ListLitAvoid []string
+
 	// build link 提供的全局符号（如 __string_len）：由 strings 包实现，
 	// 编译器内建 len/cap 检测到后改为调用该符号
 	StringSyms map[string]bool
