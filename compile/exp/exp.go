@@ -4989,12 +4989,25 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 	}
 	c.freeTmpReg(zreg)
 
-	// 初值参数：按字段偏移写入（仅支持 ≤ps 的标量值）
+	// 初值参数：按字段偏移写入（仅支持 ≤ps 的标量值）。
+	// 实参已声明字段名（"new" 调用由 struct 字面量 lowering 产生），
+	// 优先按名匹配的字段槽位写——new("C" 跳过 "A") 若按位置会串位：C 的值会被写到 A 槽。
 	offs := make([]int, len(call.Args))
 	if st, ok := call.NewType.(*typeSys.StructType); ok {
 		fields := st.Fields()
-		for i := 0; i < len(offs) && i < len(fields); i++ {
-			offs[i] = fields[i].Offset
+		fieldsByName := make(map[string]int, len(fields))
+		for j := range fields {
+			fieldsByName[fields[j].Name] = fields[j].Offset
+		}
+		for i := 0; i < len(offs); i++ {
+			if i < len(fields) {
+				offs[i] = fields[i].Offset
+			}
+			if i < len(call.Args) && call.Args[i] != nil && call.Args[i].Name != nil {
+				if off, ok := fieldsByName[call.Args[i].Name.String()]; ok {
+					offs[i] = off
+				}
+			}
 		}
 	}
 	for i, arg := range call.Args {
@@ -5070,12 +5083,25 @@ func (c *ECompiler) builtinNewRC(exp *parser.Expression, call *parser.CallBlock,
 	}
 	c.freeTmpReg(zreg)
 
-	// 初值参数：按字段偏移写入（仅支持 ≤ps 的标量值）
+	// 初值参数：按字段偏移写入（仅支持 ≤ps 的标量值）。
+	// 实参已声明字段名（"new" 调用由 struct 字面量 lowering 产生），
+	// 优先按名匹配的字段槽位写——new("C" 跳过 "A") 若按位置会串位：C 的值会被写到 A 槽。
 	offs := make([]int, len(call.Args))
 	if st, ok := call.NewType.(*typeSys.StructType); ok {
 		fields := st.Fields()
-		for i := 0; i < len(offs) && i < len(fields); i++ {
-			offs[i] = fields[i].Offset
+		fieldsByName := make(map[string]int, len(fields))
+		for j := range fields {
+			fieldsByName[fields[j].Name] = fields[j].Offset
+		}
+		for i := 0; i < len(offs); i++ {
+			if i < len(fields) {
+				offs[i] = fields[i].Offset
+			}
+			if i < len(call.Args) && call.Args[i] != nil && call.Args[i].Name != nil {
+				if off, ok := fieldsByName[call.Args[i].Name.String()]; ok {
+					offs[i] = off
+				}
+			}
 		}
 	}
 	for i, arg := range call.Args {
