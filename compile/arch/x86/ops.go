@@ -253,6 +253,10 @@ func (a *x86Ops) InstBinary(dst, op, src string) string {
 		}
 		code += utils.Format("movzx " + dst + ", " + lo8(dst))
 		return code
+	case "&&":
+		return utils.Format("and " + dst + ", " + src)
+	case "||":
+		return utils.Format("or " + dst + ", " + src)
 	default:
 		return ""
 	}
