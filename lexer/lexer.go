@@ -71,11 +71,19 @@ func (l *Lexer) GetString() string {
 	startCursor := l.Cursor
 	for {
 		if l.Cursor >= l.TextLength-1 {
-			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
+			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
+		}
+		// 转义序列：反斜杠+下一字节整体视为转义，不作为结束引号/换行字节处理
+		if l.Text[l.Cursor] == '\\' {
+			if l.Cursor+1 >= l.TextLength {
+				l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
+			}
+			l.AddCursor(2)
+			continue
 		}
 		word := l.Text[l.Cursor]
 		if word == '\n' || word == '\r' {
-			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
+			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
 		}
 		l.AddCursor(1)
 		if word == '"' {
@@ -89,11 +97,19 @@ func (l *Lexer) GetChar() string {
 	startCursor := l.Cursor
 	for {
 		if l.Cursor >= l.TextLength-1 {
-			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
+			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
+		}
+		// 转义序列：反斜杠+下一字节整体视为转义，不作为结束引号/换行字节处理
+		if l.Text[l.Cursor] == '\\' {
+			if l.Cursor+1 >= l.TextLength {
+				l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
+			}
+			l.AddCursor(2)
+			continue
 		}
 		word := l.Text[l.Cursor]
 		if word == '\n' || word == '\r' {
-			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\" mark was found")
+			l.Error.MissError("Syntax Error", startCursor, "Only one \"\\\"\"\"\" mark was found")
 		}
 		l.AddCursor(1)
 		if word == '\'' {
