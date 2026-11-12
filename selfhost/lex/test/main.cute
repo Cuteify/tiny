@@ -8,7 +8,6 @@
 //   SELFTEST_CASE=selfhost/lex/testdata/sample.cute ./main
 // 期望：与 Go 参考 main.go 对 sample.cute 的输出逐字节一致（104 行 [TYPE]value）。
 import "std:console"
-import "std:memory"
 import "std:strings"
 import "std:syscall"
 import lex "../"
@@ -42,17 +41,18 @@ fn main() int {
         console.println(path)
         ret 2
     }
-    var buf: ptr = memory.malloc(65536)
+    var scr: string = new(string, 65536)
+    var p: *u8 = unsafe.cast[*u8](scr)
     var pos: uint = 0
     for ; pos < 65536; {
-        var n: i32 = syscall.read(fd, buf + pos, 65536 - pos)
+        var n: i32 = syscall.read(fd, unsafe.cast[ptr](p) + pos, 65536 - pos)
         if n <= 0 {
             break
         }
         pos = pos + unsafe.cast[uint](n)
     }
     syscall.close(fd)
-    var src: string = strings.makeString(buf, pos, pos)
+    var src: string = strings.makeString(unsafe.cast[ptr](p), pos, pos)
     var l: *lex.Lexer = lex.NewLexer(src)
     for ; true; {
         var t: *lex.Token = l.Next()
