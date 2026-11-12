@@ -13,15 +13,6 @@ import "std:strings"
 import "std:syscall"
 import lex "../"
 
-// nl 在运行时构造只含换行字节（10）的字符串（源码里的 \n 是两字符反斜杠+n；
-// console 没有实装该字节，用 syscall 写出真换行）。
-fn nl() string {
-    var p: ptr = memory.malloc(1)
-    var q: *u8 = p
-    *q = 10
-    ret strings.makeString(p, 1, 1)
-}
-
 // getenvStr 从 /proc/self/environ 读取环境变量（见 std:syscall.getenv）。
 fn getenvStr(name string) string {
     var p: ptr = syscall.getenv(strings.toCstring(name), unsafe.cast[u64](len(name)))
@@ -42,15 +33,13 @@ fn getenvStr(name string) string {
 fn main() int {
     var path: string = getenvStr("SELFTEST_CASE")
     if len(path) == 0 {
-        console.print("LEXER_SELFTEST|USAGE: 需要 SELFTEST_CASE=<源文件路径>")
-        console.print(nl())
+        console.println("LEXER_SELFTEST|USAGE: 需要 SELFTEST_CASE=<源文件路径>")
         ret 2
     }
     var fd: i32 = syscall.open(strings.toCstring(path), 0, 0) // O_RDONLY
     if fd < 0 {
         console.print("LEXER_SELFTEST|READ_FAIL|")
-        console.print(path)
-        console.print(nl())
+        console.println(path)
         ret 2
     }
     var buf: ptr = memory.malloc(65536)
@@ -70,8 +59,7 @@ fn main() int {
         if t.Type == lex.NONE {
             break
         }
-        console.print(lex.Token.String(t))
-        console.print(nl())
+        console.println(lex.Token.String(t))
     }
     ret 42
 }
