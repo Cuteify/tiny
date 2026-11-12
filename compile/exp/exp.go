@@ -2053,6 +2053,83 @@ func (c *ECompiler) loadContainer(exp *parser.Expression, result string) string 
 	return ""
 }
 
+// emitNarrowCastFromMultiSlot 处理 `unsafe.cast[T](v)` 中 v 为多槽值（string/list/
+// struct 值，Size > 指针宽）而 T ≤ 指针宽的情形：按 §11.3“位级重解释”保留 v 的
+// 低 sizeof(T) 字节（小端序 = 头字段 data）。目的与叶子多槽装载保持一致：
+// push → 只入栈低槽；内存槽 → 按 T 宽度只写目标槽前的字段；否则取寄存器。
+func (c *ECompiler) emitNarrowCastFromMultiSlot(call *parser.CallBlock, arg *parser.Expression, result string) string {
+	dst := call.NewType
+	if dst == nil {
+		return ""
+	}
+	ps := c.arch.PointerSize()
+	dstSize := dst.Size()
+	if dstSize <= 0 || dstSize > ps {
+		return "" // 目标不窄：常规路径
+	}
+	if result == "push" && dstSize != ps {
+		return "" // 窄 push 罕见，回退旧路径
+	}
+	var pre, src string
+	if arg.Call != nil && arg.Call.Func != nil && len(arg.Call.Func.Return) > 0 && arch.FuncReturnsLarge(arg.Call.Func) {
+		// 大值返回调用：直接从返回槽读低字
+		src = c.arch.FramePtr() + strconv.Itoa(c.ctx.RetSlot)
+	} else if arg.Var != nil && arg.Var.Type != nil {
+		vt := arg.Var.Type
+		multi := vt.Size() > ps || isListLike(vt)
+		if !multi {
+			return ""
+		}
+		src = stripOuterBrackets(c.arch.VarAddr(arg.Var))
+		if isThisField(arg.Var) {
+			p2, addr2, reg2 := c.thisMem(arg.Var)
+			pre = p2
+			src = addr2
+			defer c.freeTmpReg(reg2)
+		} else if needPtrMem(arg.Var) {
+			p3, addr3, reg3 := c.ptrMem(arg.Var)
+			pre = p3
+			src = addr3
+			defer c.freeTmpReg(reg3)
+		}
+	} else {
+		return ""
+	}
+	wmem := map[int]string{1: "BYTE", 2: "WORD", 4: "DWORD", 8: "QWORD"}[dstSize]
+	// 装载/存储同一子寄存器（AL/AX/EAX；x86_64 ps==8 时为 RAX）
+	wreg := map[int]string{1: "AL", 2: "AX", 4: "EAX", 8: c.arch.ReturnReg()}[dstSize]
+	// 装载低字到返回寄存器（AL/AX/EAX 写自然清零高位；窄目标同理保留低位）
+	var code string
+	if dstSize == ps {
+		code = pre + utils.Format("mov "+c.arch.ReturnReg()+", "+wmem+" ["+src+"]")
+	} else {
+		code = pre + utils.Format("mov "+wreg+", "+wmem+" ["+src+"]")
+	}
+	if result == "" {
+		return code
+	}
+	retReg := c.arch.ReturnReg()
+	if result == "push" {
+		// 此路 dstSize==ps
+		return code + utils.Format("push "+retReg)
+	}
+	if strings.Contains(result, "[") {
+		// 去宽度前缀（QWORD[rbp-X]、QWORD [rbp-X]、[rbp-X]）后补 T 宽度
+		base := stripOuterBrackets(result)
+		if strings.TrimSpace(base) == "" {
+			return "" // 无法识别的槽形态，回退旧路径
+		}
+		return code + utils.Format("mov "+wmem+" ["+base+"], "+wreg)
+	}
+	if dstSize == ps {
+		if result != retReg {
+			return code + utils.Format("mov "+result+", "+retReg)
+		}
+		return code
+	}
+	return "" // 窄寄存器目标罕见，回退旧路径
+}
+
 // listHeaderShape（S0-2，P11 编译器通道）：内建容器三字段偏移的**唯一查询源**。
 // 全编译器所有 24B 头布局知识收敛到 typeSys ListType.Shape()——
 // 布局由 StructType.Layout 自然计算（x64=0/8/16 Go 序；x86=0/4/8），
@@ -4672,8 +4749,14 @@ func (c *ECompiler) builtinCall(exp *parser.Expression, result string) string {
 			return emit(call.NewType.Size())
 		}
 	case "unsafe.cast":
-		// unsafe.cast[T](addr) — 类型转换 no-op，直接返回 addr 值
+		// unsafe.cast[T](addr) — 位级重解释（§11.3）：保留低 sizeof(T) 字节。
 		if len(call.Args) == 1 && call.Args[0] != nil && call.Args[0].Value != nil {
+			// 多槽源（string/list/struct 值，Size > 指针宽）→ 窄目标（≤指针宽）：
+			// 旧实现直接交给 generate 的叶子多槽装载，按源宽度 copySlots 扩散写，
+			// 会覆盖目标槽之后的栈帧（p: *u8 = unsafe.cast[*u8](s) 实锤踩掉 s.ptr/s.len）。
+			if code := c.emitNarrowCastFromMultiSlot(call, call.Args[0].Value, result); code != "" {
+				return code
+			}
 			// 不能调用 Compile()：它会整体重建 expInfo，
 			// 外层 derefSet 已收集好的 q+1 等兄弟子树信息全被丢弃，
 			// 导致 deref= 语句的指针侧从此发射为空。
