@@ -1536,11 +1536,132 @@ func (c *ECompiler) getRegByName(name string) *regmgr.Reg {
 	return nil
 }
 
-// emitBin 生成二元运算指令。
+// isF64Type 判断表达式类型是否为 f64（f32 路径保持旧行为：v1 只对 f64 走 SSE2）。
+func isF64Type(t typeSys.Type) bool {
+	return t != nil && typeSys.CheckKind(t, "float") && t.Type() == "f64"
+}
+
+// isF64Imm 判断操作数文本是否为浮点立即数（numLiteral 统一输出 IEEE-754 位模式的
+// 16 进制字面量，如 0x4024000000000000）。立即数不能直接 movq 到 XMM，须经 GP 中转。
+func isF64Imm(op string) bool {
+	return strings.HasPrefix(op, "0x") || strings.HasPrefix(op, "0X")
+}
+
+// floatOperandScratch 选择不与操作数/结果冲突的 GP 临时寄存器（用于立即数中转）。
+func floatOperandScratch(words ...string) string {
+	refs := func(op, reg string) bool {
+		rest := strings.ToUpper(strings.TrimSpace(op))
+		rest = strings.NewReplacer("[", " ", "]", " ", ",", " ", "+", " ", "-", " ").Replace(rest)
+		rest = strings.ToUpper(rest)
+		for _, tok := range strings.Fields(rest) {
+			switch tok {
+			case reg, "E" + reg[1:], "R" + reg[1:]: // RAX/EAX, R8/R8D 由外层按前缀覆盖
+				return true
+			}
+			if strings.HasPrefix(tok, "E"+reg[1:]) || strings.HasPrefix(tok, "R"+reg[1:]) {
+				return true
+			}
+		}
+		return strings.Contains(rest, reg)
+	}
+	for _, reg := range []string{"RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"} {
+		used := false
+		for _, w := range words {
+			if refs(w, reg) {
+				used = true
+				break
+			}
+		}
+		if !used {
+			return reg
+		}
+	}
+	return "RAX"
+}
+
+// emitFloatBin f64 二元运算（SSE2：addsd/subsd/mulsd/divsd；比较 ucomisd + setXX）。
+// 现有 ABI 不变：f64 位模式仍以 GP 寄存器/QWORD 内存槽存放；本函数借 XMM0/XMM1
+// 做真实的双精度运算后写回 result，修复旧路径用 imul/idiv 处理位模式的缺陷。
+func (c *ECompiler) emitFloatBin(exp *parser.Expression, result, lVal, rVal string) string {
+	op := exp.Separator
+	isCmp := op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">="
+
+	load := func(xmm, operand string, avoid ...string) string {
+		if isF64Imm(operand) {
+			scratch := floatOperandScratch(append(avoid, result, lVal, rVal)...)
+			return utils.Format("mov " + scratch + ", " + operand) +
+				utils.Format("movq " + xmm + ", " + scratch)
+		}
+		return utils.Format("movq " + xmm + ", " + operand)
+	}
+
+	arith := func(xop string) string {
+		code := load("XMM0", lVal, rVal, result)
+		code += load("XMM1", rVal, lVal, result)
+		code += utils.Format(xop + " XMM0, XMM1")
+		return code + utils.Format("movq " + result + ", XMM0")
+	}
+
+	cmpWrite := func(setcc string) string {
+		code := utils.Format("ucomisd XMM0, XMM1")
+		code += utils.Format(setcc + " al")
+		if strings.Contains(result, "[") {
+			switch {
+			case strings.HasPrefix(result, "BYTE"):
+				code += utils.Format("mov " + result + ", al")
+			case strings.HasPrefix(result, "WORD"):
+				code += utils.Format("movzx RAX, al") + utils.Format("mov " + result + ", ax")
+			case strings.HasPrefix(result, "DWORD"):
+				code += utils.Format("movzx EAX, al") + utils.Format("mov " + result + ", EAX")
+			default:
+				code += utils.Format("movzx RAX, al") + utils.Format("mov " + result + ", RAX")
+			}
+			return code
+		}
+		return code + utils.Format("movzx " + result + ", al")
+	}
+
+	switch op {
+	case "+", "-", "*", "/":
+		xop := map[string]string{
+			"+": "addsd",
+			"-": "subsd",
+			"*": "mulsd",
+			"/": "divsd",
+		}[op]
+		return arith(xop)
+	case "==", "!=", "<", ">", "<=", ">=":
+		if !isCmp {
+			return ""
+		}
+		code := load("XMM0", lVal, rVal, result)
+		code += load("XMM1", rVal, lVal, result)
+		setcc := map[string]string{
+			"==": "sete",
+			"!=": "setne",
+			"<":  "setb",
+			"<=": "setbe",
+			">":  "seta",
+			">=": "setae",
+		}[op]
+		return code + cmpWrite(setcc)
+	}
+	// 未覆盖的情况（调用方已限定运算符集，不会到这里）。
+	return ""
+}
+
+// emitBin
+// 生成二元运算指令。
 // lVal/rVal 为左右操作数（寄存器名或内存地址），result 为结果目标。
 // 结果/操作数为窄内存槽时，寄存器操作数名匹配槽宽度（add DWORD[mem], EAX）。
 func (c *ECompiler) emitBin(exp *parser.Expression, result, lVal, rVal, callee string) string {
 	var code string
+	if exp.Left != nil && exp.Right != nil && isF64Type(exp.Left.Type) && isF64Type(exp.Right.Type) {
+		switch exp.Separator {
+		case "+", "-", "*", "/", "==", "!=", "<", ">", "<=", ">=":
+			return c.emitFloatBin(exp, result, lVal, rVal)
+		}
+	}
 
 	// 特殊处理 push：就地计算到左操作数寄存器，再 push
 	// （不用临时寄存器，避免临时寄存器与右操作数同寄存器导致 sub eax,eax 类错误）
