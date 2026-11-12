@@ -65,7 +65,7 @@ for d in $(cd "$ROOT" && find pkg -type d -name test | sort); do
             final="NASM_FAIL|$(tail -1 "$WORK/nasm.log" | tr '|' ' ')"
             break
         fi
-        if ! gcc $gccargs -nostartfiles -no-pie -e _start -o "$out" "$out.o" -lpthread >"$WORK/link.log" 2>&1; then
+        if ! gcc $gccargs -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$out" "$out.o" -nostdlib >"$WORK/link.log" 2>&1; then
             final="LINK_FAIL|$(tail -1 "$WORK/link.log" | tr '|' ' ')"
             break
         fi
