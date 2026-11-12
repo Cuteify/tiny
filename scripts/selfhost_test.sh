@@ -84,8 +84,8 @@ for case_file in "$WORK/lex/testdata/cases/"*.cute "$WORK/lex/testdata/sample.cu
     base=$(basename "$case_file" .cute)
     want="${case_file%.cute}.want"
     out="$WORK/out/$base.out"
-    SELFTEST_CASE="$case_file" "$WORK/main" >"$out"
-    rc=$?
+    SELFTEST_CASE="$case_file" "$WORK/main" | tee "$out"
+    rc=${PIPESTATUS[0]}
     case_count=$((case_count + 1))
     if [ $rc -ne 42 ]; then
         echo "SELFHOST_FAIL|case=$base|RC=$rc"
