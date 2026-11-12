@@ -90,7 +90,9 @@ EOF 时 `Next()` 返回 `Type == NONE` 的 token，行列号为当前光标位�
 scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 ```
 
-`test/main.cute` 约定：返回 `42` = 全部通过；其它值 = 该用例组编号。按组覆盖：
+`test/main.cute` 约定：返回 `42` = 全部通过；其它值 = 该失败用例编号。通过时输出以
+`PASS|case=N` 逐条回显，最后一行为 `LEXER_SELFTEST|PASS|ALL`；失败时输出
+`FAIL|case=N want=... got=... want_text=...`，并以对应编号返回。按组覆盖：
 
 1. 空输入 / EOF；2. 全部关键字 + `self`/标识符；3. 数字（进制/小数/科学计数法/下划线）；
 4. NUMBER 字段；5. 数字边界（`0x`、`1.`、`123abc`、`1e+`、`0b2`、`0o8`，含文本尾缀 `1.` 的越界防护）；
@@ -99,6 +101,8 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 
 测试里的换行用 `nl()` 在运行时构造（`memory.malloc` 写入字节 `10` + `strings.makeString`）：
 当前 Cute 源码里的 `"\n"` 是两字符反斜杠 + n。
+
+42 是约定的“通过”标记：Unix 退出码只有 0–255 约 8 个可用位，自举循环用非 0 码区分失败组，42 只是任选的通过码（无其它语义）；CI（`scripts/selfhost_test.sh`）检查的是 RC 是否等于 42。早期版本 `case=42`（`_x`）失败组编号与通过码碰撞，导致自举测试长期“假绿”——本次已把该用例失败码改为 43。
 
 ## 与 Go 参考的差异
 
@@ -111,7 +115,12 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 | 5 | `RenderVisible` 恒等 | 当前测试不依赖 LF 可见转义；保持 API 契约 |
 | 6 | 关键字/分隔符表用列表字面量直接构造 | 大列表字面量曾指数级恶化（2026-11-12 复测全部正常，0.4s 完成）；分隔符表 Tab/LF/CR 三个控制字节无可写字面量，占位后回写，见 #8 |
 | 7 | 切点：`byte` 与 `u8` 不互通 | `var b: byte = 65` 报错；需要 `unsafe.cast[byte]` |
-| 8 | 字符分类活已迁入 std:strings | `isDigit`/`isSpaceByte`/`isIntDigit`/`fromByte` 统一走 std:strings；Token 构造改用 struct 字面量（`T{...}`）
+| 8 | 字符分类活已迁入 std:strings | `isDigit`/`isSpaceByte`/`isIntDigit`/`fromByte` 统一走 std:strings；Token 构造改用 struct 字面量（`T{...}`） |
+| 9 | 空白仅空格/Tab 才被跳过 | 与 Go `SkipSep` 一致；Tab/LF/CR（`0x09/0x0A/0x0D`）在 delimTable 中是 DELIMITER，**LF/CR 必须保留在 token 流中**（语句终结符语义）；早期实现误把 LF 当空白跳过，换行 token 丢失 |
+| 10 | EOF 尾部词素单独补发 | Go 参考在主循环按 delimiter 切分词素，主循环因 EOF 退出时末尾词素会丢；Prefix 后置分支单独补发（主循环结束后 `i > pfPos` 兜底） |
+| 11 | 进制前缀无有效数字时退回整词 NAME | 与 Go `scanNumber` digits==0 行为一致：`0b2` → `NAME|0b2`、`0x` → `NAME|0x` |
+| 12 | EOF token 的 Value 恒为显式空串 | `*Token = Token{...}` 结构字面量缺省字段不保证零填充（历史事故），NONE token 显式写 `Value: ""` |
+| 13 | `int` ↔ `f64` 比较没有隐式提升 | `t.Number != 42` 比较的是位模式，一律用 `42.0` 字面量（`docs/LANGUAGE.md` §10.3/§5.4） |
 
 ## 已知限制 / 与下游的衔接
 
