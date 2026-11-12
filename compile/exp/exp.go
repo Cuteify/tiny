@@ -2217,6 +2217,9 @@ func (c *ECompiler) listBaseResolve(v *parser.VarBlock, avoidReg, baseText strin
 // align8 向上取整到 8 字节
 func align8(n int) int { return (n + 7) &^ 7 }
 
+// maxInt(a, b) 较大值
+func maxInt(a, b int) int { if a > b { return a }; return b }
+
 // getStringLabel 获取/注册字符串常量标签
 func (c *ECompiler) getStringLabel(val string) string {
 	if label, ok := c.ctx.StringConsts[val]; ok {
@@ -5173,6 +5176,13 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 		}
 		return c.emitListAlloc(lt, lenExp, capExp, result)
 	}
+	// 字符串创建：new(string, n)，按值返回零填充 {ptr,len,cap=n}（"string 版 new([]u8, n)"）
+	if _, ok := call.NewType.(*typeSys.StringType); ok {
+		if len(call.Args) < 1 || call.Args[0] == nil || call.Args[0].Value == nil {
+			return ""
+		}
+		return c.emitStringAlloc(call.Args[0].Value, result)
+	}
 	size := call.NewType.Size()
 	if size <= 0 {
 		return ""
@@ -5561,6 +5571,107 @@ func (c *ECompiler) emitListAlloc(lt *typeSys.ListType, lenExp, capExp *parser.E
 			code += utils.Format("push " + lenVal)
 		}
 		code += utils.Format("push " + capVal)
+		return code
+	}
+	return code + utils.Format("mov "+result+", "+callee)
+}
+// emitStringAlloc 生成字符串创建 new(string, n)：malloc n 字节 + 零填充 n 字节，
+// 按 string 约定写出 {ptr, len=n, cap=n}。n 可以为常量或运行期值。
+// 0 字节分配交给 malloc(0)（实现定义），len=cap=0，符合空串约定。
+func (c *ECompiler) emitStringAlloc(lenExp *parser.Expression, result string) string {
+
+	ps := c.arch.PointerSize()
+	ln := c.arch.LengthName(ps)
+	_, lenOff, capOff := c.listFields()
+	callee := c.pickCalleeSave()
+	if callee == "" {
+		callee = c.arch.CalleeSaveReg()
+	}
+
+	pickTmp := func(avoid ...string) *regmgr.Reg {
+		for _, reg := range c.ctx.Reg.Regs {
+			if !reg.Free || reg.Name == c.arch.ReturnReg() {
+				continue
+			}
+			skip := false
+			for _, a := range avoid {
+				if reg.Name == a {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			reg.Free = false
+			return reg
+		}
+		return &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+	}
+
+	var code string
+	var lenVal string
+	if lenExp.IsConst() {
+		n := int(lenExp.Num)
+		if n < 0 {
+			n = 0
+		}
+		code += c.emitMalloc(align8(maxInt(n, 0)))
+		lenVal = strconv.Itoa(n)
+	} else {
+		nReg := c.allocReg(lenExp)
+		if nReg == nil {
+			nReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+		}
+		code += c.generate(lenExp, nReg.Name)
+		// size = align8(n)
+		tmpN := pickTmp(callee, nReg.Name)
+		code += utils.Format("mov " + tmpN.Name + ", " + nReg.Name)
+		code += utils.Format("add " + nReg.Name + ", 7")
+		code += utils.Format("and " + nReg.Name + ", ~7")
+		callMalloc := makeMemCall("malloc", []typeSys.Type{typeSys.GetSystemType("uint")})
+		if ps == 8 {
+			code += utils.Format("mov RDI, " + nReg.Name)
+			code += utils.Format("call " + callMalloc.Func.MangledName())
+		} else {
+			code += utils.Format("push " + nReg.Name)
+			code += c.arch.Call(callMalloc)
+		}
+		lenVal = tmpN.Name
+		c.ctx.Reg.Free(lenExp)
+	}
+	code += utils.Format("mov " + callee + ", " + c.arch.ReturnReg() + "; string buffer")
+
+	// 零填充 n 字节：rep stosb 对任意 n（含 n=0）都安全
+	code += utils.Format("xor RAX, RAX")
+	if lenExp.IsConst() {
+		n := int(lenExp.Num)
+		if n < 0 {
+			n = 0
+		}
+		code += utils.Format("mov RCX, " + strconv.Itoa(n))
+	} else {
+		code += utils.Format("mov RCX, " + lenVal)
+	}
+	code += utils.Format("mov RDI, " + callee)
+	code += utils.Format("rep stosb")
+
+	// 装载结果三字段 {ptr, len, cap}
+	if strings.Contains(result, "[") {
+		base := stripOuterBrackets(result)
+		code += utils.Format("mov " + ln + " " + result + ", " + matchMemWidth(result, callee))
+		if lenExp.IsConst() {
+			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + lenVal)
+		} else {
+			code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(lenOff) + "], " + matchMemWidth(ln+"[", lenVal))
+		}
+		code += utils.Format("mov " + ln + " [" + base + "+" + strconv.Itoa(capOff) + "], " + lenVal)
+		return code
+	}
+	if result == "push" {
+		code += utils.Format("push " + callee)
+		code += utils.Format("push " + lenVal)
+		code += utils.Format("push " + lenVal)
 		return code
 	}
 	return code + utils.Format("mov "+result+", "+callee)

@@ -702,11 +702,14 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	switch name {
 	case "new":
 		// new(T[, v...])：堆对象创建内建，返回 *T；
-		// new(list[T], len[, cap])：列表创建内建，按值返回列表
+		// new(list[T], len[, cap])：列表创建内建，按值返回列表；
+		// new(string, n)：字符串创建内建，按值返回 string（len=cap=n）
 		if c.NewType != nil {
 			retType := typeSys.Type(typeSys.MakePointer(c.NewType))
 			if lt, ok := c.NewType.(*typeSys.ListType); ok && lt.Elem() != nil {
 				retType = lt
+			} else if _, ok := c.NewType.(*typeSys.StringType); ok {
+				retType = c.NewType
 			}
 			c.Func = &FuncBlock{
 				Return: []typeSys.Type{retType},
@@ -739,6 +742,8 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 			retType := typeSys.Type(typeSys.MakePointer(c.NewType))
 			if lt, ok := c.NewType.(*typeSys.ListType); ok && lt.Elem() != nil {
 				retType = lt
+			} else if _, ok := c.NewType.(*typeSys.StringType); ok {
+				retType = c.NewType
 			}
 			c.Func = &FuncBlock{
 				Return: []typeSys.Type{retType},
