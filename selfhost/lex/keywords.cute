@@ -12,18 +12,37 @@
 //      以及内部 consume 推进行列号使用。
 import "std:strings"
 
+var gKwList: []string
+var gKwReady: bool = false
+
 // kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
+// 首次调用时惰性构建并缓存（原实现每次构造 33 元素列表）。
 fn kwTable() []string {
-    ret []string{"break", "build", "case", "const", "continue", "default", "defer", "else", "enum", "except", "fallthrough", "false", "finally", "fn", "for", "if", "import", "interface", "let", "nil", "range", "ret", "return", "struct", "switch", "true", "try", "type", "var", "while"}
+    if gKwReady {
+        ret gKwList
+    }
+    gKwList = []string{"break", "build", "case", "const", "continue", "default", "defer", "else", "enum", "except", "fallthrough", "false", "finally", "fn", "for", "if", "import", "interface", "let", "nil", "range", "ret", "return", "struct", "switch", "true", "try", "type", "var", "while"}
+    gKwReady = true
+    ret gKwList
 }
 
+var gDelimList: []string
+var gDelimReady: bool = false
+
 // delimTable 分隔符表（已排序；1~3 字符）。
+// Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写；
+// 首次调用时惰性构建并缓存（包级可写变量承载；原实现每次构造 59 元素列表）。
 fn delimTable() []string {
+    if gDelimReady {
+        ret gDelimList
+    }
     var ds: []string = []string{"", "", "", " ", "!", "!=", `"`, "%", "%=", "&", "&&", "&=", "'", "(", ")", "*", "*=", "+", "++", "+=", ",", "-", "--", "-=", "->", ".", "...", "/", "/*", "//", "/=", ":", ":=", ";", "<", "<<", "<<=", "<=", "=", "==", ">", ">=", ">>", ">>=", "?", "@", "[", `\`, "]", "^", "^=", "`", "{", "|", "|=", "||", "}", "~"}
     ds[0] = strings.fromByte(9)    // \t
     ds[1] = strings.fromByte(10)   // \n
     ds[2] = strings.fromByte(13)   // \r
-    ret ds
+    gDelimList = ds
+    gDelimReady = true
+    ret gDelimList
 }
 
 // isKeyword 二分查找 keywords。

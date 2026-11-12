@@ -12,6 +12,7 @@
 //   2. 关键字/分隔符表 presort 为字面量，isKeyword/isDelimiter 内做二分查找；
 //      Go 侧的 init() sort.Strings 折叠进作者化排序，顺序与 Go 运行结果一致；
 //   3. 泛型 [T any] 单态化为 Token：本编译器不支持泛型结构体（docs §15 已登记）。
+
 import "std:memory"
 import "std:strings"
 
@@ -81,28 +82,42 @@ fn Token.IsLineEnd(t *Token) bool {
 }
 
 // RenderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
-// 与 Go 参考 token.go 的 RenderVisible 逐字节一致（一行一 token 输出不被破坏）；
-// 单引号串里的 "\n" 在 Cute 源码中就是反斜杠+n，正好是需要的输出字节。
+// 与 Go 参考 token.go 的 RenderVisible 逐字节一致（一行一 token 输出不被破坏）。
+// 单缓冲 O(n)：最坏情况下每个输入字节产出 2 个输出字节，按 2n+1 预分配；
+// 原实现每字符 malloc(2)+字符串拼接 O(n²) 行为已废弃。
 fn RenderVisible(s string) string {
     var n: uint = strings.len(s)
+    if n == 0 {
+        ret s
+    }
     var pU8: *u8 = strings.toCstring(s)
-    var out: string = ""
+    var buf: ptr = memory.malloc(2 * n + 1)
+    var bufu8: *u8 = buf
+    var w: uint = 0
     var i: uint = 0
     for ; i < n; {
         var b: u8 = *(pU8 + i)
         var bi: int = unsafe.cast[int](b)
         if bi == 10 {
-            out = out + "\n"
+            *(bufu8 + w) = 92
+            *(bufu8 + w + 1) = 110
+            w = w + 2
         } else if bi == 13 {
-            out = out + "\r"
+            *(bufu8 + w) = 92
+            *(bufu8 + w + 1) = 114
+            w = w + 2
         } else if bi == 9 {
-            out = out + "\t"
+            *(bufu8 + w) = 92
+            *(bufu8 + w + 1) = 116
+            w = w + 2
         } else {
-            out = out + strings.fromByte(b)
+            *(bufu8 + w) = b
+            w = w + 1
         }
         i = i + 1
     }
-    ret out
+    *(bufu8 + w) = 0
+    ret strings.makeString(buf, w, w)
 }
 
 // RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。
