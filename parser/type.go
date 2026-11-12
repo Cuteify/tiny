@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"cuteify/lexer"
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 )
@@ -33,6 +34,41 @@ func (t *TypeBlock) Parse(p *Parser) {
 	}
 
 	token := p.Lexer.Next()
+
+	// 泛型声明：type Box[T, U] struct / interface。结构体/接口的 Parse 自行消费
+	// “[T, U]”并建占位表；这里只按“名称后的 [...] 前瞻”决定走 struct/interface 分支。
+	if token.Type == lexer.SEPARATOR && token.Value == "[" {
+		// 前瞻（不消费）：token 自己就是那个“[”，从它之后扫到匹配的 ]
+		save := p.Lexer.Cursor
+		depth := 1
+		for {
+			t2 := p.Lexer.Next()
+			if t2.IsEmpty() {
+				p.Lexer.SetCursor(save)
+				p.Error.MissError("Syntax Error", save, "unbalanced '[' in type declaration")
+				return
+			}
+			if t2.Type == lexer.SEPARATOR && t2.Value == "[" {
+				depth++
+			}
+			if t2.Type == lexer.SEPARATOR && t2.Value == "]" {
+				depth--
+				if depth == 0 {
+					break
+				}
+			}
+		}
+		kw := p.Lexer.Next()
+		p.Lexer.SetCursor(save)
+		switch kw.Value {
+		case "struct", "interface":
+			token = kw
+		default:
+			p.Lexer.SetCursor(save)
+			// 不是 struct/interface，按原逻辑走（会在 typeRef 处报“need type”）
+			token = p.Lexer.Next()
+		}
+	}
 
 	isTrueAlias := false
 	if token.Value == "=" {
