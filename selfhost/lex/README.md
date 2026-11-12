@@ -4,9 +4,10 @@
 `lexer/` 的对照指引版本）的**逐行 1:1 移植**：输入一段源码 `string`，输出
 token 类型、文本与字节区间；不读文件、不建 AST。
 
-- 实现：`buf.cute`（`token.go` 与 `buf.go` 合并，按文件依赖序排在前）、`lexer.cute`
+- 实现：`buf.cute`（`token.go` 与 `buf.go` 合并，按文件依赖序排在前）、`keywords.cute`
+  （关键字/分隔符表及 `isKeyword`/`isDelimiter`）、`lexer.cute`
 - 包名：`lex`
-- 测试：`test/main.cute`（通过返回 `42`）
+- 测试：`test/main.cute`（SELFTEST_CASE 文件对拍驱动，见“测试”一节）
 - 外层总览：`../README.md`
 - S1 token 流 driver：`../cmd/tokdump/` —— **与本移植未对接**（仍是旧 token 模型，见“已知限制”）
 
@@ -90,28 +91,47 @@ EOF 时 `Next()` 返回 `Type == NONE` 的 token，行列号为当前光标位�
 scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 ```
 
-`test/main.cute` 约定：返回 `42` = 全部通过；其它值 = 该失败用例编号。输出为
-**token 流 dump**（与 Go 参考 main.go 相同的 `[TYPE]value` 逐行格式；注释/空白不产出
-token；LF/CR/TAB 以两字符 `\n` `\r` `\t` 转义显示，行尾为真换行），最后一行是
-`LEXER_SELFTEST|PASS|ALL`；失败时打印 `FAIL|case=N want=... got=... want_text=...`，并以对应编号返回。
-42 是约定的“通过”标记：Unix 退出码只有 0–255，自举测试用非 0 码区分失败组，42 只是任选的
-通过码（无其它语义）；早期版本 `_x` 用例失败码 42 与通过码碰撞，长期假绿，已修复为 43。
-按组覆盖：
+`test/main.cute` 是一个 **SELFTEST_CASE 对拍驱动**：读取环境变量 `SELFTEST_CASE`
+指向的源文件，按 Go 参考 main.go 的格式逐行输出 `[TYPE]value`（注释/空白不产出 token；
+LF/CR/TAB 以两字符 `\n` `\r` `\t` 可见化显示，行尾真换行）。`scripts/selfhost_test.sh`
+对 `testdata/cases/*.cute` 与 `testdata/sample.cute` 逐个运行并与对应 `.want` 逐字节比较；
+全部通过才输出
 
-1. 空输入 / EOF；2. 全部关键字 + `self`/标识符；3. 数字（进制/小数/科学计数法/下划线）；
-4. NUMBER 字段；5. 数字边界（`0x`、`1.`、`123abc`、`1e+`、`0b2`、`0o8`，含文本尾缀 `1.` 的越界防护）；
-6. 二/三字符分隔符最长匹配；7. 字符串 / 字符 / 裸串；8. 注释（行注释/块注释/含换行）；
-9. 行列号跨行；10. EOF 与缓存语义；11. 关键字最长匹配；12. 复合表达式切分。
+```
+SELFHOST_CASES|x86_64|checked=15
+SELFHOST_OK|x86_64|RC=42
+```
+
+`main` 只输出 token 流，不自带断言；语料的“期望输出”固化在 `.want` 中（用本移植复现，
+逐例对 Go 参考 `go run <参考目录>/lexer.go` 的输出 diff 核对，仅保留同一处已登记背离）：
+
+- 与 Go 参考**逐字节一致**的语料（10/15）：`01-empty`（空）、`03-numbers-mix`、`04-numbers-int`、
+  `05-number-boundary`、`06-dot-ending`、`07-delimiters`、`08-strings`、`09-char-string`、
+  `10-raw-string`、`sample.cute`（104 行）。
+- 仅因“末尾无 DELIMITER 时补发末尾词素”与 Go 参考不同的语料（5/15）：`02-keywords`、
+  `11-line-comment`、`12-block-comment`、`13-newline-pos`、`14-eof-tail`。
+
+用例与语料的对应在 `.cute` 文件里一目了然：
+
+| 语料 | 覆盖 |
+|---|---|
+| 01-empty | 空输入 |
+| 02-keywords | 全部关键字 + `self`/标识符 |
+| 03-numbers-mix / 04-numbers-int | 进制/下划线/小数/科学计数法 |
+| 05-number-boundary / 06-dot-ending | 数字边界、文本尾缀 `1.` 的越界防护 |
+| 07-delimiters | 二/三字符分隔符最长匹配 |
+| 08-strings / 09-char-string / 10-raw-string | 字符串 / 字符 / 裸串 |
+| 11-line-comment / 12-block-comment | 注释（含换行） |
+| 13-newline-pos | 位置行列号跨行 |
+| 14-eof-tail | EOF 尾部词素补发 |
+| sample.cute | 全部构造的组合（与 Go 逐字节一致） |
 
 测试里的换行用 `nl()` 在运行时构造（`memory.malloc` 写入字节 `10` + `strings.makeString`）：
 当前 Cute 源码里的 `"\n"` 是两字符反斜杠 + n。
 
-与 Go 参考在 `testdata/sample.cute`（104 行）上输出**逐字节一致**；进一步对 14 组样例
-（空输入、关键字、数字、4 组边界、分隔符、4 组字符串/注释、EOF）逐一对拍，9 组逐字节一致，
-5 组的唯一差异全部源于“Go 参考末尾无 DELIMITER 时丢掉末尾词素”这一处（本移植补发，见
-差异表 #11）。对拍方式：两个版本都以 stdin 读源码，逐字节 `cmp`；Go 侧用
-`go run <参考目录>/lexer.go` 的 stdin driver，Cute 侧用同构的 stdin dump（格式均为
-`[TYPE]value` 逐行、`\n \r \t` 两字符可见化、行尾真换行）。
+注：本测试不再存在“PASS|case=N”的输出（全部 judge 已删除）；RC=42 仅表示进程正常跑完
+并对拍通过（`SELFHOST_CASES`+/`SELFHOST_OK` 输出由 `scripts/selfhost_test.sh` 给出）。
+早期版本 `_x` 用例失败组号 42 与通过码碰撞掩盖了假绿，重构为对拍体系后消除了遮蔽。
 
 已知刻意保留的唯一背离：文件末尾无 DELIMITER 结尾时，Go 参考主循环因 EOF 退出会丢掉
 末尾词素；本移植在主循环后补发（见差异表 #11）。
