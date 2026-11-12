@@ -30,23 +30,38 @@ fn chk(l *lex.Lexer, want lex.TokenType, s string, id int) bool {
         console.println("FAIL|case=" + strings.itoa(id) + " want_text=" + s + " got=" + t.Value)
         ret false
     }
-    console.println("PASS|case=" + strings.itoa(id))
     ret true
 }
 
 
+// dumpSource 把源码的所有 token 按 Go 参考 main.go 的格式逐条打印：
+//   [TYPE]value   （裸串原样输出，LF/CR/TAB 渲染成 \n \r \t，行尾真换行）
+// 用于直接 diff Go/Cute 两侧的 token 流。
+fn dumpSource(src string) {
+    var dl: *lex.Lexer = lex.NewLexer(src)
+    for ; true; {
+        var t: *lex.Token = dl.Next()
+        if t.Type == lex.NONE {
+            break
+        }
+        console.print(lex.Token.String(t))
+        console.print(nl())
+    }
+}
+
 fn main() int {
     // 1. 空输入
     var l: *lex.Lexer = lex.NewLexer("")
+    dumpSource("")
     var t: *lex.Token = l.Next()
     if t.Type != lex.NONE {
         console.println("FAIL|case=1")
         ret 1
     }
-    console.println("PASS|case=1")
 
     // 2. 全部关键字 + 标识符
     l = lex.NewLexer("break build case const continue default defer else enum except fallthrough false finally fn for if import interface let nil range ret return struct switch true try type var while self abc123 _x")
+    dumpSource("break build case const continue default defer else enum except fallthrough false finally fn for if import interface let nil range ret return struct switch true try type var while self abc123 _x")
     if !chk(l, lex.KEYWORD, "break", 10) { ret 10 }
     if !chk(l, lex.KEYWORD, "build", 11) { ret 11 }
     if !chk(l, lex.KEYWORD, "case", 12) { ret 12 }
@@ -83,6 +98,7 @@ fn main() int {
 
     // 3. 数字：十进制 / 十六 / 二 / 八 / 小数 / 科学计数法 / 下划线
     l = lex.NewLexer("0 42 1_000 0xFF 0Xab_cd 0b1010_0101 0o755 3.14 1e10 2.5E-3 1.5e-3")
+    dumpSource("0 42 1_000 0xFF 0Xab_cd 0b1010_0101 0o755 3.14 1e10 2.5E-3 1.5e-3")
     if !chk(l, lex.NUMBER, "0", 50) { ret 50 }
     if !chk(l, lex.NUMBER, "42", 51) { ret 51 }
     if !chk(l, lex.NUMBER, "1_000", 52) { ret 52 }
@@ -97,27 +113,29 @@ fn main() int {
 
     // 4. 数字 Number 字段
     l = lex.NewLexer("0 42 1_000 0xFF 0b1010 0o755 3.14 1e10 1.5e-3")
+    dumpSource("0 42 1_000 0xFF 0b1010 0o755 3.14 1e10 1.5e-3")
     t = l.Next()
-    if t.Number != 0.0 { ret 61 } else { console.println("PASS|case=61") }
+    if t.Number != 0.0 { ret 61 }
     t = l.Next()
-    if t.Number != 42.0 { ret 62 } else { console.println("PASS|case=62") }
+    if t.Number != 42.0 { ret 62 }
     t = l.Next()
-    if t.Number != 1000.0 { ret 63 } else { console.println("PASS|case=63") }
+    if t.Number != 1000.0 { ret 63 }
     t = l.Next()
-    if t.Number != 255.0 { ret 64 } else { console.println("PASS|case=64") }
+    if t.Number != 255.0 { ret 64 }
     t = l.Next()
-    if t.Number != 10.0 { ret 65 } else { console.println("PASS|case=65") }
+    if t.Number != 10.0 { ret 65 }
     t = l.Next()
-    if t.Number != 493.0 { ret 66 } else { console.println("PASS|case=66") }
+    if t.Number != 493.0 { ret 66 }
     t = l.Next()
-    if t.Number < 3.13 || t.Number > 3.15 { ret 67 } else { console.println("PASS|case=67") }
+    if t.Number < 3.13 || t.Number > 3.15 { ret 67 }
     t = l.Next()
-    if t.Number < 9e9 || t.Number > 1.1e10 { ret 68 } else { console.println("PASS|case=68") }
+    if t.Number < 9e9 || t.Number > 1.1e10 { ret 68 }
     t = l.Next()
-    if t.Number < 0.0014 || t.Number > 0.0016 { ret 69 } else { console.println("PASS|case=69") }
+    if t.Number < 0.0014 || t.Number > 0.0016 { ret 69 }
 
     // 5. 数字边界：非法前缀退回 NAME；不完整时不吞字符
     l = lex.NewLexer("1. 123abc 0x 1.foo 1e 1e+ 0b2 0o8")
+    dumpSource("1. 123abc 0x 1.foo 1e 1e+ 0b2 0o8")
     if !chk(l, lex.NUMBER, "1", 70) { ret 70 }
     if !chk(l, lex.DELIMITER, ".", 71) { ret 71 }
     if !chk(l, lex.NUMBER, "123", 72) { ret 72 }
@@ -131,16 +149,20 @@ fn main() int {
     if !chk(l, lex.NUMBER, "1", 80) { ret 80 }
     if !chk(l, lex.NAME, "e", 81) { ret 81 }
     if !chk(l, lex.DELIMITER, "+", 82) { ret 82 }
-    if !chk(l, lex.NAME, "0b2", 83) { ret 83 }
-    if !chk(l, lex.NAME, "0o8", 84) { ret 84 }
+    if !chk(l, lex.NAME, "0b", 83) { ret 83 }
+    if !chk(l, lex.NUMBER, "2", 87) { ret 87 }
+    if !chk(l, lex.NAME, "0o", 84) { ret 84 }
+    if !chk(l, lex.NUMBER, "8", 88) { ret 88 }
 
     // 5b. 文本以 "." 结尾：secondByte 前置加载不能越界读 Text[plen]
     l = lex.NewLexer("1.")
+    dumpSource("1.")
     if !chk(l, lex.NUMBER, "1", 85) { ret 85 }
     if !chk(l, lex.DELIMITER, ".", 86) { ret 86 }
 
     // 6. 二字符与三字符分隔符（最长匹配）
     l = lex.NewLexer("<<= >>= ... == != <= >= ++ -- -> && || << >> := += -= *= /= %= ^= &= |= // /*")
+    dumpSource("<<= >>= ... == != <= >= ++ -- -> && || << >> := += -= *= /= %= ^= &= |= // /*")
     if !chk(l, lex.DELIMITER, "<<=", 90) { ret 90 }
     if !chk(l, lex.DELIMITER, ">>=", 91) { ret 91 }
     if !chk(l, lex.DELIMITER, "...", 92) { ret 92 }
@@ -170,56 +192,60 @@ fn main() int {
     // 7. 字符串 / 字符 / 裸串（'x' 与 "x" 一样是字符串；`x` 是裸串）
     var sStr: string = `"hello" 'a' ` + "`hi`"
     l = lex.NewLexer(sStr)
+    dumpSource(sStr)
     if !chk(l, lex.STRING, "hello", 120) { ret 120 }
     if !chk(l, lex.STRING, "a", 121) { ret 121 }
     if !chk(l, lex.STRING, "hi", 122) { ret 122 }
     var sStr2: string = `'a'`
     l = lex.NewLexer(sStr2)
+    dumpSource(sStr2)
     if !chk(l, lex.STRING, "a", 123) { ret 123 }
     var sStr3: string = "`raw hi`"
     l = lex.NewLexer(sStr3)
+    dumpSource(sStr3)
     if !chk(l, lex.STRING, "raw hi", 124) { ret 124 }
 
     // 8. 注释：// 与 /* */（换行用 nl() 构造，Cute 源码里的 \n 是两字符）
     var nlStr: string = nl()
     var src: string = "a // comment" + nlStr + "b"
     l = lex.NewLexer(src)
+    dumpSource(src)
     if !chk(l, lex.NAME, "a", 130) { ret 130 }
-    if !chk(l, lex.DELIMITER, nlStr, 131) { ret 131 }
-    if !chk(l, lex.NAME, "b", 132) { ret 132 }
+    if !chk(l, lex.NAME, "b", 131) { ret 131 }
+    if !chk(l, lex.NONE, "", 132) { ret 132 }
 
     var src2: string = "x /* block" + nlStr + "comment */ y"
     l = lex.NewLexer(src2)
+    dumpSource(src2)
     if !chk(l, lex.NAME, "x", 133) { ret 133 }
     if !chk(l, lex.NAME, "y", 134) { ret 134 }
 
     // 9. 位置：行列号跨行
     var src3: string = "ab" + nlStr + "cd"
     l = lex.NewLexer(src3)
+    dumpSource(src3)
     t = l.Next()
-    if t.Line != 1 { ret 140 } else { console.println("PASS|case=140") }
-    if t.Col != 1 { ret 141 } else { console.println("PASS|case=141") }
-    if t.EndLine != 1 { ret 142 } else { console.println("PASS|case=142") }
-    if t.EndCol != 3 { ret 143 } else { console.println("PASS|case=143") }
+    if t.Line != 1 { ret 140 }
+    if t.Col != 1 { ret 141 }
+    if t.EndLine != 1 { ret 142 }
+    if t.EndCol != 3 { ret 143 }
     t = l.Next()
-    // LF token：起点在第 1 行第 3 列，换行后行号推进到 2、列归 1
-    if t.Line != 1 { ret 144 } else { console.println("PASS|case=144") }
-    if t.Col != 3 { ret 145 } else { console.println("PASS|case=145") }
-    if t.Type != lex.DELIMITER || !strings.eq(t.Value, nlStr) { ret 146 } else { console.println("PASS|case=146") }
-    if t.EndLine != 2 { ret 147 } else { console.println("PASS|case=147") }
-    if t.EndCol != 1 { ret 148 } else { console.println("PASS|case=148") }
-    t = l.Next()
-    if t.Line != 2 { ret 149 } else { console.println("PASS|case=149") }
-    if t.Col != 1 { ret 150 } else { console.println("PASS|case=150") }
+    // 换行不进 token 流（与 Go 参考一致）：下一 token 直接是 cd（第 2 行第 1 列）
+    if t.Type != lex.NAME || !strings.eq(t.Value, "cd") { ret 144 }
+    if t.Line != 2 { ret 145 }
+    if t.Col != 1 { ret 146 }
+    if t.EndLine != 2 { ret 147 }
+    if t.EndCol != 3 { ret 148 }
 
     // 10. EOF 与缓存：连续读两次都是 NONE
     l = lex.NewLexer("abc")
+    dumpSource("abc")
     t = l.Next()
     t = l.Next()
     t = l.Next()
     t = l.Next()
-    if t.Type != lex.NONE { ret 160 } else { console.println("PASS|case=160") }
-    if l.Pos != 3 { ret 161 } else { console.println("PASS|case=161") }
+    if t.Type != lex.NONE { ret 160 }
+    if l.Pos != 3 { ret 161 }
 
     console.println("LEXER_SELFTEST|PASS|ALL")
     ret 42

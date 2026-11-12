@@ -79,10 +79,29 @@ fn Token.IsLineEnd(t *Token) bool {
     ret false
 }
 
-// RenderVisible 把字符串中的特殊字符渲染为可见形式。
-// 当前测试不依赖换行转义渲染，直接恒等返回（保持与 Go 参考等价的调用契约）。
+// RenderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
+// 与 Go 参考 token.go 的 RenderVisible 逐字节一致（一行一 token 输出不被破坏）；
+// 单引号串里的 "\n" 在 Cute 源码中就是反斜杠+n，正好是需要的输出字节。
 fn RenderVisible(s string) string {
-    ret s
+    var n: uint = strings.len(s)
+    var pU8: *u8 = strings.toCstring(s)
+    var out: string = ""
+    var i: uint = 0
+    for ; i < n; {
+        var b: u8 = *(pU8 + i)
+        var bi: int = unsafe.cast[int](b)
+        if bi == 10 {
+            out = out + "\n"
+        } else if bi == 13 {
+            out = out + "\r"
+        } else if bi == 9 {
+            out = out + "\t"
+        } else {
+            out = out + strings.fromByte(b)
+        }
+        i = i + 1
+    }
+    ret out
 }
 
 // kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
