@@ -17,7 +17,12 @@ fn print(s string) i32 {
 // 打印字符串并换行（返回写出的字节数，含换行）
 fn println(s string) i32 {
     var n: i32 = print(s)
-    ret n + syscall.write(STDOUT, strings.toCstring("\n"), 1)
+    var buf: ptr = memory.malloc(1)
+    var q: *u8 = buf
+    *q = 10
+    var w: i32 = syscall.write(STDOUT, buf, 1)
+    memory.free(buf)
+    ret n + w
 }
 
 // read 从标准输入读取数据到缓冲区，返回读取的字节数

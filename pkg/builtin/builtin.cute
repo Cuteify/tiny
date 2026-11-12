@@ -1,3 +1,4 @@
+import "std:memory"
 import "std:strings"
 import "std:syscall"
 // pkg/builtin/builtin.cute - 内置包
@@ -14,7 +15,12 @@ fn print(s: string) i32 {
 // println 打印字符串并换行，返回写出的字节数（含换行）
 fn println(s: string) i32 {
     var n: i32 = print(s)
-    ret n + syscall.write(1, strings.toCstring("\n"), 1)
+    var buf: ptr = memory.malloc(1)
+    var q: *u8 = buf
+    *q = 10
+    var w: i32 = syscall.write(1, buf, 1)
+    memory.free(buf)
+    ret n + w
 }
 
 // panic 打印消息并以状态码 1 终止
