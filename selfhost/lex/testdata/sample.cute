@@ -6,7 +6,7 @@ fn add(a: int, b: int) int {
 	ret a + b
 }
 
-var greeting: string = "hello\nworld"  // string does no escape processing
+var greeting: string = "hello\nworld"  // 词法器原样输出（不解码转义）
 var raw: string = `multi
 line
 raw string`

@@ -1179,6 +1179,7 @@ func (c *Compiler) generateDataSection() string {
 		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
 		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
 		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+		escaped = strings.ReplaceAll(escaped, "\x00", `\0`)
 		// NASM 的双引号字符串不支持反斜杠转义；用反引号字符串承载转义。
 		code += fmt.Sprintf("    %s db `%s`, 0\n", label, escaped)
 		code += fmt.Sprintf("    %s_len equ $ - %s\n", label, label)

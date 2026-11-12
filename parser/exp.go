@@ -490,6 +490,67 @@ func parseCharLiteral(content string) (int, error) {
 	return int(runes[0]), nil
 }
 
+// hexDigitVal 解析一个十六进制数字位（0-9a-fA-F），失败返回 0,false。
+func hexDigitVal(c byte) (int, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0'), true
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10, true
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10, true
+	}
+	return 0, false
+}
+
+// unescapeCuteString 解析双引号解释型字符串字面量里的转义序列：
+//   \\ \" \' \n \r \t \0 \xHH（2 位十六进制）
+// 其余 \X 一律报错（避免静默退化为反斜杠+X 造成混淆）。
+// 原始字符串（反引号 RAW）不调用此函数，仍为原样保留。
+func unescapeCuteString(s string) (string, error) {
+	var buf []byte
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			buf = append(buf, s[i])
+			continue
+		}
+		if i+1 >= len(s) {
+			return "", fmt.Errorf("unterminated escape sequence at end of string literal")
+		}
+		i++
+		switch s[i] {
+		case '\\':
+			buf = append(buf, '\\')
+		case '"':
+			buf = append(buf, '"')
+		case '\'':
+			buf = append(buf, '\'')
+		case 'n':
+			buf = append(buf, 10)
+		case 'r':
+			buf = append(buf, 13)
+		case 't':
+			buf = append(buf, 9)
+		case '0':
+			buf = append(buf, 0)
+		case 'x':
+			if i+2 >= len(s) {
+				return "", fmt.Errorf("\\x requires exactly 2 hex digits")
+			}
+			hi, ok1 := hexDigitVal(s[i+1])
+			lo, ok2 := hexDigitVal(s[i+2])
+			if !ok1 || !ok2 {
+				return "", fmt.Errorf("\\x requires exactly 2 hex digits, got %q%q", s[i+1], s[i+2])
+			}
+			buf = append(buf, byte(hi<<4|lo))
+			i += 2
+		default:
+			return "", fmt.Errorf("unknown escape sequence \\%c in string literal", s[i])
+		}
+	}
+	return string(buf), nil
+}
+
 func (p *Parser) getExp(stopCursor int) *Expression {
 	code := p.Lexer.Next()
 	if code.IsEmpty() {
@@ -540,8 +601,17 @@ func (p *Parser) getExp(stopCursor int) *Expression {
 		}
 
 	case lexer.STRING, lexer.RAW:
+		val := code.Value
+		if code.Type == lexer.STRING {
+			udec, err := unescapeCuteString(val)
+			if err != nil {
+				p.Error.MissError("Expression Error", p.Lexer.Cursor, err.Error())
+				return nil
+			}
+			val = udec
+		}
 		return &Expression{
-			StringVal: code.Value,
+			StringVal: val,
 			Type:      typeSys.GetSystemType("string"),
 		}
 

@@ -35,7 +35,7 @@ fn string_with_numbers() int {
 
 fn string_with_special() int {
     var s: string = "hello\nworld"
-    ret len(s)  // 12 (\n 按字面两字节，无转义处理)
+    ret len(s)  // 11 (\n 转义为 LF 字节，10)
 }
 
 fn string_comparison() int {
@@ -61,7 +61,7 @@ fn main() int {
     sum = sum + string_single_char()   // 1
     sum = sum + string_unicode()       // 12
     sum = sum + string_with_numbers()  // 7
-    sum = sum + string_with_special()  // 12
+    sum = sum + string_with_special()  // 11
     sum = sum + string_comparison()    // 2
-    ret sum  // 5+11+0+1+12+7+12+2 = 50
+    ret sum  // 5+11+0+1+12+7+11+2 = 49
 }
