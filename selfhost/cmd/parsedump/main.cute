@@ -11,14 +11,6 @@ import "std:strings"
 import "std:syscall"
 import parse "../../parse"
 
-// nl 在运行时构造换行字符串（源码里的 "\n" 只是反斜杠 + n）。
-fn nl() string {
-    var p: ptr = memory.malloc(8)
-    var q: *int = p
-    *q = 10
-    ret strings.view(p, 1, 1)
-}
-
 // readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
 fn readAll() string {
     var cap: uint = 1048576
@@ -92,7 +84,7 @@ fn pPad(bb ptr, d int) {
 }
 
 fn pEnd(bb ptr) {
-    w(bb, nl())
+    w(bb, "\n")
 }
 
 fn pHex(bb ptr, v uint) {
@@ -515,7 +507,7 @@ fn main() int {
         printInt(col)
         console.print("|byte=")
         printInt(unsafe.cast[int](pos))
-        console.print(nl())
+        console.print("\n")
         ret 1
     }
 
@@ -537,6 +529,6 @@ fn main() int {
     printCounter("fns", parse.fnCount(p))
     printCounter("stmts", parse.stmtCount(p))
     printCounter("exprs", parse.exprCount(p))
-    console.print(nl())
+    console.print("\n")
     ret 0
 }

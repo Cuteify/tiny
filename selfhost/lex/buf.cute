@@ -13,7 +13,6 @@
 //      Go 侧的 init() sort.Strings 折叠进作者化排序，顺序与 Go 运行结果一致；
 //   3. 泛型 [T any] 单态化为 Token：本编译器不支持泛型结构体（docs §15 已登记）。
 
-import "std:memory"
 import "std:strings"
 
 // TokenType 词法单元类型：NONE（EOF / 出错哨兵）、STRING、KEYWORD、
@@ -91,8 +90,8 @@ fn RenderVisible(s string) string {
         ret s
     }
     var pU8: *u8 = strings.toCstring(s)
-    var buf: ptr = memory.malloc(2 * n + 1)
-    var bufu8: *u8 = buf
+    var buf: string = new(string, unsafe.cast[int](2 * n + 1))
+    var bufu8: *u8 = unsafe.cast[*u8](buf)
     var w: uint = 0
     var i: uint = 0
     for ; i < n; {
@@ -117,7 +116,7 @@ fn RenderVisible(s string) string {
         i = i + 1
     }
     *(bufu8 + w) = 0
-    ret strings.view(buf, w, w)
+    ret buf[:w]
 }
 
 // RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。

@@ -11,14 +11,6 @@ import "std:strings"
 import "std:syscall"
 import lex "../../lex"
 
-// nl 在运行时构造换行字符串（源码里的 "\n" 只是反斜杠 + n）。
-fn nl() string {
-    var p: ptr = memory.malloc(8)
-    var q: *int = p
-    *q = 10
-    ret strings.view(p, 1, 1)
-}
-
 // readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
 fn readAll() string {
     var cap: uint = 1048576
@@ -114,7 +106,7 @@ fn main() int {
     var col: int = 1
     var last: uint = 0
     var count: int = 0
-    var newline: string = nl()
+    var newline: string = "\n"
 
     for ; true; {
         var k: lex.TokenType = lex.next(l)
