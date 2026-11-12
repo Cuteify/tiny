@@ -191,7 +191,10 @@ fn notFound() uint {
     ret *_p25
 }
 
-// makeString 从底层组件构建 string 值
+// makeString 从底层组件构建 string 值（仅包装**已有** ptr）：
+// 不分配、不拥有、不跟踪底层缓冲；LLR 视返回值为“外部视图”，调用方自行管理 buf 生命周期。
+// 需要一份 GC 可跟踪的可写 string 时，用编译器内建 new(string, n)（返回 {ptr,len=cap=n} 三槽，
+// 底层 malloc 由 LLR 在帧尾释放；写入用 unsafe.cast[*u8](s) 取得数据指针）。
 fn makeString(ptr: ptr, length: uint, capVal: uint) string {
     var result: string
     var rp: ptr = &result

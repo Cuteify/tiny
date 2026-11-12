@@ -126,8 +126,7 @@ SELFHOST_OK|x86_64|RC=42
 | 14-eof-tail | EOF 尾部词素补发 |
 | sample.cute | 全部构造的组合（与 Go 逐字节一致） |
 
-测试里的换行用 `nl()` 在运行时构造（`memory.malloc` 写入字节 `10` + `strings.makeString`）：
-当前 Cute 源码里的 `"\n"` 是两字符反斜杠 + n。
+测试里的换行直接用 `console.println`（内置 `println` 已在 `pkg/console` / `pkg/builtin` 实现真 LF 换行，不存在字面 `\n` 输出问题）。
 
 注：本测试不再存在“PASS|case=N”的输出（全部 judge 已删除）；RC=42 仅表示进程正常跑完
 并对拍通过（`SELFHOST_CASES`+/`SELFHOST_OK` 输出由 `scripts/selfhost_test.sh` 给出）。

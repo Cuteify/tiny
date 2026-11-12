@@ -733,8 +733,11 @@ var q: *P = new(P, 7, 8)    // 按字段顺序初始化
 - `new(P)` 返回 `*P`，所有字段零值。
 - `new(int, 7)` 返回指向 7 的 `*int`。
 - `new([]int, 4, 8)` 返回长度 4、容量 8 的列表。
+- `new(string, n)` 返回一份零填充的 string，len = cap = n，底层 `{ptr@0, len@8/4, cap@16/8}` 头由编译器直接写出；返回值为 owning 类型（自己独占底层缓冲），可 `unsafe.cast[*u8](s)` 取得数据指针逐字节写入，超出本帧可 GC 自动释放。n 可为常量或运行期值。
 - ❌ `new([]int)`（不传长度）会在汇编阶段报 `invalid combination of opcode and operands`。
 - ❌ `newRC([]int, n)` 能分配，但列表读写结果错误；`newRC(int, 7)` 正常。
+
+> `strings.makeString(buf, len, cap)` 只负责把**已有的** buf 指针包成 string 三槽头（借用外部 ptr，LLR 不视其为本帧分配，调用方自行管理底层缓冲）；需要创建可写 string 时用 `new(string, n)`，不要手写 `memory.malloc` + `makeString`。
 
 ### 6.7 结构体方法 ✅
 
@@ -1340,6 +1343,7 @@ map 索引读取走 `maps.get`，单独复用一个独立暂存缓冲区。
 |---|---|---|
 | `new(T, v...)` | ✅ | 堆分配；返回 `*T`；结构体按字段顺序填值 |
 | `new([]T, len[, cap])` | ⚠️ | 必须传 len；不传 len 汇编失败 |
+| `new(string, n)` | ✅ | 堆分配零填充 string（len = cap = n）；owning 返回；可 `unsafe.cast[*u8](s)` 直接写 |
 | `newRC(T, v...)` | ⚠️ | RC 分配；`newRC(int, 7)` 正常，`newRC([]T, n)` 列表读写错误 |
 | `sizeof[T]()` | ✅ | 必须带括号；类型实参可为具名类型、别名、`[]T`、`[N]T` |
 | `sizeof[T]` | ❌ | 不带括号返回伪值（56） |
@@ -1386,6 +1390,7 @@ unsafe.cast[T](x)
 - `unsafe.cast[int](1.5)` 得 0。
 - 把整数转成 `byte`：`unsafe.cast[byte](x)`；只想要数值截断时用 `byte(x)`。
 - 指针/地址互转：`unsafe.cast[ptr](p)`、`unsafe.cast[*T](addr)`。
+- 多槽源（string/list/struct 值，Size > 指针宽）→ 窄目标（≤指针宽）时，保留源的低 `sizeof(T)` 字节（小端；`*u8 = unsafe.cast[*u8](s)` 即 s 的 data 指针）；目标是寄存器 / 内存槽 / push 均按此截断规则。
 - 数值转换请用 §5.4 的显式转换函数（`int(x)` / `i64(x)` / `f64(x)` 等），不要用 `unsafe.cast` 代替。
 
 ### 11.4 自动 std 包与 intrinsic 表 ✅
