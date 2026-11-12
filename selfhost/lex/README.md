@@ -90,9 +90,13 @@ EOF 时 `Next()` 返回 `Type == NONE` 的 token，行列号为当前光标位�
 scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 ```
 
-`test/main.cute` 约定：返回 `42` = 全部通过；其它值 = 该失败用例编号。通过时输出以
-`PASS|case=N` 逐条回显，最后一行为 `LEXER_SELFTEST|PASS|ALL`；失败时输出
-`FAIL|case=N want=... got=... want_text=...`，并以对应编号返回。按组覆盖：
+`test/main.cute` 约定：返回 `42` = 全部通过；其它值 = 该失败用例编号。输出为
+**token 流 dump**（与 Go 参考 main.go 相同的 `[TYPE]value` 逐行格式；注释/空白不产出
+token；LF/CR/TAB 以两字符 `\n` `\r` `\t` 转义显示，行尾为真换行），最后一行是
+`LEXER_SELFTEST|PASS|ALL`；失败时打印 `FAIL|case=N want=... got=... want_text=...`，并以对应编号返回。
+42 是约定的“通过”标记：Unix 退出码只有 0–255，自举测试用非 0 码区分失败组，42 只是任选的
+通过码（无其它语义）；早期版本 `_x` 用例失败码 42 与通过码碰撞，长期假绿，已修复为 43。
+按组覆盖：
 
 1. 空输入 / EOF；2. 全部关键字 + `self`/标识符；3. 数字（进制/小数/科学计数法/下划线）；
 4. NUMBER 字段；5. 数字边界（`0x`、`1.`、`123abc`、`1e+`、`0b2`、`0o8`，含文本尾缀 `1.` 的越界防护）；
@@ -101,6 +105,16 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 
 测试里的换行用 `nl()` 在运行时构造（`memory.malloc` 写入字节 `10` + `strings.makeString`）：
 当前 Cute 源码里的 `"\n"` 是两字符反斜杠 + n。
+
+与 Go 参考在 `testdata/sample.cute`（104 行）上输出**逐字节一致**；进一步对 14 组样例
+（空输入、关键字、数字、4 组边界、分隔符、4 组字符串/注释、EOF）逐一对拍，9 组逐字节一致，
+5 组的唯一差异全部源于“Go 参考末尾无 DELIMITER 时丢掉末尾词素”这一处（本移植补发，见
+差异表 #11）。对拍方式：两个版本都以 stdin 读源码，逐字节 `cmp`；Go 侧用
+`go run <参考目录>/lexer.go` 的 stdin driver，Cute 侧用同构的 stdin dump（格式均为
+`[TYPE]value` 逐行、`\n \r \t` 两字符可见化、行尾真换行）。
+
+已知刻意保留的唯一背离：文件末尾无 DELIMITER 结尾时，Go 参考主循环因 EOF 退出会丢掉
+末尾词素；本移植在主循环后补发（见差异表 #11）。
 
 42 是约定的“通过”标记：Unix 退出码只有 0–255 约 8 个可用位，自举循环用非 0 码区分失败组，42 只是任选的通过码（无其它语义）；CI（`scripts/selfhost_test.sh`）检查的是 RC 是否等于 42。早期版本 `case=42`（`_x`）失败组编号与通过码碰撞，导致自举测试长期“假绿”——本次已把该用例失败码改为 43。
 
@@ -112,15 +126,16 @@ scripts/selfhost_test.sh x86_64     # 期望 SELFHOST_OK|x86_64|RC=42
 | 2 | `RingBuffer[T any]` 单态化为元素类型固定 `Token` | Cute 不支持泛型结构体（§15 已登记） |
 | 3 | `unsafe.cast[int](b)` / `unsafe.cast[uint](...)` 替代 Go 数值转换 | byte 与 int 不直接比较；字面量只能是 `u8` 等可判大小类型，见 LANGUAGE.md §5.5 |
 | 4 | **Next 语义修复：弹出 makeToken 刚写入缓存的副本** | Go 参考 `makeToken` 既返回 token 又写预取缓存，`Next()` 纯循环会把每个词素返回 **两次**（与 `Prefetch()` 语义重复）。本移植让 `Next()` 是纯消费 API：扫描后弹出刚写入的缓存项，调用方得到每个词素一次；`Prefetch()` 行为不变（与 Go main.go 一致）。README 已登记 |
-| 5 | `RenderVisible` 恒等 | 当前测试不依赖 LF 可见转义；保持 API 契约 |
+| 5 | `RenderVisible` 实现 LF/CR/TAB 可见转义 | 输出 `[TYPE]value` 时 LF/CR/TAB 渲染为两字符 `\n` `\r` `\t`，其余原样；与 Go 参考 `RenderVisible` 逐字节一致 |
 | 6 | 关键字/分隔符表用列表字面量直接构造 | 大列表字面量曾指数级恶化（2026-11-12 复测全部正常，0.4s 完成）；分隔符表 Tab/LF/CR 三个控制字节无可写字面量，占位后回写，见 #8 |
 | 7 | 切点：`byte` 与 `u8` 不互通 | `var b: byte = 65` 报错；需要 `unsafe.cast[byte]` |
 | 8 | 字符分类活已迁入 std:strings | `isDigit`/`isSpaceByte`/`isIntDigit`/`fromByte` 统一走 std:strings；Token 构造改用 struct 字面量（`T{...}`） |
-| 9 | 空白仅空格/Tab 才被跳过 | 与 Go `SkipSep` 一致；Tab/LF/CR（`0x09/0x0A/0x0D`）在 delimTable 中是 DELIMITER，**LF/CR 必须保留在 token 流中**（语句终结符语义）；早期实现误把 LF 当空白跳过，换行 token 丢失 |
-| 10 | EOF 尾部词素单独补发 | Go 参考在主循环按 delimiter 切分词素，主循环因 EOF 退出时末尾词素会丢；Prefix 后置分支单独补发（主循环结束后 `i > pfPos` 兜底） |
-| 11 | 进制前缀无有效数字时退回整词 NAME | 与 Go `scanNumber` digits==0 行为一致：`0b2` → `NAME|0b2`、`0x` → `NAME|0x` |
-| 12 | EOF token 的 Value 恒为显式空串 | `*Token = Token{...}` 结构字面量缺省字段不保证零填充（历史事故），NONE token 显式写 `Value: ""` |
-| 13 | `int` ↔ `f64` 比较没有隐式提升 | `t.Number != 42` 比较的是位模式，一律用 `42.0` 字面量（`docs/LANGUAGE.md` §10.3/§5.4） |
+| 9 | 空白跳过含 LF/CR（与 Go 参考一致） | 与 Go `isSpace` 一致（空格/Tab/CR/LF 全被跳过、不产生 token）；delimTable 里的 Tab/LF/CR 条目仅供 `//` 行注释“保留换行”与内部 consume 推进行列号使用，**不产出 DELIMITER 换行 token**；自举（parser）阶段若要用 LF 终结语句，需要额外变更扫描规则（见下文“与下游的衔接”） |
+| 10 | NONE token 的 Value 恒为显式空串 | `*Token = Token{...}` 结构字面量缺省字段不保证零填充（历史事故），NONE token 显式写 `Value: ""` |
+| 11 | EOF 尾部词素单独补发 | Go 参考主循环因 EOF 退出时末尾词素丢失（如以标识符结尾的源文件）；本移植在主循环后按 `i > pfPos` 补发 NAME/KEYWORD |
+| 12 | 进制前缀无有效数字退回前缀 NAME | 与 Go 参考一致：`0b2` → `NAME|0b` + `NUMBER|2`、`0x` → `NAME|0x`（只取前缀两个字节） |
+| 13 | int ↔ f64 比较没有隐式提升 | `t.Number != 42` 比较的是位模式，一律用 `42.0` 字面量（`docs/LANGUAGE.md` §10.3/§5.4） |
+| 14 | token 流与 Go 参考字节一致 | 与 Go 参考在 `testdata/sample.cute`（104 行）上输出逐字节一致；对拍 14 组样例输入时，9 组逐字节一致，5 组的唯一差异也都是 **文件末尾无 DELIMITER 结尾时 Go 参考会丢掉末尾词素**（本移植补发，见 #11） |
 
 ## 已知限制 / 与下游的衔接
 
