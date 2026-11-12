@@ -4436,30 +4436,33 @@ func (c *ECompiler) sliceExp(exp *parser.Expression, result string) string {
 	loSlot := "[" + sp + "]"
 
 	var lenVal string
+	var lenTmp *regmgr.Reg // runtime-hi 分支的 len 需要独立寄存器，防止被 cap 计算覆盖
 	if hiExpr != nil && hiExpr.IsConst() {
 		lenVal = strconv.Itoa(int(hiExpr.Num) - loConst)
 	} else if hiExpr != nil {
-		retReg := c.arch.ReturnReg()
-		code += c.generate(hiExpr, retReg)
+		lReg := c.allocTmpReg()
+		code += c.generate(hiExpr, lReg.Name)
 		if pushedLo {
-			code += utils.Format("sub " + retReg + ", " + ln + " " + loSlot + "; len = hi - lo")
+			code += utils.Format("sub " + lReg.Name + ", " + ln + " " + loSlot + "; len = hi - lo")
 		} else {
-			code += utils.Format("sub " + retReg + ", " + strconv.Itoa(loConst))
+			code += utils.Format("sub " + lReg.Name + ", " + strconv.Itoa(loConst))
 		}
-		lenVal = retReg
+		lenVal = lReg.Name
+		lenTmp = lReg
 	} else {
 		// hi 缺省：len = 原集合 len - lo（hi==nil 即取到末尾）。
 		// 仅"右边是变量"时能读到集合 len 槽；其余形状（字面量容器等）退回 0。
 		if exp.Right.Var != nil {
 			lenAddr := stripOuterBrackets(c.arch.VarAddr(exp.Right.Var)) + "+" + strconv.Itoa(lenOff)
-			retReg := c.arch.ReturnReg()
-			code += utils.Format("mov " + retReg + ", " + ln + " [" + lenAddr + "]")
+			lReg := c.allocTmpReg()
+			code += utils.Format("mov " + lReg.Name + ", " + ln + " [" + lenAddr + "]")
 			if pushedLo {
-				code += utils.Format("sub " + retReg + ", " + ln + " " + loSlot + "; len - lo")
+				code += utils.Format("sub " + lReg.Name + ", " + ln + " " + loSlot + "; len - lo")
 			} else if loConst != 0 {
-				code += utils.Format("sub " + retReg + ", " + strconv.Itoa(loConst))
+				code += utils.Format("sub " + lReg.Name + ", " + strconv.Itoa(loConst))
 			}
-			lenVal = retReg
+			lenVal = lReg.Name
+			lenTmp = lReg
 		} else {
 			lenVal = "0"
 		}
@@ -4535,7 +4538,9 @@ func (c *ECompiler) sliceExp(exp *parser.Expression, result string) string {
 	if !deliveredPtr {
 		code += utils.Format("add " + sp + ", " + strconv.Itoa(barrierSlots*ps))
 	}
-
+	if lenTmp != nil {
+		c.freeTmpReg(lenTmp)
+	}
 	c.ctx.Reg.Free(loExpr)
 	c.ctx.Reg.Free(hiExpr)
 	c.ctx.Reg.Free(exp.Right)
