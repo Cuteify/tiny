@@ -769,6 +769,10 @@ func (a *x86Ops) prologue(fn *parser.FuncBlock) (code string) {
 	if arch.FuncReturnsLarge(fn) {
 		retBytes = arch.ArgSlots(fn.Return[0]) * 4
 	}
+	// 防溢出：本函数被调方返回多大，这里就要能放下多大（见 x86_64 侧说明）。
+	if b := arch.MaxDirectCallRetBytes(a.ctx.Now, 4); b > retBytes {
+		retBytes = b
+	}
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 4
 	a.ctx.StackSize += retBytes + 4
 

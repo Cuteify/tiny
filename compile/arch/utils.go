@@ -89,6 +89,159 @@ func FuncReturnBytes(fn *parser.FuncBlock) int {
 	return total
 }
 
+// retBytesOfTypes 计算一组返回类型在槽中需要占用的总字节数。
+// slotBytes 为槽宽：x86_64/x64 = 8，x86 = 4。64 位标量（i64/u64/f64）
+// 可以放进两个寄存器，不在此统计。
+func retBytesOfTypes(types []typeSys.Type, slotBytes int) int {
+	total := 0
+	for _, t := range types {
+		if t == nil {
+			continue
+		}
+		if IsListLikeType(t) {
+			total += 3 * slotBytes
+			continue
+		}
+		if t.Size() == 8 && (t.Type() == "i64" || t.Type() == "u64" || t.Type() == "f64") {
+			continue
+		}
+		if t.Size() > typeSys.TargetPointerSize {
+			total += ArgSlots(t) * slotBytes
+		}
+	}
+	return total
+}
+
+// MaxDirectCallRetBytes 扫描 funcNode 子树，找出所有直接/间接调用点，
+// 取其返回槽字节数最大值。本函数体的 scratch 返回槽至少要容纳这么大，
+// 否则被调函数写超容量会覆盖调用者帧内的邻近槽。
+// 历史 bug：SysV 只按“自身返回值”定大小（非大返回 → 默认 24B），
+// mk 返回 T5（40B）时覆盖 caller 的 t.a→t.e，实证 t.e 返回 11 而不是 55。
+func MaxDirectCallRetBytes(funcNode *parser.Node, slotBytes int) int {
+	if funcNode == nil {
+		return 0
+	}
+	best := 0
+
+	noteCall := func(cb *parser.CallBlock) {
+		if cb == nil {
+			return
+		}
+		var ret []typeSys.Type
+		if cb.Func != nil {
+			ret = cb.Func.Return
+		} else if cb.ThisVar != nil && cb.ThisVar.Type != nil {
+			// 间接调用（函数指针/闭包）取其 FuncType 的 Returns
+			if ft, ok := cb.ThisVar.Type.(*typeSys.FuncType); ok {
+				ret = ft.Returns
+			}
+		}
+		if len(ret) == 0 {
+			return
+		}
+		if b := retBytesOfTypes(ret, slotBytes); b > best {
+			best = b
+		}
+	}
+
+	var visitExp func(e *parser.Expression)
+	visitExp = func(e *parser.Expression) {
+		if e == nil {
+			return
+		}
+		if e.Call != nil {
+			noteCall(e.Call)
+			for _, a := range e.Call.Args {
+				if a != nil {
+					visitExp(a.Value)
+				}
+			}
+			for _, a := range e.Call.VariadicArgs {
+				if a != nil {
+					visitExp(a.Value)
+				}
+			}
+		}
+		visitExp(e.Left)
+		visitExp(e.Right)
+		for _, ix := range e.Index {
+			visitExp(ix)
+		}
+		for _, el := range e.ListElems {
+			visitExp(el)
+		}
+	}
+
+	var walk func(n *parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil {
+			return
+		}
+		switch v := n.Value.(type) {
+		case *parser.VarBlock:
+			visitExp(v.Value)
+		case *parser.IfBlock:
+			visitExp(v.Condition)
+		case *parser.ForBlock:
+			visitExp(v.Init)
+			visitExp(v.Condition)
+			visitExp(v.Increment)
+			visitExp(v.Range)
+			for _, rn := range v.RangeNames {
+				if rn != nil {
+					visitExp(rn.Value)
+				}
+			}
+		case *parser.SwitchBlock:
+			visitExp(v.Target)
+		case *parser.CaseBlock:
+			for _, vals := range v.Values {
+				visitExp(vals)
+			}
+		case *parser.ReturnBlock:
+			for _, rv := range v.Value {
+				visitExp(rv)
+			}
+		case *parser.DeferBlock:
+			if v.Call != nil {
+				noteCall(v.Call)
+				for _, a := range v.Call.Args {
+					if a != nil {
+						visitExp(a.Value)
+					}
+				}
+			}
+		case *parser.BreakBlock, *parser.ContinueBlock, *parser.FallthroughBlock:
+			// 无表达式字段
+		case *parser.CallBlock:
+			noteCall(v)
+			for _, a := range v.Args {
+				if a != nil {
+					visitExp(a.Value)
+				}
+			}
+			for _, a := range v.VariadicArgs {
+				if a != nil {
+					visitExp(a.Value)
+				}
+			}
+		default:
+			// 其它 Block（枚举/类型/导入等）无返回槽相关表达式
+		}
+		for _, ch := range n.Children {
+			if ch != nil {
+				walk(ch)
+			}
+		}
+		// IfBlock 的 else 体挂在字段上，非 Children 链
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib.ElseBlock != nil {
+			walk(ib.ElseBlock)
+		}
+	}
+	walk(funcNode)
+	return best
+}
+
 // CalcArgsSize 计算函数参数大小
 func CalcArgsSize(fn *parser.FuncBlock, align int) (size int) {
 	if len(fn.Args) == 0 {

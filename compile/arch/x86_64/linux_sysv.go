@@ -111,6 +111,12 @@ func (a *SysV) Prologue(fn *parser.FuncBlock) (code string) {
 	if arch.FuncReturnsLarge(fn) {
 		retBytes = arch.FuncReturnBytes(fn)
 	}
+	// 防溢出：本函数被调方返回多大，这里就要能放下多大。
+	// 结构体大返回超过默认 24B 时，沿用默认值会让被调函数把相邻的
+	// 调用者帧覆盖掉（mk 返回 T5 覆盖 main 的 t.a→t.e 实证，见语言限制 §15）。
+	if b := arch.MaxDirectCallRetBytes(a.ctx.Now, 8); b > retBytes {
+		retBytes = b
+	}
 	a.ctx.RetSlot = -(a.ctx.StackSize) - retBytes - 8
 	a.ctx.StackSize += retBytes + 8
 
