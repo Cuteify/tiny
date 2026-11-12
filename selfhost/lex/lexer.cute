@@ -134,13 +134,41 @@ fn Lexer.handleNumber(l *Lexer) *Token {
             vu, vok := strings.parseUint(rawText, base)
             if vok {
                 var xnum: uint = vu
-                ret l.makeToken(Token{Type: NUMBER, Value: text[i:e], Number: f64(xnum),
+                var xstr: string = text[i:e]
+                ret l.makeToken(Token{Type: NUMBER, Value: xstr, Number: f64(xnum),
                     Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
             }
         }
-        // 进制前缀后无有效数字：退回 NAME（如 0x）
-        ret l.makeToken(Token{Type: NAME, Value: text[i:i+2],
-            Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](i + 2)})
+        // 前缀后无有效数字：退回整词作为 NAME（与 Go 参考一致：
+        // “0b2” → NAME|0b2，“0x” → NAME|0x）
+        var w: uint = i
+        for ; w < plen; {
+            var e2: int = 3
+            var matched: bool = false
+            for ; e2 > 0; {
+                if unsafe.cast[int](w) + e2 > unsafe.cast[int](plen) {
+                    e2 = e2 - 1
+                    continue
+                }
+                var cand: string = text[w:w+unsafe.cast[uint](e2)]
+                if isDelimiter(cand) {
+                    matched = true
+                    break
+                }
+                e2 = e2 - 1
+            }
+            if matched {
+                break
+            }
+            w = w + 1
+        }
+        var wval: string = text[i:w]
+        var wtype: TokenType = NAME
+        if isKeyword(wval) {
+            wtype = KEYWORD
+        }
+        ret l.makeToken(Token{Type: wtype, Value: wval,
+            Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](w)})
     }
 
     // 十进制：整数 / 小数 / 科学计数法
@@ -173,7 +201,8 @@ fn Lexer.handleNumber(l *Lexer) *Token {
     if vok {
         num = vf
     }
-    ret l.makeToken(Token{Type: NUMBER, Value: text[i:e], Number: num,
+    var numStr: string = text[i:e]
+    ret l.makeToken(Token{Type: NUMBER, Value: numStr, Number: num,
         Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
 }
 
@@ -234,7 +263,7 @@ fn Lexer.handleString(l *Lexer, delimiter string) *Token {
     }
     // 未闭合：消费到文件尾
     l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
-    var te: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
+    var te: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
     ret te
 }
 
@@ -242,15 +271,20 @@ fn Lexer.handleString(l *Lexer, delimiter string) *Token {
 fn Lexer.Prefetch(l *Lexer) *Token {
     var plen: uint = len(l.Text)
 
-    // 跳过空格（pfPos/pfLine/pfCol 一并推进）
+    // 跳过空白（Go 参考 SkipSep 语义：仅空格与 Tab；换行是 DELIMITER，必须保留）
     var i: uint = unsafe.cast[uint](l.pfPos)
-    for ; i < plen && strings.isSpaceByte(l.Text[i]); {
-        i = i + 1
+    for ; i < plen; {
+        var ib: int = unsafe.cast[int](l.Text[i])
+        if ib == 32 || ib == 9 {
+            i = i + 1
+            continue
+        }
+        break
     }
     l.consume(TokenCoord(l.pfPos, unsafe.cast[int](i)))
     if unsafe.cast[uint](l.pfPos) >= plen {
         // EOF
-        var t: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
+        var t: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
         ret t
     }
 
@@ -315,7 +349,17 @@ fn Lexer.Prefetch(l *Lexer) *Token {
         ret l.makeToken(Token{Type: DELIMITER, Value: delimiter,
             Pos: l.pfPos, EndPos: unsafe.cast[int](i + unsafe.cast[uint](delimLen))})
     }
-    var te: *Token = Token{Type: NONE, Line: l.pfLine, Col: l.pfCol}
+    // 主循环因 EOF 退出：结尾的词法 token 需要单独处理
+    if unsafe.cast[int](i) > l.pfPos {
+        var val: string = l.Text[unsafe.cast[uint](l.pfPos):i]
+        var tokenTyp2: TokenType = NAME
+        if isKeyword(val) {
+            tokenTyp2 = KEYWORD
+        }
+        ret l.makeToken(Token{Type: tokenTyp2, Value: val,
+            Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
+    }
+    var te: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
     ret te
 }
 
