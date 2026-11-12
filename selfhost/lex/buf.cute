@@ -3,6 +3,7 @@
 // Cute 编译器按文件名字母序逐文件解析，先声明先可见：buf.cute 需要先于
 // lexer.cute 解析并提供 Token + RingBuffer，因此把 token.go 的类型与函数
 // 整体搬进本文件（buf.go 的所有内容保持在本文件末尾，紧随 token.go 之后）。
+// 关键字/分隔符表与 isKeyword/isDelimiter 移入 keywords.cute（见该文件）。
 // Go 侧参考实现的关键点全部照抄；与 Go 的差异仅在 Cute 必要处。
 //
 // 与 Go 的差异：
@@ -102,62 +103,6 @@ fn RenderVisible(s string) string {
         i = i + 1
     }
     ret out
-}
-
-// kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
-// 全部为字符串常量：列表字面量直接构造（多行字面量本语言不支持，写成单条语句）。
-fn kwTable() []string {
-    ret []string{"break", "build", "case", "const", "continue", "default", "defer", "else", "enum", "except", "fallthrough", "false", "finally", "fn", "for", "if", "import", "interface", "let", "nil", "range", "ret", "return", "struct", "switch", "true", "try", "type", "var", "while"}
-}
-
-// delimTable 分隔符表（已排序；1~3 字符）。
-// Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写。
-fn delimTable() []string {
-    var ds: []string = []string{"", "", "", " ", "!", "!=", `"`, "%", "%=", "&", "&&", "&=", "'", "(", ")", "*", "*=", "+", "++", "+=", ",", "-", "--", "-=", "->", ".", "...", "/", "/*", "//", "/=", ":", ":=", ";", "<", "<<", "<<=", "<=", "=", "==", ">", ">=", ">>", ">>=", "?", "@", "[", `\`, "]", "^", "^=", "`", "{", "|", "|=", "||", "}", "~"}
-    ds[0] = strings.fromByte(9)    // \t
-    ds[1] = strings.fromByte(10)   // \n
-    ds[2] = strings.fromByte(13)   // \r
-    ret ds
-}
-
-// isKeyword 二分查找 keywords。
-fn isKeyword(s string) bool {
-    var kwList: []string = kwTable()
-    var lo: int = 0
-    var hi: int = len(kwList) - 1
-    for ; lo <= hi; {
-        var mid: int = (lo + hi) / 2
-        var cmp: int = strings.compare(kwList[mid], s)
-        if cmp == 0 {
-            ret true
-        }
-        if cmp < 0 {
-            lo = mid + 1
-        } else {
-            hi = mid - 1
-        }
-    }
-    ret false
-}
-
-// isDelimiter 二分查找 。
-fn isDelimiter(s string) bool {
-    var delimList: []string = delimTable()
-    var lo: int = 0
-    var hi: int = len(delimList) - 1
-    for ; lo <= hi; {
-        var mid: int = (lo + hi) / 2
-        var cmp: int = strings.compare(delimList[mid], s)
-        if cmp == 0 {
-            ret true
-        }
-        if cmp < 0 {
-            lo = mid + 1
-        } else {
-            hi = mid - 1
-        }
-    }
-    ret false
 }
 
 // RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。

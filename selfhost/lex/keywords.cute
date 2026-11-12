@@ -1,0 +1,67 @@
+// keywords.cute —— 关键字/分隔符表（Go 参考 keywords.go 的移植，作为 lex 包的一部分分发）。
+//
+// 与 keywords.go 的差异仅在：
+//   1. 表为列表字面量直接构造（多行字面量本语言不支持，写成单条语句）；
+//      大列表字面量编译时间实测正常（2026-11-12 工作记录，~0.4s）。
+//   2. Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写
+//      （与 Go 的 "\t"/"\n"/"\r" 等价）。
+//   3. isKeyword/isDelimiter 内对列表做二分查找，与 Go 的
+//      sort.SearchStrings 行为一致（Go init() sort.Strings 折叠为作者化排序）。
+//   4. 分隔符表中的 Tab/LF/CR 条目不产生 token：isSpace 跳过含 LF/CR
+//      （与 Go 参考 isSpace 语义一致）；它们仅供 "//" 行注释保留其后返的换行
+//      以及内部 consume 推进行列号使用。
+import "std:strings"
+
+// kwTable 关键字表（已排序；Go 侧 init() 排序折叠进作者化顺序）。
+fn kwTable() []string {
+    ret []string{"break", "build", "case", "const", "continue", "default", "defer", "else", "enum", "except", "fallthrough", "false", "finally", "fn", "for", "if", "import", "interface", "let", "nil", "range", "ret", "return", "struct", "switch", "true", "try", "type", "var", "while"}
+}
+
+// delimTable 分隔符表（已排序；1~3 字符）。
+fn delimTable() []string {
+    var ds: []string = []string{"", "", "", " ", "!", "!=", `"`, "%", "%=", "&", "&&", "&=", "'", "(", ")", "*", "*=", "+", "++", "+=", ",", "-", "--", "-=", "->", ".", "...", "/", "/*", "//", "/=", ":", ":=", ";", "<", "<<", "<<=", "<=", "=", "==", ">", ">=", ">>", ">>=", "?", "@", "[", `\`, "]", "^", "^=", "`", "{", "|", "|=", "||", "}", "~"}
+    ds[0] = strings.fromByte(9)    // \t
+    ds[1] = strings.fromByte(10)   // \n
+    ds[2] = strings.fromByte(13)   // \r
+    ret ds
+}
+
+// isKeyword 二分查找 keywords。
+fn isKeyword(s string) bool {
+    var kwList: []string = kwTable()
+    var lo: int = 0
+    var hi: int = len(kwList) - 1
+    for ; lo <= hi; {
+        var mid: int = (lo + hi) / 2
+        var cmp: int = strings.compare(kwList[mid], s)
+        if cmp == 0 {
+            ret true
+        }
+        if cmp < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    ret false
+}
+
+// isDelimiter 二分查找分隔符表。
+fn isDelimiter(s string) bool {
+    var delimList: []string = delimTable()
+    var lo: int = 0
+    var hi: int = len(delimList) - 1
+    for ; lo <= hi; {
+        var mid: int = (lo + hi) / 2
+        var cmp: int = strings.compare(delimList[mid], s)
+        if cmp == 0 {
+            ret true
+        }
+        if cmp < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    ret false
+}
