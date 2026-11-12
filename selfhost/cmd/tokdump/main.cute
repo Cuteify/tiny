@@ -9,7 +9,7 @@ import "std:console"
 import "std:memory"
 import "std:strings"
 import "std:syscall"
-import lex "../../lex"
+import lex "../../lexer"
 
 // readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
 fn readAll() string {

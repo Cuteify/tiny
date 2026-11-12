@@ -23,8 +23,8 @@ ARCH=${1:-x86_64}
 shift || true
 
 DEFAULT_FILES="
-selfhost/lex/lex.cute
-selfhost/lex/test/main.cute
+selfhost/lexer/lexer.cute
+selfhost/lexer/test/main.cute
 selfhost/parse/parse.cute
 selfhost/parse/test/main.cute
 selfhost/cmd/tokdump/main.cute
@@ -91,7 +91,7 @@ build_driver() {
         exit 1
     fi
     # shellcheck disable=SC2086
-    if ! gcc $gccargs -nostartfiles -no-pie -e _start -o "$WORK/$name" "$WORK/$name.o" -lpthread >"$WORK/$name-link.log" 2>&1; then
+    if ! gcc $gccargs -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$WORK/$name" "$WORK/$name.o" -nostdlib >"$WORK/$name-link.log" 2>&1; then
         echo "SELFHOST_PARSE_FAIL|LINK|$name"
         tail -10 "$WORK/$name-link.log"
         exit 1

@@ -3,8 +3,8 @@
 // 与 keywords.go 的差异仅在：
 //   1. 表为列表字面量直接构造（多行字面量本语言不支持，写成单条语句）；
 //      大列表字面量编译时间实测正常（2026-11-12 工作记录，~0.4s）。
-//   2. Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写
-//      （与 Go 的 "\t"/"\n"/"\r" 等价）。
+//   2. "\t"/"\n"/"\r" 控制字节走双引号字符串转义（已支持），
+//      与 Go 的等价字面值一致。
 //   3. isKeyword/isDelimiter 内对列表做二分查找，与 Go 的
 //      sort.SearchStrings 行为一致（Go init() sort.Strings 折叠为作者化排序）。
 //   4. 分隔符表中的 Tab/LF/CR 条目不产生 token：isSpace 跳过含 LF/CR
@@ -30,16 +30,15 @@ var gDelimList: []string
 var gDelimReady: bool = false
 
 // delimTable 分隔符表（已排序；1~3 字符）。
-// Tab/LF/CR 三个控制字节无可写字面量，用空位占位后回写；
 // 首次调用时惰性构建并缓存（包级可写变量承载；原实现每次构造 59 元素列表）。
 fn delimTable() []string {
     if gDelimReady {
         ret gDelimList
     }
     var ds: []string = []string{"", "", "", " ", "!", "!=", `"`, "%", "%=", "&", "&&", "&=", "'", "(", ")", "*", "*=", "+", "++", "+=", ",", "-", "--", "-=", "->", ".", "...", "/", "/*", "//", "/=", ":", ":=", ";", "<", "<<", "<<=", "<=", "=", "==", ">", ">=", ">>", ">>=", "?", "@", "[", `\`, "]", "^", "^=", "`", "{", "|", "|=", "||", "}", "~"}
-    ds[0] = strings.fromByte(9)    // \t
-    ds[1] = strings.fromByte(10)   // \n
-    ds[2] = strings.fromByte(13)   // \r
+    ds[0] = "\t"
+    ds[1] = "\n"
+    ds[2] = "\r"
     gDelimList = ds
     gDelimReady = true
     ret gDelimList

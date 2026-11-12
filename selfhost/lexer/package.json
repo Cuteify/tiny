@@ -1,5 +1,5 @@
 {
-    "name": "lex",
+    "name": "lexer",
     "version": "0.2.0",
     "description": "Cuteify 自举词法分析器（Go 参考逐行 1:1 移植，string 输入，无宿主文件 I/O）"
 }

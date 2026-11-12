@@ -1,0 +1,84 @@
+// Cuteify 自举 lexer（token 流对拍驱动）。
+//
+// 从命令行取源文件路径（argv[1]），按 Go 参考 main.go 的格式逐行输出
+// [TYPE]value；空白/注释不产生 token。空源文件也必须能正常读完并输出零 token。
+// 对拍（与 .want 逐字节比较）由 scripts/selfhost_test.sh 完成，本程序不自带断言。
+//
+// 运行（仓库根目录）：
+//   ./main selfhost/lexer/testdata/sample.cute
+// 期望：与 Go 参考 main.go 对 sample.cute 的输出逐字节一致（104 行 [TYPE]value）。
+import "std:console"
+import "std:memory"
+import "std:strings"
+import "std:syscall"
+import lex "../"
+
+fn main() int {
+    // 命令行：/proc/self/cmdline 格式为 "argv[0]\0argv[1]\0..."
+    var argbuf: ptr = memory.malloc(65536)
+    var fd: i32 = syscall.open(strings.toCstring("/proc/self/cmdline"), 0, 0) // O_RDONLY
+    var total: u64 = 0
+    if fd >= 0 {
+        var n: i32 = syscall.read(fd, argbuf, 65536)
+        if n > 0 {
+            total = u64(n)
+        }
+        syscall.close(fd)
+    }
+    // 跳过 argv[0]（到第一个 '\0'）
+    var i: u64 = 0
+    for ; i < total; {
+        var _p1: *u8 = argbuf + i
+        if *_p1 == 0 {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    if i >= total {
+        memory.free(argbuf)
+        console.println("LEXER_SELFTEST|USAGE: 需要一个源文件参数，例如 ./main selfhost/lexer/testdata/sample.cute")
+        ret 2
+    }
+    var argStart: u64 = i
+    var argEnd: u64 = i
+    for ; argEnd < total; {
+        var _p2: *u8 = argbuf + argEnd
+        if *_p2 == 0 {
+            break
+        }
+        argEnd = argEnd + 1
+    }
+    var path: string = strings.view(argbuf + argStart, argEnd - argStart, argEnd - argStart)
+
+    // 读源文件
+    var srcfd: i32 = syscall.open(strings.toCstring(path), 0, 0) // O_RDONLY
+    if srcfd < 0 {
+        memory.free(argbuf)
+        console.print("LEXER_SELFTEST|READ_FAIL|")
+        console.println(path)
+        ret 2
+    }
+    var scr: string = new(string, 65536)
+    var p: *u8 = unsafe.cast[*u8](scr)
+    var pos: uint = 0
+    for ; pos < 65536; {
+        var n: i32 = syscall.read(srcfd, unsafe.cast[ptr](p) + pos, 65536 - pos)
+        if n <= 0 {
+            break
+        }
+        pos = pos + unsafe.cast[uint](n)
+    }
+    syscall.close(srcfd)
+    var src: string = strings.view(unsafe.cast[ptr](p), pos, pos)
+    var l: *lex.Lexer = lex.NewLexer(src)
+    for ; true; {
+        var t: *lex.Token = l.Next()
+        if t.Type == lex.NONE {
+            break
+        }
+        console.println(lex.Token.String(t))
+    }
+    memory.free(argbuf)
+    ret 42
+}

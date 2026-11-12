@@ -15,8 +15,8 @@ ARCH=${1:-x86_64}
 shift || true
 
 DEFAULT_FILES="
-selfhost/lex/lex.cute
-selfhost/lex/test/main.cute
+selfhost/lexer/lexer.cute
+selfhost/lexer/test/main.cute
 selfhost/cmd/tokdump/main.cute
 test/enum/main.cute
 test/complexTest/main.cute
@@ -62,7 +62,7 @@ flock 9
 WORK=${WORK:-/tmp/opencode/selfhost-parity-$ARCH}
 rm -rf "$WORK"
 mkdir -p "$WORK/selfhost"
-cp -a "$ROOT/selfhost/lex" "$WORK/selfhost/lex"
+cp -a "$ROOT/selfhost/lexer" "$WORK/selfhost/lexer"
 cp -a "$ROOT/selfhost/cmd" "$WORK/selfhost/cmd"
 cd "$WORK/selfhost/cmd/tokdump" || exit 1
 
@@ -78,7 +78,7 @@ if ! nasm -f "$fmt" -w-label-redef-late -o "$WORK/main.o" _main.asm >"$WORK/nasm
     exit 1
 fi
 # shellcheck disable=SC2086
-if ! gcc $gccargs -nostartfiles -no-pie -e _start -o "$WORK/tokdump" "$WORK/main.o" -lpthread >"$WORK/link.log" 2>&1; then
+if ! gcc $gccargs -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$WORK/tokdump" "$WORK/main.o" -nostdlib >"$WORK/link.log" 2>&1; then
     echo "SELFHOST_PARITY_FAIL|LINK"
     tail -10 "$WORK/link.log"
     exit 1

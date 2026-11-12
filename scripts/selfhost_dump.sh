@@ -4,14 +4,14 @@
 # 用法（仓库根目录）：
 #   BIN=/tmp/opencode/bin/selfhostc scripts/selfhost_dump.sh [x86_64|x86] [source-file]
 #
-# 默认 arch=x86_64，默认 source-file=selfhost/lex/lex.cute。
+# 默认 arch=x86_64，默认 source-file=selfhost/lexer/lexer.cute。
 # 成功标志：最后一行 `EOF line:col  tokens=N`，退出码 0。
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 1
 BIN=${BIN:-$ROOT/cuteify2}
 ARCH=${1:-x86_64}
-SRC=${2:-$ROOT/selfhost/lex/lex.cute}
+SRC=${2:-$ROOT/selfhost/lexer/lexer.cute}
 
 if [ ! -f "$SRC" ]; then
     echo "源码不存在: $SRC" >&2
@@ -43,7 +43,7 @@ flock 9
 WORK=${WORK:-/tmp/opencode/selfhost-dump-$ARCH}
 rm -rf "$WORK"
 mkdir -p "$WORK/selfhost"
-cp -a "$ROOT/selfhost/lex" "$WORK/selfhost/lex"
+cp -a "$ROOT/selfhost/lexer" "$WORK/selfhost/lexer"
 cp -a "$ROOT/selfhost/cmd" "$WORK/selfhost/cmd"
 cd "$WORK/selfhost/cmd/tokdump" || exit 1
 
@@ -61,7 +61,7 @@ if ! nasm -f "$fmt" -w-label-redef-late -o "$WORK/main.o" _main.asm >"$WORK/nasm
 fi
 
 # shellcheck disable=SC2086
-if ! gcc $gccargs -nostartfiles -no-pie -e _start -o "$WORK/tokdump" "$WORK/main.o" -lpthread >"$WORK/link.log" 2>&1; then
+if ! gcc $gccargs -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$WORK/tokdump" "$WORK/main.o" -nostdlib >"$WORK/link.log" 2>&1; then
     echo "SELFHOST_DUMP_FAIL|LINK"
     tail -10 "$WORK/link.log"
     exit 1
@@ -90,7 +90,7 @@ if grep -q '^ERROR ' "$WORK/tokens.txt"; then
 fi
 
 # 默认输入必须真的覆盖到 lexer 自身的关键 token。
-if [ "$SRC" = "$ROOT/selfhost/lex/lex.cute" ]; then
+if [ "$SRC" = "$ROOT/selfhost/lexer/lexer.cute" ]; then
     if ! grep -qF 'IMPORT  [import]' "$WORK/tokens.txt"; then
         echo "SELFHOST_DUMP_FAIL|missing IMPORT token"
         exit 1
