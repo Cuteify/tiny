@@ -1,252 +1,77 @@
-// Cuteify 自举 lexer 行为测试（新 token 模型 1:1 对应 Go 参考实现）。
+// Cuteify 自举 lexer（token 流对拍驱动）。
+//
+// 读取环境变量 SELFTEST_CASE 指向的源文件，按 Go 参考 main.go 的格式逐行输出
+// [TYPE]value；空白/注释不产生 token。空源文件也必须能正常读完并输出零 token。
+// 对拍（与 .want 逐字节比较）由 scripts/selfhost_test.sh 完成，本程序不自带断言。
 //
 // 运行（仓库根目录）：
-//   scripts/selfhost_test.sh x86_64   # 期望 SELFHOST_OK|x86_64|RC=42
-//   或（本地调试）: CUTE_ROOT=$PWD go run . selfhost/lex/test
-// 约定：返回 42 表示全部通过；其它值是该用例组编号。
+//   SELFTEST_CASE=selfhost/lex/testdata/sample.cute ./main
+// 期望：与 Go 参考 main.go 对 sample.cute 的输出逐字节一致（104 行 [TYPE]value）。
 import "std:console"
-import "std:strings"
 import "std:memory"
+import "std:strings"
+import "std:syscall"
 import lex "../"
 
-// nl 在运行时构造一个只含换行字节（10）的字符串。
-// 当前编译器把源码里的 "\n" 保留为反斜杠 + n，跨行裸串也不可靠，
-// 所以测试用分配器 + makeString 构造真实换行。
+// nl 在运行时构造只含换行字节（10）的字符串（源码里的 \n 是两字符反斜杠+n；
+// console 没有实装该字节，用 syscall 写出真换行）。
 fn nl() string {
-    var p: ptr = memory.malloc(8)
-    var q: *int = p
+    var p: ptr = memory.malloc(1)
+    var q: *u8 = p
     *q = 10
     ret strings.makeString(p, 1, 1)
 }
 
-// chk 读取下一个 token，校验类型与文本（打印每条断言的 PASS/FAIL）。
-fn chk(l *lex.Lexer, want lex.TokenType, s string, id int) bool {
-    var t: *lex.Token = l.Next()
-    if t.Type != want {
-        console.println("FAIL|case=" + strings.itoa(id) + " want=" + lex.TokenType.String(want) + " got=" + lex.TokenType.String(t.Type) + " text=" + t.Value)
-        ret false
+// getenvStr 从 /proc/self/environ 读取环境变量（见 std:syscall.getenv）。
+fn getenvStr(name string) string {
+    var p: ptr = syscall.getenv(strings.toCstring(name), unsafe.cast[u64](len(name)))
+    if p == unsafe.cast[ptr](0) {
+        ret ""
     }
-    if !strings.eq(t.Value, s) {
-        console.println("FAIL|case=" + strings.itoa(id) + " want_text=" + s + " got=" + t.Value)
-        ret false
+    var l: uint = 0
+    for ; ; {
+        var q: *u8 = p + l
+        if *q == 0 {
+            break
+        }
+        l = l + 1
     }
-    ret true
+    ret strings.makeString(p, l, l)
 }
 
-
-// dumpSource 把源码的所有 token 按 Go 参考 main.go 的格式逐条打印：
-//   [TYPE]value   （裸串原样输出，LF/CR/TAB 渲染成 \n \r \t，行尾真换行）
-// 用于直接 diff Go/Cute 两侧的 token 流。
-fn dumpSource(src string) {
-    var dl: *lex.Lexer = lex.NewLexer(src)
+fn main() int {
+    var path: string = getenvStr("SELFTEST_CASE")
+    if len(path) == 0 {
+        console.print("LEXER_SELFTEST|USAGE: 需要 SELFTEST_CASE=<源文件路径>")
+        console.print(nl())
+        ret 2
+    }
+    var fd: i32 = syscall.open(strings.toCstring(path), 0, 0) // O_RDONLY
+    if fd < 0 {
+        console.print("LEXER_SELFTEST|READ_FAIL|")
+        console.print(path)
+        console.print(nl())
+        ret 2
+    }
+    var buf: ptr = memory.malloc(65536)
+    var pos: uint = 0
+    for ; pos < 65536; {
+        var n: i32 = syscall.read(fd, buf + pos, 65536 - pos)
+        if n <= 0 {
+            break
+        }
+        pos = pos + unsafe.cast[uint](n)
+    }
+    syscall.close(fd)
+    var src: string = strings.makeString(buf, pos, pos)
+    var l: *lex.Lexer = lex.NewLexer(src)
     for ; true; {
-        var t: *lex.Token = dl.Next()
+        var t: *lex.Token = l.Next()
         if t.Type == lex.NONE {
             break
         }
         console.print(lex.Token.String(t))
         console.print(nl())
     }
-}
-
-fn main() int {
-    // 1. 空输入
-    var l: *lex.Lexer = lex.NewLexer("")
-    dumpSource("")
-    var t: *lex.Token = l.Next()
-    if t.Type != lex.NONE {
-        console.println("FAIL|case=1")
-        ret 1
-    }
-
-    // 2. 全部关键字 + 标识符
-    l = lex.NewLexer("break build case const continue default defer else enum except fallthrough false finally fn for if import interface let nil range ret return struct switch true try type var while self abc123 _x")
-    dumpSource("break build case const continue default defer else enum except fallthrough false finally fn for if import interface let nil range ret return struct switch true try type var while self abc123 _x")
-    if !chk(l, lex.KEYWORD, "break", 10) { ret 10 }
-    if !chk(l, lex.KEYWORD, "build", 11) { ret 11 }
-    if !chk(l, lex.KEYWORD, "case", 12) { ret 12 }
-    if !chk(l, lex.KEYWORD, "const", 13) { ret 13 }
-    if !chk(l, lex.KEYWORD, "continue", 14) { ret 14 }
-    if !chk(l, lex.KEYWORD, "default", 15) { ret 15 }
-    if !chk(l, lex.KEYWORD, "defer", 16) { ret 16 }
-    if !chk(l, lex.KEYWORD, "else", 17) { ret 17 }
-    if !chk(l, lex.KEYWORD, "enum", 18) { ret 18 }
-    if !chk(l, lex.KEYWORD, "except", 19) { ret 19 }
-    if !chk(l, lex.KEYWORD, "fallthrough", 20) { ret 20 }
-    if !chk(l, lex.KEYWORD, "false", 21) { ret 21 }
-    if !chk(l, lex.KEYWORD, "finally", 22) { ret 22 }
-    if !chk(l, lex.KEYWORD, "fn", 23) { ret 23 }
-    if !chk(l, lex.KEYWORD, "for", 24) { ret 24 }
-    if !chk(l, lex.KEYWORD, "if", 25) { ret 25 }
-    if !chk(l, lex.KEYWORD, "import", 26) { ret 26 }
-    if !chk(l, lex.KEYWORD, "interface", 27) { ret 27 }
-    if !chk(l, lex.KEYWORD, "let", 28) { ret 28 }
-    if !chk(l, lex.KEYWORD, "nil", 29) { ret 29 }
-    if !chk(l, lex.KEYWORD, "range", 30) { ret 30 }
-    if !chk(l, lex.KEYWORD, "ret", 31) { ret 31 }
-    if !chk(l, lex.KEYWORD, "return", 32) { ret 32 }
-    if !chk(l, lex.KEYWORD, "struct", 33) { ret 33 }
-    if !chk(l, lex.KEYWORD, "switch", 34) { ret 34 }
-    if !chk(l, lex.KEYWORD, "true", 35) { ret 35 }
-    if !chk(l, lex.KEYWORD, "try", 36) { ret 36 }
-    if !chk(l, lex.KEYWORD, "type", 37) { ret 37 }
-    if !chk(l, lex.KEYWORD, "var", 38) { ret 38 }
-    if !chk(l, lex.KEYWORD, "while", 39) { ret 39 }
-    if !chk(l, lex.NAME, "self", 40) { ret 40 }
-    if !chk(l, lex.NAME, "abc123", 41) { ret 41 }
-    if !chk(l, lex.NAME, "_x", 42) { ret 43 }
-
-    // 3. 数字：十进制 / 十六 / 二 / 八 / 小数 / 科学计数法 / 下划线
-    l = lex.NewLexer("0 42 1_000 0xFF 0Xab_cd 0b1010_0101 0o755 3.14 1e10 2.5E-3 1.5e-3")
-    dumpSource("0 42 1_000 0xFF 0Xab_cd 0b1010_0101 0o755 3.14 1e10 2.5E-3 1.5e-3")
-    if !chk(l, lex.NUMBER, "0", 50) { ret 50 }
-    if !chk(l, lex.NUMBER, "42", 51) { ret 51 }
-    if !chk(l, lex.NUMBER, "1_000", 52) { ret 52 }
-    if !chk(l, lex.NUMBER, "0xFF", 53) { ret 53 }
-    if !chk(l, lex.NUMBER, "0Xab_cd", 54) { ret 54 }
-    if !chk(l, lex.NUMBER, "0b1010_0101", 55) { ret 55 }
-    if !chk(l, lex.NUMBER, "0o755", 56) { ret 56 }
-    if !chk(l, lex.NUMBER, "3.14", 57) { ret 57 }
-    if !chk(l, lex.NUMBER, "1e10", 58) { ret 58 }
-    if !chk(l, lex.NUMBER, "2.5E-3", 59) { ret 59 }
-    if !chk(l, lex.NUMBER, "1.5e-3", 60) { ret 60 }
-
-    // 4. 数字 Number 字段
-    l = lex.NewLexer("0 42 1_000 0xFF 0b1010 0o755 3.14 1e10 1.5e-3")
-    dumpSource("0 42 1_000 0xFF 0b1010 0o755 3.14 1e10 1.5e-3")
-    t = l.Next()
-    if t.Number != 0.0 { ret 61 }
-    t = l.Next()
-    if t.Number != 42.0 { ret 62 }
-    t = l.Next()
-    if t.Number != 1000.0 { ret 63 }
-    t = l.Next()
-    if t.Number != 255.0 { ret 64 }
-    t = l.Next()
-    if t.Number != 10.0 { ret 65 }
-    t = l.Next()
-    if t.Number != 493.0 { ret 66 }
-    t = l.Next()
-    if t.Number < 3.13 || t.Number > 3.15 { ret 67 }
-    t = l.Next()
-    if t.Number < 9e9 || t.Number > 1.1e10 { ret 68 }
-    t = l.Next()
-    if t.Number < 0.0014 || t.Number > 0.0016 { ret 69 }
-
-    // 5. 数字边界：非法前缀退回 NAME；不完整时不吞字符
-    l = lex.NewLexer("1. 123abc 0x 1.foo 1e 1e+ 0b2 0o8")
-    dumpSource("1. 123abc 0x 1.foo 1e 1e+ 0b2 0o8")
-    if !chk(l, lex.NUMBER, "1", 70) { ret 70 }
-    if !chk(l, lex.DELIMITER, ".", 71) { ret 71 }
-    if !chk(l, lex.NUMBER, "123", 72) { ret 72 }
-    if !chk(l, lex.NAME, "abc", 73) { ret 73 }
-    if !chk(l, lex.NAME, "0x", 74) { ret 74 }
-    if !chk(l, lex.NUMBER, "1", 75) { ret 75 }
-    if !chk(l, lex.DELIMITER, ".", 76) { ret 76 }
-    if !chk(l, lex.NAME, "foo", 77) { ret 77 }
-    if !chk(l, lex.NUMBER, "1", 78) { ret 78 }
-    if !chk(l, lex.NAME, "e", 79) { ret 79 }
-    if !chk(l, lex.NUMBER, "1", 80) { ret 80 }
-    if !chk(l, lex.NAME, "e", 81) { ret 81 }
-    if !chk(l, lex.DELIMITER, "+", 82) { ret 82 }
-    if !chk(l, lex.NAME, "0b", 83) { ret 83 }
-    if !chk(l, lex.NUMBER, "2", 87) { ret 87 }
-    if !chk(l, lex.NAME, "0o", 84) { ret 84 }
-    if !chk(l, lex.NUMBER, "8", 88) { ret 88 }
-
-    // 5b. 文本以 "." 结尾：secondByte 前置加载不能越界读 Text[plen]
-    l = lex.NewLexer("1.")
-    dumpSource("1.")
-    if !chk(l, lex.NUMBER, "1", 85) { ret 85 }
-    if !chk(l, lex.DELIMITER, ".", 86) { ret 86 }
-
-    // 6. 二字符与三字符分隔符（最长匹配）
-    l = lex.NewLexer("<<= >>= ... == != <= >= ++ -- -> && || << >> := += -= *= /= %= ^= &= |= // /*")
-    dumpSource("<<= >>= ... == != <= >= ++ -- -> && || << >> := += -= *= /= %= ^= &= |= // /*")
-    if !chk(l, lex.DELIMITER, "<<=", 90) { ret 90 }
-    if !chk(l, lex.DELIMITER, ">>=", 91) { ret 91 }
-    if !chk(l, lex.DELIMITER, "...", 92) { ret 92 }
-    if !chk(l, lex.DELIMITER, "==", 93) { ret 93 }
-    if !chk(l, lex.DELIMITER, "!=", 94) { ret 94 }
-    if !chk(l, lex.DELIMITER, "<=", 95) { ret 95 }
-    if !chk(l, lex.DELIMITER, ">=", 96) { ret 96 }
-    if !chk(l, lex.DELIMITER, "++", 97) { ret 97 }
-    if !chk(l, lex.DELIMITER, "--", 98) { ret 98 }
-    if !chk(l, lex.DELIMITER, "->", 99) { ret 99 }
-    if !chk(l, lex.DELIMITER, "&&", 100) { ret 100 }
-    if !chk(l, lex.DELIMITER, "||", 101) { ret 101 }
-    if !chk(l, lex.DELIMITER, "<<", 102) { ret 102 }
-    if !chk(l, lex.DELIMITER, ">>", 103) { ret 103 }
-    if !chk(l, lex.DELIMITER, ":=", 104) { ret 104 }
-    if !chk(l, lex.DELIMITER, "+=", 105) { ret 105 }
-    if !chk(l, lex.DELIMITER, "-=", 106) { ret 106 }
-    if !chk(l, lex.DELIMITER, "*=", 107) { ret 107 }
-    if !chk(l, lex.DELIMITER, "/=", 108) { ret 108 }
-    if !chk(l, lex.DELIMITER, "%=", 109) { ret 109 }
-    if !chk(l, lex.DELIMITER, "^=", 110) { ret 110 }
-    if !chk(l, lex.DELIMITER, "&=", 111) { ret 111 }
-    if !chk(l, lex.DELIMITER, "|=", 112) { ret 112 }
-    // 注释（// 至换行/文件尾）：不产生 token，流直接结束
-    if !chk(l, lex.NONE, "", 113) { ret 113 }
-
-    // 7. 字符串 / 字符 / 裸串（'x' 与 "x" 一样是字符串；`x` 是裸串）
-    var sStr: string = `"hello" 'a' ` + "`hi`"
-    l = lex.NewLexer(sStr)
-    dumpSource(sStr)
-    if !chk(l, lex.STRING, "hello", 120) { ret 120 }
-    if !chk(l, lex.STRING, "a", 121) { ret 121 }
-    if !chk(l, lex.STRING, "hi", 122) { ret 122 }
-    var sStr2: string = `'a'`
-    l = lex.NewLexer(sStr2)
-    dumpSource(sStr2)
-    if !chk(l, lex.STRING, "a", 123) { ret 123 }
-    var sStr3: string = "`raw hi`"
-    l = lex.NewLexer(sStr3)
-    dumpSource(sStr3)
-    if !chk(l, lex.STRING, "raw hi", 124) { ret 124 }
-
-    // 8. 注释：// 与 /* */（换行用 nl() 构造，Cute 源码里的 \n 是两字符）
-    var nlStr: string = nl()
-    var src: string = "a // comment" + nlStr + "b"
-    l = lex.NewLexer(src)
-    dumpSource(src)
-    if !chk(l, lex.NAME, "a", 130) { ret 130 }
-    if !chk(l, lex.NAME, "b", 131) { ret 131 }
-    if !chk(l, lex.NONE, "", 132) { ret 132 }
-
-    var src2: string = "x /* block" + nlStr + "comment */ y"
-    l = lex.NewLexer(src2)
-    dumpSource(src2)
-    if !chk(l, lex.NAME, "x", 133) { ret 133 }
-    if !chk(l, lex.NAME, "y", 134) { ret 134 }
-
-    // 9. 位置：行列号跨行
-    var src3: string = "ab" + nlStr + "cd"
-    l = lex.NewLexer(src3)
-    dumpSource(src3)
-    t = l.Next()
-    if t.Line != 1 { ret 140 }
-    if t.Col != 1 { ret 141 }
-    if t.EndLine != 1 { ret 142 }
-    if t.EndCol != 3 { ret 143 }
-    t = l.Next()
-    // 换行不进 token 流（与 Go 参考一致）：下一 token 直接是 cd（第 2 行第 1 列）
-    if t.Type != lex.NAME || !strings.eq(t.Value, "cd") { ret 144 }
-    if t.Line != 2 { ret 145 }
-    if t.Col != 1 { ret 146 }
-    if t.EndLine != 2 { ret 147 }
-    if t.EndCol != 3 { ret 148 }
-
-    // 10. EOF 与缓存：连续读两次都是 NONE
-    l = lex.NewLexer("abc")
-    dumpSource("abc")
-    t = l.Next()
-    t = l.Next()
-    t = l.Next()
-    t = l.Next()
-    if t.Type != lex.NONE { ret 160 }
-    if l.Pos != 3 { ret 161 }
-
-    console.println("LEXER_SELFTEST|PASS|ALL")
     ret 42
 }
