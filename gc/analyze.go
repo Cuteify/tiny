@@ -984,9 +984,11 @@ func callSummary(cb *parser.CallBlock) *FnSummary {
 }
 
 // pureBuiltinEscapes 纯内建参数逃逸摘要：只读实参，不保存/返回地址。
+// unsafe.cast 是编译器 no-op 内建（位级重解释，从不逃逸实参）：不入清单时，
+// 含 cast 的函数被 LLR 整体禁用帧内释放（CallsAny 非空即早退）。
 func pureBuiltinEscapes(name string) (Escape, bool) {
 	switch name {
-	case "len", "cap", "sizeof", "print", "println", "panic":
+	case "len", "cap", "sizeof", "print", "println", "panic", "unsafe.cast":
 		return EscNone, true
 	}
 	return EscNone, false
