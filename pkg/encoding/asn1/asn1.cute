@@ -119,7 +119,7 @@ fn marshalInt(v int) string {
     }
     var totalLen: int = 1 + lenBytes + valLen
     memory.free(valBuf)
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }
 
 // marshalString 将字符串编码为 ASN.1 DER UTF8String 格式
@@ -170,5 +170,5 @@ fn marshalString(s string) string {
         i = i + 1
     }
     var totalLen: int = 1 + lenBytes + sLen
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }

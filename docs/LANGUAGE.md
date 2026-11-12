@@ -746,7 +746,7 @@ var q: *P = new(P, 7, 8)    // 按字段顺序初始化
 - ❌ `new([]int)`（不传长度）会在汇编阶段报 `invalid combination of opcode and operands`。
 - ❌ `newRC([]int, n)` 能分配，但列表读写结果错误；`newRC(int, 7)` 正常。
 
-> `strings.makeString(buf, len, cap)` 只负责把**已有的** buf 指针包成 string 三槽头（借用外部 ptr，LLR 不视其为本帧分配，调用方自行管理底层缓冲）；需要创建可写 string 时用 `new(string, n)`，不要手写 `memory.malloc` + `makeString`。
+> `strings.view(buf, len, cap)` 只负责把**已有的** buf 指针包成 string 三槽头（借用外部 ptr，LLR 不视其为本帧分配，调用方自行管理底层缓冲）；需要创建可写 string 时用 `new(string, n)`，不要手写 `memory.malloc` + `view`。
 
 ### 6.7 结构体方法 ✅
 

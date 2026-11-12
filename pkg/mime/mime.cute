@@ -152,7 +152,7 @@ fn typeByExtension(ext string) string {
             }
             var _p7: *u8 = buf + extLen + 1
             *_p7 = unsafe.cast[u8](0)
-            lookupExt = strings.makeString(buf, extLen + 1, extLen + 1)
+            lookupExt = strings.view(buf, extLen + 1, extLen + 1)
         }
     }
     var lookupPtr: ptr = strings.toCstring(lookupExt)
@@ -209,7 +209,7 @@ fn typeByExtension(ext string) string {
             }
             var _p16: *u8 = mimeBuf + mimeLen
             *_p16 = unsafe.cast[u8](0)
-            ret strings.makeString(mimeBuf, mimeLen, mimeLen)
+            ret strings.view(mimeBuf, mimeLen, mimeLen)
         }
         i = i + 1
     }
@@ -248,5 +248,5 @@ fn Extensions() string {
     }
     var _p22: *u8 = buf + outPos
     *_p22 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }

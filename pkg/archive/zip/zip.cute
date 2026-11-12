@@ -102,7 +102,7 @@ fn NewReader(data string) *Reader {
 
         // 提取文件名
         var namePtr: ptr = rPtr + pos + 30
-        var name: string = strings.makeString(namePtr, nameLen, nameLen)
+        var name: string = strings.view(namePtr, nameLen, nameLen)
 
         // 文件数据偏移 = 文件头起始 + 30 + nameLen + extraLen
         var dataOffset: uint = pos + 30 + nameLen + extraLen

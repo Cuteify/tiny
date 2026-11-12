@@ -80,7 +80,7 @@ fn encode(s string) string {
     }
     var _p7: *u8 = buf + outPos
     *_p7 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }
 
 // decode 将 Quoted-Printable 编码的字符串解码
@@ -137,5 +137,5 @@ fn decode(s string) string {
     }
     var _p15: *u8 = buf + outPos
     *_p15 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }

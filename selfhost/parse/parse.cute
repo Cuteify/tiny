@@ -353,7 +353,7 @@ fn repeatText(s string, count int) string {
 fn negFloatText(s string) string {
     var n: uint = strings.len(s)
     if n > 0 && byteStr(s, 0) == 45 {
-        ret strings.makeString(strings.toCstring(s) + 1, n - 1, n - 1)
+        ret strings.view(strings.toCstring(s) + 1, n - 1, n - 1)
     }
     ret catText("-", s)
 }
@@ -495,7 +495,7 @@ fn spanText(x *Parser, s uint) string {
         e = s
     }
     var n: uint = e - s
-    var t: string = strings.makeString(x.p + s, n, n)
+    var t: string = strings.view(x.p + s, n, n)
     ret strings.trimRight(t, " ")
 }
 
@@ -688,7 +688,7 @@ fn skipSep(x *Parser) {
 // tstr 把当前 token 的 [a,b) 区间构造为 string 视图。
 fn tstr(x *Parser) string {
     var n: uint = x.b - x.a
-    ret strings.makeString(x.p + x.a, n, n)
+    ret strings.view(x.p + x.a, n, n)
 }
 
 // at 判断当前 token 文本是否等于 s。
@@ -1296,7 +1296,7 @@ fn canonTypeText(s string) string {
                 }
                 i = i + 1
             }
-            var word: string = strings.makeString(strings.toCstring(s) + st, i - st, i - st)
+            var word: string = strings.view(strings.toCstring(s) + st, i - st, i - st)
             if prevDot {
                 strings.builderWriteString(bb, word)
             } else {
@@ -1304,7 +1304,7 @@ fn canonTypeText(s string) string {
             }
             prevDot = false
         } else {
-            var one: string = strings.makeString(strings.toCstring(s) + i, 1, 1)
+            var one: string = strings.view(strings.toCstring(s) + i, 1, 1)
             strings.builderWriteString(bb, one)
             prevDot = c == 46
             i = i + 1
@@ -1727,7 +1727,7 @@ fn dropLast(s string) string {
         ret s
     }
     var m: uint = n - 1
-    ret strings.makeString(strings.toCstring(s), m, m)
+    ret strings.view(strings.toCstring(s), m, m)
 }
 
 // forStmt 解析 while 形式、for ; cond ; 形式、三表达式形式与 range 形式。
@@ -2081,7 +2081,7 @@ fn firstName(s string) string {
     var i: uint = 0
     for ; i < n; {
         if byteStr(s, i) == 46 {
-            ret strings.makeString(strings.toCstring(s), i, i)
+            ret strings.view(strings.toCstring(s), i, i)
         }
         i = i + 1
     }
@@ -2418,10 +2418,10 @@ fn goIntText(n int) string {
         end = end - 1
     }
     var bb: ptr = strings.builderNew(nd + 8)
-    strings.builderWriteString(bb, strings.makeString(strings.toCstring(dec), 1, 1))
+    strings.builderWriteString(bb, strings.view(strings.toCstring(dec), 1, 1))
     if end > 1 {
         strings.builderWriteString(bb, ".")
-        var mant: string = strings.makeString(strings.toCstring(dec) + 1, end - 1, end - 1)
+        var mant: string = strings.view(strings.toCstring(dec) + 1, end - 1, end - 1)
         strings.builderWriteString(bb, mant)
     }
     strings.builderWriteString(bb, "e+")

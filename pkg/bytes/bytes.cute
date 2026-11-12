@@ -124,7 +124,7 @@ fn String(b ptr) string {
     }
     var _p23: *u8 = strPtr + dataLen
     *_p23 = unsafe.cast[u8](0)
-    ret strings.makeString(strPtr, dataLen, dataLen)
+    ret strings.view(strPtr, dataLen, dataLen)
 }
 
 // bytes 返回缓冲区数据的原始指针和长度（不支持列表，直接返回信息）

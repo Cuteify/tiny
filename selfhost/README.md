@@ -193,7 +193,7 @@ token 的判断本身不一致）、`Error` 的行列定位、`Filename`、`SepT
 3. **容器实参三槽装载**：`SysV.Call` 的寄存器 buffer 与栈参数路径统一走表达式编译器，
    支持字符串拼接、切片、调用等任意容器表达式。此前 `f("a" + b)` 会把实参编译成
    全零容器，只有先赋给局部变量再传参才正常。
-4. **GC 视图所有权**：`strings.makeString` 返回的是外部 ptr 的视图，不应由 LLR 自动
+4. **GC 视图所有权**：`strings.view` 返回的是外部 ptr 的视图，不应由 LLR 自动
    释放。前端摘要把“对局部变量取地址”保守判为 `Unknown`，后端 `exprAllocates` 只认
    `RetOwned && RetKind == RetFresh`。修复前 `lex.text(l)` 的返回值会在条件分支被
    `freeSlot`，导致 token 文本偶发损坏。

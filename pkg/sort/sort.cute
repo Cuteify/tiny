@@ -218,7 +218,7 @@ fn _strLoad(data: ptr, index: int) string {
     var pPtr: *ptr = data + off
     var pLen: *int = data + off + 8
     var pCap: *int = data + off + 16
-    ret strings.makeString(*pPtr, *pLen, *pCap)
+    ret strings.view(*pPtr, *pLen, *pCap)
 }
 
 // _strStore 将 string s 存入 data + index*_STR_ELEM

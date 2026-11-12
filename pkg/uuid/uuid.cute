@@ -115,5 +115,5 @@ fn new() string {
     *_p26 = unsafe.cast[u8](0)
     memory.free(bytes)
     memory.free(formatOrder)
-    ret strings.makeString(buf, pos, pos)
+    ret strings.view(buf, pos, pos)
 }

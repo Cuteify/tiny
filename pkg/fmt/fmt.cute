@@ -46,7 +46,7 @@ fn appendInt(s string, n int) string {
     }
     var _p5: *u8 = buf + totalLen
     *_p5 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }
 
 // appendStr 将字符串追加到现有字符串末尾
@@ -75,7 +75,7 @@ fn appendStr(s string, suffix string) string {
     }
     var _p10: *u8 = buf + totalLen
     *_p10 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }
 
 // appendChar 将单个字符追加到字符串末尾
@@ -96,5 +96,5 @@ fn appendChar(s string, c int) string {
     *_p13 = unsafe.cast[u8](c)
     var _p14: *u8 = buf + sLen + 1
     *_p14 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, sLen + 1, sLen + 1)
+    ret strings.view(buf, sLen + 1, sLen + 1)
 }

@@ -113,7 +113,7 @@ fn Error(t *T, msg string) {
     pos = pos + newLen
     var _p13: *u8 = buf + pos
     *_p13 = unsafe.cast[u8](0)
-    _tgSetErr(t, strings.makeString(buf, totalLen, totalLen))
+    _tgSetErr(t, strings.view(buf, totalLen, totalLen))
 }
 
 // Equal 断言两个整数相等，不等则标记失败（T 轨 int 家族）
@@ -175,7 +175,7 @@ fn _mkNeq(head string, a int, b int) string {
     pos = pos + bn
     var _p23: *u8 = msgBuf + pos
     *_p23 = unsafe.cast[u8](0)
-    ret strings.makeString(msgBuf, pos, pos)
+    ret strings.view(msgBuf, pos, pos)
 }
 
 // EqualStr 断言两个字符串相等，不等则标记失败（T 轨 string 家族）
@@ -228,7 +228,7 @@ fn EqualStr(t *T, a string, b string) {
         pos = pos + 1
         var _p33: *u8 = msgBuf + pos
         *_p33 = unsafe.cast[u8](0)
-        Error(t, strings.makeString(msgBuf, pos, pos))
+        Error(t, strings.view(msgBuf, pos, pos))
     }
 }
 
@@ -326,7 +326,7 @@ fn assertEqST(t *T, a: string, b: string) bool {
         pos = pn
         var _p36: *u8 = msgBuf + pos
         *_p36 = unsafe.cast[u8](0)
-        Error(t, strings.makeString(msgBuf, pos, pos))
+        Error(t, strings.view(msgBuf, pos, pos))
         ret false
     }
     ret true

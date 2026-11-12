@@ -94,7 +94,7 @@ fn encode(data string) string {
     outPos = outPos + 2
     var _p10: *u8 = buf + outPos
     *_p10 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }
 
 // decode 将 Ascii85 字符串解码为字节数据
@@ -181,5 +181,5 @@ fn decode(s string) string {
     }
     var _p21: *u8 = buf + outPos
     *_p21 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }

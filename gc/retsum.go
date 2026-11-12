@@ -175,7 +175,7 @@ func (a *analysis) localRetKind(name string, fb *parser.FuncBlock, visiting map[
 		return ReturnUnknown
 	}
 	// 取地址的局部不能按“零值 + 显式赋值”判定：函数可能通过指针把参数 /
-	// 静态缓冲写进它（strings.makeString 的 var result + &result 就是实例）。
+	// 静态缓冲写进它（strings.view 的 var result + &result 就是实例）。
 	// 这类局部一律 Unknown，避免调用方 free 掉非本帧分配的底层缓冲。
 	if a.bodyTakesAddrOf(fb, name) {
 		return ReturnUnknown

@@ -77,7 +77,7 @@ fn trimLeft(s string, cutset string) string {
     }
     var _p5: *u8 = buf + newLen
     *_p5 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, newLen, newLen)
+    ret strings.view(buf, newLen, newLen)
 }
 
 // trimRight 从 s 右侧去除 cutset 中包含的字符
@@ -120,7 +120,7 @@ fn trimRight(s string, cutset string) string {
     }
     var _p10: *u8 = buf + end
     *_p10 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, end, end)
+    ret strings.view(buf, end, end)
 }
 
 // trim 从 s 两端去除 cutset 中包含的字符
@@ -376,7 +376,7 @@ fn bufSetInt(buf ptr, offset int, n int) int {
 
 // bufToString 将缓冲区包装为 string 并释放缓冲区
 fn bufToString(buf ptr, length int) string {
-    var s: string = strings.makeString(buf, length, length)
+    var s: string = strings.view(buf, length, length)
     memory.free(buf)
     ret s
 }
@@ -407,7 +407,7 @@ fn formatBool(b bool) string {
         *_p37 = unsafe.cast[u8](101)
         var _p38: *u8 = tbuf + 4
         *_p38 = unsafe.cast[u8](0)
-        ret strings.makeString(tbuf, 4, 4)
+        ret strings.view(tbuf, 4, 4)
     }
     var fbuf: ptr = memory.malloc(6)
     var _p39: *u8 = fbuf
@@ -422,7 +422,7 @@ fn formatBool(b bool) string {
     *_p43 = unsafe.cast[u8](101)
     var _p44: *u8 = fbuf + 5
     *_p44 = unsafe.cast[u8](0)
-    ret strings.makeString(fbuf, 5, 5)
+    ret strings.view(fbuf, 5, 5)
 }
 
 // ===== 新增函数 =====
@@ -534,7 +534,7 @@ fn clone(s string) string {
     }
     var _p53: *u8 = buf + sLen
     *_p53 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, sLen, sLen)
+    ret strings.view(buf, sLen, sLen)
 }
 
 // reverse 返回 s 的反转字符串
@@ -556,7 +556,7 @@ fn reverse(s string) string {
     }
     var _p56: *u8 = buf + sLen
     *_p56 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, sLen, sLen)
+    ret strings.view(buf, sLen, sLen)
 }
 
 // repeatN 返回 s 重复 count 次的新字符串（repeat 的 int 参数版本）
@@ -669,7 +669,7 @@ fn replaceAll(s string, old string, new string) string {
         scan = idx + oLen
     }
     *(_oU8 + o) = 0
-    ret strings.makeString(out, o, o)
+    ret strings.view(out, o, o)
 }
 
 // parseUint 按 base（2-36）解析无符号整数；等价于 strconv.ParseUint 的成功路径。
@@ -813,7 +813,7 @@ fn fromByte(b u8) string {
     var bufu8: *u8 = buf
     *bufu8 = b
     *(bufu8 + 1) = unsafe.cast[u8](0)
-    ret makeString(buf, 1, 1)
+    ret view(buf, 1, 1)
 }
 
 // formatUint 把无符号整数按 base（2-36）转为字符串；逆向调用 n%base 求各位。
@@ -830,7 +830,7 @@ fn formatUint(n uint, base uint) string {
     if v == 0 {
         *bufU8 = 48
         *(bufU8 + 1) = 0
-        ret strings.makeString(buf, 1, 1)
+        ret strings.view(buf, 1, 1)
     }
     var i: uint = digits - 1
     *(bufU8 + digits) = 0
@@ -847,5 +847,5 @@ fn formatUint(n uint, base uint) string {
         if i == 0 { break }
         i = i - 1
     }
-    ret strings.makeString(buf, digits, digits)
+    ret strings.view(buf, digits, digits)
 }

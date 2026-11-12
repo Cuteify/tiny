@@ -16,7 +16,7 @@ fn nl() string {
     var p: ptr = memory.malloc(8)
     var q: *int = p
     *q = 10
-    ret strings.makeString(p, 1, 1)
+    ret strings.view(p, 1, 1)
 }
 
 // readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
@@ -31,7 +31,7 @@ fn readAll() string {
         }
         total = total + unsafe.cast[uint](n)
     }
-    ret strings.makeString(buf, total, total)
+    ret strings.view(buf, total, total)
 }
 
 // advance 从 from 扫描到 to，更新 1-based 行列号（行号按 LF 递增）。
@@ -68,19 +68,19 @@ fn showText(t string) {
         var b: u8 = *q
         if b == 10 {
             if i > s {
-                console.print(strings.makeString(p + s, i - s, i - s))
+                console.print(strings.view(p + s, i - s, i - s))
             }
             console.print(`\n`)
             s = i + 1
         } else if b == 13 {
             if i > s {
-                console.print(strings.makeString(p + s, i - s, i - s))
+                console.print(strings.view(p + s, i - s, i - s))
             }
             console.print(`\r`)
             s = i + 1
         } else if b == 9 {
             if i > s {
-                console.print(strings.makeString(p + s, i - s, i - s))
+                console.print(strings.view(p + s, i - s, i - s))
             }
             console.print(`\t`)
             s = i + 1
@@ -88,7 +88,7 @@ fn showText(t string) {
         i = i + 1
     }
     if n > s {
-        console.print(strings.makeString(p + s, n - s, n - s))
+        console.print(strings.view(p + s, n - s, n - s))
     }
 }
 

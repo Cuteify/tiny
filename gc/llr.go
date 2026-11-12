@@ -85,7 +85,7 @@ type LLRResult struct {
 
 // LLRCondFree 条件/增量表达式中的 owning call 临时对象释放标记。
 // 只在能证明调用结果独占（RetFresh、无 alias/borrow mask）且被调自身确有
-// 堆分配时登记；非分配包装器（如 strings.makeString）只建对象、不释放。
+// 堆分配时登记；非分配包装器（如 strings.view）只建对象、不释放。
 type LLRCondFree struct {
 	VarName string            `json:"varName"` // 合成槽名（$cond0…，调试用）
 	Callee  string            `json:"callee"`  // 调用摘要键
@@ -824,7 +824,7 @@ func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool) []LLRC
 
 // condTempFreeable 判断一次 owning call 的结果能否作为独立临时释放。
 // 必须同时满足：新分配、无参数别名/借用 mask、被调自身确有堆分配。
-// 最后一条排除 strings.makeString 这类只包装外部 ptr 的非分配函数：
+// 最后一条排除 strings.view 这类只包装外部 ptr 的非分配函数：
 // 其 RetFresh 目前只是“返回局部容器”的近似，底层缓冲仍由调用方/容器持有。
 func condTempFreeable(fs *FnSummary) bool {
 	if fs == nil || !fs.RetOwned || fs.RetKind != RetFresh {

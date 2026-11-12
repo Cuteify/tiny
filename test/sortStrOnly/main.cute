@@ -15,7 +15,7 @@ fn main() int {
     memory.free(memory.malloc(8))
     println("done2")
 
-    // Test makeString manually
+    // Test view manually
     var buf: ptr = memory.malloc(24)
     var _p1: *ptr = buf
     *_p1 = unsafe.cast[ptr](strings.toCstring("hello"))
@@ -26,7 +26,7 @@ fn main() int {
     var _p4: *ptr = buf
     var _p5: *ptr = buf + 8
     var _p6: *ptr = buf + 16
-    var s: string = strings.makeString(*_p4, *_p5, *_p6)
+    var s: string = strings.view(*_p4, *_p5, *_p6)
     console.println(s)
     println("done3")
 

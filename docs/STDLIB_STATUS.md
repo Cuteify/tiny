@@ -122,7 +122,7 @@ fn main() int {
 
 对可疑语义单独写最小目录验证，例如：
 
-- `strings.eq("ab","ab")` vs `strings.eq(makeString(...), "ab")`；
+- `strings.eq("ab","ab")` vs `strings.eq(view(...), "ab")`；
 - `time.durationString(u64变量)` vs `time.durationString(大整数字面量)`；
 - 把 `pkg/io/test`、`pkg/time/test` 里的 `strings.eq` 全部替换为
   `strings.compare(...) != 0` 后复跑。
@@ -474,7 +474,7 @@ ret true
 
 ```text
 strings.eq("ab", "ab")                  -> true   // 同一字面量被去重成同一指针
-strings.eq(makeString(...), "ab")       -> false  // 内容相同，指针不同
+strings.eq(view(...), "ab")       -> false  // 内容相同，指针不同
 strings.eq(构造字符串, 构造字符串)        -> 通常 false
 ```
 
@@ -834,7 +834,7 @@ fn main() int {
     *_p1 = 97
     var _p2: *u8 = buf + 1
     *_p2 = 98
-    var c: string = strings.makeString(buf, 2, 2)
+    var c: string = strings.view(buf, 2, 2)
     console.print("constructed=")
     if strings.eq(c, "ab") { console.print("Y\n") } else { console.print("N\n") }
     console.print("compare=")

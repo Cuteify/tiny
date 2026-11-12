@@ -21,7 +21,7 @@ fn NewReader(data string) *Reader {
     // 跳过 zlib 头部（2 字节）
     var flateData: ptr = rPtr + 2
     var flateLen: uint = rLen - 2
-    var flateStr: string = strings.makeString(flateData, flateLen, flateLen)
+    var flateStr: string = strings.view(flateData, flateLen, flateLen)
     var fr: *flate.Reader = flate.NewReader(flateStr)
     var _p1: *ptr = buf
     *_p1 = unsafe.cast[ptr](fr)
@@ -120,5 +120,5 @@ fn Close(w ptr) string {
     *_p18 = unsafe.cast[u8](adler & 0xFF)
     var _p19: *u8 = outPtr + totalLen
     *_p19 = unsafe.cast[u8](0)
-    ret strings.makeString(outPtr, totalLen, totalLen)
+    ret strings.view(outPtr, totalLen, totalLen)
 }

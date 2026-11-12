@@ -117,7 +117,7 @@ fn RenderVisible(s string) string {
         i = i + 1
     }
     *(bufu8 + w) = 0
-    ret strings.makeString(buf, w, w)
+    ret strings.view(buf, w, w)
 }
 
 // RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。

@@ -70,7 +70,7 @@ fn parseTarName(ptr ptr, maxLen uint) string {
     }
     var _p5: *u8 = strPtr + i
     *_p5 = unsafe.cast[u8](0)
-    ret strings.makeString(strPtr, i, i)
+    ret strings.view(strPtr, i, i)
 }
 
 // NewReader 创建 tar 读取器

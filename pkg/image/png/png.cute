@@ -78,7 +78,7 @@ fn Encode(img **image.Image) string {
     }
     var _p17: *u8 = buf + totalLen
     *_p17 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }
 
 // NewReader 从数据字符串解码图像（简化版：解析 "RGBA:w:h:<raw>" 格式）

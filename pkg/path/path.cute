@@ -95,7 +95,7 @@ fn base(path string) string {
     }
     var _p8: *u8 = buf + baseLen
     *_p8 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, baseLen, baseLen)
+    ret strings.view(buf, baseLen, baseLen)
 }
 
 // dir 返回路径的目录部分（最后一个斜杠之前的部分）
@@ -159,7 +159,7 @@ fn dir(path string) string {
     }
     var _p14: *u8 = buf + dirLen
     *_p14 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, dirLen, dirLen)
+    ret strings.view(buf, dirLen, dirLen)
 }
 
 // ext 返回文件扩展名（包含 '.'），没有扩展名返回空字符串
@@ -199,7 +199,7 @@ fn ext(path string) string {
         }
         var _p18: *u8 = buf + extLen
         *_p18 = unsafe.cast[u8](0)
-        ret strings.makeString(buf, extLen, extLen)
+        ret strings.view(buf, extLen, extLen)
     }
     ret ""
 }
@@ -241,7 +241,7 @@ fn split(path string) (string, string) {
         }
         var _p22: *u8 = dirBuf + dirLen
         *_p22 = unsafe.cast[u8](0)
-        dirPart = strings.makeString(dirBuf, dirLen, dirLen)
+        dirPart = strings.view(dirBuf, dirLen, dirLen)
     }
     // 文件部分
     var fileLen: uint = sLen - last - 1
@@ -258,7 +258,7 @@ fn split(path string) (string, string) {
     }
     var _p25: *u8 = fileBuf + fileLen
     *_p25 = unsafe.cast[u8](0)
-    var filePart: string = strings.makeString(fileBuf, fileLen, fileLen)
+    var filePart: string = strings.view(fileBuf, fileLen, fileLen)
     return dirPart, filePart
 }
 
@@ -408,7 +408,7 @@ fn clean(path string) string {
     }
     var endp: *u8 = buf + dst
     *endp = unsafe.cast[u8](0)
-    ret strings.makeString(buf, dst, dst)
+    ret strings.view(buf, dst, dst)
 }
 
 // join 连接两个路径元素
@@ -454,7 +454,7 @@ fn join(elem1 string, elem2 string) string {
         }
         var _p40: *u8 = buf + totalLen
         *_p40 = unsafe.cast[u8](0)
-        ret strings.makeString(buf, totalLen, totalLen)
+        ret strings.view(buf, totalLen, totalLen)
     }
 
     // 需要加一个斜杠
@@ -479,7 +479,7 @@ fn join(elem1 string, elem2 string) string {
     }
     var _p46: *u8 = buf + totalLen
     *_p46 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, totalLen, totalLen)
+    ret strings.view(buf, totalLen, totalLen)
 }
 
 // ============================================================
@@ -563,7 +563,7 @@ fn localize(path string) string {
     }
     var _p55: *u8 = buf + newLen
     *_p55 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, newLen, newLen)
+    ret strings.view(buf, newLen, newLen)
 }
 
 // abs 获取绝对路径（通过 getcwd 获取当前目录并拼接）
@@ -603,7 +603,7 @@ fn abs(path string) string {
     }
     var _p62: *u8 = buf + totalLen
     *_p62 = unsafe.cast[u8](0)
-    var joined: string = strings.makeString(buf, totalLen, totalLen)
+    var joined: string = strings.view(buf, totalLen, totalLen)
     memory.free(cwdBuf)
     ret clean(joined)
 }
@@ -704,7 +704,7 @@ fn rel(basePath string, targetPath string) string {
             *_p73 = unsafe.cast[u8](47)
             var _p74: *u8 = buf + newLen
             *_p74 = unsafe.cast[u8](0)
-            resultParts = strings.makeString(buf, newLen, newLen)
+            resultParts = strings.view(buf, newLen, newLen)
         }
         // 添加 ".."
         var dotDot: string = ".."
@@ -728,7 +728,7 @@ fn rel(basePath string, targetPath string) string {
         *_p78 = unsafe.cast[u8](46)
         var _p79: *u8 = buf + newLen
         *_p79 = unsafe.cast[u8](0)
-        resultParts = strings.makeString(buf, newLen, newLen)
+        resultParts = strings.view(buf, newLen, newLen)
         hasContent = true
         u = u + 1
     }
@@ -758,7 +758,7 @@ fn rel(basePath string, targetPath string) string {
             *_p83 = unsafe.cast[u8](47)
             var _p84: *u8 = buf + newLen
             *_p84 = unsafe.cast[u8](0)
-            resultParts = strings.makeString(buf, newLen, newLen)
+            resultParts = strings.view(buf, newLen, newLen)
         }
         var prevLen: uint = strings.len(resultParts)
         var newLen: uint = prevLen + remaining
@@ -782,7 +782,7 @@ fn rel(basePath string, targetPath string) string {
         }
         var _p89: *u8 = buf + newLen
         *_p89 = unsafe.cast[u8](0)
-        resultParts = strings.makeString(buf, newLen, newLen)
+        resultParts = strings.view(buf, newLen, newLen)
     }
 
     if !hasContent && remaining == 0 {
@@ -922,7 +922,7 @@ fn walk(path string, callback fn(string)) {
                 }
                 var _p107: *u8 = fullPath + totalLen
                 *_p107 = unsafe.cast[u8](0)
-                var fullPathStr: string = strings.makeString(fullPath, totalLen, totalLen)
+                var fullPathStr: string = strings.view(fullPath, totalLen, totalLen)
                 callback(fullPathStr)
             }
 

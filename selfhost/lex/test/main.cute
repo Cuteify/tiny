@@ -26,7 +26,7 @@ fn getenvStr(name string) string {
         }
         l = l + 1
     }
-    ret strings.makeString(p, l, l)
+    ret strings.view(p, l, l)
 }
 
 fn main() int {
@@ -52,7 +52,7 @@ fn main() int {
         pos = pos + unsafe.cast[uint](n)
     }
     syscall.close(fd)
-    var src: string = strings.makeString(unsafe.cast[ptr](p), pos, pos)
+    var src: string = strings.view(unsafe.cast[ptr](p), pos, pos)
     var l: *lex.Lexer = lex.NewLexer(src)
     for ; true; {
         var t: *lex.Token = l.Next()

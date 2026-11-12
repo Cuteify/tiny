@@ -31,7 +31,7 @@ fn NewReader(data string) *Reader {
     var flateData: ptr = rPtr + 10
     var flateLen: uint = rLen - 10
     // 将 flate 部分构造为字符串传给 flate.NewReader
-    var flateStr: string = strings.makeString(flateData, flateLen, flateLen)
+    var flateStr: string = strings.view(flateData, flateLen, flateLen)
     var fr: *flate.Reader = flate.NewReader(flateStr)
     // layout: [flate:8][header:8][dataLen:8]
     var _p1: *ptr = buf
@@ -179,5 +179,5 @@ fn Close(w ptr) string {
     // 构造字符串
     var _p37: *u8 = outPtr + totalLen
     *_p37 = unsafe.cast[u8](0)
-    ret strings.makeString(outPtr, totalLen, totalLen)
+    ret strings.view(outPtr, totalLen, totalLen)
 }

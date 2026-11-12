@@ -237,5 +237,5 @@ fn Close(w ptr) string {
     }
     var _p49: *u8 = strPtr + totalLen
     *_p49 = unsafe.cast[u8](0)
-    ret strings.makeString(strPtr, totalLen, totalLen)
+    ret strings.view(strPtr, totalLen, totalLen)
 }

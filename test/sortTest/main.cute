@@ -209,7 +209,7 @@ fn _checkStrSorted(a ptr, n int) bool {
         var _p4: *ptr = a + jOff
         var _p5: *ptr = a + jOff + 8
         var _p6: *ptr = a + jOff + 16
-        if sort.compareStrings(strings.makeString(*_p1, *_p2, *_p3), strings.makeString(*_p4, *_p5, *_p6)) > 0 {
+        if sort.compareStrings(strings.view(*_p1, *_p2, *_p3), strings.view(*_p4, *_p5, *_p6)) > 0 {
             ret false
         }
         i = i + 1

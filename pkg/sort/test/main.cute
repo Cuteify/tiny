@@ -38,7 +38,7 @@ fn rowString(a ptr, i int) string {
     var p: *ptr = a + i * 24
     var l: *ptr = a + i * 24 + 8
     var n: uint = unsafe.cast[uint](*l)
-    ret strings.makeString(*p, n, n)
+    ret strings.view(*p, n, n)
 }
 
 fn main() int {

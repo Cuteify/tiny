@@ -107,7 +107,7 @@ fn durationString(d u64) string {
     }
     var _p10: *u8 = buf + pos
     *_p10 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, pos, pos)
+    ret strings.view(buf, pos, pos)
 }
 
 // since 返回从 t 到现在经过的时间

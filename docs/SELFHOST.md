@@ -193,7 +193,7 @@ parser 若需要定界符位置，可由 `start-1`/`end+1` 推回；文档和测
 | Cute 侧缺少枚举声明形式，token 常量只能逐条 `const` | 新增 `enum Name { ... }` 语法：成员自增/显式整数、枚举名注册为独立命名类型、成员常量带枚举类型 |
 | NASM 数据段双引号字符串不处理反斜杠转义 | 改用反引号字符串并转义 `\`、`` ` ``、`"`、换行、Tab、CR |
 | 字符串拼接作为函数实参时被编成全零容器 | `SysV.Call` 的容器实参统一走表达式编译器三槽装载 |
-| GC 误释放 `strings.makeString` 返回的视图 | 前端取地址局部判 `Unknown`，后端只认 `RetFresh` |
+| GC 误释放 `strings.view` 返回的视图 | 前端取地址局部判 `Unknown`，后端只认 `RetFresh` |
 | `switch` 的 `case`/`default` 解析状态错误 | 新分支前退回 `SwitchBlock`；`default` 不解析 case 值 |
 
 这些修复属于宿主编译器，不改变自举 lexer 的 API；但它们应随自举模块一起回归，
@@ -314,7 +314,7 @@ S3 的已知差异分四类：浮点格式/折叠、Go 折叠时序（跨文件/
 | 字符串/字符 token 区间指向内容 | 与 Go 的 `Cursor/EndCursor` 不同 | 文档固定；parser 按内容区间使用 |
 | 无 `Lexer.Next()` 的自检分支 | 不会复现 Go 版对带定界符 token 的怪异判断 | 视为修正，不追求 bug-for-bug |
 | 关键字 if 链 | 代码更长，性能非瓶颈 | 等语言有 map 索引或 trie 再优化 |
-| 跨行裸串字面量测试受限 | 当前编译器对源码内跨行 RAW 支持不完整 | 测试用 `nl()` + `makeString` 运行时构造换行；lexer 扫描本身已覆盖 |
+| 跨行裸串字面量测试受限 | 当前编译器对源码内跨行 RAW 支持不完整 | 测试用 `nl()` + `view` 运行时构造换行；lexer 扫描本身已覆盖 |
 | `tname` 用 switch | 代码略长，token 类型少，非瓶颈 | 与 Go `TokenType.String()` 分支对齐，不追求表驱动 |
 | S3 parser 不做完整语义检查 | 不校验名字/类型/参数个数，也不执行 intrinsic lowering | 只对齐 Go parser 可观察的 AST 形状；语义留给后续阶段 |
 | S3 浮点字面量保留源码文本 | `2.50`、`1e3`、高精度 π 与 Go `%v` 输出不同 | 已登记为已知差异；完整浮点解析/最短格式化待后续 |

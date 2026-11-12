@@ -87,7 +87,7 @@ fn escape(s string) string {
     }
     var _p27: *u8 = buf + outPos
     *_p27 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }
 
 // unescape 反转义 HTML 实体
@@ -152,7 +152,7 @@ fn unescape(s string) string {
         }
     }
     putByteHtml(buf, outPos, unsafe.cast[u8](0))
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }
 
 // escapeAll 转义所有非 ASCII 字符（值 > 127 的字节）为 &#xHH; 格式
@@ -204,5 +204,5 @@ fn escapeAll(s string) string {
     }
     var _p64: *u8 = buf + outPos
     *_p64 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }

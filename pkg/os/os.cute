@@ -24,7 +24,7 @@ fn getcwd() string {
         ret ""
     }
     var len: uint = unsafe.cast[uint](n)
-    ret strings.makeString(buf, len, len)
+    ret strings.view(buf, len, len)
 }
 
 // Linux errno 值（syscall 返回 -errno）

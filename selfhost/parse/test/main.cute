@@ -17,7 +17,7 @@ fn nl() string {
     var p: ptr = memory.malloc(8)
     var q: *int = p
     *q = 10
-    ret strings.makeString(p, 1, 1)
+    ret strings.view(p, 1, 1)
 }
 
 // parsed 解析一段源码并返回 parser（无论成功还是失败）。

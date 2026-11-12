@@ -518,7 +518,7 @@ func (a *analyzer) localOwnership(name string, fb *parser.FuncBlock, body *parse
 		return retOwnInfo{}, false
 	}
 	// 对局部变量取地址后，函数可能通过指针写入参数/静态缓冲（如
-	// strings.makeString 的 `var result; &result; *_p = ptr`）。此时
+	// strings.view 的 `var result; &result; *_p = ptr`）。此时
 	// “零值初始化”不能证明返回值归调用方所有，必须保守判为未知，
 	// 否则调用方会 free 掉底层缓冲区。
 	if bodyTakesAddrOfNode(body, name) {
@@ -860,7 +860,7 @@ func exprAllocates(e *parser.Expression) bool {
 		}
 		// 用摘要键解析悬空调用（跨文件/跨包调用在 gc.Analyze 时 Func 可能尚未绑定）
 		// 只有 RetFresh 才表示返回值归调用方所有；RetUnknown（如
-		// strings.makeString 通过指针写入局部容器）绝不能当作本帧分配，
+		// strings.view 通过指针写入局部容器）绝不能当作本帧分配，
 		// 否则调用方会释放参数/静态缓冲区。
 		if fs := callSummary(e.Call); fs != nil && fs.RetOwned && fs.RetKind == RetFresh {
 			return true

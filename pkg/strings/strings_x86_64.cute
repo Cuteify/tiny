@@ -182,11 +182,11 @@ fn notFound() uint {
     ret *_p25
 }
 
-// makeString 从底层组件构建 string 值（仅包装**已有** ptr）：
+// view 从底层组件构建 string 值（仅包装**已有** ptr）：
 // 不分配、不拥有、不跟踪底层缓冲；LLR 视返回值为“外部视图”，调用方自行管理 buf 生命周期。
 // 需要一份 GC 可跟踪的可写 string 时，用编译器内建 new(string, n)（返回 {ptr,len=cap=n} 三槽，
 // 底层 malloc 由 LLR 在帧尾释放；写入用 unsafe.cast[*u8](s) 取得数据指针）。
-fn makeString(ptr: ptr, length: uint, capVal: uint) string {
+fn view(ptr: ptr, length: uint, capVal: uint) string {
     var result: string
     var rp: ptr = &result
     var _p26: *ptr = rp
@@ -318,7 +318,7 @@ fn toUpper(s string) string {
     }
     var _p37: *u8 = buf + sLen
     *_p37 = unsafe.cast[u8](0)
-    ret makeString(buf, sLen, sLen)
+    ret view(buf, sLen, sLen)
 }
 
 // toLower 返回 s 的小写副本
@@ -340,7 +340,7 @@ fn toLower(s string) string {
     }
     var _p40: *u8 = buf + sLen
     *_p40 = unsafe.cast[u8](0)
-    ret makeString(buf, sLen, sLen)
+    ret view(buf, sLen, sLen)
 }
 
 // trimSpace 返回去除两端空白字符的 s
@@ -378,7 +378,7 @@ fn trimSpace(s string) string {
     }
     var _p45: *u8 = buf + newLen
     *_p45 = unsafe.cast[u8](0)
-    ret makeString(buf, newLen, newLen)
+    ret view(buf, newLen, newLen)
 }
 
 // trimPrefix 返回去除 s 前缀 prefix 的字符串
@@ -400,7 +400,7 @@ fn trimPrefix(s string, prefix string) string {
         }
         var _p48: *u8 = buf + newLen
         *_p48 = unsafe.cast[u8](0)
-        ret makeString(buf, newLen, newLen)
+        ret view(buf, newLen, newLen)
     }
     ret s
 }
@@ -424,7 +424,7 @@ fn trimSuffix(s string, suffix string) string {
         }
         var _p51: *u8 = buf + newLen
         *_p51 = unsafe.cast[u8](0)
-        ret makeString(buf, newLen, newLen)
+        ret view(buf, newLen, newLen)
     }
     ret s
 }
@@ -450,7 +450,7 @@ fn repeat(s string, count uint) string {
     }
     var _p54: *u8 = buf + total
     *_p54 = unsafe.cast[u8](0)
-    ret makeString(buf, total, total)
+    ret view(buf, total, total)
 }
 
 // replace 返回将 s 中前 n 个 old 替换为 new 的字符串（n=0 替换全部）
@@ -525,7 +525,7 @@ fn replace(s string, old string, new string, n uint) string {
     }
     var _p61: *u8 = buf + newLen
     *_p61 = unsafe.cast[u8](0)
-    ret makeString(buf, newLen, newLen)
+    ret view(buf, newLen, newLen)
 }
 
 // ===== 字符串连接 =====
@@ -533,7 +533,7 @@ fn replace(s string, old string, new string, n uint) string {
 // join 用 sep 连接多个字符串，返回结果
 fn join(strs ptr, count int, sep string) string {
     if count <= 0 {
-        ret makeString(nil, 0, 0)
+        ret view(nil, 0, 0)
     }
     var sepPtr: ptr = toCstring(sep)
     var sepLen: uint = len(sep)
@@ -583,7 +583,7 @@ fn join(strs ptr, count int, sep string) string {
     }
     var _p69: *u8 = buf + totalLen
     *_p69 = unsafe.cast[u8](0)
-    ret makeString(buf, totalLen, totalLen)
+    ret view(buf, totalLen, totalLen)
 }
 
 // ===== Wave St：块内 staging helper（D4 v3 防则：typed cast 只在 fn 顶层）=====
@@ -754,7 +754,7 @@ fn splitGet(r ptr, i uint) string {
     var off: uint = i * elemSize
     var cellAddr: ptr = data + off
     var cell: *strView = unsafe.cast[*strView](cellAddr)
-    ret makeString(cell.p, cell.n, cell.c)
+    ret view(cell.p, cell.n, cell.c)
 }
 
 // _cellP 读容器第 i 个 cell 的 p 字段 helper：typed staging 全顶层（D3/D4 v3：块内禁 cast）
@@ -869,7 +869,7 @@ fn fields(s string) ptr {
 
 // ===== Wave St：Builder MVP（builderNew/Write/WriteString/Len/String/Free + _bGrow）=====
 // 控制块 24B 三槽：p@0=数据 buf / n@8=当前长度 / c@16=容量（strView 同形，字段复用）。
-// String() 不调 bufToString（其 makeString-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
+// String() 不调 bufToString（其 view-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
 
 // builderNew 建一个容量 capacity 的字节 Builder；capacity<1 按 1 处理
 fn builderNew(capacity uint) ptr {
@@ -974,7 +974,7 @@ fn builderString(b ptr) string {
     var tailP: *u8 = unsafe.cast[*u8](tailAddr)
     var zeroU: uint = 0
     *tailP = unsafe.cast[u8](zeroU)
-    ret makeString(out, n0, n0)
+    ret view(out, n0, n0)
 }
 
 // builderFree 释放 builder 全家（数据 buf + 控制块）；其后使用为 UB

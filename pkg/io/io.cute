@@ -111,7 +111,7 @@ fn String(w *Writer) string {
     }
     var _p9: *u8 = buf + w.len
     *_p9 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, w.len, w.len)
+    ret strings.view(buf, w.len, w.len)
 }
 
 // Copy 从 src Reader 复制数据到 dst Writer，返回复制的字节数
@@ -152,7 +152,7 @@ fn ReadAll(r *Reader) string {
     var _p14: *u8 = buf + remaining
     *_p14 = unsafe.cast[u8](0)
     r.pos = r.len
-    ret strings.makeString(buf, remaining, remaining)
+    ret strings.view(buf, remaining, remaining)
 }
 
 // LimitReader 返回一个限制最多读取 n 字节的 Reader

@@ -274,5 +274,5 @@ fn Close(w *Writer) string {
     }
     var _p63: *u8 = strPtr + outLen
     *_p63 = unsafe.cast[u8](0)
-    ret strings.makeString(strPtr, outLen, outLen)
+    ret strings.view(strPtr, outLen, outLen)
 }

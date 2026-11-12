@@ -16,7 +16,7 @@ fn nl() string {
     var p: ptr = memory.malloc(8)
     var q: *int = p
     *q = 10
-    ret strings.makeString(p, 1, 1)
+    ret strings.view(p, 1, 1)
 }
 
 // readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
@@ -31,7 +31,7 @@ fn readAll() string {
         }
         total = total + unsafe.cast[uint](n)
     }
-    ret strings.makeString(buf, total, total)
+    ret strings.view(buf, total, total)
 }
 
 // advance 从 from 扫描到 to，更新 1-based 行列号（行号按 LF 递增）。
@@ -98,7 +98,7 @@ fn pEnd(bb ptr) {
 fn pHex(bb ptr, v uint) {
     var digits: string = "0123456789abcdef"
     var dp: ptr = strings.toCstring(digits)
-    w(bb, strings.makeString(dp + v, 1, 1))
+    w(bb, strings.view(dp + v, 1, 1))
 }
 
 // pQuote 按 Go %q（strconv.Quote）的常见 ASCII 形态转义并加双引号。
@@ -130,7 +130,7 @@ fn pQuote(bb ptr, s string) {
             w(bb, `\f`)
         } else if c >= 32 && c != 127 {
             // Go %q 对可打印 Unicode 原样输出；UTF-8 多字节按字节透传。
-            w(bb, strings.makeString(base + i, 1, 1))
+            w(bb, strings.view(base + i, 1, 1))
         } else {
             w(bb, `\x`)
             var hi: uint = c / 16

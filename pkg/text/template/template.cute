@@ -70,7 +70,7 @@ fn execute(t *Template, data ptr) string {
                 }
                 var _p8: *u8 = keyBuf + keyLen
                 *_p8 = unsafe.cast[u8](0)
-                var key: string = strings.makeString(keyBuf, keyLen, keyLen)
+                var key: string = strings.view(keyBuf, keyLen, keyLen)
                 // 在 maps 中查找(值域=ptr 宽,取出 string 头指针)
                 var val: ptr = 0
                 var hasVal: bool = maps.get[string](data, key, &val)
@@ -107,5 +107,5 @@ fn execute(t *Template, data ptr) string {
     }
     var _p16: *u8 = buf + outPos
     *_p16 = unsafe.cast[u8](0)
-    ret strings.makeString(buf, outPos, outPos)
+    ret strings.view(buf, outPos, outPos)
 }
