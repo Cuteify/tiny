@@ -144,6 +144,25 @@ func (t *TypeBlock) Type() typeSys.Type {
 		return &t.Struct.Type
 	case TypeAlias:
 		return t.Alias
+	case TypeInterface:
+		// 用户接口：构造带方法签名的 InterfaceType（boxed value：{vtable_ptr, data_ptr}）。
+		// 构造结果注册进全局类型表（packages RegisterType），被赋值/方法调用路径消费。
+		it := &typeSys.InterfaceType{
+			RType: typeSys.RType{TypeName: t.Name.String()},
+		}
+		if t.Interface != nil {
+			for _, m := range t.Interface.Methods {
+				def := typeSys.InterfaceMethodDef{Name: m.Name.Last()}
+				for _, a := range m.Args {
+					if a != nil && a.Type != nil {
+						def.Args = append(def.Args, a.Type)
+					}
+				}
+				def.Returns = m.Returns
+				it.InterfaceMethods = append(it.InterfaceMethods, def)
+			}
+		}
+		return it
 	default:
 		return &typeSys.RType{TypeName: t.Name.String()}
 	}

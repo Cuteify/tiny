@@ -382,6 +382,37 @@ func (c *CallBlock) Check(p *Parser) bool {
 					}
 					receiverExp = nil
 				}
+			case recvType != nil && recvType.Kind() == "interface":
+				// 接口方法调用：方法来自接口类型的方法表（InterfaceDef 解析期登记），
+				// arch 侧走 vtable 查表（this 指针经 ThisVar 传入，data_ptr 即第一个实参）。
+				// 合成 FuncBlock 仅供 Check 走参数个数/类型检查，不会被发射（dispatch 是间接调用）。
+				iface, ok := recvType.(*typeSys.InterfaceType)
+				if !ok {
+					receiverExp = nil
+					break
+				}
+				for _, im := range iface.InterfaceMethods {
+					if im.Name != methodName {
+						continue
+					}
+					// Receiver 不在 c.Args 中（ThisVar 已携带，arch 走 vtable：data_ptr → RDI）。
+					fb := &FuncBlock{Name: NewName(methodName)}
+					for j, a := range im.Args {
+						nm := NewName("arg" + strconv.Itoa(j))
+						fb.Args = append(fb.Args, &ArgBlock{Type: a, Name: nm})
+					}
+					if len(im.Returns) > 0 {
+						fb.Return = append(fb.Return, im.Returns...)
+					}
+					c.Func = fb
+					c.ThisVar = receiverExp.Var
+					receiverExp = nil
+					break
+				}
+				// 接口中没有同名方法：按普通名解析（报"not found"，与未知方法一致）
+				if c.Func == nil {
+					receiverExp = nil
+				}
 			case recvType == nil:
 				receiverExp = nil
 			}

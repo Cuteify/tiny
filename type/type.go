@@ -256,6 +256,12 @@ type InterfaceType struct {
 	InterfaceMethods []InterfaceMethodDef
 }
 
+// Kind 标识接口类型（与 RType.Kind() 的对应分支一致）。
+// 嵌入的 RType 转发给这里，优先级高于 RType 自身的方法集。
+func (i *InterfaceType) Kind() string {
+	return "interface"
+}
+
 // Size returns the size of an interface value: 2 * pointerSize
 func (i *InterfaceType) Size() int {
 	return 2 * TargetPointerSize
@@ -276,9 +282,19 @@ func (i *InterfaceType) ImplementsInterface(concreteType Type) bool {
 	if concreteType == nil {
 		return false
 	}
+	// 方法登记在被指对象的 RType 上（*T 的方法也挂在值类型的 RType），
+	// 因此指针形态的接收者先剥一层再查方法表。
+	ct := concreteType
+	for ct != nil && ct.IsPointer() {
+		e := ct.Elem()
+		if e == nil {
+			break
+		}
+		ct = e
+	}
 	for _, ifaceMethod := range i.InterfaceMethods {
 		found := false
-		for _, cm := range concreteType.Methods() {
+		for _, cm := range ct.Methods() {
 			var methodName string
 			switch m := cm.(type) {
 			case *InterfaceMethodDef:

@@ -5802,10 +5802,15 @@ func (c *ECompiler) BoxInterface(varBlock *parser.VarBlock) string {
 					}
 				}
 			}
-			if st, ok := concreteType.(*typeSys.StructType); ok {
-				methodLabels[i] = st.TypeName + "_" + m.Name + Itoa(argCount)
+			_ = argCount
+			// 方法标签 = 具体实现的 MangledName()（与其余编译路径一致）。
+			// 之前手工拼的 “<T>_<m><arity>” 与真实标签不符（缺冲突后缀时段）。
+			if concreteFunc != nil {
+				methodLabels[i] = concreteFunc.MangledName()
+			} else if st, ok := concreteType.(*typeSys.StructType); ok {
+				methodLabels[i] = st.TypeName + "_" + m.Name
 			} else {
-				methodLabels[i] = concreteType.Type() + "_" + m.Name + Itoa(argCount)
+				methodLabels[i] = concreteType.Type() + "_" + m.Name
 			}
 			// Mark the concrete method as useful so it gets compiled
 			if concreteFunc != nil {
