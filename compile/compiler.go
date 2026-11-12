@@ -237,7 +237,7 @@ func (c *Compiler) compileRoot(node *parser.Node, code string) string {
 		}
 		globals += "\n"
 	}
-	return globals + c.generateGlobalSection(node) + "section .text\nglobal _start\n\n"
+	return globals + c.generateGlobalSection(node) + "section .text progbits alloc exec nowrite align=16\nglobal _start\n\n"
 }
 
 // generateGlobalSection 输出全局变量的 .bss/.data 声明
@@ -1168,10 +1168,11 @@ func (c *Compiler) generateDataSection() string {
 			c.getStringLabel(vb.Value.StringVal)
 		}
 	}
-	code := "\nsection .data\n"
+	code := "\nsection .data._oob_msg progbits alloc nowrite align=1\n"
 	// 边界检查错误信息
 	code += "    _oob_msg db \"index out of range\", 10\n"
 	code += "    _oob_msg_len equ $ - _oob_msg\n"
+	code += "section .data\n"
 	for val, label := range c.Ctx.StringConsts {
 		escaped := strings.ReplaceAll(val, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, "`", "\\`")
@@ -1263,6 +1264,8 @@ func (c *Compiler) generateStartEntry() string {
 // 行为：打印 "index out of range" 到 stderr，然后 exit(1)
 func (c *Compiler) generatePanicOOB() string {
 	var code string
+	// 独立段：程式不触发越界 panic 时可被 --gc-sections 整体丢弃（连带 .data 的 _oob_msg）
+	code += utils.Format("section .text._panic_index_oob progbits alloc exec nowrite align=1")
 	code += utils.Format("; ==============================")
 	code += utils.Format("; Runtime helper: index out of range panic")
 	code += utils.Format("_panic_index_oob:")
@@ -1309,6 +1312,8 @@ func (c *Compiler) generatePanicOOB() string {
 // 行为：从 src 复制 n 字节到 dst，支持重叠区域（向前复制）
 func (c *Compiler) generateMemmove() string {
 	var code string
+	// 独立段：非字符串拼接/memmove 时可被 --gc-sections 整体丢弃
+	code += utils.Format("section .text._memmove progbits alloc exec nowrite align=1")
 	code += utils.Format("; ==============================")
 	code += utils.Format("; Runtime helper: memmove(dst, src, n)")
 	code += utils.Format("_memmove:")
@@ -1406,7 +1411,14 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	// 重置寄存器分配器（每个函数独立）
 	c.Ctx.Reg.Reset()
 
-	// 先生成函数头部（不缩进）
+	// 每个函数独占一段 .text.<name>：链接时
+	// -ffunction-sections + --gc-sections 可按需丢弃未引用的函数，
+	// 这是“删除样板代码”的手段。_start 仍留在 .text（ELF 入口段）。
+	code += utils.Format("section .text." + name + " progbits alloc exec nowrite align=16")
+	code += utils.Format("global " + name)
+	if alias != "" {
+		code += utils.Format("global " + alias)
+	}
 	code += utils.Format("; ==============================")
 	code += utils.Format("; Function: " + name)
 	if alias != "" {

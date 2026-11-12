@@ -454,7 +454,6 @@ func (c *CallBlock) Check(p *Parser) bool {
 	}
 
 	c.Func.Useful = true
-
 	return c.finishCallCheck(p)
 }
 
@@ -527,6 +526,8 @@ func (c *CallBlock) finishCallCheck(p *Parser) bool {
 		arg.Name = defArg.Name
 		arg.Offset = defArg.Offset
 	}
+
+	c.Func.Useful = true
 
 	return true
 }
