@@ -1160,9 +1160,8 @@ func (c *Compiler) compileRootTail(node *parser.Node) string {
 }
 
 func (c *Compiler) generateDataSection() string {
-	if len(c.Ctx.StringConsts) == 0 && len(c.Ctx.GlobalStrings) == 0 {
-		return ""
-	}
+	// _panic_index_oob is always emitted (see compileRootTail) → _oob_msg is unconditionally needed.
+	// Do NOT short-circuit this section when StringConsts/GlobalStrings are empty.
 	// 先为全局 string 变量的初始值分配字面量 label，确保 db 一并输出
 	for _, vb := range c.Ctx.GlobalStrings {
 		if vb.Value != nil && vb.Value.IsConst() && vb.Value.StringVal != "" {
