@@ -102,8 +102,10 @@ func (i *InterfaceDef) parseMethodArgs(p *Parser) []*ArgBlock {
 			typeName, _ := p.ParseName(false)
 			results := p.Find(typeName, FindTypeType)
 			if len(results) > 0 {
-				if tb, ok := results[0].Value.(*TypeBlock); ok {
-					arg.Type = tb.Type()
+				// 既可能是 *TypeBlock（用户类型）也可能是 *typeSys.RType
+				// （内建议保留内建），统一按 typeSys.Type 收。
+				if t, ok := results[0].Value.(typeSys.Type); ok {
+					arg.Type = t
 				}
 			}
 		} else {
