@@ -7,9 +7,8 @@
 //      与 Go 的等价字面值一致。
 //   3. isKeyword/isDelimiter 内对列表做二分查找，与 Go 的
 //      sort.SearchStrings 行为一致（Go init() sort.Strings 折叠为作者化排序）。
-//   4. 分隔符表中的 Tab/LF/CR 条目不产生 token：isSpace 跳过含 LF/CR
-//      （与 Go 参考 isSpace 语义一致）；它们仅供 "//" 行注释保留其后返的换行
-//      以及内部 consume 推进行列号使用。
+//   4. LF/CR 与 Go 一致产出 DELIMITER token（换行是语句终结符）；
+//      Tab 条目仅供 "//" 行注释保留其后的换行以及内部 consume 推进行列号使用。
 import "std:strings"
 
 var gKwList: []string

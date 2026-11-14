@@ -13,7 +13,7 @@ token 类型、文本与字节区间；不读文件、不建 AST。
 
 ## 快速开始
 
-```cute
+```cuteify
 import "std:console"
 import lex "../"
 
@@ -59,7 +59,7 @@ fn main() int {
 |---|---|
 | `NONE` | EOF |
 | `STRING` | 双引号 / 单引号 / 反引号字符串（含定界符文本不包含在 `Value` 里） |
-| `KEYWORD` | cute 全量关键字（go 关键字表为准） |
+| `KEYWORD` | cuteify 全量关键字（go 关键字表为准） |
 | `DELIMITER` | 分隔符 / 运算符（1~3 字节最长匹配） |
 | `NUMBER` | 数字字面量（整数/浮点统一） |
 | `NAME` | 标识符、关键字表外的词素 |
@@ -141,15 +141,15 @@ SELFHOST_OK|x86_64|RC=42
 
 | # | 差异 | 说明 |
 |---|---|------|
-| 1 | Token / Error / Lexer 按 `*T` 传递/缓存 | Cute 编译器不支持多字段结构体按值返回（与 `docs/LANGUAGE.md` §15 一致） |
-| 2 | `RingBuffer[T any]` 单态化为元素类型固定 `Token` | Cute 不支持泛型结构体（§15 已登记） |
+| 1 | Token / Error / Lexer 按 `*T` 传递/缓存 | Cuteify 编译器不支持多字段结构体按值返回（与 `docs/LANGUAGE.md` §15 一致） |
+| 2 | `RingBuffer[T any]` 单态化为元素类型固定 `Token` | Cuteify 不支持泛型结构体（§15 已登记） |
 | 3 | `unsafe.cast[int](b)` / `unsafe.cast[uint](...)` 替代 Go 数值转换 | byte 与 int 不直接比较；字面量只能是 `u8` 等可判大小类型，见 LANGUAGE.md §5.5 |
 | 4 | **Next 语义修复：弹出 makeToken 刚写入缓存的副本** | Go 参考 `makeToken` 既返回 token 又写预取缓存，`Next()` 纯循环会把每个词素返回 **两次**（与 `Prefetch()` 语义重复）。本移植让 `Next()` 是纯消费 API：扫描后弹出刚写入的缓存项，调用方得到每个词素一次；`Prefetch()` 行为不变（与 Go main.go 一致）。README 已登记 |
 | 5 | `RenderVisible` 实现 LF/CR/TAB 可见转义 | 输出 `[TYPE]value` 时 LF/CR/TAB 渲染为两字符 `\n` `\r` `\t`，其余原样；与 Go 参考 `RenderVisible` 逐字节一致 |
 | 6 | 关键字/分隔符表用列表字面量直接构造 | 大列表字面量曾指数级恶化（2026-11-12 复测全部正常，0.4s 完成）；分隔符表 Tab/LF/CR 三个控制字节无可写字面量，占位后回写，见 #8 |
 | 7 | 切点：`byte` 与 `u8` 不互通 | `var b: byte = 65` 报错；需要 `unsafe.cast[byte]` |
 | 8 | 字符分类活已迁入 std:strings | `isDigit`/`isSpaceByte`/`isIntDigit`/`fromByte` 统一走 std:strings；Token 构造改用 struct 字面量（`T{...}`） |
-| 9 | 空白跳过含 LF/CR（与 Go 参考一致） | 与 Go `isSpace` 一致（空格/Tab/CR/LF 全被跳过、不产生 token）；delimTable 里的 Tab/LF/CR 条目仅供 `//` 行注释“保留换行”与内部 consume 推进行列号使用，**不产出 DELIMITER 换行 token**；自举（parser）阶段若要用 LF 终结语句，需要额外变更扫描规则（见下文“与下游的衔接”） |
+| 9 | LF/CR 产出 DELIMITER token | 2026-11-14 修复：空白只跳过空格/Tab（对齐 Go 参考 `SkipSep` + `\n`/`\r` = `SEPARATOR`），LF/CR 现在从 delimTable 正常产出 DELIMITER（换行是 cuteify 语句终结符，parser 依赖此边界）；`//` 行注释保留后续换行、`/* */` 块注释内部换行不产出 token，与 Go 参考一致；`.want` 金样已重生成（仅叠加 `\n` 行，无删改），`scripts/selfhost_test.sh x86_64` 保持 `SELFHOST_OK\|x86_64\|RC=42`、`checked=15` |
 | 10 | NONE token 的 Value 恒为显式空串 | `*Token = Token{...}` 结构字面量缺省字段不保证零填充（历史事故），NONE token 显式写 `Value: ""` |
 | 11 | EOF 尾部词素单独补发 | Go 参考主循环因 EOF 退出时末尾词素丢失（如以标识符结尾的源文件）；本移植在主循环后按 `i > pfPos` 补发 NAME/KEYWORD |
 | 12 | 进制前缀无有效数字退回前缀 NAME | 与 Go 参考一致：`0b2` → `NAME|0b` + `NUMBER|2`、`0x` → `NAME|0x`（只取前缀两个字节） |
