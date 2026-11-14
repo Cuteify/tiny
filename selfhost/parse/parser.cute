@@ -8,9 +8,6 @@ type FileBlock struct {
 fn mk(src string) *Parser {
     var x: *Parser = new(Parser)
     x.l = lex.NewLexer(src)
-    x.peekTok = nil
-    x.pushBack = new([]*lex.Token, 24, 24)
-    x.pushBackPos = 0
     x.e = OK
     x.ep = 0
     x.decls = 0
@@ -96,10 +93,9 @@ fn fail(x *Parser, e int, pos int) {
     x.ep = unsafe.cast[uint](pos)
 }
 
-// peek 无消费地获取下一个 token（维护有界 pushback 队列 + 单 token 前瞻槽）。
-// 约定：所有前瞻都走 peek/next，禁止 x.l.Next 与 peek 混用造成环形缓存乱序。
-// peek 无消费地获取下一个 token。所有前瞻都走 peek/next，禁止 x.l.Next/Prefetch 混用。
-// rb 是 24 槽环形缓存，所有被窥视的 token 先入环，next 按 FIFO 弹出。
+// parseDeclKeyword 按关键字分派顶层声明。
+// 前瞻走 x.l.Peek()（lexer 预取环首视图，幂等、不消费）；
+// 消费走 x.l.Next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.Prefetch()（入环不弹）。
 fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
     if strings.eq(kw, "import") {
         if !parseImportFromKeyword(x) {
@@ -120,8 +116,8 @@ fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
         ret true
     }
     if strings.eq(kw, "type") {
-        skipTerminators(x)
-        if isTok(peek(x), lex.DELIMITER, "(") {
+        x.l.SkipTerminators()
+        if lex.Token.Is(x.l.Peek(), lex.DELIMITER, "(") {
             ret parseGroupedDecl(x, "type")
         }
         ret parseTypeFromKeyword(x, t)
@@ -156,8 +152,8 @@ fn isDeclKeyword(kw string) bool {
 // file 解析整个文件。
 fn file(x *Parser) {
     for ; ; {
-        skipTerminators(x)
-        var t: *lex.Token = peek(x)
+        x.l.SkipTerminators()
+        var t: *lex.Token = x.l.Peek()
         if t == nil {
             ret
         }
@@ -167,7 +163,7 @@ fn file(x *Parser) {
         if t.Type == lex.KEYWORD {
             if isDeclKeyword(t.Value) {
                 var kw: string = t.Value
-                next(x)
+                x.l.Next()
                 var okDecl: bool = parseDeclKeyword(x, kw, t)
                 if !okDecl {
                     ret
@@ -179,8 +175,8 @@ fn file(x *Parser) {
         }
         if t.Type == lex.NAME {
             // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
-            var nameT: *lex.Token = next(x)
-            var p2: *lex.Token = peek(x)
+            var nameT: *lex.Token = x.l.Next()
+            var p2: *lex.Token = x.l.Peek()
             if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
                 if !expect(x, lex.DELIMITER, ":", EDECL) {
                     ret

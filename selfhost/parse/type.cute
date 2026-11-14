@@ -7,8 +7,8 @@ type TypeBlock struct {
 }
 
 fn skipType(x *Parser) bool {
-    skipTerminators(x)
-    var t: *lex.Token = next(x)
+    x.l.SkipTerminators()
+    var t: *lex.Token = x.l.Next()
     if t == nil {
         fail(x, ETYPE, 0)
         ret false
@@ -18,12 +18,12 @@ fn skipType(x *Parser) bool {
             ret skipType(x)
         }
         if strings.eq(t.Value, "[") {
-            var p: *lex.Token = peek(x)
-            if isTok(p, lex.DELIMITER, "]") {
-                next(x)
+            var p: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p, lex.DELIMITER, "]") {
+                x.l.Next()
                 ret skipType(x)
             }
-            var num: *lex.Token = next(x)
+            var num: *lex.Token = x.l.Next()
             if num == nil || num.Type != lex.NUMBER {
                 if (num) {
                     fail(x, ETYPE, num.Pos)
@@ -47,36 +47,36 @@ fn skipType(x *Parser) bool {
                 ret false
             }
             for ; ; {
-                var p: *lex.Token = peek(x)
-                if isTok(p, lex.DELIMITER, ")") {
-                    next(x)
+                var p: *lex.Token = x.l.Peek()
+                if lex.Token.Is(p, lex.DELIMITER, ")") {
+                    x.l.Next()
                     break
                 }
                 // 变参 ...T
-                if isTok(p, lex.DELIMITER, "...") {
-                    next(x)
+                if lex.Token.Is(p, lex.DELIMITER, "...") {
+                    x.l.Next()
                 }
                 if !skipType(x) {
                     ret false
                 }
-                var p2: *lex.Token = peek(x)
-                if isTok(p2, lex.DELIMITER, ",") {
-                    next(x)
+                var p2: *lex.Token = x.l.Peek()
+                if lex.Token.Is(p2, lex.DELIMITER, ",") {
+                    x.l.Next()
                     continue
                 }
             }
             // 返回类型：可能括号（多返回值）或单类型；无则 None 也接受（无返回值由调用方消歧）
-            var p3: *lex.Token = peek(x)
-            if isTok(p3, lex.DELIMITER, "(") {
+            var p3: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p3, lex.DELIMITER, "(") {
                 ret consumeBalanced(x, "(", ")", ETYPE)
             }
-            var p4: *lex.Token = peek(x)
+            var p4: *lex.Token = x.l.Peek()
             if p4 == nil {
                 ret true
             }
             // 能以类型起头则吃一个；否则不动（调用方按需要处理 { 等）
             if p4.Type == lex.KEYWORD || p4.Type == lex.NAME || p4.Type == lex.DELIMITER {
-                if isTok(p4, lex.DELIMITER, "*") || isTok(p4, lex.DELIMITER, "[") || p4.Type != lex.DELIMITER {
+                if lex.Token.Is(p4, lex.DELIMITER, "*") || lex.Token.Is(p4, lex.DELIMITER, "[") || p4.Type != lex.DELIMITER {
                     ret skipType(x)
                 }
             }
@@ -88,18 +88,18 @@ fn skipType(x *Parser) bool {
     if t.Type == lex.NAME {
         // 限定名首段已被吃掉；吃 `.` NAME 序列
         for ; ; {
-            var p5: *lex.Token = peek(x)
-            if !isTok(p5, lex.DELIMITER, ".") {
+            var p5: *lex.Token = x.l.Peek()
+            if !lex.Token.Is(p5, lex.DELIMITER, ".") {
                 break
             }
-            next(x)
+            x.l.Next()
             var part: *lex.Token = expectName(x, ETYPE)
             if part == nil {
                 ret false
             }
         }
-        if strings.eq(t.Value, "map") && isTok(peek(x), lex.DELIMITER, "[") {
-            next(x)
+        if strings.eq(t.Value, "map") && lex.Token.Is(x.l.Peek(), lex.DELIMITER, "[") {
+            x.l.Next()
             if !skipType(x) {
                 ret false
             }
@@ -116,24 +116,24 @@ fn skipType(x *Parser) bool {
 
 // parseFuncParams 解析函数参数列表；已吃进起始 (。
 fn parseGroupedDecl(x *Parser, kind string) bool {
-    var p: *lex.Token = peek(x)
-    if !isTok(p, lex.DELIMITER, "(") {
+    var p: *lex.Token = x.l.Peek()
+    if !lex.Token.Is(p, lex.DELIMITER, "(") {
         ret false
     }
-    next(x)
+    x.l.Next()
     for ; ; {
-        skipTerminators(x)
-        var t: *lex.Token = peek(x)
+        x.l.SkipTerminators()
+        var t: *lex.Token = x.l.Peek()
         if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
-        if isTok(t, lex.DELIMITER, ")") {
-            next(x)
+        if lex.Token.Is(t, lex.DELIMITER, ")") {
+            x.l.Next()
             ret true
         }
         if strings.eq(kind, "type") {
-            var nameT: *lex.Token = next(x)
+            var nameT: *lex.Token = x.l.Next()
             if nameT == nil || nameT.Type != lex.NAME {
                 if (nameT) {
                     fail(x, EDECL, nameT.Pos)
@@ -142,10 +142,10 @@ fn parseGroupedDecl(x *Parser, kind string) bool {
                 }
                 ret false
             }
-            skipTerminators(x)
-            var q: *lex.Token = peek(x)
-            if isTok(q, lex.KEYWORD, "struct") {
-                next(x)
+            x.l.SkipTerminators()
+            var q: *lex.Token = x.l.Peek()
+            if lex.Token.Is(q, lex.KEYWORD, "struct") {
+                x.l.Next()
                 if !parseStructBody(x) {
                     ret false
                 }
@@ -153,16 +153,16 @@ fn parseGroupedDecl(x *Parser, kind string) bool {
                 x.decls = x.decls + 1
                 continue
             }
-            if isTok(q, lex.KEYWORD, "interface") {
-                next(x)
+            if lex.Token.Is(q, lex.KEYWORD, "interface") {
+                x.l.Next()
                 if !parseInterfaceBody(x) {
                     ret false
                 }
                 x.decls = x.decls + 1
                 continue
             }
-            if isTok(q, lex.DELIMITER, "=") {
-                next(x)
+            if lex.Token.Is(q, lex.DELIMITER, "=") {
+                x.l.Next()
                 if !parseTypeRef(x) {
                     ret false
                 }
@@ -190,10 +190,10 @@ fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
     if nameT == nil {
         ret false
     }
-    skipTerminators(x)
-    var q: *lex.Token = peek(x)
-    if isTok(q, lex.KEYWORD, "struct") {
-        next(x)
+    x.l.SkipTerminators()
+    var q: *lex.Token = x.l.Peek()
+    if lex.Token.Is(q, lex.KEYWORD, "struct") {
+        x.l.Next()
         if !parseStructBody(x) {
             ret false
         }
@@ -201,24 +201,24 @@ fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
         x.decls = x.decls + 1
         ret true
     }
-    if isTok(q, lex.KEYWORD, "interface") {
-        next(x)
+    if lex.Token.Is(q, lex.KEYWORD, "interface") {
+        x.l.Next()
         if !parseInterfaceBody(x) {
             ret false
         }
         x.decls = x.decls + 1
         ret true
     }
-    if isTok(q, lex.DELIMITER, "=") {
-        next(x)
+    if lex.Token.Is(q, lex.DELIMITER, "=") {
+        x.l.Next()
         if !parseTypeRef(x) {
             ret false
         }
         x.decls = x.decls + 1
         ret true
     }
-    if isTok(q, lex.DELIMITER, ":") {
-        next(x)
+    if lex.Token.Is(q, lex.DELIMITER, ":") {
+        x.l.Next()
         var parentN: *lex.Token = expectName(x, EDECL)
         if parentN == nil {
             ret false

@@ -8,30 +8,30 @@ fn parseStructLit(x *Parser) bool {
         ret false
     }
     for ; ; {
-        skipTerminators(x)
-        var t: *lex.Token = peek(x)
-        if isTok(t, lex.DELIMITER, "}") {
-            next(x)
+        x.l.SkipTerminators()
+        var t: *lex.Token = x.l.Peek()
+        if lex.Token.Is(t, lex.DELIMITER, "}") {
+            x.l.Next()
             ret true
         }
-        var nameT: *lex.Token = peek(x)
+        var nameT: *lex.Token = x.l.Peek()
         if nameT.Type != lex.NAME {
             fail(x, ESTMT, nameT.Pos)
             ret false
         }
-        next(x)
+        x.l.Next()
         if !expect(x, lex.DELIMITER, ":", ESTMT) {
             ret false
         }
         if !parseExpr(x) {
             ret false
         }
-        var t2: *lex.Token = peek(x)
-        if isTok(t2, lex.DELIMITER, ",") {
-            next(x)
+        var t2: *lex.Token = x.l.Peek()
+        if lex.Token.Is(t2, lex.DELIMITER, ",") {
+            x.l.Next()
             continue
         }
-        if isTok(t2, lex.DELIMITER, "}") {
+        if lex.Token.Is(t2, lex.DELIMITER, "}") {
             continue
         }
         fail(x, ESTMT, t2.Pos)

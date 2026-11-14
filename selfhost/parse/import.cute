@@ -8,29 +8,29 @@ type ImportBlock struct {
 }
 
 fn parseImportFromKeyword(x *Parser) bool {
-    var saved: *lex.Token = peek(x)
-    if isTok(saved, lex.DELIMITER, "(") {
-        next(x)
+    var saved: *lex.Token = x.l.Peek()
+    if lex.Token.Is(saved, lex.DELIMITER, "(") {
+        x.l.Next()
         for ; ; {
-            skipTerminators(x)
-            var t: *lex.Token = peek(x)
+            x.l.SkipTerminators()
+            var t: *lex.Token = x.l.Peek()
             if t == nil {
                 fail(x, EDECL, 0)
                 ret false
             }
-            if isTok(t, lex.DELIMITER, ")") {
-                next(x)
+            if lex.Token.Is(t, lex.DELIMITER, ")") {
+                x.l.Next()
                 x.imports = x.imports + 1
                 x.decls = x.decls + 1
                 ret true
             }
             if t.Type == lex.STRING {
-                next(x)
+                x.l.Next()
                 continue
             }
             if t.Type == lex.NAME {
-                next(x)
-                var strT: *lex.Token = next(x)
+                x.l.Next()
+                var strT: *lex.Token = x.l.Next()
                 if strT == nil || strT.Type != lex.STRING {
                     if (strT) {
                         fail(x, EDECL, strT.Pos)
@@ -41,19 +41,19 @@ fn parseImportFromKeyword(x *Parser) bool {
                 }
                 continue
             }
-            if isTok(t, lex.DELIMITER, ",") {
-                next(x)
+            if lex.Token.Is(t, lex.DELIMITER, ",") {
+                x.l.Next()
                 continue
             }
             fail(x, EDECL, t.Pos)
             ret false
         }
     }
-    var t: *lex.Token = peek(x)
+    var t: *lex.Token = x.l.Peek()
     if t != nil && t.Type == lex.NAME {
-        next(x)
+        x.l.Next()
     }
-    var strT: *lex.Token = next(x)
+    var strT: *lex.Token = x.l.Next()
     if strT == nil || strT.Type != lex.STRING {
         if (strT) {
             fail(x, EDECL, strT.Pos)

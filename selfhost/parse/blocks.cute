@@ -29,9 +29,6 @@ type Node struct {
 // Parser 把 lexer 流向上包成语法结构。
 type Parser struct {
     l: *lex.Lexer
-    peekTok: *lex.Token
-    pushBack: []*lex.Token
-    pushBackPos: int
     root: *Node
     e: int
     ep: uint

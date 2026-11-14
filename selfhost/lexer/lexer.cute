@@ -434,3 +434,36 @@ fn Lexer.Next(l *Lexer) *Token {
     l.setPos(coordFromTokenEnd(tok))
     ret tok
 }
+
+// Peek 返回下一个将消费的 token 而不消费它（幂等）：
+// 环有缓存则看环首；否则以 Prefetch() 扫描一个 token 入环后环首即它。
+// 与 Next() 严格按同一顺序；不会重复推进或重复扫描。
+fn Lexer.Peek(l *Lexer) *Token {
+    var hit: *Token = l.pfCache.Front()
+    if unsafe.cast[uint](hit) != 0 {
+        ret hit
+    }
+    ret l.Prefetch()
+}
+
+// SkipLineEnds 吃掉换行/回车 token（LF/CR）；分号留给 Expect 消费。
+fn Lexer.SkipLineEnds(l *Lexer) {
+    for ; ; {
+        var t: *Token = l.Peek()
+        if t == nil || !t.IsLineEnd() {
+            ret
+        }
+        l.Next()
+    }
+}
+
+// SkipTerminators 吃掉换行/回车/分号（语句边界容忍）。
+fn Lexer.SkipTerminators(l *Lexer) {
+    for ; ; {
+        var t: *Token = l.Peek()
+        if t == nil || !t.IsSemiOrNewline() {
+            ret
+        }
+        l.Next()
+    }
+}

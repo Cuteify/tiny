@@ -5,26 +5,26 @@ import lex "../lexer"
 
 fn parseFuncParams(x *Parser) bool {
     for ; ; {
-        skipTerminators(x)
-        var p: *lex.Token = peek(x)
-        if isTok(p, lex.DELIMITER, ")") {
-            next(x)
+        x.l.SkipTerminators()
+        var p: *lex.Token = x.l.Peek()
+        if lex.Token.Is(p, lex.DELIMITER, ")") {
+            x.l.Next()
             ret true
         }
         // 变参 ...T（无名）
-        if isTok(p, lex.DELIMITER, "...") {
-            next(x)
+        if lex.Token.Is(p, lex.DELIMITER, "...") {
+            x.l.Next()
             if !skipType(x) {
                 ret false
             }
-            var pEnd: *lex.Token = peek(x)
-            if isTok(pEnd, lex.DELIMITER, ")") {
+            var pEnd: *lex.Token = x.l.Peek()
+            if lex.Token.Is(pEnd, lex.DELIMITER, ")") {
                 continue
             }
             ret false
         }
         // 具名参数 name ... / name: Type / name Type
-        var nameT: *lex.Token = next(x)
+        var nameT: *lex.Token = x.l.Next()
         if nameT == nil || nameT.Type != lex.NAME {
             if (nameT) {
                 fail(x, EDECL, nameT.Pos)
@@ -34,14 +34,14 @@ fn parseFuncParams(x *Parser) bool {
             ret false
         }
         // 变参具名形式 name ...Type
-        var pVar: *lex.Token = peek(x)
-        if isTok(pVar, lex.DELIMITER, "...") {
-            next(x)
+        var pVar: *lex.Token = x.l.Peek()
+        if lex.Token.Is(pVar, lex.DELIMITER, "...") {
+            x.l.Next()
             if !skipType(x) {
                 ret false
             }
-        } else if isTok(pVar, lex.DELIMITER, ":") {
-            next(x)
+        } else if lex.Token.Is(pVar, lex.DELIMITER, ":") {
+            x.l.Next()
             if !skipType(x) {
                 ret false
             }
@@ -52,12 +52,12 @@ fn parseFuncParams(x *Parser) bool {
             }
         }
         // 默认值 = expr：跳过到 ',' 或 ')'
-        var pDef: *lex.Token = peek(x)
-        if isTok(pDef, lex.DELIMITER, "=") {
-            next(x)
+        var pDef: *lex.Token = x.l.Peek()
+        if lex.Token.Is(pDef, lex.DELIMITER, "=") {
+            x.l.Next()
             var depth: int = 0
             for ; ; {
-                var t: *lex.Token = peek(x)
+                var t: *lex.Token = x.l.Peek()
                 if t == nil {
                     ret true
                 }
@@ -82,16 +82,16 @@ fn parseFuncParams(x *Parser) bool {
                         break
                     }
                 }
-                next(x)
+                x.l.Next()
             }
         }
         // 分隔符
-        var pSep: *lex.Token = peek(x)
-        if isTok(pSep, lex.DELIMITER, ")") {
+        var pSep: *lex.Token = x.l.Peek()
+        if lex.Token.Is(pSep, lex.DELIMITER, ")") {
             continue
         }
-        if isTok(pSep, lex.DELIMITER, ",") {
-            next(x)
+        if lex.Token.Is(pSep, lex.DELIMITER, ",") {
+            x.l.Next()
             continue
         }
         // 最后一参之后的行尾：允许换行（参数跨行）
@@ -111,28 +111,28 @@ fn parseCallArgs(x *Parser) bool {
         ret false
     }
     for ; ; {
-        skipTerminators(x)
-        var t: *lex.Token = peek(x)
-        if isTok(t, lex.DELIMITER, ")") {
-            next(x)
+        x.l.SkipTerminators()
+        var t: *lex.Token = x.l.Peek()
+        if lex.Token.Is(t, lex.DELIMITER, ")") {
+            x.l.Next()
             ret true
         }
         if !parseExpr(x) {
             ret false
         }
-        var t2: *lex.Token = peek(x)
-        if isTok(t2, lex.DELIMITER, ",") {
-            next(x)
+        var t2: *lex.Token = x.l.Peek()
+        if lex.Token.Is(t2, lex.DELIMITER, ",") {
+            x.l.Next()
             continue
         }
-        if isTok(t2, lex.DELIMITER, ")") {
+        if lex.Token.Is(t2, lex.DELIMITER, ")") {
             continue
         }
-        if isTok(t2, lex.DELIMITER, "...") {
-            next(x)
+        if lex.Token.Is(t2, lex.DELIMITER, "...") {
+            x.l.Next()
             continue
         }
-        var t3: *lex.Token = peek(x)
+        var t3: *lex.Token = x.l.Peek()
         if t3 == nil || t3.Type == lex.NONE {
             fail(x, EEXPR, 0)
             ret false
@@ -146,33 +146,33 @@ fn parseCallArgs(x *Parser) bool {
 
 // blockStmt 解析 { 语句 }；消费并配平花括号。
 fn parseRetTypes(x *Parser) bool {
-    var t: *lex.Token = peek(x)
+    var t: *lex.Token = x.l.Peek()
     // 无返回值：换行或 directamente '{' / EOF
-    if isLineEnd(t) {
+    if lex.Token.IsLineEnd(t) {
         ret true
     }
-    if isTok(t, lex.DELIMITER, "{") {
+    if lex.Token.Is(t, lex.DELIMITER, "{") {
         ret true
     }
-    if isTok(t, lex.DELIMITER, "(") {
-        next(x)
+    if lex.Token.Is(t, lex.DELIMITER, "(") {
+        x.l.Next()
         for ; ; {
-            skipTerminators(x)
-            var p: *lex.Token = peek(x)
-            if isTok(p, lex.DELIMITER, ")") {
-                next(x)
+            x.l.SkipTerminators()
+            var p: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p, lex.DELIMITER, ")") {
+                x.l.Next()
                 ret true
             }
             if !skipType(x) {
                 ret false
             }
-            var p2: *lex.Token = peek(x)
-            if isTok(p2, lex.DELIMITER, ",") {
-                next(x)
+            var p2: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p2, lex.DELIMITER, ",") {
+                x.l.Next()
                 continue
             }
-            var p3: *lex.Token = peek(x)
-            if isTok(p3, lex.DELIMITER, ")") {
+            var p3: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p3, lex.DELIMITER, ")") {
                 continue
             }
             ret false

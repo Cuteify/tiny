@@ -1,115 +1,21 @@
-// helpers.cute —— lexer token 流查询与消费原语；Parser 状态机的一切原语。
-//
+// helpers.cute —— parser 的 token 辅助（token 取/回退全部在 lexer 里）。
+//   取/消费：x.l.Next() / x.l.Peek()（lexer 管理的预取环）
+//   行尾/语句终符：lex.Token.IsLineEnd / lex.Token.IsSemiOrNewline
+//   行尾跳过：x.l.SkipLineEnds() / x.l.SkipTerminators()
+//   记账原语：expect / expectName / expectKeyword（parser 的错误码记账）
 // 加载顺序：依赖 blocks.cute。
 import "std:strings"
 import lex "../lexer"
 
-fn peek(x *Parser) *lex.Token {
-    if x.pushBackPos > 0 {
-        ret x.pushBack[x.pushBackPos - 1]
-    }
-    if x.peekTok == nil {
-        x.peekTok = x.l.Next()
-    }
-    ret x.peekTok
-}
-
-// next 消费下一个 token（严格按 peek 的顺序）。
-fn next(x *Parser) *lex.Token {
-    if x.pushBackPos > 0 {
-        x.pushBackPos = x.pushBackPos - 1
-        ret x.pushBack[x.pushBackPos]
-    }
-    var t: *lex.Token = x.peekTok
-    if t == nil {
-        ret x.l.Next()
-    }
-    x.peekTok = nil
-    ret t
-}
-
-// pushBack 压栈放回 token（后进先出；扫描倒回保持原序）。
-fn pushBack(x *Parser, t *lex.Token) {
-    if t == nil {
-        ret
-    }
-    if x.pushBackPos < 24 {
-        x.pushBack[x.pushBackPos] = t
-        x.pushBackPos = x.pushBackPos + 1
-    }
-}
-
-
-fn isTok(t *lex.Token, kind: lex.TokenType, value string) bool {
-    if t == nil {
-        ret false
-    }
-    if t.Type != kind {
-        ret false
-    }
-    ret strings.eq(t.Value, value)
-}
-
-// isLineEnd 是否为换行/回车 token（分号不再作为行尾，供 expect 直接期望）。
-// 注意：parser 把 NONE(EOF) 视为“不是行尾”以终止跳过循环；lexer 的
-// Token.IsLineEnd 把 NONE 视为行尾（行渲染用），两者语义不同，故 EOF 在此拦截。
-fn isLineEnd(t *lex.Token) bool {
-    if t == nil {
-        ret true
-    }
-    if t.Type != lex.DELIMITER {
-        ret false
-    }
-    ret lex.Token.IsLineEnd(t)
-}
-
-// isSemiOrNewline 是否为语句终结符（\n / \r 或 ;）；EOF(NONE) 返回 false。
-fn isSemiOrNewline(t *lex.Token) bool {
-    if t == nil {
-        ret true
-    }
-    if t.Type != lex.DELIMITER {
-        ret false
-    }
-    if isTok(t, lex.DELIMITER, ";") {
-        ret true
-    }
-    ret lex.Token.IsLineEnd(t)
-}
-
-// skipLineEnds 吃掉换行/回车（仅换行；分号留作 expect 消费）。
-fn skipLineEnds(x *Parser) {
-    for ; ; {
-        var t: *lex.Token = peek(x)
-        if t != nil && isLineEnd(t) {
-            next(x)
-            continue
-        }
-        ret
-    }
-}
-
-// skipTerminators 吃掉换行/回车/分号（语句边界容忍）。
-fn skipTerminators(x *Parser) {
-    for ; ; {
-        var t: *lex.Token = peek(x)
-        if t != nil && isSemiOrNewline(t) {
-            next(x)
-            continue
-        }
-        ret
-    }
-}
-
 // expect 期望一个指定种类+值的 token（跳过行尾）；失败记错。
 fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
-    skipLineEnds(x)
-    var t: *lex.Token = next(x)
-    if t == nil {
+    x.l.SkipLineEnds()
+    var t: *lex.Token = x.l.Next()
+    if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret false
     }
-    if t.Type != kind || !strings.eq(t.Value, value) {
+    if !lex.Token.Is(t, kind, value) {
         fail(x, e, t.Pos)
         ret false
     }
@@ -118,9 +24,9 @@ fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
 
 // expectName 期望一个 NAME；失败记错并返回零指针。
 fn expectName(x *Parser, e int) *lex.Token {
-    skipLineEnds(x)
-    var t: *lex.Token = next(x)
-    if t == nil {
+    x.l.SkipLineEnds()
+    var t: *lex.Token = x.l.Next()
+    if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret 0
     }
@@ -133,25 +39,25 @@ fn expectName(x *Parser, e int) *lex.Token {
 
 // expectKeyword 期望一个关键字；失败记错。
 fn expectKeyword(x *Parser, kw string, e int) bool {
-    skipLineEnds(x)
-    var t: *lex.Token = next(x)
-    if t == nil {
+    x.l.SkipLineEnds()
+    var t: *lex.Token = x.l.Next()
+    if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret false
     }
-    if t.Type != lex.KEYWORD || !strings.eq(t.Value, kw) {
+    if !lex.Token.Is(t, lex.KEYWORD, kw) {
         fail(x, e, t.Pos)
         ret false
     }
     ret true
 }
 
-// consumeBalanced 已吃进起始符后消费至配平；用于函数体/asm 块（M2 前）。
+// consumeBalanced 已吃进起始符后消费至配平；用于函数体/asm 块。
 // 遇到不平衡 EOF 记 e；返回 false。
 fn consumeBalanced(x *Parser, open string, close string, e int) bool {
     var depth: int = 1
     for ; depth > 0; {
-        var t: *lex.Token = next(x)
+        var t: *lex.Token = x.l.Next()
         if t == nil || t.Type == lex.NONE {
             fail(x, e, 0)
             ret false
@@ -171,11 +77,11 @@ fn consumeBalanced(x *Parser, open string, close string, e int) bool {
 }
 
 // restOfLineAtDepth0 跳到行尾/回车/EOF；括号/列表/花括号深度内逗号保留。
-// 用于 var/const 初值与字段默认值（M2 起精确解析）。
+// 用于 var/const 初值与字段默认值（精确解析前）。
 fn restOfLineAtDepth0(x *Parser) {
     var depth: int = 0
     for ; ; {
-        var t: *lex.Token = peek(x)
+        var t: *lex.Token = x.l.Peek()
         if t == nil {
             ret
         }
@@ -194,6 +100,6 @@ fn restOfLineAtDepth0(x *Parser) {
                 ret
             }
         }
-        next(x)
+        x.l.Next()
     }
 }

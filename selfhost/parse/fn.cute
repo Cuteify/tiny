@@ -13,43 +13,43 @@ fn parseFnFromKeyword(x *Parser) bool {
     if nameT == nil {
         ret false
     }
-    skipTerminators(x)
-    var p: *lex.Token = peek(x)
-    if isTok(p, lex.DELIMITER, ".") {
-        next(x)
+    x.l.SkipTerminators()
+    var p: *lex.Token = x.l.Peek()
+    if lex.Token.Is(p, lex.DELIMITER, ".") {
+        x.l.Next()
         var m: *lex.Token = expectName(x, EDECL)
         if m == nil {
             ret false
         }
     }
-    skipTerminators(x)
-    var p2: *lex.Token = peek(x)
-    if isTok(p2, lex.DELIMITER, "[") {
-        next(x)
+    x.l.SkipTerminators()
+    var p2: *lex.Token = x.l.Peek()
+    if lex.Token.Is(p2, lex.DELIMITER, "[") {
+        x.l.Next()
         for ; ; {
-            skipTerminators(x)
-            var t: *lex.Token = peek(x)
-            if isTok(t, lex.DELIMITER, "]") {
-                next(x)
+            x.l.SkipTerminators()
+            var t: *lex.Token = x.l.Peek()
+            if lex.Token.Is(t, lex.DELIMITER, "]") {
+                x.l.Next()
                 break
             }
             var tp: *lex.Token = expectName(x, EDECL)
             if tp == nil {
                 ret false
             }
-            var p3: *lex.Token = peek(x)
-            if isTok(p3, lex.DELIMITER, "]") {
-                next(x)
+            var p3: *lex.Token = x.l.Peek()
+            if lex.Token.Is(p3, lex.DELIMITER, "]") {
+                x.l.Next()
                 break
             }
-            if isTok(p3, lex.DELIMITER, ",") {
-                next(x)
+            if lex.Token.Is(p3, lex.DELIMITER, ",") {
+                x.l.Next()
                 continue
             }
             break
         }
     }
-    skipTerminators(x)
+    x.l.SkipTerminators()
     if !expect(x, lex.DELIMITER, "(", EDECL) {
         ret false
     }

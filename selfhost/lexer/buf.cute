@@ -66,19 +66,47 @@ fn Token.Len(t *Token) int {
     ret unsafe.cast[int](strings.len(t.Value))
 }
 
-// IsLineEnd 行尾判定（含空 token）：LF 与 CR 均认为是行尾。
+// IsLineEnd 行尾判定：LF 与 CR 的一字节 DELIMITER token。
+// nil / NONE / 其它类型一律返回 false（parser 的行尾跳循环靠它终止）。
 fn Token.IsLineEnd(t *Token) bool {
-    if t.Type == NONE {
+    if unsafe.cast[uint](t) == 0 {
+        ret false
+    }
+    if t.Type != DELIMITER {
+        ret false
+    }
+    if len(t.Value) != 1 {
+        ret false
+    }
+    var b: byte = t.Value[0]
+    var bi: int = unsafe.cast[int](b)
+    ret bi == 10 || bi == 13
+}
+
+// IsSemiOrNewline 语句终结符判定：DELIMITER ";" 或 IsLineEnd(t)。
+// nil / NONE / 其它类型返回 false。
+fn Token.IsSemiOrNewline(t *Token) bool {
+    if unsafe.cast[uint](t) == 0 {
+        ret false
+    }
+    if t.Type != DELIMITER {
+        ret false
+    }
+    if strings.eq(t.Value, ";") {
         ret true
     }
-    if t.Type == DELIMITER && len(t.Value) == 1 {
-        var b: byte = t.Value[0]
-        var bi: int = unsafe.cast[int](b)
-        if bi == 10 || bi == 13 {
-            ret true
-        }
+    ret Token.IsLineEnd(t)
+}
+
+// Is 按种类+值判断 token（类型安全的 kind/value 匹配，调用方不必各自 nil/Type/eq）。
+fn Token.Is(t *Token, kind: TokenType, value string) bool {
+    if unsafe.cast[uint](t) == 0 {
+        ret false
     }
-    ret false
+    if t.Type != kind {
+        ret false
+    }
+    ret strings.eq(t.Value, value)
 }
 
 // RenderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
@@ -189,6 +217,15 @@ fn RingBuffer.Clear(r *RingBuffer) {
     r.ReadPos = 0
     r.WritePos = 0
     r.f = false
+}
+
+// Front 只读地查看环首元素；空时返回零指针（不弹出）。
+// parser 的 peek 语义直接由这里经 lex.Prefetch 承接，不进环也不消费。
+fn RingBuffer.Front(r *RingBuffer) *Token {
+    if r.IsEmpty() {
+        ret 0
+    }
+    ret r.buf[r.ReadPos]
 }
 
 // Resize 扩容：把现有有效数据迁移到新buffer

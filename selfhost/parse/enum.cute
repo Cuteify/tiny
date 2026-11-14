@@ -11,10 +11,10 @@ fn parseEnumFromKeyword(x *Parser) bool {
     if nameT == nil {
         ret false
     }
-    skipTerminators(x)
-    var p: *lex.Token = peek(x)
-    if isTok(p, lex.DELIMITER, ":") {
-        next(x)
+    x.l.SkipTerminators()
+    var p: *lex.Token = x.l.Peek()
+    if lex.Token.Is(p, lex.DELIMITER, ":") {
+        x.l.Next()
         if !skipType(x) {
             ret false
         }
@@ -23,14 +23,14 @@ fn parseEnumFromKeyword(x *Parser) bool {
         ret false
     }
     for ; ; {
-        skipTerminators(x)
-        var t: *lex.Token = peek(x)
+        x.l.SkipTerminators()
+        var t: *lex.Token = x.l.Peek()
         if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
-        if isTok(t, lex.DELIMITER, "}") {
-            next(x)
+        if lex.Token.Is(t, lex.DELIMITER, "}") {
+            x.l.Next()
             x.enums = x.enums + 1
             x.decls = x.decls + 1
             ret true
@@ -39,16 +39,16 @@ fn parseEnumFromKeyword(x *Parser) bool {
             fail(x, EDECL, t.Pos)
             ret false
         }
-        next(x)
-        skipTerminators(x)
-        var p2: *lex.Token = peek(x)
-        if isTok(p2, lex.DELIMITER, "=") {
-            next(x)
+        x.l.Next()
+        x.l.SkipTerminators()
+        var p2: *lex.Token = x.l.Peek()
+        if lex.Token.Is(p2, lex.DELIMITER, "=") {
+            x.l.Next()
             restOfLineAtDepth0(x)
             continue
         }
-        if isTok(p2, lex.DELIMITER, ",") || isTok(p2, lex.DELIMITER, ";") {
-            next(x)
+        if lex.Token.Is(p2, lex.DELIMITER, ",") || lex.Token.Is(p2, lex.DELIMITER, ";") {
+            x.l.Next()
             continue
         }
     }
