@@ -2,13 +2,15 @@
 //
 // 目标：用递归下降解析 .cute 源码，复刻 Go 参考形态
 //   Node { Value Block, Father *Node, Children []*Node }
-// 与 Block interface{ Tag(x) int }。本期（M0）只落：
-//   - Block / Node / Parser / file() 主循环骨架
-//   - 顶层分派：import / build / fn / type / var / const 各 decl
-//   - 与 selfhost/lexer 6 枚举对接（Prefetch + SetCursor 分支决策）
-//   - 能编译、能跑子集、不改 Go 参考已通过的语料
+// 与 Block interface{ Tag() int }。
 //
-// 不做完整语义 Check；权限只用于对拍与 AST 构造。
+// M0：Block/Node/Parser 骨架 + file() 主循环（顶层 token 消费 + 计数）。
+// M1（本版）：顶层声明分派——import/build/fn/type/var/const/enum/struct：
+//   import、build、枚举、结构体声明做结构校验并计数；
+//   函数签名（参数/返回值）校验；
+//   函数体/字段默认值/常量初值按平衡括号跳过（M2 起解析语句与表达式并计数）。
+//
+// 不做完整语义 Check；仅面向对拍与阶段验收。
 import "std:strings"
 import lex "../lexer"
 
@@ -16,6 +18,7 @@ import lex "../lexer"
 const OK: int = 0
 const ETOK: int = 1
 const EDECL: int = 2
+const ETYPE: int = 3
 const ESTMT: int = 4
 const EEXPR: int = 5
 
@@ -40,10 +43,10 @@ const B_VAR: int = 3
 const B_CONST: int = 4
 const B_IMPORT: int = 5
 const B_BUILD: int = 6
+const B_ENUM: int = 7
 
 type FuncBlock struct {
     Name: string
-    useless: int
 }
 
 fn FuncBlock.Tag(recv: *FuncBlock) int {
@@ -91,6 +94,14 @@ fn BuildBlock.Tag(recv: *BuildBlock) int {
     ret B_BUILD
 }
 
+type EnumBlock struct {
+    Name: string
+}
+
+fn EnumBlock.Tag(recv: *EnumBlock) int {
+    ret B_ENUM
+}
+
 type FileBlock struct {
 }
 
@@ -101,19 +112,39 @@ fn FileBlock.Tag(recv: *FileBlock) int {
 // Parser 把 lexer 流向上包成语法结构。
 type Parser struct {
     l: *lex.Lexer
+    peekTok: *lex.Token
     root: *Node
     e: int
     ep: uint
     decls: int
+    imports: int
+    builds: int
+    structs: int
+    enums: int
+    consts: int
+    vars: int
+    fns: int
+    stmts: int
+    exprs: int
 }
 
 // mk 基于源码字符串创建 parser。
 fn mk(src string) *Parser {
     var x: *Parser = new(Parser)
     x.l = lex.NewLexer(src)
+    x.peekTok = nil
     x.e = OK
     x.ep = 0
     x.decls = 0
+    x.imports = 0
+    x.builds = 0
+    x.structs = 0
+    x.enums = 0
+    x.consts = 0
+    x.vars = 0
+    x.fns = 0
+    x.stmts = 0
+    x.exprs = 0
     x.root = new(Node)
     ret x
 }
@@ -128,74 +159,1181 @@ fn errPos(x *Parser) uint {
     ret x.ep
 }
 
-// declCount 返回顶层声明数。
+// declCount 返回顶层声明数（import/build/fn/type/enum/var/const 均计入）。
 fn declCount(x *Parser) int {
     ret x.decls
 }
 
-// importCount 返回 import 数（暂以计数占位）。
+// importCount 返回 import 数（分组每个成员算一条）。
 fn importCount(x *Parser) int {
-    ret 0
+    ret x.imports
 }
 
 // buildCount 返回 build 数。
 fn buildCount(x *Parser) int {
-    ret 0
+    ret x.builds
 }
 
-// structCount 返回 struct 数。
+// structCount 返回 struct 数（含 type X struct 与旧式 struct X）。
 fn structCount(x *Parser) int {
-    ret 0
+    ret x.structs
+}
+
+// enumCount 返回 enum 数。
+fn enumCount(x *Parser) int {
+    ret x.enums
 }
 
 // fnCount 返回函数声明数。
 fn fnCount(x *Parser) int {
-    ret 0
+    ret x.fns
 }
 
 // varCount 返回 var 声明数。
 fn varCount(x *Parser) int {
-    ret 0
+    ret x.vars
 }
 
 // constCount 返回 const 声明数。
 fn constCount(x *Parser) int {
-    ret 0
+    ret x.consts
 }
 
-// stmtCount 返回语句数（块内语句）。
+// stmtCount 返回语句数（块内语句）；M2 前恒为 0。
 fn stmtCount(x *Parser) int {
-    ret 0
+    ret x.stmts
 }
 
-// exprCount 返回表达式数。
+// exprCount 返回表达式数；M2 前恒为 0。
 fn exprCount(x *Parser) int {
-    ret 0
+    ret x.exprs
 }
 
-// file 解析整个文件：迭代每个 token，分派到对应 decl 解析函数。
-// M0 仅消费顶层 fn/type/var/const/import，语句树留到 M2。
-fn file(x *Parser) {
-    // 空输入：直接返回成功
-    var done: bool = false
-    for ; !done; {
-        var t: *lex.Token = x.l.Next()
-        if t.Type == lex.NONE {
-            done = true
-        } else if t.Type == lex.KEYWORD {
-            if strings.eq(t.Value, "fn") || strings.eq(t.Value, "type") || strings.eq(t.Value, "var") || strings.eq(t.Value, "import") {
-                x.decls = x.decls + 1
-            }
-            // v0: 不建 AST，仅计数
-        } else if t.Type == lex.DELIMITER {
-            // 分隔符：忽略
-        } else if t.Type == lex.NAME || t.Type == lex.NUMBER || t.Type == lex.STRING {
-            // 名称/字面量：忽略
-        } else {
-            // 未知 token：记词法错误
-            x.e = ETOK
-            x.ep = unsafe.cast[uint](t.Pos)
-            done = true
+// fail 记录首个错误（不覆盖已记录的错误）。
+fn fail(x *Parser, e int, pos int) {
+    if x.e != OK {
+        ret
+    }
+    x.e = e
+    x.ep = unsafe.cast[uint](pos)
+}
+
+// peek 无消费地获取下一个 token（维护单 token 前瞻槽）。
+// 约定：所有前瞻都走 peek/next，禁止 x.l.Next 与 peek 混用造成环形缓存乱序。
+// peek 从流里吃进一个 token 放入单 token 前瞻槽；重复调用返回同一个。
+// next 消费前瞻槽（不够再从流里吃）。
+fn peek(x *Parser) *lex.Token {
+    if isNilTok(x.peekTok) {
+        x.peekTok = x.l.Next()
+    }
+    ret x.peekTok
+}
+
+// next 消费下一个 token。
+fn next(x *Parser) *lex.Token {
+    var t: *lex.Token = peek(x)
+    if !isNilTok(t) {
+        x.peekTok = nil
+    }
+    ret t
+}
+
+// eof 无消费地探知文件末尾。
+fn eof(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    if isNilTok(t) {
+        ret true
+    }
+    ret t.Type == lex.NONE
+}
+
+fn isTok(t *lex.Token, kind: lex.TokenType, value string) bool {
+    if isNilTok(t) {
+        ret false
+    }
+    if t.Type != kind {
+        ret false
+    }
+    ret strings.eq(t.Value, value)
+}
+
+// isNilTok 判空 *Token。
+fn isNilTok(t *lex.Token) bool {
+    ret t == nil
+}
+
+// discardTok 明确忽略 token（cuteify 无 _ 空标识符，用空函数体语义化丢弃）。
+fn discardTok(t *lex.Token) {
+    ret
+}
+
+// isTokKind 仅按类型判断（值由调用方自行处理）。
+fn isTokKind(t *lex.Token, kind: lex.TokenType) bool {
+    if isNilTok(t) {
+        ret false
+    }
+    ret t.Type == kind
+}
+
+// isLineEnd 是否为语句边界（换行/回车/分号）token。
+fn isLineEnd(t *lex.Token) bool {
+    if isNilTok(t) {
+        ret true
+    }
+    if t.Type != lex.DELIMITER {
+        ret false
+    }
+    if strings.eq(t.Value, ";") {
+        ret true
+    }
+    if unsafe.cast[int](t.Value[0]) == 10 {
+        ret true
+    }
+    if unsafe.cast[int](t.Value[0]) == 13 {
+        ret true
+    }
+    ret false
+}
+
+// skipLineEnds 吃掉空白行/分号；触底 EOF 返回 true。
+fn skipLineEnds(x *Parser) {
+    for ; ; {
+        var t: *lex.Token = peek(x)
+        if !isNilTok(t) && isLineEnd(t) {
+            next(x)
+            continue
         }
+        ret
+    }
+}
+
+// expect 期望一个指定种类+值的 token（跳过行尾）；失败记错。
+fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
+    skipLineEnds(x)
+    var t: *lex.Token = next(x)
+    if isNilTok(t) {
+        fail(x, e, 0)
+        ret false
+    }
+    if t.Type != kind || !strings.eq(t.Value, value) {
+        fail(x, e, t.Pos)
+        ret false
+    }
+    ret true
+}
+
+// expectName 期望一个 NAME；失败记错并返回零指针。
+fn expectName(x *Parser, e int) *lex.Token {
+    skipLineEnds(x)
+    var t: *lex.Token = next(x)
+    if isNilTok(t) {
+        fail(x, e, 0)
+        ret 0
+    }
+    if t.Type != lex.NAME {
+        fail(x, e, t.Pos)
+        ret 0
+    }
+    ret t
+}
+
+// expectKeyword 期望一个关键字；失败记错。
+fn expectKeyword(x *Parser, kw string, e int) bool {
+    skipLineEnds(x)
+    var t: *lex.Token = next(x)
+    if isNilTok(t) {
+        fail(x, e, 0)
+        ret false
+    }
+    if t.Type != lex.KEYWORD || !strings.eq(t.Value, kw) {
+        fail(x, e, t.Pos)
+        ret false
+    }
+    ret true
+}
+
+// atClosing 判断当前预取 token 是不是某种收尾分隔符。
+fn atClosing(x *Parser, closing string) bool {
+    var t: *lex.Token = peek(x)
+    ret isTok(t, lex.DELIMITER, closing)
+}
+
+// consumeBalanced 已吃进起始符后消费至配平；用于函数体/asm 块（M2 前）。
+// 遇到不平衡 EOF 记 e；返回 false。
+fn consumeBalanced(x *Parser, open string, close string, e int) bool {
+    var depth: int = 1
+    for ; depth > 0; {
+        var t: *lex.Token = next(x)
+        if isNilTok(t) || t.Type == lex.NONE {
+            fail(x, e, 0)
+            ret false
+        }
+        if t.Type == lex.DELIMITER {
+            if strings.eq(t.Value, open) {
+                depth = depth + 1
+                continue
+            }
+            if strings.eq(t.Value, close) {
+                depth = depth - 1
+                continue
+            }
+        }
+    }
+    ret true
+}
+
+// restOfLineAtDepth0 跳到行尾/回车/EOF；括号/列表/花括号深度内逗号保留。
+// 用于 var/const 初值与字段默认值（M2 起精确解析）。
+fn restOfLineAtDepth0(x *Parser) {
+    var depth: int = 0
+    for ; ; {
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            ret
+        }
+        if t.Type == lex.NONE {
+            ret
+        }
+        if t.Type == lex.DELIMITER {
+            if strings.eq(t.Value, "(") || strings.eq(t.Value, "[") || strings.eq(t.Value, "{") {
+                depth = depth + 1
+            } else if strings.eq(t.Value, ")") || strings.eq(t.Value, "]") || strings.eq(t.Value, "}") {
+                if depth == 0 {
+                    ret
+                }
+                depth = depth - 1
+            } else if unsafe.cast[int](t.Value[0]) == 10 && depth == 0 {
+                ret
+            } else if unsafe.cast[int](t.Value[0]) == 13 && depth == 0 {
+                ret
+            }
+        }
+        next(x)
+    }
+}
+
+// skipType 消费一个类型注解（指针/列表/定长数组/map/函数类型/限定名）。
+fn skipType(x *Parser) bool {
+    skipLineEnds(x)
+    var t: *lex.Token = next(x)
+    if isNilTok(t) {
+        fail(x, ETYPE, 0)
+        ret false
+    }
+    if t.Type == lex.DELIMITER {
+        if strings.eq(t.Value, "*") {
+            ret skipType(x)
+        }
+        if strings.eq(t.Value, "[") {
+            var p: *lex.Token = peek(x)
+            if isTok(p, lex.DELIMITER, "]") {
+                next(x)
+                ret skipType(x)
+            }
+            var num: *lex.Token = next(x)
+            if isNilTok(num) || num.Type != lex.NUMBER {
+                if (num) {
+                    fail(x, ETYPE, num.Pos)
+                } else {
+                    fail(x, ETYPE, 0)
+                }
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, "]", ETYPE) {
+                ret false
+            }
+            ret skipType(x)
+        }
+        fail(x, ETYPE, t.Pos)
+        ret false
+    }
+    if t.Type == lex.KEYWORD {
+        if strings.eq(t.Value, "fn") {
+            // 函数类型参数：类型（可无名）
+            if !expect(x, lex.DELIMITER, "(", ETYPE) {
+                ret false
+            }
+            for ; ; {
+                var p: *lex.Token = peek(x)
+                if isTok(p, lex.DELIMITER, ")") {
+                    next(x)
+                    break
+                }
+                // 变参 ...T
+                if isTok(p, lex.DELIMITER, "...") {
+                    next(x)
+                }
+                if !skipType(x) {
+                    ret false
+                }
+                var p2: *lex.Token = peek(x)
+                if isTok(p2, lex.DELIMITER, ",") {
+                    next(x)
+                    continue
+                }
+            }
+            // 返回类型：可能括号（多返回值）或单类型；无则 None 也接受（无返回值由调用方消歧）
+            var p3: *lex.Token = peek(x)
+            if isTok(p3, lex.DELIMITER, "(") {
+                ret consumeBalanced(x, "(", ")", ETYPE)
+            }
+            var p4: *lex.Token = peek(x)
+            if isNilTok(p4) {
+                ret true
+            }
+            // 能以类型起头则吃一个；否则不动（调用方按需要处理 { 等）
+            if p4.Type == lex.KEYWORD || p4.Type == lex.NAME || p4.Type == lex.DELIMITER {
+                if isTok(p4, lex.DELIMITER, "*") || isTok(p4, lex.DELIMITER, "[") || p4.Type != lex.DELIMITER {
+                    ret skipType(x)
+                }
+            }
+            ret true
+        }
+        fail(x, ETYPE, t.Pos)
+        ret false
+    }
+    if t.Type == lex.NAME {
+        // 限定名首段已被吃掉；吃 `.` NAME 序列
+        for ; ; {
+            var p5: *lex.Token = peek(x)
+            if !isTok(p5, lex.DELIMITER, ".") {
+                break
+            }
+            next(x)
+            var part: *lex.Token = expectName(x, ETYPE)
+            if isNilTok(part) {
+                ret false
+            }
+        }
+        if strings.eq(t.Value, "map") && atClosing(x, "[") {
+            next(x)
+            if !skipType(x) {
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, "]", ETYPE) {
+                ret false
+            }
+            ret skipType(x)
+        }
+        ret true
+    }
+    fail(x, ETYPE, t.Pos)
+    ret false
+}
+
+
+// parseFuncParams 解析函数参数列表；已吃进起始 (。
+fn parseFuncParams(x *Parser) bool {
+    for ; ; {
+        skipLineEnds(x)
+        var p: *lex.Token = peek(x)
+        if isTok(p, lex.DELIMITER, ")") {
+            next(x)
+            ret true
+        }
+        // 变参 ...T（无名）
+        if isTok(p, lex.DELIMITER, "...") {
+            next(x)
+            if !skipType(x) {
+                ret false
+            }
+            var pEnd: *lex.Token = peek(x)
+            if isTok(pEnd, lex.DELIMITER, ")") {
+                continue
+            }
+            ret false
+        }
+        // 具名参数 name ... / name: Type / name Type
+        var nameT: *lex.Token = next(x)
+        if isNilTok(nameT) || nameT.Type != lex.NAME {
+            if (nameT) {
+                fail(x, EDECL, nameT.Pos)
+            } else {
+                fail(x, EDECL, 0)
+            }
+            ret false
+        }
+        // 变参具名形式 name ...Type
+        var pVar: *lex.Token = peek(x)
+        if isTok(pVar, lex.DELIMITER, "...") {
+            next(x)
+            if !skipType(x) {
+                ret false
+            }
+        } else if isTok(pVar, lex.DELIMITER, ":") {
+            next(x)
+            if !skipType(x) {
+                ret false
+            }
+        } else {
+            // 裸类型：name Type
+            if !skipType(x) {
+                ret false
+            }
+        }
+        // 默认值 = expr：跳过到 ',' 或 ')'
+        var pDef: *lex.Token = peek(x)
+        if isTok(pDef, lex.DELIMITER, "=") {
+            next(x)
+            var depth: int = 0
+            for ; ; {
+                var t: *lex.Token = peek(x)
+                if isNilTok(t) {
+                    ret true
+                }
+                if t.Type == lex.NONE {
+                    ret true
+                }
+                if t.Type == lex.DELIMITER {
+                    if strings.eq(t.Value, "(") || strings.eq(t.Value, "[") || strings.eq(t.Value, "{") {
+                        depth = depth + 1
+                    } else if strings.eq(t.Value, ")") {
+                        if depth == 0 {
+                            break
+                        }
+                        depth = depth - 1
+                    } else if strings.eq(t.Value, "]") || strings.eq(t.Value, "}") {
+                        if depth > 0 {
+                            depth = depth - 1
+                        }
+                    } else if strings.eq(t.Value, ",") && depth == 0 {
+                        break
+                    } else if unsafe.cast[int](t.Value[0]) == 10 && depth == 0 {
+                        break
+                    }
+                }
+                next(x)
+            }
+        }
+        // 分隔符
+        var pSep: *lex.Token = peek(x)
+        if isTok(pSep, lex.DELIMITER, ")") {
+            continue
+        }
+        if isTok(pSep, lex.DELIMITER, ",") {
+            next(x)
+            continue
+        }
+        // 最后一参之后的行尾：允许换行（参数跨行）
+        if !isNilTok(pSep) && pSep.Type == lex.DELIMITER && (unsafe.cast[int](pSep.Value[0]) == 10 || unsafe.cast[int](pSep.Value[0]) == 13) {
+            continue
+        }
+        ret false
+    }
+}
+
+// parseRetTypes 解析可选返回类型（已调过函数名与 '('）。
+// 返回类型必须同行（无换行跳过）：换行即表示没有返回类型（接口方法/fn）。
+fn parseRetTypes(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    // 无返回值：换行或 directamente '{' / EOF
+    if isLineEnd(t) {
+        ret true
+    }
+    if isTok(t, lex.DELIMITER, "{") {
+        ret true
+    }
+    if isTok(t, lex.DELIMITER, "(") {
+        next(x)
+        for ; ; {
+            skipLineEnds(x)
+            var p: *lex.Token = peek(x)
+            if isTok(p, lex.DELIMITER, ")") {
+                next(x)
+                ret true
+            }
+            if !skipType(x) {
+                ret false
+            }
+            var p2: *lex.Token = peek(x)
+            if isTok(p2, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            var p3: *lex.Token = peek(x)
+            if isTok(p3, lex.DELIMITER, ")") {
+                continue
+            }
+            ret false
+        }
+    }
+    // 单返回值类型
+    ret skipType(x)
+}
+
+
+
+
+// parseStructBody 解析结构体体（type X struct / 裸 struct X 复用）。
+// structs 计数由调用方做。
+fn parseStructBody(x *Parser) bool {
+    if !expect(x, lex.DELIMITER, "{", EDECL) {
+        ret false
+    }
+    for ; ; {
+        skipLineEnds(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        // 匿名嵌入父结构：@Name / alias @Name
+        if isTok(t, lex.DELIMITER, "@") {
+            next(x)
+            var parentN: *lex.Token = expectName(x, EDECL)
+            if isNilTok(parentN) {
+                ret false
+            }
+            continue
+        }
+        // 访问修饰符 !（只读）/ ?（只写）
+        var t0: *lex.Token = peek(x)
+        if isTok(t0, lex.DELIMITER, "!") || isTok(t0, lex.DELIMITER, "?") {
+            next(x)
+        }
+        var fieldName: *lex.Token = peek(x)
+        if isNilTok(fieldName) || fieldName.Type != lex.NAME {
+            fail(x, EDECL, fieldName.Pos)
+            ret false
+        }
+        next(x)
+        // alias @Parent：fieldName 后面直接跟 @
+        if atClosing(x, "@") {
+            next(x)
+            var parentN: *lex.Token = expectName(x, EDECL)
+            if isNilTok(parentN) {
+                ret false
+            }
+            continue
+        }
+        if !expect(x, lex.DELIMITER, ":", ETYPE) {
+            ret false
+        }
+        if !skipType(x) {
+            ret false
+        }
+        // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
+        var pTag: *lex.Token = peek(x)
+        if !isNilTok(pTag) && pTag.Type == lex.STRING {
+            next(x)
+        }
+        // 字段默认值 = expr
+        var pDef: *lex.Token = peek(x)
+        if isTok(pDef, lex.DELIMITER, "=") {
+            next(x)
+            restOfLineAtDepth0(x)
+        }
+    }
+}
+
+// parseInterfaceBody 解析 interface { ... }（type X interface 复用）。
+fn parseInterfaceBody(x *Parser) bool {
+    if !expect(x, lex.DELIMITER, "{", EDECL) {
+        ret false
+    }
+    for ; ; {
+        skipLineEnds(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        if t.Type != lex.NAME {
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+        var methodName: *lex.Token = next(x)
+        discardTok(methodName)
+        // 嵌入式接口（仅 NAME 换行）
+        var p: *lex.Token = peek(x)
+        if isLineEnd(p) {
+            continue
+        }
+        if isTok(p, lex.DELIMITER, "(") {
+            next(x)
+            if !parseFuncParams(x) {
+                ret false
+            }
+            if !parseRetTypes(x) {
+                ret false
+            }
+            continue
+        }
+        // 不是方法头：记错
+        fail(x, EDECL, p.Pos)
+        ret false
+    }
+}
+
+
+// parseGroupedDecl 解析 var ( ... ) / const ( ... ) / let ( ... ) / type ( ... ) 分组声明。
+fn parseGroupedDecl(x *Parser, kind string) bool {
+    var p: *lex.Token = peek(x)
+    if !isTok(p, lex.DELIMITER, "(") {
+        ret false
+    }
+    next(x)
+    for ; ; {
+        skipLineEnds(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, ")") {
+            next(x)
+            ret true
+        }
+        if strings.eq(kind, "type") {
+            var nameT: *lex.Token = next(x)
+            if isNilTok(nameT) || nameT.Type != lex.NAME {
+                if (nameT) {
+                    fail(x, EDECL, nameT.Pos)
+                } else {
+                    fail(x, EDECL, 0)
+                }
+                ret false
+            }
+            skipLineEnds(x)
+            var q: *lex.Token = peek(x)
+            if isTok(q, lex.KEYWORD, "struct") {
+                next(x)
+                if !parseStructBody(x) {
+                    ret false
+                }
+                x.structs = x.structs + 1
+                x.decls = x.decls + 1
+                continue
+            }
+            if isTok(q, lex.KEYWORD, "interface") {
+                next(x)
+                if !parseInterfaceBody(x) {
+                    ret false
+                }
+                x.decls = x.decls + 1
+                continue
+            }
+            if isTok(q, lex.DELIMITER, "=") {
+                next(x)
+                if !parseTypeRef(x) {
+                    ret false
+                }
+                x.decls = x.decls + 1
+                continue
+            }
+            fail(x, ETYPE, nameT.Pos)
+            ret false
+        }
+        // var/const/let 单条
+        var okDecl: bool = parseVarConst(x, kind)
+        if !okDecl {
+            ret false
+        }
+    }
+}
+
+// parseVarConst 解析单条 var/const/let 声明：[var|const] name[: Type] = v。
+fn parseVarConst(x *Parser, kind string) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    var t: *lex.Token = peek(x)
+    var hasType: bool = isTok(t, lex.DELIMITER, ":")
+    if hasType {
+        next(x)
+        if !skipType(x) {
+            ret false
+        }
+    }
+    var eqT: *lex.Token = peek(x)
+    if isTok(eqT, lex.DELIMITER, "=") {
+        next(x)
+        restOfLineAtDepth0(x)
+    } else if !hasType {
+        // var x 无类型也无初值：声明但零值（允许）
+    }
+    if strings.eq(kind, "const") {
+        x.consts = x.consts + 1
+    } else {
+        x.vars = x.vars + 1
+    }
+    x.decls = x.decls + 1
+    ret true
+}
+
+
+
+
+
+// parseDeclDispatch 顶层关键字分派。
+fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
+    if strings.eq(kw, "import") {
+        if !parseImportFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "build") {
+        if !parseBuildFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "fn") {
+        if !parseFnFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "type") {
+        skipLineEnds(x)
+        if atClosing(x, "(") {
+            ret parseGroupedDecl(x, "type")
+        }
+        ret parseTypeFromKeyword(x, t)
+    }
+    if strings.eq(kw, "struct") {
+        ret parseStructDeclFromKeyword(x)
+    }
+    if strings.eq(kw, "enum") {
+        ret parseEnumFromKeyword(x)
+    }
+    if strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let") {
+        return parseVarConstDispatch(x, kw)
+    }
+    fail(x, EDECL, t.Pos)
+    ret false
+}
+
+// 以下 *FromKeyword 变体在关键字已被消费后继续解析（避免重复消费）。
+
+fn parseImportFromKeyword(x *Parser) bool {
+    var saved: *lex.Token = peek(x)
+    if isTok(saved, lex.DELIMITER, "(") {
+        next(x)
+        for ; ; {
+            skipLineEnds(x)
+            var t: *lex.Token = peek(x)
+            if isNilTok(t) {
+                fail(x, EDECL, 0)
+                ret false
+            }
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.imports = x.imports + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if t.Type == lex.STRING {
+                next(x)
+                continue
+            }
+            if t.Type == lex.NAME {
+                var alias: *lex.Token = next(x)
+                discardTok(alias)
+                var strT: *lex.Token = next(x)
+                if isNilTok(strT) || strT.Type != lex.STRING {
+                    if (strT) {
+                        fail(x, EDECL, strT.Pos)
+                    } else {
+                        fail(x, EDECL, 0)
+                    }
+                    ret false
+                }
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    var t: *lex.Token = peek(x)
+    if !isNilTok(t) && t.Type == lex.NAME {
+        var alias: *lex.Token = next(x)
+        discardTok(alias)
+    }
+    var strT: *lex.Token = next(x)
+    if isNilTok(strT) || strT.Type != lex.STRING {
+        if (strT) {
+            fail(x, EDECL, strT.Pos)
+        } else {
+            fail(x, EDECL, 0)
+        }
+        ret false
+    }
+    x.imports = x.imports + 1
+    x.decls = x.decls + 1
+    ret true
+}
+
+fn parseBuildFromKeyword(x *Parser) bool {
+    var kindT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(kindT) {
+        ret false
+    }
+    var kind: string = kindT.Value
+    if strings.eq(kind, "os") || strings.eq(kind, "arch") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        for ; ; {
+            skipLineEnds(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.builds = x.builds + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if isTokKind(t, lex.NAME) || isTokKind(t, lex.STRING) || isTokKind(t, lex.KEYWORD) {
+                next(x)
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    if strings.eq(kind, "bits") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        for ; ; {
+            skipLineEnds(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.builds = x.builds + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if isTokKind(t, lex.NUMBER) {
+                next(x)
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    if strings.eq(kind, "asm") {
+        if !expect(x, lex.DELIMITER, "{", EDECL) {
+            ret false
+        }
+        if !consumeBalanced(x, "{", "}", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "link") || strings.eq(kind, "ext") || strings.eq(kind, "extret") || strings.eq(kind, "export") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        var t: *lex.Token = next(x)
+        if isNilTok(t) || (t.Type != lex.STRING && t.Type != lex.NAME) {
+            if (t) {
+                fail(x, EDECL, t.Pos)
+            } else {
+                fail(x, EDECL, 0)
+            }
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ")", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "align") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        var t: *lex.Token = next(x)
+        if isNilTok(t) || t.Type != lex.NUMBER {
+            if (t) {
+                fail(x, EDECL, t.Pos)
+            } else {
+                fail(x, EDECL, 0)
+            }
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ")", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "noalign") {
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    fail(x, EDECL, kindT.Pos)
+    ret false
+}
+
+fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipLineEnds(x)
+    var q: *lex.Token = peek(x)
+    if isTok(q, lex.KEYWORD, "struct") {
+        next(x)
+        if !parseStructBody(x) {
+            ret false
+        }
+        x.structs = x.structs + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if isTok(q, lex.KEYWORD, "interface") {
+        next(x)
+        if !parseInterfaceBody(x) {
+            ret false
+        }
+        x.decls = x.decls + 1
+        ret true
+    }
+    if isTok(q, lex.DELIMITER, "=") {
+        next(x)
+        if !parseTypeRef(x) {
+            ret false
+        }
+        x.decls = x.decls + 1
+        ret true
+    }
+    if isTok(q, lex.DELIMITER, ":") {
+        next(x)
+        var parentN: *lex.Token = expectName(x, EDECL)
+        if isNilTok(parentN) {
+            ret false
+        }
+        if !expectKeyword(x, "struct", EDECL) {
+            ret false
+        }
+        if !parseStructBody(x) {
+            ret false
+        }
+        x.structs = x.structs + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    // type X T —— 新类型定义（docs/LANGUAGE.md §5.1：type MyInt2 int）
+    ret parseTypeRef(x)
+}
+
+fn parseStructDeclFromKeyword(x *Parser) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipLineEnds(x)
+    var p: *lex.Token = peek(x)
+    if isTok(p, lex.DELIMITER, ":") {
+        next(x)
+        var parentN: *lex.Token = expectName(x, EDECL)
+        if isNilTok(parentN) {
+            ret false
+        }
+    }
+    if !parseStructBody(x) {
+        ret false
+    }
+    x.structs = x.structs + 1
+    x.decls = x.decls + 1
+    ret true
+}
+
+fn parseEnumFromKeyword(x *Parser) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipLineEnds(x)
+    var p: *lex.Token = peek(x)
+    if isTok(p, lex.DELIMITER, ":") {
+        next(x)
+        if !skipType(x) {
+            ret false
+        }
+    }
+    if !expect(x, lex.DELIMITER, "{", EDECL) {
+        ret false
+    }
+    for ; ; {
+        skipLineEnds(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            x.enums = x.enums + 1
+            x.decls = x.decls + 1
+            ret true
+        }
+        if t.Type != lex.NAME {
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+        var memberT: *lex.Token = next(x)
+        discardTok(memberT)
+        skipLineEnds(x)
+        var p2: *lex.Token = peek(x)
+        if isTok(p2, lex.DELIMITER, "=") {
+            next(x)
+            restOfLineAtDepth0(x)
+            continue
+        }
+        if isTok(p2, lex.DELIMITER, ",") || isTok(p2, lex.DELIMITER, ";") {
+            next(x)
+            continue
+        }
+    }
+}
+
+fn parseFnFromKeyword(x *Parser) bool {
+    // fn 关键字已被消费
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipLineEnds(x)
+    var p: *lex.Token = peek(x)
+    if isTok(p, lex.DELIMITER, ".") {
+        next(x)
+        var m: *lex.Token = expectName(x, EDECL)
+        if isNilTok(m) {
+            ret false
+        }
+    }
+    skipLineEnds(x)
+    var p2: *lex.Token = peek(x)
+    if isTok(p2, lex.DELIMITER, "[") {
+        next(x)
+        for ; ; {
+            skipLineEnds(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, "]") {
+                next(x)
+                break
+            }
+            var tp: *lex.Token = expectName(x, EDECL)
+            if isNilTok(tp) {
+                ret false
+            }
+            var p3: *lex.Token = peek(x)
+            if isTok(p3, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            break
+        }
+    }
+    skipLineEnds(x)
+    if !expect(x, lex.DELIMITER, "(", EDECL) {
+        ret false
+    }
+    if !parseFuncParams(x) {
+        ret false
+    }
+    if !parseRetTypes(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+        ret false
+    }
+    if !consumeBalanced(x, "{", "}", ESTMT) {
+        ret false
+    }
+    x.fns = x.fns + 1
+    x.decls = x.decls + 1
+    ret true
+}
+
+// parseTypeRef 别名/普通类型引用（= 后）。
+fn parseTypeRef(x *Parser) bool {
+    ret skipType(x)
+}
+
+fn parseVarConstDispatch(x *Parser, kind string) bool {
+    skipLineEnds(x)
+    if atClosing(x, "(") {
+        ret parseGroupedDecl(x, kind)
+    }
+    ret parseVarConst(x, kind)
+}
+
+// isDeclKeyword 顶层声明关键字集合。
+fn isDeclKeyword(kw string) bool {
+    if strings.eq(kw, "import") { ret true }
+    if strings.eq(kw, "build") { ret true }
+    if strings.eq(kw, "fn") { ret true }
+    if strings.eq(kw, "type") { ret true }
+    if strings.eq(kw, "struct") { ret true }
+    if strings.eq(kw, "enum") { ret true }
+    if strings.eq(kw, "var") { ret true }
+    if strings.eq(kw, "const") { ret true }
+    if strings.eq(kw, "let") { ret true }
+    ret false
+}
+
+// file 解析整个文件。
+fn file(x *Parser) {
+    for ; ; {
+        skipLineEnds(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            ret
+        }
+        if t.Type == lex.NONE {
+            ret
+        }
+        if t.Type == lex.KEYWORD {
+            if isDeclKeyword(t.Value) {
+                var kw: string = t.Value
+                next(x)
+                var okDecl: bool = parseDeclKeyword(x, kw, t)
+                if !okDecl {
+                    ret
+                }
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret
+        }
+        if t.Type == lex.STRING || t.Type == lex.NUMBER || t.Type == lex.NAME {
+            // 顶层孤立字面量/标识符：语法错误
+            fail(x, EDECL, t.Pos)
+            ret
+        }
+        // 顶层孤立的分隔符/其他：声明位置语法错误
+        fail(x, EDECL, t.Pos)
+        ret
     }
 }
