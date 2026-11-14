@@ -66,6 +66,56 @@ fn TokenCoord(pos int, endPos int) *Token {
     ret Token{Pos: pos, EndPos: endPos}
 }
 
+// Coord 绝对坐标快照（字节偏移 + 1-based 行列号）。
+//
+// 设计约束（这是本类型存在的原因）：
+//   位置更新只允许注入两类绝对值来源——
+//     ① 保存的快照：Lexer.savePos()（host 光标）/ Lexer.savePfPos()（预取光标）
+//     ② token 自带坐标：coordFromTokenStart(t) / coordFromTokenEnd(t)
+//   不存在“已有 pos ± 手算偏移”的入口：setPos 只接受 *Coord，整数
+//   delta 永远无法作为它的参数，任何位置更新都必须落到一份被保存的绝对值上。
+type Coord struct {
+    Pos: int
+    Line: int
+    Col: int
+}
+
+// coordFromTokenStart 从 token 自带的起始坐标构造快照。
+fn coordFromTokenStart(t *Token) *Coord {
+    if unsafe.cast[uint](t) == 0 {
+        panic("coordFromTokenStart: nil token")
+    }
+    ret Coord{Pos: t.Pos, Line: t.Line, Col: t.Col}
+}
+
+// coordFromTokenEnd 从 token 自带的结束坐标构造快照。
+fn coordFromTokenEnd(t *Token) *Coord {
+    if unsafe.cast[uint](t) == 0 {
+        panic("coordFromTokenEnd: nil token")
+    }
+    ret Coord{Pos: t.EndPos, Line: t.EndLine, Col: t.EndCol}
+}
+
+// savePos 保存 host 光标（Pos/Line/Col）当前值。
+fn Lexer.savePos(l *Lexer) *Coord {
+    ret Coord{Pos: l.Pos, Line: l.Line, Col: l.Col}
+}
+
+// savePfPos 保存预取光标（pfPos/pfLine/pfCol）当前值。
+fn Lexer.savePfPos(l *Lexer) *Coord {
+    ret Coord{Pos: l.pfPos, Line: l.pfLine, Col: l.pfCol}
+}
+
+// setPos 以 *Coord 的绝对值更新 host 光标；不做任何算术、不读当前值。
+fn Lexer.setPos(l *Lexer, c *Coord) {
+    if unsafe.cast[uint](c) == 0 {
+        panic("Lexer.setPos: nil Coord")
+    }
+    l.Pos = c.Pos
+    l.Line = c.Line
+    l.Col = c.Col
+}
+
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
 fn Lexer.consume(l *Lexer, t *Token) {
     var text: string = l.Text
@@ -354,17 +404,13 @@ fn Lexer.Next(l *Lexer) *Token {
     // hit == 0 表示缓存空（无可弹出的 token）
     var hit: *Token = l.pfCache.Read()
     if unsafe.cast[uint](hit) != 0 {
-        l.Pos = hit.EndPos
-        l.Line = hit.EndLine
-        l.Col = hit.EndCol
+        l.setPos(coordFromTokenEnd(hit))
         ret hit
     }
     var tok: *Token = l.Prefetch()
     if tok.Type == NONE {
-        // EOF
-        l.Pos = l.pfPos
-        l.Line = l.pfLine
-        l.Col = l.pfCol
+        // EOF：以预取光标位置为准（consume() 已把 pfPos 推进到文件尾）
+        l.setPos(l.savePfPos())
         ret tok
     }
     // 语义差异（与 Go 参考一处差异，见 README）：
@@ -374,13 +420,9 @@ fn Lexer.Next(l *Lexer) *Token {
     var dropT: *Token = l.pfCache.Read()
     if unsafe.cast[uint](dropT) == 0 {
         // 缓存满了或已被弹出：防御性分支，直接返回新 token 即可
-        l.Pos = tok.EndPos
-        l.Line = tok.EndLine
-        l.Col = tok.EndCol
+        l.setPos(coordFromTokenEnd(tok))
         ret tok
     }
-    l.Pos = tok.EndPos
-    l.Line = tok.EndLine
-    l.Col = tok.EndCol
+    l.setPos(coordFromTokenEnd(tok))
     ret tok
 }
