@@ -2,15 +2,8 @@
 import "std:strings"
 import lex "../lexer"
 
-// BuildBlock 定义；tag = B_BUILD。
-const B_BUILD: int = 6;
-
 type BuildBlock struct {
     Key: string
-}
-
-fn BuildBlock.Tag(recv: *BuildBlock) int {
-    ret B_BUILD
 }
 
 fn parseBuildFromKeyword(x *Parser) bool {
@@ -130,4 +123,3 @@ fn parseBuildFromKeyword(x *Parser) bool {
 }
 
 // parseInterfaceFromKeyword 解析裸 interface 声明：interface K { ... } 等价 type K interface { ... }。
-

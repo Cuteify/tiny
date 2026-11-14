@@ -2,15 +2,8 @@
 import "std:strings"
 import lex "../lexer"
 
-// TypeBlock 定义；tag = B_TYPE。
-const B_TYPE: int = 2;
-
 type TypeBlock struct {
     Name: string
-}
-
-fn TypeBlock.Tag(recv: *TypeBlock) int {
-    ret B_TYPE
 }
 
 fn skipType(x *Parser) bool {
@@ -120,7 +113,6 @@ fn skipType(x *Parser) bool {
     fail(x, ETYPE, t.Pos)
     ret false
 }
-
 
 // parseFuncParams 解析函数参数列表；已吃进起始 (。
 fn parseGroupedDecl(x *Parser, kind string) bool {
@@ -247,4 +239,3 @@ fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
 fn parseTypeRef(x *Parser) bool {
     ret skipType(x)
 }
-

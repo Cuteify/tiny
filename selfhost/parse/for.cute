@@ -186,5 +186,3 @@ fn parseForStmt(x *Parser) bool {
     ret parseBlock(x)
 }
 
-// parseRetStmt 解析 ret / return 语句（可多值）。
-

@@ -2,14 +2,7 @@
 import "std:strings"
 import lex "../lexer"
 
-// FileBlock 定义；tag = B_FILE。
-const B_FILE: int = 0;
-
 type FileBlock struct {
-}
-
-fn FileBlock.Tag(recv: *FileBlock) int {
-    ret B_FILE
 }
 
 fn mk(src string) *Parser {
@@ -215,4 +208,3 @@ fn file(x *Parser) {
         ret
     }
 }
-

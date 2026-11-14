@@ -14,9 +14,9 @@ const ETYPE: int = 3
 const ESTMT: int = 4
 const EEXPR: int = 5
 
-// Block 是语法树节点的抽象接口：每个语法单位对应一个具体 Block。
+// Block 是语法树节点的抽象接口（Go 参考形态：空 marker）。
+// 派发按 ``n.Value`` 的具体类型进行，不需要也不存在 Tag() 方法。
 type Block interface {
-    Tag() int
 }
 
 // Node 是任意语法节点的统一表示。Father/Children 与 Go 参考一致。

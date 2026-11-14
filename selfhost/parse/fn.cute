@@ -3,15 +3,8 @@
 import "std:strings"
 import lex "../lexer"
 
-// FuncBlock 定义；tag = B_FUNC。
-const B_FUNC: int = 1;
-
 type FuncBlock struct {
     Name: string
-}
-
-fn FuncBlock.Tag(recv: *FuncBlock) int {
-    ret B_FUNC
 }
 
 fn parseFnFromKeyword(x *Parser) bool {
@@ -73,6 +66,3 @@ fn parseFnFromKeyword(x *Parser) bool {
     x.decls = x.decls + 1
     ret true
 }
-
-// parseTypeRef 别名/普通类型引用（= 后）。
-

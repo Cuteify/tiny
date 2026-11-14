@@ -25,5 +25,3 @@ fn parseIfStmt(x *Parser) bool {
     ret true
 }
 
-// parseForStmt 解析 for 语句的三种形态。
-

@@ -2,15 +2,8 @@
 import "std:strings"
 import lex "../lexer"
 
-// EnumBlock 定义；tag = B_ENUM。
-const B_ENUM: int = 7;
-
 type EnumBlock struct {
     Name: string
-}
-
-fn EnumBlock.Tag(recv: *EnumBlock) int {
-    ret B_ENUM
 }
 
 fn parseEnumFromKeyword(x *Parser) bool {
@@ -61,4 +54,3 @@ fn parseEnumFromKeyword(x *Parser) bool {
         }
     }
 }
-
