@@ -1,7 +1,18 @@
-// gen.cute —— 泛型函数声明 fn f[T]() 与方法 fn P.m()。
-// 加载顺序：依赖 call.cute、stmt.cute、helpers.cute。
+// fn.cute —— 函数声明：fn f[T]() 与 fn P.m()（方法声明），FuncBlock 定义。
+// 加载顺序：依赖 call.cute、stmt.cute、helpers.cute；Block/Node 来自 blocks.cute。
 import "std:strings"
 import lex "../lexer"
+
+// FuncBlock 定义；tag = B_FUNC。
+const B_FUNC: int = 1;
+
+type FuncBlock struct {
+    Name: string
+}
+
+fn FuncBlock.Tag(recv: *FuncBlock) int {
+    ret B_FUNC
+}
 
 fn parseFnFromKeyword(x *Parser) bool {
     // fn 关键字已被消费

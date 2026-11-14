@@ -1,7 +1,18 @@
 // import.cute —— import "path" / import alias / import ( group )。
-// 加载顺序：依赖 helpers.cute。
 import "std:strings"
 import lex "../lexer"
+
+// ImportBlock 定义；tag = B_IMPORT。
+const B_IMPORT: int = 5;
+
+type ImportBlock struct {
+    Path: string
+    Alias: string
+}
+
+fn ImportBlock.Tag(recv: *ImportBlock) int {
+    ret B_IMPORT
+}
 
 fn parseImportFromKeyword(x *Parser) bool {
     var saved: *lex.Token = peek(x)

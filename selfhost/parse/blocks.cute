@@ -1,24 +1,8 @@
-// blocks.cute —— parser 的块类型声明（Go 参考 node.go 的 Block interface 形态）。
-// 具体 *Block 实现各自的 Tag() int —— parser 按 Tag 走分派表。
-// 错误码、Tag 常量、节点结构集中于此；struct *Block 等价 import 视图。
+// blocks.cute —— 自举 parser 的块声明（Go 参考 node.go 的 Block interface 形态）。
+// Node 是统一的语法树节点，Block 是其子类 interface；具体 *Block 见各目标文件。
+// 错误码、Tag 常量、节点结构、Parser 类型集中于此。
 //
 // 加载顺序：仅依赖 lex。
-import "std:strings"
-import lex "../lexer"
-
-// Cuteify 自举 parser（S4：按 Go 参考形态实现 Block 接口）。
-//
-// 目标：用递归下降解析 .cute 源码，复刻 Go 参考形态
-//   Node { Value Block, Father *Node, Children []*Node }
-// 与 Block interface{ Tag() int }。
-//
-// M0：Block/Node/Parser 骨架 + file() 主循环（顶层 token 消费 + 计数）。
-// M1（本版）：顶层声明分派——import/build/fn/type/var/const/enum/struct：
-//   import、build、枚举、结构体声明做结构校验并计数；
-//   函数签名（参数/返回值）校验；
-//   函数体/字段默认值/常量初值按平衡括号跳过（M2 起解析语句与表达式并计数）。
-//
-// 不做完整语义 Check；仅面向对拍与阶段验收。
 import "std:strings"
 import lex "../lexer"
 
@@ -36,78 +20,10 @@ type Block interface {
 }
 
 // Node 是任意语法节点的统一表示。Father/Children 与 Go 参考一致。
-// Value 是 *某种具体的 Block（*FuncBlock 等）。
 type Node struct {
     Value: Block
     Father: *Node
     Children: []*Node
-}
-
-// 具体 block 的 Tag 常量
-const B_FILE: int = 0
-const B_FUNC: int = 1
-const B_TYPE: int = 2
-const B_VAR: int = 3
-const B_CONST: int = 4
-const B_IMPORT: int = 5
-const B_BUILD: int = 6
-const B_ENUM: int = 7
-
-type FuncBlock struct {
-    Name: string
-}
-
-fn FuncBlock.Tag(recv: *FuncBlock) int {
-    ret B_FUNC
-}
-
-type TypeBlock struct {
-    Name: string
-}
-fn TypeBlock.Tag(recv: *TypeBlock) int {
-    ret B_TYPE
-}
-
-type VarBlock struct {
-    Name: string
-}
-fn VarBlock.Tag(recv: *VarBlock) int {
-    ret B_VAR
-}
-
-type ConstBlock struct {
-    Name: string
-}
-fn ConstBlock.Tag(recv: *ConstBlock) int {
-    ret B_CONST
-}
-
-type ImportBlock struct {
-    Path: string
-    Alias: string
-}
-fn ImportBlock.Tag(recv: *ImportBlock) int {
-    ret B_IMPORT
-}
-
-type BuildBlock struct {
-    Key: string
-}
-fn BuildBlock.Tag(recv: *BuildBlock) int {
-    ret B_BUILD
-}
-
-type EnumBlock struct {
-    Name: string
-}
-fn EnumBlock.Tag(recv: *EnumBlock) int {
-    ret B_ENUM
-}
-
-type FileBlock struct {
-}
-fn FileBlock.Tag(recv: *FileBlock) int {
-    ret B_FILE
 }
 
 // Parser 把 lexer 流向上包成语法结构。
@@ -130,6 +46,3 @@ type Parser struct {
     stmts: int
     exprs: int
 }
-
-// mk 基于源码字符串创建 parser。
-

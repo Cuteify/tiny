@@ -1,7 +1,17 @@
 // build.cute —— build os/arch/bits/asm/link/ext/extret/align/noalign。
-// 加载顺序：依赖 helpers.cute。
 import "std:strings"
 import lex "../lexer"
+
+// BuildBlock 定义；tag = B_BUILD。
+const B_BUILD: int = 6;
+
+type BuildBlock struct {
+    Key: string
+}
+
+fn BuildBlock.Tag(recv: *BuildBlock) int {
+    ret B_BUILD
+}
 
 fn parseBuildFromKeyword(x *Parser) bool {
     var kindT: *lex.Token = expectName(x, EDECL)

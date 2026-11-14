@@ -1,7 +1,17 @@
-// type.cute —— 类型引用解析（skipType / parseTypeRef）与 type 声明。
-// 加载顺序：依赖 exp.cute、struct.cute、helpers.cute。
+// type.cute —— 类型引用（skipType / parseTypeRef）与 type 声明。
 import "std:strings"
 import lex "../lexer"
+
+// TypeBlock 定义；tag = B_TYPE。
+const B_TYPE: int = 2;
+
+type TypeBlock struct {
+    Name: string
+}
+
+fn TypeBlock.Tag(recv: *TypeBlock) int {
+    ret B_TYPE
+}
 
 fn skipType(x *Parser) bool {
     skipTerminators(x)
