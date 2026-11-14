@@ -66,14 +66,15 @@ fn Token.Len(t *Token) int {
     ret unsafe.cast[int](strings.len(t.Value))
 }
 
-// IsLineEnd 行尾判定（含空 token）。
+// IsLineEnd 行尾判定（含空 token）：LF 与 CR 均认为是行尾。
 fn Token.IsLineEnd(t *Token) bool {
     if t.Type == NONE {
         ret true
     }
     if t.Type == DELIMITER && len(t.Value) == 1 {
         var b: byte = t.Value[0]
-        if unsafe.cast[int](b) == 10 {
+        var bi: int = unsafe.cast[int](b)
+        if bi == 10 || bi == 13 {
             ret true
         }
     }

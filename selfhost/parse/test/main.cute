@@ -3,11 +3,10 @@
 // 无参数：运行内嵌的 M1 用例套件（声明计数为主），全过返回 42；
 //         失败返回用例组编号，便于定位。
 // 一个参数：解析该文件并打印 PARSE_OK|计数（调试方便）；错误返回 1。
-import "std:memory"
 import "std:console"
 import "std:strings"
-import "std:syscall"
 import parse "../"
+import util "../../testutil"
 
 fn parsed(src string) *parse.Parser {
     var p: *parse.Parser = parse.mk(src)
@@ -145,64 +144,14 @@ fn printCounter(name string, n int) {
     console.print(strings.itoa(n))
 }
 
-fn fileMain() int {
+fn fileMain(path string) int {
     // 解析 argv[1]：打印 PARSE_OK | 计数，退出码 42 / 1
-    var argbuf: ptr = memory.malloc(65536)
-    var tfd: i32 = syscall.open(strings.toCstring("/proc/self/cmdline"), 0, 0)
-    var total: u64 = 0
-    if tfd >= 0 {
-        var n: i32 = syscall.read(tfd, argbuf, 65536)
-        if n > 0 {
-            total = u64(n)
-        }
-        syscall.close(tfd)
-    }
-    var i: u64 = 0
-    for ; i < total; {
-        var p1: *u8 = argbuf + i
-        if *p1 == 0 {
-            i = i + 1
-            break
-        }
-        i = i + 1
-    }
-    if i >= total {
-        memory.free(argbuf)
-        console.println("PARSE_TEST|USAGE: 需要一个 .cute 源文件参数")
-        ret 2
-    }
-    var argStart: u64 = i
-    var argEnd: u64 = i
-    for ; argEnd < total; {
-        var p2: *u8 = argbuf + argEnd
-        if *p2 == 0 {
-            break
-        }
-        argEnd = argEnd + 1
-    }
-    var path: string = strings.view(argbuf + argStart, argEnd - argStart, argEnd - argStart)
-
-    // 读源文件（同 M0 已验证的 u64 原始返回值绕过 i32 零扩展比较的问题）
-    var rawfd: u64 = syscall.syscall64(2, strings.toCstring(path), 0, 0, 0, 0)
-    if rawfd > 9223372036854775807 {
-        memory.free(argbuf)
+    var sf: *util.SourceFile = util.loadSourceFile(path)
+    if !sf.Ok {
         console.println("PARSE_TEST|READ_FAIL|")
         ret 2
     }
-    var srcfd: i32 = unsafe.cast[i32](rawfd)
-    var scr: string = new(string, 65536)
-    var sp: *u8 = unsafe.cast[*u8](scr)
-    var pos: uint = 0
-    for ; pos < 65536; {
-        var n: i32 = syscall.read(srcfd, unsafe.cast[ptr](sp) + pos, 65536 - pos)
-        if n <= 0 {
-            break
-        }
-        pos = pos + unsafe.cast[uint](n)
-    }
-    syscall.close(srcfd)
-    memory.free(argbuf)
-    var src: string = strings.view(unsafe.cast[ptr](sp), pos, pos)
+    var src: string = sf.Src
 
     var p: *parse.Parser = parse.mk(src)
     parse.file(p)
@@ -225,33 +174,10 @@ fn fileMain() int {
     ret 42
 }
 
-fn hasArg() bool {
-    var argbuf: ptr = memory.malloc(65536)
-    var tfd: i32 = syscall.open(strings.toCstring("/proc/self/cmdline"), 0, 0)
-    var total: u64 = 0
-    if tfd >= 0 {
-        var n: i32 = syscall.read(tfd, argbuf, 65536)
-        if n > 0 {
-            total = u64(n)
-        }
-        syscall.close(tfd)
-    }
-    var i: u64 = 0
-    for ; i < total; {
-        var p1: *u8 = argbuf + i
-        if *p1 == 0 {
-            i = i + 1
-            break
-        }
-        i = i + 1
-    }
-    memory.free(argbuf)
-    ret i < total
-}
-
 fn main() int {
-    if hasArg() {
-        ret fileMain()
+    var path: string = util.arg1()
+    if len(path) != 0 {
+        ret fileMain(path)
     }
     var r: int = caseEmpty()
     if r != 0 { ret 1 }

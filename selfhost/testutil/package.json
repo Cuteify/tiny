@@ -1,0 +1,5 @@
+{
+    "name": "testutil",
+    "version": "0.1.0",
+    "description": "selfhost 自测驱动的共享 helper（argv[1] 解析、源文件读入），供 lexer/parser 自测复用"
+}

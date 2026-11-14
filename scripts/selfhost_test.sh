@@ -42,6 +42,8 @@ WORK=${WORK:-/tmp/opencode/selfhost-$ARCH}
 rm -rf "$WORK"
 mkdir -p "$WORK"
 cp -a "$ROOT/selfhost/lexer" "$WORK/lexer"
+# lexer 自测驱动依赖 ../../testutil（testutil 目录与 lexer 同级）
+cp -a "$ROOT/selfhost/testutil" "$WORK/testutil"
 cd "$WORK/lexer/test" || exit 1
 
 # 串行化编译器/汇编/链接，避免与同机的其它测试争用临时文件。

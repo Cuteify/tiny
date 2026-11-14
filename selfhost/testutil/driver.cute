@@ -1,0 +1,87 @@
+// driver.cute —— selfhost 自测驱动的共享 helper。
+//
+// 被 selfhost/lexer/test 与 selfhost/parse/test 引用（此前两处逐行重复）：
+//   arg1()           从 /proc/self/cmdline 取 argv[1]；不存在返回 ""。
+//   SourceFile       源文件读入结果：Src 为文件全部内容（上限 64 KiB）；Ok=false 表示打开失败。
+//   loadSourceFile() 读入最多 64 KiB 源文件。
+//
+// 加载顺序：仅依赖 std。
+import "std:memory"
+import "std:strings"
+import "std:syscall"
+
+// SourceFile 源文件读入结果。
+type SourceFile struct {
+    Src: string
+    Ok: bool
+}
+
+// arg1 从 /proc/self/cmdline 取 argv[1]；不存在返回 ""（调用方自行打印用法并退出）。
+// 返回值为独立拷贝，与 argbuf 生命周期无关。
+fn arg1() string {
+    // 命令行：/proc/self/cmdline 格式为 "argv[0]\0argv[1]\0..."
+    var argbuf: ptr = memory.malloc(65536)
+    var fd: i32 = syscall.open(strings.toCstring("/proc/self/cmdline"), 0, 0) // O_RDONLY
+    var total: u64 = 0
+    if fd >= 0 {
+        var n: i32 = syscall.read(fd, argbuf, 65536)
+        if n > 0 {
+            total = u64(n)
+        }
+        syscall.close(fd)
+    }
+    // 跳过 argv[0]（到第一个 '\0'）
+    var i: u64 = 0
+    for ; i < total; {
+        var p1: *u8 = argbuf + i
+        if *p1 == 0 {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    if i >= total {
+        memory.free(argbuf)
+        ret ""
+    }
+    var argStart: u64 = i
+    var argEnd: u64 = i
+    for ; argEnd < total; {
+        var p2: *u8 = argbuf + argEnd
+        if *p2 == 0 {
+            break
+        }
+        argEnd = argEnd + 1
+    }
+    var path: string = strings.clone(strings.view(argbuf + argStart, argEnd - argStart, argEnd - argStart))
+    memory.free(argbuf)
+    ret path
+}
+
+// loadSourceFile 读入最多 64 KiB 的源文件；Ok=false 表示打开失败。
+// 使用 u64 原始返回值比较（绕过 i32 零扩展比较语义的历史问题，见 selfhost M0 记录）。
+// 读缓冲必须用 memory.malloc：new(string, n) 的缓冲由 LLR 在函数帧尾释放，
+// 返回 view 给调用方读到的会是已释放内存（踩坑记录：selfhost_test 02-keywords 输出垃圾）。
+fn loadSourceFile(path string) *SourceFile {
+    var rawfd: u64 = syscall.syscall64(2, strings.toCstring(path), 0, 0, 0, 0)
+    var r: *SourceFile = new(SourceFile)
+    if rawfd > 9223372036854775807 {
+        r.Src = ""
+        r.Ok = false
+        ret r
+    }
+    var srcfd: i32 = unsafe.cast[i32](rawfd)
+    var buf: ptr = memory.malloc(65536)
+    var pos: uint = 0
+    for ; pos < 65536; {
+        var n: i32 = syscall.read(srcfd, buf + pos, 65536 - pos)
+        if n <= 0 {
+            break
+        }
+        pos = pos + unsafe.cast[uint](n)
+    }
+    syscall.close(srcfd)
+    r.Src = strings.view(buf, pos, pos)
+    r.Ok = true
+    ret r
+}
