@@ -183,6 +183,14 @@ fn RingBuffer.Read(r *RingBuffer) *Token {
     ret val
 }
 
+// Clear 重置读写下标与满标记（不动槽位，也不释放已写入的 *Token）。
+// 用于位置回卷后丢弃预取残留——buffer 直接复用，零分配。
+fn RingBuffer.Clear(r *RingBuffer) {
+    r.ReadPos = 0
+    r.WritePos = 0
+    r.f = false
+}
+
 // Resize 扩容：把现有有效数据迁移到新buffer
 // 注意：Resize 环形buffer比较麻烦，不能直接copy底层数组
 fn RingBuffer.Resize(r *RingBuffer, newSize int) {

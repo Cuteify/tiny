@@ -107,6 +107,9 @@ fn Lexer.savePfPos(l *Lexer) *Coord {
 }
 
 // setPos 以 *Coord 的绝对值更新 host 光标；不做任何算术、不读当前值。
+// 同时把预取机（pfPos/pfLine/pfCol + pfCache）回卷到同一份快照——
+// prefetch 对本次位置修改完全无感：下一次 Prefetch 一律从快照处重新扫描，
+// 修改前残留在预取环里的 token 一律丢弃，pf 光标不会漂移出 host 光标。
 fn Lexer.setPos(l *Lexer, c *Coord) {
     if unsafe.cast[uint](c) == 0 {
         panic("Lexer.setPos: nil Coord")
@@ -114,6 +117,11 @@ fn Lexer.setPos(l *Lexer, c *Coord) {
     l.Pos = c.Pos
     l.Line = c.Line
     l.Col = c.Col
+    // 预取回退：pf 光标对齐到快照 + 清空预取环（不释放 *Token，host 手里的指针保持有效）
+    l.pfPos = c.Pos
+    l.pfLine = c.Line
+    l.pfCol = c.Col
+    l.pfCache.Clear()
 }
 
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
