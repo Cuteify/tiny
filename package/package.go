@@ -299,6 +299,30 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 			p.Block.Parser = p
 			p.Package = packageInfo
 			p.Parse()
+			// 根包全局声明块补包前缀：合并后所有包（含 dep）的全局名是同一套
+			// "包路径/LocalName" 形态，跨文件查找直接按 Name.Eq 命中。
+			// 主入口 main 保留裸名。
+			if isRoot {
+				for i := 0; i < len(p.Block.Children); i++ {
+					switch v := p.Block.Children[i].Value.(type) {
+					case *parser.FuncBlock:
+						if v.Name.Last() == "main" {
+							continue
+						}
+						if len(v.Name) > 0 && !v.Name[0].IsPkgPath {
+							v.Name.SetPkgPath(packagePath)
+						}
+					case *parser.VarBlock:
+						if v.IsDefine && len(v.Name) > 0 && !v.Name[0].IsPkgPath {
+							v.Name.SetPkgPath(packagePath)
+						}
+					case *parser.TypeBlock:
+						if len(v.Name) > 0 && !v.Name[0].IsPkgPath {
+							v.Name.SetPkgPath(packagePath)
+						}
+					}
+				}
+			}
 			if !isRoot {
 				for i := 0; i < len(p.Block.Children); i++ {
 					switch v := p.Block.Children[i].Value.(type) {
