@@ -1,0 +1,298 @@
+// stmt.cute —— 语句分派与顶层入口 parseStmt；所有 block 经过这里。
+// 加载顺序：依赖 exp.cute、call.cute、for.cute、ifelse.cute、switch.cute、helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn isAssignOp(t *lex.Token) bool {
+    if isNilTok(t) || t.Type != lex.DELIMITER {
+        ret false
+    }
+    if strings.eq(t.Value, "=") || strings.eq(t.Value, ":=") {
+        ret true
+    }
+    if strings.eq(t.Value, "+=") {
+        ret true
+    }
+    if strings.eq(t.Value, "-=") {
+        ret true
+    }
+    if strings.eq(t.Value, "*=") {
+        ret true
+    }
+    if strings.eq(t.Value, "/=") {
+        ret true
+    }
+    if strings.eq(t.Value, "%=") {
+        ret true
+    }
+    if strings.eq(t.Value, "^=") {
+        ret true
+    }
+    if strings.eq(t.Value, "&=") {
+        ret true
+    }
+    if strings.eq(t.Value, "|=") {
+        ret true
+    }
+    if strings.eq(t.Value, "<<=") {
+        ret true
+    }
+    if strings.eq(t.Value, ">>=") {
+        ret true
+    }
+    ret false
+}
+
+// scanForKind 有界向前感知 for 头的种类：1=range，2=classic（含 :=），3=其它。
+// 顺序消费并推回 ring buffer，保持源序；不消耗 "{" ";" "range"（留给后续）。
+fn parseBlock(x *Parser) bool {
+    skipTerminators(x)
+    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+        ret false
+    }
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if t.Type == lex.NONE {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        if !parseStmt(x) {
+            ret false
+        }
+    }
+}
+
+// parseSimpleStmt 整形最常见的语句：赋值/自增自减/纯表达式（仅调用语句）。
+// 支持多目标形式：a, b := f()（tuple 目标）。
+fn parseSimpleStmt(x *Parser) bool {
+    if !parseExpr(x) {
+        ret false
+    }
+    // 多目标：a, b := f() / a, b = f()
+    for ; ; {
+        if !isTok(peek(x), lex.DELIMITER, ",") {
+            break
+        }
+        next(x)
+        if !parseExpr(x) {
+            ret false
+        }
+    }
+    var t: *lex.Token = peek(x)
+    if isAssignOp(t) {
+        next(x)
+        if !parseExpr(x) {
+            ret false
+        }
+        ret true
+    }
+    if isTok(t, lex.DELIMITER, "++") || isTok(t, lex.DELIMITER, "--") {
+        next(x)
+        ret true
+    }
+    // 非赋值形式的语句后必须是语句边界（换行 / ';' / '}' / EOF）
+    if isLineEnd(t) {
+        ret true
+    }
+    if isTok(t, lex.DELIMITER, "}") {
+        ret true
+    }
+    if !isNilTok(t) && t.Type == lex.DELIMITER {
+        if strings.eq(t.Value, ";") || strings.eq(t.Value[0:1], "\n") || strings.eq(t.Value[0:1], "\r") {
+            ret true
+        }
+    }
+    if isNilTok(t) || t.Type == lex.NONE {
+        ret true
+    }
+    fail(x, ESTMT, t.Pos)
+    ret false
+}
+
+// atCase 判断当前是否 case/default/}。
+fn parseRetStmt(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    if isTok(t, lex.KEYWORD, "ret") {
+        next(x)
+    } else {
+        next(x)
+    }
+    var p: *lex.Token = peek(x)
+    if isLineEnd(p) {
+        ret true
+    }
+    if isTok(p, lex.DELIMITER, "}") {
+        ret true
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    for ; ; {
+        if isTok(peek(x), lex.DELIMITER, ",") {
+            next(x)
+            if !parseExpr(x) {
+                ret false
+            }
+            continue
+        }
+        break
+    }
+    ret true
+}
+
+// parseDeferStmt 解析 defer 语句（仅调用形态）。
+fn parseDeferStmt(x *Parser) bool {
+    if !expectKeyword(x, "defer", ESTMT) {
+        ret false
+    }
+    // defer 后必须是调用式表达式
+    if !parseExpr(x) {
+        ret false
+    }
+    ret true
+}
+
+// parseBreakContinue 解析 break/continue 语句。
+fn parseBreakContinue(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    if isTok(t, lex.KEYWORD, "break") {
+        next(x)
+        ret true
+    }
+    if isTok(t, lex.KEYWORD, "continue") {
+        next(x)
+        ret true
+    }
+    ret false
+}
+
+// parseStmt 语句分派；消费语句并累计 stmts。
+fn parseStmt(x *Parser) bool {
+    skipTerminators(x)
+    var t: *lex.Token = peek(x)
+    if isNilTok(t) || t.Type == lex.NONE {
+        ret true
+    }
+    // 隐式 var：name: T = v（无关键字）
+    if t.Type == lex.NAME {
+        var nameTok: *lex.Token = next(x)
+        discardTok(nameTok)
+        var p2: *lex.Token = peek(x)
+        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+            if !expect(x, lex.DELIMITER, ":", ESTMT) {
+                ret false
+            }
+            if !skipType(x) {
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, "=", ESTMT) {
+                ret false
+            }
+            restOfLineAtDepth0(x)
+            x.vars = x.vars + 1
+            x.decls = x.decls + 1
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ",") {
+            // tuple 目标：a, b := f() — 把 nameTok 推回，走 parseSimpleStmt
+            pushBack(x, nameTok)
+        } else {
+            // 走 parseSimpleStmt 的普通 NAME 形态
+            pushBack(x, nameTok)
+        }
+    }
+    if t.Type == lex.KEYWORD {
+        if strings.eq(t.Value, "var") || strings.eq(t.Value, "const") || strings.eq(t.Value, "let") {
+            var kw: string = t.Value
+            next(x)
+            if !parseVarConstDispatch(x, kw) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "if") {
+            if !parseIfStmt(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "for") || strings.eq(t.Value, "while") {
+            if !parseForStmt(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "switch") {
+            if !parseSwitchStmt(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "ret") || strings.eq(t.Value, "return") {
+            if !parseRetStmt(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "defer") {
+            if !parseDeferStmt(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "break") || strings.eq(t.Value, "continue") {
+            if !parseBreakContinue(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "fallthrough") {
+            next(x)
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "build") {
+            // fn 体内允许的 build 指令（标记当前函数 / 内联汇编 / 对齐等）
+            next(x)
+            if !parseBuildFromKeyword(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+    }
+    if t.Type == lex.DELIMITER && strings.eq(t.Value, "{") {
+        if !parseBlock(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if !parseSimpleStmt(x) {
+        ret false
+    }
+    x.stmts = x.stmts + 1
+    ret true
+}
+
+// atOpen 判别当前 token 是否为 { 。
+fn atOpen(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    ret isTok(t, lex.DELIMITER, "{")
+}
+
+// parseStructLit 解析结构体字面量字段 { field: expr, ... }（已见 { 的前提）。
+

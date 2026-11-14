@@ -1,0 +1,211 @@
+// parser.cute —— Parser 类型、入口 file() 与顶层关键字分派（Go 参考 parser.go）。
+// 暴露给 driver：mk、err、errPos、declCount/importCount/buildCount/etc、file()。
+//
+// 加载顺序：依赖 blocks.cute、helpers.cute，以及各 *FromKeyword 入口。
+import "std:strings"
+import lex "../lexer"
+
+fn mk(src string) *Parser {
+    var x: *Parser = new(Parser)
+    x.l = lex.NewLexer(src)
+    x.peekTok = nil
+    x.pushBack = new([]*lex.Token, 24, 24)
+    x.pushBackPos = 0
+    x.e = OK
+    x.ep = 0
+    x.decls = 0
+    x.imports = 0
+    x.builds = 0
+    x.structs = 0
+    x.enums = 0
+    x.consts = 0
+    x.vars = 0
+    x.fns = 0
+    x.stmts = 0
+    x.exprs = 0
+    x.root = new(Node)
+    ret x
+}
+
+// err 返回首个错误码（OK 表示无错误）。
+fn err(x *Parser) int {
+    ret x.e
+}
+
+// errPos 返回首个错误的字节位置。
+fn errPos(x *Parser) uint {
+    ret x.ep
+}
+
+// declCount 返回顶层声明数（import/build/fn/type/enum/var/const 均计入）。
+fn declCount(x *Parser) int {
+    ret x.decls
+}
+
+// importCount 返回 import 数（分组每个成员算一条）。
+fn importCount(x *Parser) int {
+    ret x.imports
+}
+
+// buildCount 返回 build 数。
+fn buildCount(x *Parser) int {
+    ret x.builds
+}
+
+// structCount 返回 struct 数（含 type X struct 与旧式 struct X）。
+fn structCount(x *Parser) int {
+    ret x.structs
+}
+
+// enumCount 返回 enum 数。
+fn enumCount(x *Parser) int {
+    ret x.enums
+}
+
+// fnCount 返回函数声明数。
+fn fnCount(x *Parser) int {
+    ret x.fns
+}
+
+// varCount 返回 var 声明数。
+fn varCount(x *Parser) int {
+    ret x.vars
+}
+
+// constCount 返回 const 声明数。
+fn constCount(x *Parser) int {
+    ret x.consts
+}
+
+// stmtCount 返回语句数（块内语句）；M2 前恒为 0。
+fn stmtCount(x *Parser) int {
+    ret x.stmts
+}
+
+// exprCount 返回表达式数；M2 前恒为 0。
+fn exprCount(x *Parser) int {
+    ret x.exprs
+}
+
+// fail 记录首个错误（不覆盖已记录的错误）。
+fn fail(x *Parser, e int, pos int) {
+    if x.e != OK {
+        ret
+    }
+    x.e = e
+    x.ep = unsafe.cast[uint](pos)
+}
+
+// peek 无消费地获取下一个 token（维护有界 pushback 队列 + 单 token 前瞻槽）。
+// 约定：所有前瞻都走 peek/next，禁止 x.l.Next 与 peek 混用造成环形缓存乱序。
+// peek 无消费地获取下一个 token。所有前瞻都走 peek/next，禁止 x.l.Next/Prefetch 混用。
+// rb 是 24 槽环形缓存，所有被窥视的 token 先入环，next 按 FIFO 弹出。
+fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
+    if strings.eq(kw, "import") {
+        if !parseImportFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "build") {
+        if !parseBuildFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "fn") {
+        if !parseFnFromKeyword(x) {
+            ret false
+        }
+        ret true
+    }
+    if strings.eq(kw, "type") {
+        skipTerminators(x)
+        if atClosing(x, "(") {
+            ret parseGroupedDecl(x, "type")
+        }
+        ret parseTypeFromKeyword(x, t)
+    }
+    if strings.eq(kw, "struct") {
+        ret parseStructDeclFromKeyword(x)
+    }
+    if strings.eq(kw, "enum") {
+        ret parseEnumFromKeyword(x)
+    }
+    if strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let") {
+        return parseVarConstDispatch(x, kw)
+    }
+    fail(x, EDECL, t.Pos)
+    ret false
+}
+
+// 以下 *FromKeyword 变体在关键字已被消费后继续解析（避免重复消费）。
+fn isDeclKeyword(kw string) bool {
+    if strings.eq(kw, "import") { ret true }
+    if strings.eq(kw, "build") { ret true }
+    if strings.eq(kw, "fn") { ret true }
+    if strings.eq(kw, "type") { ret true }
+    if strings.eq(kw, "struct") { ret true }
+    if strings.eq(kw, "enum") { ret true }
+    if strings.eq(kw, "var") { ret true }
+    if strings.eq(kw, "const") { ret true }
+    if strings.eq(kw, "let") { ret true }
+    ret false
+}
+
+// file 解析整个文件。
+fn file(x *Parser) {
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            ret
+        }
+        if t.Type == lex.NONE {
+            ret
+        }
+        if t.Type == lex.KEYWORD {
+            if isDeclKeyword(t.Value) {
+                var kw: string = t.Value
+                next(x)
+                var okDecl: bool = parseDeclKeyword(x, kw, t)
+                if !okDecl {
+                    ret
+                }
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret
+        }
+        if t.Type == lex.NAME {
+            // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
+            var nameT: *lex.Token = next(x)
+            var p2: *lex.Token = peek(x)
+            if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+                if !expect(x, lex.DELIMITER, ":", EDECL) {
+                    ret
+                }
+                if !skipType(x) {
+                    ret
+                }
+                if !expect(x, lex.DELIMITER, "=", EDECL) {
+                    ret
+                }
+                restOfLineAtDepth0(x)
+                x.decls = x.decls + 1
+                x.vars = x.vars + 1
+                continue
+            }
+            fail(x, EDECL, nameT.Pos)
+            ret
+        }
+        if t.Type == lex.STRING || t.Type == lex.NUMBER {
+            fail(x, EDECL, t.Pos)
+            ret
+        }
+        // 顶层孤立的分隔符/其他：声明位置语法错误
+        fail(x, EDECL, t.Pos)
+        ret
+    }
+}
+

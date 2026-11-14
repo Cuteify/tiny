@@ -1,0 +1,123 @@
+// build.cute —— build os/arch/bits/asm/link/ext/extret/align/noalign。
+// 加载顺序：依赖 helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn parseBuildFromKeyword(x *Parser) bool {
+    var kindT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(kindT) {
+        ret false
+    }
+    var kind: string = kindT.Value
+    if strings.eq(kind, "os") || strings.eq(kind, "arch") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        for ; ; {
+            skipTerminators(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.builds = x.builds + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if isTokKind(t, lex.NAME) || isTokKind(t, lex.STRING) || isTokKind(t, lex.KEYWORD) {
+                next(x)
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    if strings.eq(kind, "bits") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        for ; ; {
+            skipTerminators(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.builds = x.builds + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if isTokKind(t, lex.NUMBER) {
+                next(x)
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    if strings.eq(kind, "asm") {
+        if !expect(x, lex.DELIMITER, "{", EDECL) {
+            ret false
+        }
+        if !consumeBalanced(x, "{", "}", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "link") || strings.eq(kind, "ext") || strings.eq(kind, "extret") || strings.eq(kind, "export") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        var t: *lex.Token = next(x)
+        if isNilTok(t) || (t.Type != lex.STRING && t.Type != lex.NAME) {
+            if (t) {
+                fail(x, EDECL, t.Pos)
+            } else {
+                fail(x, EDECL, 0)
+            }
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ")", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "align") {
+        if !expect(x, lex.DELIMITER, "(", EDECL) {
+            ret false
+        }
+        var t: *lex.Token = next(x)
+        if isNilTok(t) || t.Type != lex.NUMBER {
+            if (t) {
+                fail(x, EDECL, t.Pos)
+            } else {
+                fail(x, EDECL, 0)
+            }
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ")", EDECL) {
+            ret false
+        }
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    if strings.eq(kind, "noalign") {
+        x.builds = x.builds + 1
+        x.decls = x.decls + 1
+        ret true
+    }
+    fail(x, EDECL, kindT.Pos)
+    ret false
+}
+
+// parseInterfaceFromKeyword 解析裸 interface 声明：interface K { ... } 等价 type K interface { ... }。
+

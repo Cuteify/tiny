@@ -1,0 +1,67 @@
+// gen.cute —— 泛型函数声明 fn f[T]() 与方法 fn P.m()。
+// 加载顺序：依赖 call.cute、stmt.cute、helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn parseFnFromKeyword(x *Parser) bool {
+    // fn 关键字已被消费
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipTerminators(x)
+    var p: *lex.Token = peek(x)
+    if isTok(p, lex.DELIMITER, ".") {
+        next(x)
+        var m: *lex.Token = expectName(x, EDECL)
+        if isNilTok(m) {
+            ret false
+        }
+    }
+    skipTerminators(x)
+    var p2: *lex.Token = peek(x)
+    if isTok(p2, lex.DELIMITER, "[") {
+        next(x)
+        for ; ; {
+            skipTerminators(x)
+            var t: *lex.Token = peek(x)
+            if isTok(t, lex.DELIMITER, "]") {
+                next(x)
+                break
+            }
+            var tp: *lex.Token = expectName(x, EDECL)
+            if isNilTok(tp) {
+                ret false
+            }
+            var p3: *lex.Token = peek(x)
+            if isTok(p3, lex.DELIMITER, "]") {
+                next(x)
+                break
+            }
+            if isTok(p3, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            break
+        }
+    }
+    skipTerminators(x)
+    if !expect(x, lex.DELIMITER, "(", EDECL) {
+        ret false
+    }
+    if !parseFuncParams(x) {
+        ret false
+    }
+    if !parseRetTypes(x) {
+        ret false
+    }
+    if !parseBlock(x) {
+        ret false
+    }
+    x.fns = x.fns + 1
+    x.decls = x.decls + 1
+    ret true
+}
+
+// parseTypeRef 别名/普通类型引用（= 后）。
+

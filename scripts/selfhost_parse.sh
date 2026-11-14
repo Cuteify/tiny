@@ -25,7 +25,6 @@ shift || true
 DEFAULT_FILES="
 selfhost/lexer/lexer.cute
 selfhost/lexer/test/main.cute
-selfhost/parse/parse.cute
 selfhost/parse/test/main.cute
 selfhost/cmd/tokdump/main.cute
 selfhost/cmd/parsedump/main.cute

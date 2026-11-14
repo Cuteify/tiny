@@ -1,0 +1,323 @@
+// exp.cute —— 表达式递归下降（运算优先级 climb）；与 Go exp.go 同级。
+// 加载顺序：依赖 helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn prec(s string) int {
+    if strings.eq(s, "||") {
+        ret 1
+    }
+    if strings.eq(s, "&&") {
+        ret 2
+    }
+    if strings.eq(s, "==") || strings.eq(s, "!=") {
+        ret 3
+    }
+    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
+        ret 4
+    }
+    if strings.eq(s, "|") {
+        ret 5
+    }
+    if strings.eq(s, "^") {
+        ret 6
+    }
+    if strings.eq(s, "&") {
+        ret 7
+    }
+    if strings.eq(s, "<<") || strings.eq(s, ">>") {
+        ret 9
+    }
+    if strings.eq(s, "+") || strings.eq(s, "-") {
+        ret 10
+    }
+    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+        ret 11
+    }
+    ret 0
+}
+
+// isAssignOp 判断 token 是否为赋值运算符。
+fn parsePrimary(x *Parser) bool {
+    skipTerminators(x)
+    var t: *lex.Token = peek(x)
+    if isNilTok(t) {
+        fail(x, EEXPR, 0)
+        ret false
+    }
+    if t.Type == lex.NUMBER {
+        x.exprs = x.exprs + 1
+        next(x)
+        ret true
+    }
+    if t.Type == lex.STRING {
+        x.exprs = x.exprs + 1
+        next(x)
+        ret true
+    }
+    // 布尔/nil 关键字
+    if t.Type == lex.KEYWORD {
+        if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
+            x.exprs = x.exprs + 1
+            next(x)
+            ret true
+        }
+        // 字面量 false/true 之外的其他关键字：不是表达式
+        fail(x, EEXPR, t.Pos)
+        ret false
+    }
+    if t.Type == lex.NAME {
+        x.exprs = x.exprs + 1
+        next(x)
+        // NAME{...} 结构体字面量：NAME 与 '{' 必须严格相邻（Go 参考同规则），
+        // 否则 "{" 是后续块的花括号（if a == b { / fn f() { 等）。
+        var p: *lex.Token = peek(x)
+        if isTok(p, lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
+            if !parseStructLit(x) {
+                ret false
+            }
+            ret true
+        }
+        ret true
+    }
+    if isTok(t, lex.DELIMITER, "(") {
+        next(x)
+        skipTerminators(x)
+        if !parseExpr(x) {
+            ret false
+        }
+        skipTerminators(x)
+        if !expect(x, lex.DELIMITER, ")", EEXPR) {
+            ret false
+        }
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    // 复合字面量：[]T{...} / [N]T{...} / map[K]V{...}
+    if isTok(t, lex.DELIMITER, "[") || (t.Type == lex.NAME && strings.eq(t.Value, "map")) {
+        if !parseCompositeType(x) {
+            ret false
+        }
+        skipTerminators(x)
+        if isTok(peek(x), lex.DELIMITER, "{") {
+            x.exprs = x.exprs + 1
+            ret parseCompositeElems(x)
+        }
+        // 类型本身作为表达式实参，如 new([]int, 8)
+        x.exprs = x.exprs + 1
+        ret true
+    }
+    fail(x, EEXPR, t.Pos)
+    ret false
+}
+
+// parseCompositeType 消费 []T / [N]T / map[K]V 前缀（不消耗 {）。
+// 反向不构建 AST。
+fn parseCompositeType(x *Parser) bool {
+    skipTerminators(x)
+    var t: *lex.Token = peek(x)
+    if t.Type == lex.NAME && strings.eq(t.Value, "map") {
+        next(x)
+        if !expect(x, lex.DELIMITER, "[", ETYPE) {
+            ret false
+        }
+        if !skipType(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, "]", ETYPE) {
+            ret false
+        }
+        ret skipType(x)
+    }
+    if isTok(t, lex.DELIMITER, "[") {
+        next(x)
+        if isTok(peek(x), lex.DELIMITER, "]") {
+            next(x)
+            ret skipType(x)
+        }
+        var num: *lex.Token = next(x)
+        if isNilTok(num) || num.Type != lex.NUMBER {
+            if isNilTok(num) {
+                fail(x, ETYPE, 0)
+            } else {
+                fail(x, ETYPE, num.Pos)
+            }
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, "]", ETYPE) {
+            ret false
+        }
+        ret skipType(x)
+    }
+    fail(x, ETYPE, t.Pos)
+    ret false
+}
+
+// parseCompositeElems 解析 { 元素, ... }（已消耗 { 的前提下）。
+fn parseCompositeElems(x *Parser) bool {
+    if !expect(x, lex.DELIMITER, "{", EEXPR) {
+        ret false
+    }
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        var t2: *lex.Token = peek(x)
+        if isTok(t2, lex.DELIMITER, ",") {
+            next(x)
+            continue
+        }
+        if isTok(t2, lex.DELIMITER, "}") {
+            continue
+        }
+        fail(x, EEXPR, t2.Pos)
+        ret false
+    }
+}
+
+// parsePostfix 后缀消歧：索引/切片/选择器/调用，循环到非后缀 token。
+fn parsePostfix(x *Parser) bool {
+    if !parsePrimary(x) {
+        ret false
+    }
+    for ; ; {
+        var t: *lex.Token = peek(x)
+        // 方法/字段选择：.name（不计 expr）
+        if isTok(t, lex.DELIMITER, ".") {
+            next(x)
+            var part: *lex.Token = expectName(x, EEXPR)
+            if isNilTok(part) {
+                ret false
+            }
+            continue
+        }
+        // 索引/切片：a[i] / a[lo:hi] / a[lo:] / a[:hi]
+        if isTok(t, lex.DELIMITER, "[") {
+            next(x)
+            skipTerminators(x)
+            if isTok(peek(x), lex.DELIMITER, ":") {
+                next(x)
+                if !isTok(peek(x), lex.DELIMITER, "]") {
+                    if !parseExpr(x) {
+                        ret false
+                    }
+                }
+                if !expect(x, lex.DELIMITER, "]", EEXPR) {
+                    ret false
+                }
+                continue
+            }
+            if !parseExpr(x) {
+                ret false
+            }
+            var t2: *lex.Token = peek(x)
+            if isTok(t2, lex.DELIMITER, ":") {
+                next(x)
+                // 可选 start 或 end: a[i:j], a[i:], a[:j], a[:]（start 已消费）
+                if !isTok(peek(x), lex.DELIMITER, "]") {
+                    if !parseExpr(x) {
+                        ret false
+                    }
+                }
+                // 第三可选步长：a[start:end:step]
+                if isTok(peek(x), lex.DELIMITER, ":") {
+                    next(x)
+                    if !isTok(peek(x), lex.DELIMITER, "]") {
+                        if !parseExpr(x) {
+                            ret false
+                        }
+                    }
+                }
+                if !expect(x, lex.DELIMITER, "]", EEXPR) {
+                    ret false
+                }
+                continue
+            }
+            if !expect(x, lex.DELIMITER, "]", EEXPR) {
+                ret false
+            }
+            continue
+        }
+        // 函数调用/泛型调用：f(args) / f[T](args)
+        if isTok(t, lex.DELIMITER, "(") {
+            if !parseCallArgs(x) {
+                ret false
+            }
+            continue
+        }
+        // 泛型调用：f[T, U](args) —— 后接 ( 才是调用；否则不消耗（留给外层索引路径）
+        if isTok(t, lex.DELIMITER, "[") {
+            ret true
+        }
+        break
+    }
+    ret true
+}
+
+// parseUnary 解析前缀一元运算符（! - ~ * & + ^）。
+fn parseUnary(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    var isUnary: bool = false
+    if isTok(t, lex.DELIMITER, "!") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "-") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "~") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "*") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "&") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "+") {
+        isUnary = true
+    } else if isTok(t, lex.DELIMITER, "^") {
+        isUnary = true
+    }
+    if isUnary {
+        next(x)
+        ret parseUnary(x)
+    }
+    if !parsePostfix(x) {
+        ret false
+    }
+    ret true
+}
+
+// parseBinaryExpr 优先级攀升；minPrec 以下的算符停止。
+fn parseBinaryExpr(x *Parser, minPrec int) bool {
+    if !parseUnary(x) {
+        ret false
+    }
+    for ; ; {
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) || t.Type != lex.DELIMITER {
+            break
+        }
+        var p: int = prec(t.Value)
+        if p == 0 || p < minPrec {
+            break
+        }
+        next(x)
+        if !parseBinaryExpr(x, p + 1) {
+            ret false
+        }
+    }
+    ret true
+}
+
+// parseExpr 表达式入口。
+fn parseExpr(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    if !isNilTok(t) {
+    }
+    ret parseBinaryExpr(x, 1)
+}
+
+// parseCallArgs 解析函数调用/内建 new 的实参列表。
+

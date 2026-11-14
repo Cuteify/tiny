@@ -1,0 +1,67 @@
+// import.cute —— import "path" / import alias / import ( group )。
+// 加载顺序：依赖 helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn parseImportFromKeyword(x *Parser) bool {
+    var saved: *lex.Token = peek(x)
+    if isTok(saved, lex.DELIMITER, "(") {
+        next(x)
+        for ; ; {
+            skipTerminators(x)
+            var t: *lex.Token = peek(x)
+            if isNilTok(t) {
+                fail(x, EDECL, 0)
+                ret false
+            }
+            if isTok(t, lex.DELIMITER, ")") {
+                next(x)
+                x.imports = x.imports + 1
+                x.decls = x.decls + 1
+                ret true
+            }
+            if t.Type == lex.STRING {
+                next(x)
+                continue
+            }
+            if t.Type == lex.NAME {
+                var alias: *lex.Token = next(x)
+                discardTok(alias)
+                var strT: *lex.Token = next(x)
+                if isNilTok(strT) || strT.Type != lex.STRING {
+                    if (strT) {
+                        fail(x, EDECL, strT.Pos)
+                    } else {
+                        fail(x, EDECL, 0)
+                    }
+                    ret false
+                }
+                continue
+            }
+            if isTok(t, lex.DELIMITER, ",") {
+                next(x)
+                continue
+            }
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+    }
+    var t: *lex.Token = peek(x)
+    if !isNilTok(t) && t.Type == lex.NAME {
+        var alias: *lex.Token = next(x)
+        discardTok(alias)
+    }
+    var strT: *lex.Token = next(x)
+    if isNilTok(strT) || strT.Type != lex.STRING {
+        if (strT) {
+            fail(x, EDECL, strT.Pos)
+        } else {
+            fail(x, EDECL, 0)
+        }
+        ret false
+    }
+    x.imports = x.imports + 1
+    x.decls = x.decls + 1
+    ret true
+}
+

@@ -1,0 +1,92 @@
+// switch.cute —— switch/case/default；fallthrough 由上游 case 注入。
+// 加载顺序：依赖 helpers.cute、stmt.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn atCaseOrClose(x *Parser) bool {
+    var t: *lex.Token = peek(x)
+    if isTok(t, lex.KEYWORD, "case") || isTok(t, lex.KEYWORD, "default") {
+        ret true
+    }
+    ret isTok(t, lex.DELIMITER, "}")
+}
+
+// parseCaseBody 解析 case/default 分支的语句（直到 case/default/}）。
+fn parseCaseBody(x *Parser) bool {
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) || t.Type == lex.NONE {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.KEYWORD, "case") || isTok(t, lex.KEYWORD, "default") {
+            ret true
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            ret true
+        }
+        if !parseStmt(x) {
+            ret false
+        }
+    }
+}
+
+// parseSwitchStmt 解析 switch 语句（无目标 switch / 带目标）。
+fn parseSwitchStmt(x *Parser) bool {
+    if !expectKeyword(x, "switch", ESTMT) {
+        ret false
+    }
+    var t: *lex.Token = peek(x)
+    if !isTok(t, lex.DELIMITER, "{") {
+        if !parseExpr(x) {
+            ret false
+        }
+    }
+    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+        ret false
+    }
+    for ; ; {
+        skipTerminators(x)
+        var t2: *lex.Token = peek(x)
+        if isTok(t2, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        if isTok(t2, lex.KEYWORD, "case") {
+            next(x)
+            for ; ; {
+                if !parseExpr(x) {
+                    ret false
+                }
+                if isTok(peek(x), lex.DELIMITER, ",") {
+                    next(x)
+                    continue
+                }
+                break
+            }
+            if !expect(x, lex.DELIMITER, ":", ESTMT) {
+                ret false
+            }
+            if !parseCaseBody(x) {
+                ret false
+            }
+            continue
+        }
+        if isTok(t2, lex.KEYWORD, "default") {
+            next(x)
+            if !expect(x, lex.DELIMITER, ":", ESTMT) {
+                ret false
+            }
+            if !parseCaseBody(x) {
+                ret false
+            }
+            continue
+        }
+        fail(x, ESTMT, t2.Pos)
+        ret false
+    }
+}
+
+// parseIfStmt 解析 if/else if/else。
+

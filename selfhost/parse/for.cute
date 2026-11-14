@@ -1,0 +1,190 @@
+// for.cute —— for 三种形态 + range。
+// 加载顺序：依赖 call.cute、exp.cute、helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn scanForKind(x *Parser) int {
+    var seen: []*lex.Token = new([]*lex.Token, 12, 12)
+    var n: int = 0
+    var kind: int = 3
+    for ; n < 12; {
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) || t.Type == lex.NONE {
+            break
+        }
+        if t.Type == lex.DELIMITER && (strings.eq(t.Value, ";") || strings.eq(t.Value, "{")) {
+            break
+        }
+        if t.Type == lex.KEYWORD && strings.eq(t.Value, "range") {
+            kind = 1
+            break
+        }
+        if t.Type == lex.DELIMITER && strings.eq(t.Value, ":=") && kind == 3 {
+            kind = 2
+        }
+        var dropT: *lex.Token = next(x)
+        seen[n] = dropT
+        n = n + 1
+    }
+    var i: int = n - 1
+    for ; i >= 0; i = i - 1 {
+        pushBack(x, seen[i])
+    }
+    ret kind
+}
+
+// parsePrimary 解析字面量、名字、括号表达式、复合字面量（表达式叶子计数）。
+fn parseForStmt(x *Parser) bool {
+    var kw: string = "for"
+    var t: *lex.Token = peek(x)
+    if isTok(t, lex.KEYWORD, "while") {
+        kw = "while"
+    }
+    if !expectKeyword(x, kw, ESTMT) {
+        ret false
+    }
+    var kind: int = scanForKind(x)
+    var t2: *lex.Token = peek(x)
+    if isTok(t2, lex.DELIMITER, ";") {
+        // for ; cond ; post { } —— cond 可空（for ; ; { }）
+        next(x)
+        if !isTok(peek(x), lex.DELIMITER, ";") {
+            if !parseExpr(x) {
+                ret false
+            }
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        for ; ; {
+            var t3: *lex.Token = peek(x)
+            if isTok(t3, lex.DELIMITER, "{") {
+                break
+            }
+            if isNilTok(t3) || t3.Type == lex.NONE {
+                ret false
+            }
+            next(x)
+        }
+        ret parseBlock(x)
+    }
+    if isTok(peek(x), lex.KEYWORD, "var") {
+        next(x)
+        var nameT: *lex.Token = expectName(x, ESTMT)
+        if isNilTok(nameT) {
+            ret false
+        }
+        // init: var name: T = expr；expr 直接解析到 ; 为止
+        if !expect(x, lex.DELIMITER, ":", ESTMT) {
+            ret false
+        }
+        if !skipType(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, "=", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        for ; ; {
+            var t2: *lex.Token = peek(x)
+            if isTok(t2, lex.DELIMITER, "{") {
+                break
+            }
+            if isNilTok(t2) || t2.Type == lex.NONE {
+                ret false
+            }
+            next(x)
+        }
+        ret parseBlock(x)
+    }
+    if kind == 1 {
+        // range: IDENT [ "," IDENT ]* ":=" "range" EXPR { ... }
+        var n: int = 0
+        for ; ; {
+            var nt: *lex.Token = expectName(x, ESTMT)
+            if isNilTok(nt) {
+                ret false
+            }
+            var p: *lex.Token = peek(x)
+            if isTok(p, lex.DELIMITER, ",") {
+                next(x)
+                n = n + 1
+                continue
+            }
+            break
+        }
+        if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+            ret false
+        }
+        if !expectKeyword(x, "range", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        ret parseBlock(x)
+    }
+    if kind == 2 {
+        // classic: [var] EXPR ; EXPR ; EXPR { ... }（init 可含 := 或省略 var 声明）
+        var tInit: *lex.Token = peek(x)
+        if isTok(tInit, lex.KEYWORD, "var") {
+            next(x)
+            // init 段走 var 声明解析
+            if !parseVarConst(x, "var") {
+                ret false
+            }
+        } else {
+            if !parseExpr(x) {
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+                ret false
+            }
+            if !parseExpr(x) {
+                ret false
+            }
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        // post 子句：到 '{' 为止
+        for ; ; {
+            var t2: *lex.Token = peek(x)
+            if isTok(t2, lex.DELIMITER, "{") {
+                break
+            }
+            if isNilTok(t2) || t2.Type == lex.NONE {
+                ret false
+            }
+            next(x)
+        }
+        ret parseBlock(x)
+    }
+    if atOpen(x) {
+        ret parseBlock(x)
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    ret parseBlock(x)
+}
+
+// parseRetStmt 解析 ret / return 语句（可多值）。
+

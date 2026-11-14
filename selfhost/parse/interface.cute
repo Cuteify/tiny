@@ -1,0 +1,62 @@
+// interface.cute —— type X interface { ... } 解析。
+// 加载顺序：依赖 call.cute、helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn parseInterfaceBody(x *Parser) bool {
+    if !expect(x, lex.DELIMITER, "{", EDECL) {
+        ret false
+    }
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if isNilTok(t) {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        if t.Type != lex.NAME {
+            fail(x, EDECL, t.Pos)
+            ret false
+        }
+        var methodName: *lex.Token = next(x)
+        discardTok(methodName)
+        // 嵌入式接口（仅 NAME 换行）
+        var p: *lex.Token = peek(x)
+        if isLineEnd(p) {
+            continue
+        }
+        if isTok(p, lex.DELIMITER, "(") {
+            next(x)
+            if !parseFuncParams(x) {
+                ret false
+            }
+            if !parseRetTypes(x) {
+                ret false
+            }
+            continue
+        }
+        // 不是方法头：记错
+        fail(x, EDECL, p.Pos)
+        ret false
+    }
+}
+
+
+// parseGroupedDecl 解析 var ( ... ) / const ( ... ) / let ( ... ) / type ( ... ) 分组声明。
+fn parseInterfaceFromKeyword(x *Parser) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipTerminators(x)
+    if !parseInterfaceBody(x) {
+        ret false
+    }
+    x.decls = x.decls + 1
+    ret true
+}
+

@@ -1,0 +1,44 @@
+// struct_lit.cute —— 结构体字面量 `Type{field: value, ...}` 的 AST 构造。
+// 加载顺序：依赖 call.cute、helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+fn parseStructLit(x *Parser) bool {
+    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+        ret false
+    }
+    for ; ; {
+        skipTerminators(x)
+        var t: *lex.Token = peek(x)
+        if isTok(t, lex.DELIMITER, "}") {
+            next(x)
+            ret true
+        }
+        var nameT: *lex.Token = peek(x)
+        if nameT.Type != lex.NAME {
+            fail(x, ESTMT, nameT.Pos)
+            ret false
+        }
+        next(x)
+        if !expect(x, lex.DELIMITER, ":", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        var t2: *lex.Token = peek(x)
+        if isTok(t2, lex.DELIMITER, ",") {
+            next(x)
+            continue
+        }
+        if isTok(t2, lex.DELIMITER, "}") {
+            continue
+        }
+        fail(x, ESTMT, t2.Pos)
+        ret false
+    }
+}
+
+// parseRetTypes 解析可选返回类型（已调过函数名与 '('）。
+// 返回类型必须同行（无换行跳过）：换行即表示没有返回类型（接口方法/fn）。
+
