@@ -769,6 +769,7 @@ fn scanForKind(x *Parser) int {
             break
         }
         if t.Type == lex.KEYWORD && strings.eq(t.Value, "range") {
+            kind = 1
             break
         }
         if t.Type == lex.DELIMITER && strings.eq(t.Value, ":=") && kind == 3 {
@@ -967,9 +968,19 @@ fn parsePostfix(x *Parser) bool {
             var t2: *lex.Token = peek(x)
             if isTok(t2, lex.DELIMITER, ":") {
                 next(x)
+                // 可选 start 或 end: a[i:j], a[i:], a[:j], a[:]（start 已消费）
                 if !isTok(peek(x), lex.DELIMITER, "]") {
                     if !parseExpr(x) {
                         ret false
+                    }
+                }
+                // 第三可选步长：a[start:end:step]
+                if isTok(peek(x), lex.DELIMITER, ":") {
+                    next(x)
+                    if !isTok(peek(x), lex.DELIMITER, "]") {
+                        if !parseExpr(x) {
+                            ret false
+                        }
                     }
                 }
                 if !expect(x, lex.DELIMITER, "]", EEXPR) {
@@ -1310,6 +1321,46 @@ fn parseForStmt(x *Parser) bool {
         }
         ret parseBlock(x)
     }
+    if isTok(peek(x), lex.KEYWORD, "var") {
+        next(x)
+        var nameT: *lex.Token = expectName(x, ESTMT)
+        if isNilTok(nameT) {
+            ret false
+        }
+        // init: var name: T = expr；expr 直接解析到 ; 为止
+        if !expect(x, lex.DELIMITER, ":", ESTMT) {
+            ret false
+        }
+        if !skipType(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, "=", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        if !parseExpr(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, ";", ESTMT) {
+            ret false
+        }
+        for ; ; {
+            var t2: *lex.Token = peek(x)
+            if isTok(t2, lex.DELIMITER, "{") {
+                break
+            }
+            if isNilTok(t2) || t2.Type == lex.NONE {
+                ret false
+            }
+            next(x)
+        }
+        ret parseBlock(x)
+    }
     if kind == 1 {
         // range: IDENT [ "," IDENT ]* ":=" "range" EXPR { ... }
         var n: int = 0
@@ -1338,15 +1389,24 @@ fn parseForStmt(x *Parser) bool {
         ret parseBlock(x)
     }
     if kind == 2 {
-        // classic: EXPR ; EXPR ; EXPR { ... }（init 可含 :=）
-        if !parseExpr(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, ":=", ESTMT) {
-            ret false
-        }
-        if !parseExpr(x) {
-            ret false
+        // classic: [var] EXPR ; EXPR ; EXPR { ... }（init 可含 := 或省略 var 声明）
+        var tInit: *lex.Token = peek(x)
+        if isTok(tInit, lex.KEYWORD, "var") {
+            next(x)
+            // init 段走 var 声明解析
+            if !parseVarConst(x, "var") {
+                ret false
+            }
+        } else {
+            if !parseExpr(x) {
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+                ret false
+            }
+            if !parseExpr(x) {
+                ret false
+            }
         }
         if !expect(x, lex.DELIMITER, ";", ESTMT) {
             ret false
@@ -1443,6 +1503,35 @@ fn parseStmt(x *Parser) bool {
     if isNilTok(t) || t.Type == lex.NONE {
         ret true
     }
+    // 隐式 var：name: T = v（无关键字）
+    if t.Type == lex.NAME {
+        var nameTok: *lex.Token = next(x)
+        discardTok(nameTok)
+        var p2: *lex.Token = peek(x)
+        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+            if !expect(x, lex.DELIMITER, ":", ESTMT) {
+                ret false
+            }
+            if !skipType(x) {
+                ret false
+            }
+            if !expect(x, lex.DELIMITER, "=", ESTMT) {
+                ret false
+            }
+            restOfLineAtDepth0(x)
+            x.vars = x.vars + 1
+            x.decls = x.decls + 1
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ",") {
+            // tuple 目标：a, b := f() — 把 nameTok 推回，走 parseSimpleStmt
+            pushBack(x, nameTok)
+        } else {
+            // 走 parseSimpleStmt 的普通 NAME 形态
+            pushBack(x, nameTok)
+        }
+    }
     if t.Type == lex.KEYWORD {
         if strings.eq(t.Value, "var") || strings.eq(t.Value, "const") || strings.eq(t.Value, "let") {
             var kw: string = t.Value
@@ -1490,6 +1579,20 @@ fn parseStmt(x *Parser) bool {
         }
         if strings.eq(t.Value, "break") || strings.eq(t.Value, "continue") {
             if !parseBreakContinue(x) {
+                ret false
+            }
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "fallthrough") {
+            next(x)
+            x.stmts = x.stmts + 1
+            ret true
+        }
+        if strings.eq(t.Value, "build") {
+            // fn 体内允许的 build 指令（标记当前函数 / 内联汇编 / 对齐等）
+            next(x)
+            if !parseBuildFromKeyword(x) {
                 ret false
             }
             x.stmts = x.stmts + 1
@@ -1626,14 +1729,35 @@ fn parseStructBody(x *Parser) bool {
         if isTok(t0, lex.DELIMITER, "!") || isTok(t0, lex.DELIMITER, "?") {
             next(x)
         }
+        // 尝试识别合法的字段形态（name: Type / field @Parent / 完整未识别静默忽略）
         var fieldName: *lex.Token = peek(x)
         if isNilTok(fieldName) || fieldName.Type != lex.NAME {
             fail(x, EDECL, fieldName.Pos)
             ret false
         }
-        next(x)
-        // alias @Parent：fieldName 后面直接跟 @
-        if atClosing(x, "@") {
+        // 先看 fieldName 后面是什么决定怎么处理
+        var fieldTok: *lex.Token = next(x)
+        var afterField: *lex.Token = peek(x)
+        if isTok(afterField, lex.DELIMITER, ":") {
+            next(x)
+            if !skipType(x) {
+                ret false
+            }
+            // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
+            var pTag: *lex.Token = peek(x)
+            if !isNilTok(pTag) && pTag.Type == lex.STRING {
+                next(x)
+            }
+            // 字段默认值 = expr
+            var pDef: *lex.Token = peek(x)
+            if isTok(pDef, lex.DELIMITER, "=") {
+                next(x)
+                restOfLineAtDepth0(x)
+            }
+            continue
+        }
+        if isTok(afterField, lex.DELIMITER, "@") {
+            // alias @Parent：fieldName @Parent
             next(x)
             var parentN: *lex.Token = expectName(x, EDECL)
             if isNilTok(parentN) {
@@ -1641,23 +1765,10 @@ fn parseStructBody(x *Parser) bool {
             }
             continue
         }
-        if !expect(x, lex.DELIMITER, ":", ETYPE) {
-            ret false
-        }
-        if !skipType(x) {
-            ret false
-        }
-        // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
-        var pTag: *lex.Token = peek(x)
-        if !isNilTok(pTag) && pTag.Type == lex.STRING {
-            next(x)
-        }
-        // 字段默认值 = expr
-        var pDef: *lex.Token = peek(x)
-        if isTok(pDef, lex.DELIMITER, "=") {
-            next(x)
-            restOfLineAtDepth0(x)
-        }
+        // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
+        // 静默丢弃当前 NAME，回到循环态等待结构性 token；与 Go 参考一致
+        discardTok(fieldTok)
+        continue
     }
 }
 
@@ -1760,7 +1871,11 @@ fn parseGroupedDecl(x *Parser, kind string) bool {
                 x.decls = x.decls + 1
                 continue
             }
-            fail(x, ETYPE, nameT.Pos)
+            // 裸新类型：N int / N []string / ...
+            if !parseTypeRef(x) {
+                ret false
+            }
+            x.decls = x.decls + 1
             ret false
         }
         // var/const/let 单条
@@ -2025,6 +2140,20 @@ fn parseBuildFromKeyword(x *Parser) bool {
     ret false
 }
 
+// parseInterfaceFromKeyword 解析裸 interface 声明：interface K { ... } 等价 type K interface { ... }。
+fn parseInterfaceFromKeyword(x *Parser) bool {
+    var nameT: *lex.Token = expectName(x, EDECL)
+    if isNilTok(nameT) {
+        ret false
+    }
+    skipTerminators(x)
+    if !parseInterfaceBody(x) {
+        ret false
+    }
+    x.decls = x.decls + 1
+    ret true
+}
+
 fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
     if isNilTok(nameT) {
@@ -2179,6 +2308,10 @@ fn parseFnFromKeyword(x *Parser) bool {
                 ret false
             }
             var p3: *lex.Token = peek(x)
+            if isTok(p3, lex.DELIMITER, "]") {
+                next(x)
+                break
+            }
             if isTok(p3, lex.DELIMITER, ",") {
                 next(x)
                 continue
@@ -2255,8 +2388,29 @@ fn file(x *Parser) {
             fail(x, EDECL, t.Pos)
             ret
         }
-        if t.Type == lex.STRING || t.Type == lex.NUMBER || t.Type == lex.NAME {
-            // 顶层孤立字面量/标识符：语法错误
+        if t.Type == lex.NAME {
+            // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
+            var nameT: *lex.Token = next(x)
+            var p2: *lex.Token = peek(x)
+            if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+                if !expect(x, lex.DELIMITER, ":", EDECL) {
+                    ret
+                }
+                if !skipType(x) {
+                    ret
+                }
+                if !expect(x, lex.DELIMITER, "=", EDECL) {
+                    ret
+                }
+                restOfLineAtDepth0(x)
+                x.decls = x.decls + 1
+                x.vars = x.vars + 1
+                continue
+            }
+            fail(x, EDECL, nameT.Pos)
+            ret
+        }
+        if t.Type == lex.STRING || t.Type == lex.NUMBER {
             fail(x, EDECL, t.Pos)
             ret
         }

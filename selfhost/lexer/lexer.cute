@@ -17,7 +17,7 @@
 import "std:strings"
 
 // prefetchCap 预取 FIFO 队列的固定长度（8）。队列满时新 token 不入队。
-const prefetchCap: int = 8
+const prefetchCap: int = 24
 
 // Error 词法错误（Pos/Line/Col 为出错 token 的起点）。
 type Error struct {
@@ -298,9 +298,19 @@ fn Lexer.Prefetch(l *Lexer) *Token {
             continue
         }
 
-        // 处理注释
+        // 处理注释：若注释直接附着在词素尾部（如 int//x），
+        // 必须先把已扫描的词素返回，避免 handleComment 吞掉前缀（Go 参考先返回前缀 token）。
         var delimiter: string = l.Text[i:i + unsafe.cast[uint](delimLen)]
         if strings.eq(delimiter, "//") || strings.eq(delimiter, "/*") {
+            if unsafe.cast[int](i) > l.pfPos {
+                var head: string = l.Text[unsafe.cast[uint](l.pfPos):i]
+                var headTyp: TokenType = NAME
+                if isKeyword(head) {
+                    headTyp = KEYWORD
+                }
+                ret l.makeToken(Token{Type: headTyp, Value: head,
+                    Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
+            }
             l.handleComment(delimiter)
             ret l.Prefetch()
         }
