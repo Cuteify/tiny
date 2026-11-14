@@ -121,7 +121,7 @@ fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
     }
     if strings.eq(kw, "type") {
         skipTerminators(x)
-        if atClosing(x, "(") {
+        if isTok(peek(x), lex.DELIMITER, "(") {
             ret parseGroupedDecl(x, "type")
         }
         ret parseTypeFromKeyword(x, t)
@@ -158,7 +158,7 @@ fn file(x *Parser) {
     for ; ; {
         skipTerminators(x)
         var t: *lex.Token = peek(x)
-        if isNilTok(t) {
+        if t == nil {
             ret
         }
         if t.Type == lex.NONE {
@@ -181,7 +181,7 @@ fn file(x *Parser) {
             // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
             var nameT: *lex.Token = next(x)
             var p2: *lex.Token = peek(x)
-            if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+            if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
                 if !expect(x, lex.DELIMITER, ":", EDECL) {
                     ret
                 }

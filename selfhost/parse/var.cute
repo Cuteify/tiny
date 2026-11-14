@@ -12,7 +12,7 @@ type ConstBlock struct {
 
 fn parseVarConst(x *Parser, kind string) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(nameT) {
+    if nameT == nil {
         ret false
     }
     var t: *lex.Token = peek(x)
@@ -41,7 +41,7 @@ fn parseVarConst(x *Parser, kind string) bool {
 
 fn parseVarConstDispatch(x *Parser, kind string) bool {
     skipTerminators(x)
-    if atClosing(x, "(") {
+    if isTok(peek(x), lex.DELIMITER, "(") {
         ret parseGroupedDecl(x, kind)
     }
     ret parseVarConst(x, kind)

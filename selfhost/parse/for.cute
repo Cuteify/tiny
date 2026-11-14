@@ -9,7 +9,7 @@ fn scanForKind(x *Parser) int {
     var kind: int = 3
     for ; n < 12; {
         var t: *lex.Token = peek(x)
-        if isNilTok(t) || t.Type == lex.NONE {
+        if t == nil || t.Type == lex.NONE {
             break
         }
         if t.Type == lex.DELIMITER && (strings.eq(t.Value, ";") || strings.eq(t.Value, "{")) {
@@ -61,7 +61,7 @@ fn parseForStmt(x *Parser) bool {
             if isTok(t3, lex.DELIMITER, "{") {
                 break
             }
-            if isNilTok(t3) || t3.Type == lex.NONE {
+            if t3 == nil || t3.Type == lex.NONE {
                 ret false
             }
             next(x)
@@ -71,7 +71,7 @@ fn parseForStmt(x *Parser) bool {
     if isTok(peek(x), lex.KEYWORD, "var") {
         next(x)
         var nameT: *lex.Token = expectName(x, ESTMT)
-        if isNilTok(nameT) {
+        if nameT == nil {
             ret false
         }
         // init: var name: T = expr；expr 直接解析到 ; 为止
@@ -101,7 +101,7 @@ fn parseForStmt(x *Parser) bool {
             if isTok(t2, lex.DELIMITER, "{") {
                 break
             }
-            if isNilTok(t2) || t2.Type == lex.NONE {
+            if t2 == nil || t2.Type == lex.NONE {
                 ret false
             }
             next(x)
@@ -113,7 +113,7 @@ fn parseForStmt(x *Parser) bool {
         var n: int = 0
         for ; ; {
             var nt: *lex.Token = expectName(x, ESTMT)
-            if isNilTok(nt) {
+            if nt == nil {
                 ret false
             }
             var p: *lex.Token = peek(x)
@@ -170,7 +170,7 @@ fn parseForStmt(x *Parser) bool {
             if isTok(t2, lex.DELIMITER, "{") {
                 break
             }
-            if isNilTok(t2) || t2.Type == lex.NONE {
+            if t2 == nil || t2.Type == lex.NONE {
                 ret false
             }
             next(x)

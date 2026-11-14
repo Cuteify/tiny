@@ -16,7 +16,7 @@ fn parseCaseBody(x *Parser) bool {
     for ; ; {
         skipTerminators(x)
         var t: *lex.Token = peek(x)
-        if isNilTok(t) || t.Type == lex.NONE {
+        if t == nil || t.Type == lex.NONE {
             fail(x, ESTMT, 0)
             ret false
         }
@@ -87,6 +87,3 @@ fn parseSwitchStmt(x *Parser) bool {
         ret false
     }
 }
-
-// parseIfStmt 解析 if/else if/else。
-

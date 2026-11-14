@@ -8,7 +8,7 @@ type EnumBlock struct {
 
 fn parseEnumFromKeyword(x *Parser) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(nameT) {
+    if nameT == nil {
         ret false
     }
     skipTerminators(x)
@@ -25,7 +25,7 @@ fn parseEnumFromKeyword(x *Parser) bool {
     for ; ; {
         skipTerminators(x)
         var t: *lex.Token = peek(x)
-        if isNilTok(t) {
+        if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
@@ -39,8 +39,7 @@ fn parseEnumFromKeyword(x *Parser) bool {
             fail(x, EDECL, t.Pos)
             ret false
         }
-        var memberT: *lex.Token = next(x)
-        discardTok(memberT)
+        next(x)
         skipTerminators(x)
         var p2: *lex.Token = peek(x)
         if isTok(p2, lex.DELIMITER, "=") {

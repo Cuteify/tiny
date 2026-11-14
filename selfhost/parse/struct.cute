@@ -10,7 +10,7 @@ fn parseStructBody(x *Parser) bool {
     for ; ; {
         skipTerminators(x)
         var t: *lex.Token = peek(x)
-        if isNilTok(t) {
+        if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
@@ -22,7 +22,7 @@ fn parseStructBody(x *Parser) bool {
         if isTok(t, lex.DELIMITER, "@") {
             next(x)
             var parentN: *lex.Token = expectName(x, EDECL)
-            if isNilTok(parentN) {
+            if parentN == nil {
                 ret false
             }
             continue
@@ -34,12 +34,12 @@ fn parseStructBody(x *Parser) bool {
         }
         // 尝试识别合法的字段形态（name: Type / field @Parent / 完整未识别静默忽略）
         var fieldName: *lex.Token = peek(x)
-        if isNilTok(fieldName) || fieldName.Type != lex.NAME {
+        if fieldName == nil || fieldName.Type != lex.NAME {
             fail(x, EDECL, fieldName.Pos)
             ret false
         }
         // 先看 fieldName 后面是什么决定怎么处理
-        var fieldTok: *lex.Token = next(x)
+        next(x)
         var afterField: *lex.Token = peek(x)
         if isTok(afterField, lex.DELIMITER, ":") {
             next(x)
@@ -48,7 +48,7 @@ fn parseStructBody(x *Parser) bool {
             }
             // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
             var pTag: *lex.Token = peek(x)
-            if !isNilTok(pTag) && pTag.Type == lex.STRING {
+            if pTag != nil && pTag.Type == lex.STRING {
                 next(x)
             }
             // 字段默认值 = expr
@@ -63,14 +63,13 @@ fn parseStructBody(x *Parser) bool {
             // alias @Parent：fieldName @Parent
             next(x)
             var parentN: *lex.Token = expectName(x, EDECL)
-            if isNilTok(parentN) {
+            if parentN == nil {
                 ret false
             }
             continue
         }
         // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
-        // 静默丢弃当前 NAME，回到循环态等待结构性 token；与 Go 参考一致
-        discardTok(fieldTok)
+        // NAME 已消费，什么也不做，回到循环态等待结构性 token；与 Go 参考一致
         continue
     }
 }
@@ -78,7 +77,7 @@ fn parseStructBody(x *Parser) bool {
 // parseInterfaceBody 解析 interface { ... }（type X interface 复用）。
 fn parseStructDeclFromKeyword(x *Parser) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(nameT) {
+    if nameT == nil {
         ret false
     }
     skipTerminators(x)
@@ -86,7 +85,7 @@ fn parseStructDeclFromKeyword(x *Parser) bool {
     if isTok(p, lex.DELIMITER, ":") {
         next(x)
         var parentN: *lex.Token = expectName(x, EDECL)
-        if isNilTok(parentN) {
+        if parentN == nil {
             ret false
         }
     }

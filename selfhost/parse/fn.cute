@@ -10,7 +10,7 @@ type FuncBlock struct {
 fn parseFnFromKeyword(x *Parser) bool {
     // fn 关键字已被消费
     var nameT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(nameT) {
+    if nameT == nil {
         ret false
     }
     skipTerminators(x)
@@ -18,7 +18,7 @@ fn parseFnFromKeyword(x *Parser) bool {
     if isTok(p, lex.DELIMITER, ".") {
         next(x)
         var m: *lex.Token = expectName(x, EDECL)
-        if isNilTok(m) {
+        if m == nil {
             ret false
         }
     }
@@ -34,7 +34,7 @@ fn parseFnFromKeyword(x *Parser) bool {
                 break
             }
             var tp: *lex.Token = expectName(x, EDECL)
-            if isNilTok(tp) {
+            if tp == nil {
                 ret false
             }
             var p3: *lex.Token = peek(x)

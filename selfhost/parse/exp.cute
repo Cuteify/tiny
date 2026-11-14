@@ -41,7 +41,7 @@ fn prec(s string) int {
 fn parsePrimary(x *Parser) bool {
     skipTerminators(x)
     var t: *lex.Token = peek(x)
-    if isNilTok(t) {
+    if t == nil {
         fail(x, EEXPR, 0)
         ret false
     }
@@ -136,8 +136,8 @@ fn parseCompositeType(x *Parser) bool {
             ret skipType(x)
         }
         var num: *lex.Token = next(x)
-        if isNilTok(num) || num.Type != lex.NUMBER {
-            if isNilTok(num) {
+        if num == nil || num.Type != lex.NUMBER {
+            if num == nil {
                 fail(x, ETYPE, 0)
             } else {
                 fail(x, ETYPE, num.Pos)
@@ -192,7 +192,7 @@ fn parsePostfix(x *Parser) bool {
         if isTok(t, lex.DELIMITER, ".") {
             next(x)
             var part: *lex.Token = expectName(x, EEXPR)
-            if isNilTok(part) {
+            if part == nil {
                 ret false
             }
             continue
@@ -296,7 +296,7 @@ fn parseBinaryExpr(x *Parser, minPrec int) bool {
     }
     for ; ; {
         var t: *lex.Token = peek(x)
-        if isNilTok(t) || t.Type != lex.DELIMITER {
+        if t == nil || t.Type != lex.DELIMITER {
             break
         }
         var p: int = prec(t.Value)
@@ -314,10 +314,7 @@ fn parseBinaryExpr(x *Parser, minPrec int) bool {
 // parseExpr 表达式入口。
 fn parseExpr(x *Parser) bool {
     var t: *lex.Token = peek(x)
-    if !isNilTok(t) {
+    if t != nil {
     }
     ret parseBinaryExpr(x, 1)
 }
-
-// parseCallArgs 解析函数调用/内建 new 的实参列表。
-

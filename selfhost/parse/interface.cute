@@ -10,7 +10,7 @@ fn parseInterfaceBody(x *Parser) bool {
     for ; ; {
         skipTerminators(x)
         var t: *lex.Token = peek(x)
-        if isNilTok(t) {
+        if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
@@ -22,8 +22,7 @@ fn parseInterfaceBody(x *Parser) bool {
             fail(x, EDECL, t.Pos)
             ret false
         }
-        var methodName: *lex.Token = next(x)
-        discardTok(methodName)
+        next(x)
         // 嵌入式接口（仅 NAME 换行）
         var p: *lex.Token = peek(x)
         if isLineEnd(p) {
@@ -49,7 +48,7 @@ fn parseInterfaceBody(x *Parser) bool {
 // parseGroupedDecl 解析 var ( ... ) / const ( ... ) / let ( ... ) / type ( ... ) 分组声明。
 fn parseInterfaceFromKeyword(x *Parser) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(nameT) {
+    if nameT == nil {
         ret false
     }
     skipTerminators(x)

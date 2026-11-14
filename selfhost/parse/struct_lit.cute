@@ -38,7 +38,3 @@ fn parseStructLit(x *Parser) bool {
         ret false
     }
 }
-
-// parseRetTypes 解析可选返回类型（已调过函数名与 '('）。
-// 返回类型必须同行（无换行跳过）：换行即表示没有返回类型（接口方法/fn）。
-

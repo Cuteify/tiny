@@ -8,7 +8,7 @@ type BuildBlock struct {
 
 fn parseBuildFromKeyword(x *Parser) bool {
     var kindT: *lex.Token = expectName(x, EDECL)
-    if isNilTok(kindT) {
+    if kindT == nil {
         ret false
     }
     var kind: string = kindT.Value
@@ -25,7 +25,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
                 x.decls = x.decls + 1
                 ret true
             }
-            if isTokKind(t, lex.NAME) || isTokKind(t, lex.STRING) || isTokKind(t, lex.KEYWORD) {
+            if t != nil && (t.Type == lex.NAME || t.Type == lex.STRING || t.Type == lex.KEYWORD) {
                 next(x)
                 continue
             }
@@ -50,7 +50,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
                 x.decls = x.decls + 1
                 ret true
             }
-            if isTokKind(t, lex.NUMBER) {
+            if t != nil && t.Type == lex.NUMBER {
                 next(x)
                 continue
             }
@@ -78,7 +78,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
             ret false
         }
         var t: *lex.Token = next(x)
-        if isNilTok(t) || (t.Type != lex.STRING && t.Type != lex.NAME) {
+        if t == nil || (t.Type != lex.STRING && t.Type != lex.NAME) {
             if (t) {
                 fail(x, EDECL, t.Pos)
             } else {
@@ -98,7 +98,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
             ret false
         }
         var t: *lex.Token = next(x)
-        if isNilTok(t) || t.Type != lex.NUMBER {
+        if t == nil || t.Type != lex.NUMBER {
             if (t) {
                 fail(x, EDECL, t.Pos)
             } else {
@@ -121,5 +121,3 @@ fn parseBuildFromKeyword(x *Parser) bool {
     fail(x, EDECL, kindT.Pos)
     ret false
 }
-
-// parseInterfaceFromKeyword 解析裸 interface 声明：interface K { ... } 等价 type K interface { ... }。

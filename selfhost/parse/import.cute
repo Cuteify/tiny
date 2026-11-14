@@ -14,7 +14,7 @@ fn parseImportFromKeyword(x *Parser) bool {
         for ; ; {
             skipTerminators(x)
             var t: *lex.Token = peek(x)
-            if isNilTok(t) {
+            if t == nil {
                 fail(x, EDECL, 0)
                 ret false
             }
@@ -29,10 +29,9 @@ fn parseImportFromKeyword(x *Parser) bool {
                 continue
             }
             if t.Type == lex.NAME {
-                var alias: *lex.Token = next(x)
-                discardTok(alias)
+                next(x)
                 var strT: *lex.Token = next(x)
-                if isNilTok(strT) || strT.Type != lex.STRING {
+                if strT == nil || strT.Type != lex.STRING {
                     if (strT) {
                         fail(x, EDECL, strT.Pos)
                     } else {
@@ -51,12 +50,11 @@ fn parseImportFromKeyword(x *Parser) bool {
         }
     }
     var t: *lex.Token = peek(x)
-    if !isNilTok(t) && t.Type == lex.NAME {
-        var alias: *lex.Token = next(x)
-        discardTok(alias)
+    if t != nil && t.Type == lex.NAME {
+        next(x)
     }
     var strT: *lex.Token = next(x)
-    if isNilTok(strT) || strT.Type != lex.STRING {
+    if strT == nil || strT.Type != lex.STRING {
         if (strT) {
             fail(x, EDECL, strT.Pos)
         } else {

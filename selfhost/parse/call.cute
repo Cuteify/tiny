@@ -25,7 +25,7 @@ fn parseFuncParams(x *Parser) bool {
         }
         // 具名参数 name ... / name: Type / name Type
         var nameT: *lex.Token = next(x)
-        if isNilTok(nameT) || nameT.Type != lex.NAME {
+        if nameT == nil || nameT.Type != lex.NAME {
             if (nameT) {
                 fail(x, EDECL, nameT.Pos)
             } else {
@@ -58,7 +58,7 @@ fn parseFuncParams(x *Parser) bool {
             var depth: int = 0
             for ; ; {
                 var t: *lex.Token = peek(x)
-                if isNilTok(t) {
+                if t == nil {
                     ret true
                 }
                 if t.Type == lex.NONE {
@@ -95,7 +95,7 @@ fn parseFuncParams(x *Parser) bool {
             continue
         }
         // 最后一参之后的行尾：允许换行（参数跨行）
-        if !isNilTok(pSep) && pSep.Type == lex.DELIMITER && (unsafe.cast[int](pSep.Value[0]) == 10 || unsafe.cast[int](pSep.Value[0]) == 13) {
+        if pSep != nil && pSep.Type == lex.DELIMITER && (unsafe.cast[int](pSep.Value[0]) == 10 || unsafe.cast[int](pSep.Value[0]) == 13) {
             continue
         }
         ret false
@@ -133,7 +133,7 @@ fn parseCallArgs(x *Parser) bool {
             continue
         }
         var t3: *lex.Token = peek(x)
-        if isNilTok(t3) || t3.Type == lex.NONE {
+        if t3 == nil || t3.Type == lex.NONE {
             fail(x, EEXPR, 0)
             ret false
         }
@@ -181,10 +181,3 @@ fn parseRetTypes(x *Parser) bool {
     // 单返回值类型
     ret skipType(x)
 }
-
-
-
-
-// parseStructBody 解析结构体体（type X struct / 裸 struct X 复用）。
-// structs 计数由调用方做。
-

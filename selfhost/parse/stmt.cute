@@ -4,7 +4,7 @@ import "std:strings"
 import lex "../lexer"
 
 fn isAssignOp(t *lex.Token) bool {
-    if isNilTok(t) || t.Type != lex.DELIMITER {
+    if t == nil || t.Type != lex.DELIMITER {
         ret false
     }
     if strings.eq(t.Value, "=") || strings.eq(t.Value, ":=") {
@@ -102,12 +102,12 @@ fn parseSimpleStmt(x *Parser) bool {
     if isTok(t, lex.DELIMITER, "}") {
         ret true
     }
-    if !isNilTok(t) && t.Type == lex.DELIMITER {
+    if t != nil && t.Type == lex.DELIMITER {
         if strings.eq(t.Value, ";") || strings.eq(t.Value[0:1], "\n") || strings.eq(t.Value[0:1], "\r") {
             ret true
         }
     }
-    if isNilTok(t) || t.Type == lex.NONE {
+    if t == nil || t.Type == lex.NONE {
         ret true
     }
     fail(x, ESTMT, t.Pos)
@@ -175,15 +175,14 @@ fn parseBreakContinue(x *Parser) bool {
 fn parseStmt(x *Parser) bool {
     skipTerminators(x)
     var t: *lex.Token = peek(x)
-    if isNilTok(t) || t.Type == lex.NONE {
+    if t == nil || t.Type == lex.NONE {
         ret true
     }
     // 隐式 var：name: T = v（无关键字）
     if t.Type == lex.NAME {
         var nameTok: *lex.Token = next(x)
-        discardTok(nameTok)
         var p2: *lex.Token = peek(x)
-        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+        if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
             if !expect(x, lex.DELIMITER, ":", ESTMT) {
                 ret false
             }
@@ -199,7 +198,7 @@ fn parseStmt(x *Parser) bool {
             x.stmts = x.stmts + 1
             ret true
         }
-        if !isNilTok(p2) && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ",") {
+        if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ",") {
             // tuple 目标：a, b := f() — 把 nameTok 推回，走 parseSimpleStmt
             pushBack(x, nameTok)
         } else {
@@ -293,6 +292,3 @@ fn atOpen(x *Parser) bool {
     var t: *lex.Token = peek(x)
     ret isTok(t, lex.DELIMITER, "{")
 }
-
-// parseStructLit 解析结构体字面量字段 { field: expr, ... }（已见 { 的前提）。
-
