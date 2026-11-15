@@ -7,40 +7,12 @@ fn isAssignOp(t *lex.Token) bool {
     if t == nil || t.Type != lex.DELIMITER {
         ret false
     }
-    if strings.eq(t.Value, "=") || strings.eq(t.Value, ":=") {
-        ret true
-    }
-    if strings.eq(t.Value, "+=") {
-        ret true
-    }
-    if strings.eq(t.Value, "-=") {
-        ret true
-    }
-    if strings.eq(t.Value, "*=") {
-        ret true
-    }
-    if strings.eq(t.Value, "/=") {
-        ret true
-    }
-    if strings.eq(t.Value, "%=") {
-        ret true
-    }
-    if strings.eq(t.Value, "^=") {
-        ret true
-    }
-    if strings.eq(t.Value, "&=") {
-        ret true
-    }
-    if strings.eq(t.Value, "|=") {
-        ret true
-    }
-    if strings.eq(t.Value, "<<=") {
-        ret true
-    }
-    if strings.eq(t.Value, ">>=") {
-        ret true
-    }
-    ret false
+    ret isAssignOpValue(t.Value)
+}
+
+// isAssignOpValue 复合赋值运算符表：=, :=, +=, -=, *=, /=, %=, ^=, &=, |=, <<=, >>=。
+fn isAssignOpValue(v string) bool {
+    ret strings.eq(v, "=") || strings.eq(v, ":=") || strings.eq(v, "+=") || strings.eq(v, "-=") || strings.eq(v, "*=") || strings.eq(v, "/=") || strings.eq(v, "%=") || strings.eq(v, "^=") || strings.eq(v, "&=") || strings.eq(v, "|=") || strings.eq(v, "<<=") || strings.eq(v, ">>=")
 }
 
 // scanForKind 有界向前感知 for 头的种类：1=range，2=classic（含 :=），3=其它。
@@ -67,53 +39,60 @@ fn parseBlock(x *Parser) bool {
     }
 }
 
+// consumeTupleTargetExprs 消费 `a, b, c := f()` 的多目标模式（每个 `,` 跟一个 expr）。
+fn consumeTupleTargetExprs(x *Parser) bool {
+    for ; ; {
+        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+            ret true
+        }
+        x.l.next()
+        if !parseExpr(x) {
+            ret false
+        }
+    }
+}
+
+// isStatementPostfixEnd 检测非赋值语句的合法收尾（NL / ';' / '}' / EOF/NONE）。
+fn isStatementPostfixEnd(t *lex.Token) bool {
+    if t == nil {
+        ret true
+    }
+    if lex.Token.is(t, lex.DELIMITER, "++") || lex.Token.is(t, lex.DELIMITER, "--") {
+        ret true
+    }
+    if lex.Token.isLineEnd(t) || t.Type == lex.NONE {
+        ret true
+    }
+    if t.Type == lex.DELIMITER {
+        ret strings.eq(t.Value, "}") || strings.eq(t.Value, ";") || unsafe.cast[int](t.Value[0]) == 10 || unsafe.cast[int](t.Value[0]) == 13
+    }
+    ret false
+}
+
 // parseSimpleStmt 整形最常见的语句：赋值/自增自减/纯表达式（仅调用语句）。
 // 支持多目标形式：a, b := f()（tuple 目标）。
 fn parseSimpleStmt(x *Parser) bool {
     if !parseExpr(x) {
         ret false
     }
-    // 多目标：a, b := f() / a, b = f()
-    for ; ; {
-        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
-            break
-        }
-        x.l.next()
-        if !parseExpr(x) {
-            ret false
-        }
+    if !consumeTupleTargetExprs(x) {
+        ret false
     }
     var t: *lex.Token = x.l.peek()
     if isAssignOp(t) {
         x.l.next()
-        if !parseExpr(x) {
-            ret false
-        }
-        ret true
+        ret parseExpr(x)
     }
     if lex.Token.is(t, lex.DELIMITER, "++") || lex.Token.is(t, lex.DELIMITER, "--") {
         x.l.next()
         ret true
     }
-    // 非赋值形式的语句后必须是语句边界（换行 / ';' / '}' / EOF）
-    if lex.Token.isLineEnd(t) {
-        ret true
-    }
-    if lex.Token.is(t, lex.DELIMITER, "}") {
-        ret true
-    }
-    if t != nil && t.Type == lex.DELIMITER {
-        if strings.eq(t.Value, ";") || strings.eq(t.Value[0:1], "\n") || strings.eq(t.Value[0:1], "\r") {
-            ret true
-        }
-    }
-    if t == nil || t.Type == lex.NONE {
+    if isStatementPostfixEnd(t) {
         ret true
     }
     fail(x, ESTMT, t.Pos)
     ret false
 }
-
 // atCase 判断当前是否 case/default/}。
 fn parseRetStmt(x *Parser) bool {
     var t: *lex.Token = x.l.peek()
@@ -171,105 +150,154 @@ fn parseBreakContinue(x *Parser) bool {
     ret false
 }
 
-// parseStmt 语句分派；消费语句并累计 stmts。
+// isStmtKeywordLocalDecl 局部声明类关键字（带 kw 形式）。
+fn isStmtKeywordLocalDecl(kw string) bool {
+    ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
+}
+
+// isStmtKeywordReturn 返回类关键字（值可带 ret/return 两种拼写）。
+fn isStmtKeywordReturn(kw string) bool {
+    ret strings.eq(kw, "ret") || strings.eq(kw, "return")
+}
+
+// isStmtKeywordFinisher break/continue/fallthrough 等终止符关键字。
+fn isStmtKeywordFinisher(kw string) bool {
+    ret strings.eq(kw, "break") || strings.eq(kw, "continue") || strings.eq(kw, "fallthrough")
+}
+
+// parseImplicitVarStmt 处理 name: T = v（无 var/const/let 关键字的隐式声明）。
+// nameTok 不消费：x.l.prefetch() 把后继 token 扫入环（不弹出）；
+// 命中 ":" 分支时显式弹出 nameTok；其它形态 nameTok 仍在环首。
+fn parseImplicitVarStmt(x *Parser) bool {
+    var p2: *lex.Token = x.l.prefetch()
+    if !lex.Token.is(p2, lex.DELIMITER, ":") {
+        ret false
+    }
+    x.l.next()
+    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+        ret false
+    }
+    if !skipType(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, "=", ESTMT) {
+        ret false
+    }
+    restOfLineAtDepth0(x)
+    x.vars = x.vars + 1
+    x.decls = x.decls + 1
+    x.stmts = x.stmts + 1
+    ret true
+}
+
+fn dispatchControlClause(x *Parser, kw string) bool {
+    if strings.eq(kw, "if") {
+        if !parseIfStmt(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if strings.eq(kw, "for") || strings.eq(kw, "while") {
+        if !parseForStmt(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if strings.eq(kw, "switch") {
+        if !parseSwitchStmt(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    ret false
+}
+
+fn dispatchTerminalClause(x *Parser, kw string) bool {
+    if isStmtKeywordReturn(kw) {
+        if !parseRetStmt(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if strings.eq(kw, "defer") {
+        if !parseDeferStmt(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if strings.eq(kw, "break") || strings.eq(kw, "continue") {
+        if !parseBreakContinue(x) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    if strings.eq(kw, "fallthrough") {
+        x.l.next()
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    ret false
+}
+
+fn dispatchBuildClause(x *Parser) bool {
+    x.l.next()
+    if !parseBuildFromKeyword(x) {
+        ret false
+    }
+    x.stmts = x.stmts + 1
+    ret true
+}
+
+fn dispatchStmtBody(x *Parser, kw string) bool {
+    if dispatchControlClause(x, kw) {
+        ret true
+    }
+    if dispatchTerminalClause(x, kw) {
+        ret true
+    }
+    if strings.eq(kw, "build") {
+        ret dispatchBuildClause(x)
+    }
+    ret false
+}
+
+// dispatchStmtKeyword 按 keyword 分派到对应语句解析器并记 stmts；未知返回 false。
+fn dispatchStmtKeyword(x *Parser, kw string) bool {
+    if isStmtKeywordLocalDecl(kw) {
+        x.l.next()
+        if !parseVarConstDispatch(x, kw) {
+            ret false
+        }
+        x.stmts = x.stmts + 1
+        ret true
+    }
+    ret dispatchStmtBody(x, kw)
+}
+
+// isStmtCandidateKeywordValue NAME 开头是语句、KEYWORD 开头也是语句：两条路。
+fn isStmtCandidateFinisher(v string) bool {
+    ret strings.eq(v, "break") || strings.eq(v, "continue") || strings.eq(v, "fallthrough") || strings.eq(v, "defer") || strings.eq(v, "build")
+}
+
 fn parseStmt(x *Parser) bool {
     x.l.skipTerminators()
     var t: *lex.Token = x.l.peek()
     if t == nil || t.Type == lex.NONE {
         ret true
     }
-    // 隐式 var：name: T = v（无关键字）。
-    // 不消费 nameTok：x.l.prefetch() 把后继 token 扫入环（不弹出），
-    // 决定走 ":" 分支时先显式弹出 nameTok；其余形态 nameTok 仍在环首，自然落入后续解析。
-    if t.Type == lex.NAME {
-        var p2: *lex.Token = x.l.prefetch()
-        if lex.Token.is(p2, lex.DELIMITER, ":") {
-            x.l.next() // 弹出 nameTok
-            if !expect(x, lex.DELIMITER, ":", ESTMT) {
-                ret false
-            }
-            if !skipType(x) {
-                ret false
-            }
-            if !expect(x, lex.DELIMITER, "=", ESTMT) {
-                ret false
-            }
-            restOfLineAtDepth0(x)
-            x.vars = x.vars + 1
-            x.decls = x.decls + 1
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        // 其它形态（含 tuple 目标 a, b 或普通 NAME 开头）：nameTok 仍在环首
+    if t.Type == lex.NAME && parseImplicitVarStmt(x) {
+        ret true
     }
-    if t.Type == lex.KEYWORD {
-        if strings.eq(t.Value, "var") || strings.eq(t.Value, "const") || strings.eq(t.Value, "let") {
-            var kw: string = t.Value
-            x.l.next()
-            if !parseVarConstDispatch(x, kw) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "if") {
-            if !parseIfStmt(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "for") || strings.eq(t.Value, "while") {
-            if !parseForStmt(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "switch") {
-            if !parseSwitchStmt(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "ret") || strings.eq(t.Value, "return") {
-            if !parseRetStmt(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "defer") {
-            if !parseDeferStmt(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "break") || strings.eq(t.Value, "continue") {
-            if !parseBreakContinue(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "fallthrough") {
-            x.l.next()
-            x.stmts = x.stmts + 1
-            ret true
-        }
-        if strings.eq(t.Value, "build") {
-            // fn 体内允许的 build 指令（标记当前函数 / 内联汇编 / 对齐等）
-            x.l.next()
-            if !parseBuildFromKeyword(x) {
-                ret false
-            }
-            x.stmts = x.stmts + 1
-            ret true
-        }
+    if t.Type == lex.KEYWORD && dispatchStmtKeyword(x, t.Value) {
+        ret true
     }
-    if t.Type == lex.DELIMITER && strings.eq(t.Value, "{") {
+    if lex.Token.is(t, lex.DELIMITER, "{") {
         if !parseBlock(x) {
             ret false
         }

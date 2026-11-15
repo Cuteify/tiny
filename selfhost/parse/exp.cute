@@ -37,7 +37,63 @@ fn prec(s string) int {
     ret 0
 }
 
-// isAssignOp 判断 token 是否为赋值运算符。
+// parsePrimaryKeyword 处理 true/false/nil 关键字；非此三字时记 EEXPR。
+fn parsePrimaryKeyword(x *Parser, t *lex.Token) bool {
+    if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
+        x.exprs = x.exprs + 1
+        x.l.next()
+        ret true
+    }
+    fail(x, EEXPR, t.Pos)
+    ret false
+}
+
+// parsePrimaryName 处理单个 NAME：NAME{...} 结构体字面量需 NAME 与 '{' 严格相邻。
+fn parsePrimaryName(x *Parser, t *lex.Token) bool {
+    x.exprs = x.exprs + 1
+    x.l.next()
+    var p: *lex.Token = x.l.peek()
+    if lex.Token.is(p, lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
+        ret parseStructLit(x)
+    }
+    ret true
+}
+
+// parsePrimaryParen 处理括号分组表达式。
+fn parsePrimaryParen(x *Parser) bool {
+    x.l.next()
+    x.l.skipTerminators()
+    if !parseExpr(x) {
+        ret false
+    }
+    x.l.skipTerminators()
+    if !expect(x, lex.DELIMITER, ")", EEXPR) {
+        ret false
+    }
+    x.exprs = x.exprs + 1
+    ret true
+}
+
+// parseCompositePrimary 处理 []T{...} / [N]T{...} / map[K]V{...} 复合字面量。
+fn parseCompositePrimary(x *Parser) bool {
+    if !parseCompositeType(x) {
+        ret false
+    }
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "{") {
+        x.exprs = x.exprs + 1
+        ret parseCompositeElems(x)
+    }
+    // 类型本身作为表达式实参，如 new([]int, 8)
+    x.exprs = x.exprs + 1
+    ret true
+}
+
+// isPrimaryKeywordValue 判断 token 是否为值型关键字（true/false/nil）。
+fn isPrimaryKeywordValue(v string) bool {
+    ret strings.eq(v, "true") || strings.eq(v, "false") || strings.eq(v, "nil")
+}
+
 fn parsePrimary(x *Parser) bool {
     x.l.skipTerminators()
     var t: *lex.Token = x.l.peek()
@@ -45,67 +101,22 @@ fn parsePrimary(x *Parser) bool {
         fail(x, EEXPR, 0)
         ret false
     }
-    if t.Type == lex.NUMBER {
+    if t.Type == lex.NUMBER || t.Type == lex.STRING {
         x.exprs = x.exprs + 1
         x.l.next()
         ret true
     }
-    if t.Type == lex.STRING {
-        x.exprs = x.exprs + 1
-        x.l.next()
-        ret true
-    }
-    // 布尔/nil 关键字
     if t.Type == lex.KEYWORD {
-        if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
-            x.exprs = x.exprs + 1
-            x.l.next()
-            ret true
-        }
-        // 字面量 false/true 之外的其他关键字：不是表达式
-        fail(x, EEXPR, t.Pos)
-        ret false
+        ret parsePrimaryKeyword(x, t)
     }
     if t.Type == lex.NAME {
-        x.exprs = x.exprs + 1
-        x.l.next()
-        // NAME{...} 结构体字面量：NAME 与 '{' 必须严格相邻（Go 参考同规则），
-        // 否则 "{" 是后续块的花括号（if a == b { / fn f() { 等）。
-        var p: *lex.Token = x.l.peek()
-        if lex.Token.is(p, lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
-            if !parseStructLit(x) {
-                ret false
-            }
-            ret true
-        }
-        ret true
+        ret parsePrimaryName(x, t)
     }
     if lex.Token.is(t, lex.DELIMITER, "(") {
-        x.l.next()
-        x.l.skipTerminators()
-        if !parseExpr(x) {
-            ret false
-        }
-        x.l.skipTerminators()
-        if !expect(x, lex.DELIMITER, ")", EEXPR) {
-            ret false
-        }
-        x.exprs = x.exprs + 1
-        ret true
+        ret parsePrimaryParen(x)
     }
-    // 复合字面量：[]T{...} / [N]T{...} / map[K]V{...}
-    if lex.Token.is(t, lex.DELIMITER, "[") || (t.Type == lex.NAME && strings.eq(t.Value, "map")) {
-        if !parseCompositeType(x) {
-            ret false
-        }
-        x.l.skipTerminators()
-        if lex.Token.is(x.l.peek(), lex.DELIMITER, "{") {
-            x.exprs = x.exprs + 1
-            ret parseCompositeElems(x)
-        }
-        // 类型本身作为表达式实参，如 new([]int, 8)
-        x.exprs = x.exprs + 1
-        ret true
+    if lex.Token.is(t, lex.DELIMITER, "[") || strings.eq(t.Value, "map") {
+        ret parseCompositePrimary(x)
     }
     fail(x, EEXPR, t.Pos)
     ret false
@@ -113,41 +124,51 @@ fn parsePrimary(x *Parser) bool {
 
 // parseCompositeType 消费 []T / [N]T / map[K]V 前缀（不消耗 {）。
 // 反向不构建 AST。
+// parseMapTypeHead 解析 map[K]V 类型前缀（NAME "map" 已 peek、未消费）。
+fn parseMapTypeHead(x *Parser) bool {
+    x.l.next()
+    if !expect(x, lex.DELIMITER, "[", ETYPE) {
+        ret false
+    }
+    if !skipType(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, "]", ETYPE) {
+        ret false
+    }
+    ret skipType(x)
+}
+
+// parseArrayTypeHead 解析切片 []T 与定长数组 [N]T 类型前缀（`[` 已 peek、未消费）。
+fn parseArrayTypeHead(x *Parser) bool {
+    x.l.next()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
+        x.l.next()
+        ret skipType(x)
+    }
+    var num: *lex.Token = x.l.next()
+    if num == nil || num.Type != lex.NUMBER {
+        if num == nil {
+            fail(x, ETYPE, 0)
+        } else {
+            fail(x, ETYPE, num.Pos)
+        }
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, "]", ETYPE) {
+        ret false
+    }
+    ret skipType(x)
+}
+
 fn parseCompositeType(x *Parser) bool {
     x.l.skipTerminators()
     var t: *lex.Token = x.l.peek()
     if t.Type == lex.NAME && strings.eq(t.Value, "map") {
-        x.l.next()
-        if !expect(x, lex.DELIMITER, "[", ETYPE) {
-            ret false
-        }
-        if !skipType(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, "]", ETYPE) {
-            ret false
-        }
-        ret skipType(x)
+        ret parseMapTypeHead(x)
     }
     if lex.Token.is(t, lex.DELIMITER, "[") {
-        x.l.next()
-        if lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
-            x.l.next()
-            ret skipType(x)
-        }
-        var num: *lex.Token = x.l.next()
-        if num == nil || num.Type != lex.NUMBER {
-            if num == nil {
-                fail(x, ETYPE, 0)
-            } else {
-                fail(x, ETYPE, num.Pos)
-            }
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, "]", ETYPE) {
-            ret false
-        }
-        ret skipType(x)
+        ret parseArrayTypeHead(x)
     }
     fail(x, ETYPE, t.Pos)
     ret false
@@ -182,79 +203,78 @@ fn parseCompositeElems(x *Parser) bool {
 }
 
 // parsePostfix 后缀消歧：索引/切片/选择器/调用，循环到非后缀 token。
+// parseSelectorSuffix 解析 .name（选择器）。
+fn parseSelectorSuffix(x *Parser) bool {
+    x.l.next()
+    ret expectName(x, EEXPR) != nil
+}
+
+// consumeSliceBoundEnd 判断当前到 ']' 或 ':' 为止：若不是，consume expr；其他接受。
+fn consumeSliceBoundEnd(x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
+        ret true
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        ret true
+    }
+    ret parseExpr(x)
+}
+
+// parseIndexSuffix 处理 [i] / [i:j] / [i:] / [:j] / [i:j:step]
+fn parseIndexSuffix(x *Parser) bool {
+    x.l.next()
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        x.l.next()
+        if !consumeSliceBoundEnd(x) {
+            ret false
+        }
+        ret expect(x, lex.DELIMITER, "]", EEXPR)
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        ret expect(x, lex.DELIMITER, "]", EEXPR)
+    }
+    x.l.next()
+    if !consumeSliceBoundEnd(x) {
+        ret false
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        x.l.next()
+        if !consumeSliceBoundEnd(x) {
+            ret false
+        }
+    }
+    ret expect(x, lex.DELIMITER, "]", EEXPR)
+}
+
 fn parsePostfix(x *Parser) bool {
     if !parsePrimary(x) {
         ret false
     }
     for ; ; {
         var t: *lex.Token = x.l.peek()
-        // 方法/字段选择：.name（不计 expr）
         if lex.Token.is(t, lex.DELIMITER, ".") {
-            x.l.next()
-            var part: *lex.Token = expectName(x, EEXPR)
-            if part == nil {
+            if !parseSelectorSuffix(x) {
                 ret false
             }
             continue
         }
-        // 索引/切片：a[i] / a[lo:hi] / a[lo:] / a[:hi]
         if lex.Token.is(t, lex.DELIMITER, "[") {
-            x.l.next()
-            x.l.skipTerminators()
-            if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
-                x.l.next()
-                if !lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
-                    if !parseExpr(x) {
-                        ret false
-                    }
-                }
-                if !expect(x, lex.DELIMITER, "]", EEXPR) {
-                    ret false
-                }
-                continue
-            }
-            if !parseExpr(x) {
-                ret false
-            }
-            var t2: *lex.Token = x.l.peek()
-            if lex.Token.is(t2, lex.DELIMITER, ":") {
-                x.l.next()
-                // 可选 start 或 end: a[i:j], a[i:], a[:j], a[:]（start 已消费）
-                if !lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
-                    if !parseExpr(x) {
-                        ret false
-                    }
-                }
-                // 第三可选步长：a[start:end:step]
-                if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
-                    x.l.next()
-                    if !lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
-                        if !parseExpr(x) {
-                            ret false
-                        }
-                    }
-                }
-                if !expect(x, lex.DELIMITER, "]", EEXPR) {
-                    ret false
-                }
-                continue
-            }
-            if !expect(x, lex.DELIMITER, "]", EEXPR) {
+            if !parseIndexSuffix(x) {
                 ret false
             }
             continue
         }
-        // 函数调用/泛型调用：f(args) / f[T](args)
         if lex.Token.is(t, lex.DELIMITER, "(") {
             if !parseCallArgs(x) {
                 ret false
             }
             continue
         }
-        // 泛型调用：f[T, U](args) —— 后接 ( 才是调用；否则不消耗（留给外层索引路径）
-        if lex.Token.is(t, lex.DELIMITER, "[") {
-            ret true
-        }
+        // 既不是 . [ ( 就结束——变参泛型调用在这里停（留给外层索引路径）。
         break
     }
     ret true

@@ -7,22 +7,40 @@ import lex "../lexer"
 // 用 x.l.prefetch() 把前瞻 token 扫入 lexer 预取环、不弹出——
 // 决定 kind 之后，后续 Peek/next 按原序弹出这些 token，无需 pushBack 重放。
 // 退出条件：遇到 ; { NONE 或扫满 12 个。
+// scanForOneAhead 单步预取并扫到 for 头：命中就升级 kind；只决定，不消费环。
+fn scanForOneAhead(x *Parser, kind int) int {
+    var t: *lex.Token = x.l.prefetch()
+    if t.Type == lex.NONE {
+        ret 0
+    }
+    if t.Type == lex.DELIMITER {
+        if strings.eq(t.Value, ";") || strings.eq(t.Value, "{") {
+            ret 0
+        }
+        if strings.eq(t.Value, ":=") && kind == 3 {
+            ret 2
+        }
+        ret kind
+    }
+    if t.Type == lex.KEYWORD && strings.eq(t.Value, "range") {
+        ret 1
+    }
+    ret kind
+}
+
 fn scanForKind(x *Parser) int {
     var kind: int = 3
     var n: int = 0
     for ; n < 12; {
-        var t: *lex.Token = x.l.prefetch()
-        if t.Type == lex.NONE {
+        var newKind: int = scanForOneAhead(x, kind)
+        if newKind == 0 {
             break
         }
-        if t.Type == lex.DELIMITER && (strings.eq(t.Value, ";") || strings.eq(t.Value, "{")) {
-            break
-        }
-        if t.Type == lex.KEYWORD && strings.eq(t.Value, "range") {
+        if newKind == 1 {
             kind = 1
             break
         }
-        if t.Type == lex.DELIMITER && strings.eq(t.Value, ":=") && kind == 3 {
+        if newKind == 2 {
             kind = 2
         }
         n = n + 1
@@ -30,7 +48,142 @@ fn scanForKind(x *Parser) int {
     ret kind
 }
 
-// parsePrimary 解析字面量、名字、括号表达式、复合字面量（表达式叶子计数）。
+// consumeToBrace 消费直到遇到 '{'（post 子句用）；遇 NONE 报错。
+fn consumeToBrace(x *Parser) bool {
+    for ; ; {
+        var t: *lex.Token = x.l.peek()
+        if lex.Token.is(t, lex.DELIMITER, "{") {
+            ret true
+        }
+        if t == nil || t.Type == lex.NONE {
+            fail(x, ESTMT, 0)
+            ret false
+        }
+        x.l.next()
+    }
+}
+
+// parseForSemicolonCond 处理 for ; cond ; post { }：cond/post 均可为空。
+fn parseForSemicolonCond(x *Parser) bool {
+    x.l.next()
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
+        if !parseExpr(x) {
+            ret false
+        }
+    }
+    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+        ret false
+    }
+    if !consumeToBrace(x) {
+        ret false
+    }
+    ret parseBlock(x)
+}
+
+// parseForInitVarTyped 处理 `for var name: Type` 头部。
+fn parseForInitVarTyped(x *Parser) bool {
+    x.l.next()
+    var nameT: *lex.Token = expectName(x, ESTMT)
+    if nameT == nil {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+        ret false
+    }
+    if !skipType(x) {
+        ret false
+    }
+    ret expect(x, lex.DELIMITER, "=", ESTMT)
+}
+
+// parseForInitCondPost 处理 `= expr ; cond ; post { }`。
+fn parseForInitCondPost(x *Parser) bool {
+    if !parseExpr(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+        ret false
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+        ret false
+    }
+    if !consumeToBrace(x) {
+        ret false
+    }
+    ret parseBlock(x)
+}
+
+// parseForVarInit 处理 for var name: T = expr; cond ; post { }。
+fn parseForVarInit(x *Parser) bool {
+    if !parseForInitVarTyped(x) {
+        ret false
+    }
+    ret parseForInitCondPost(x)
+}
+
+// parseForRangeStmt 处理 range 形式 for i, v := range xs { }。
+fn parseForRangeStmt(x *Parser) bool {
+    for ; ; {
+        var nt: *lex.Token = expectName(x, ESTMT)
+        if nt == nil {
+            ret false
+        }
+        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+            break
+        }
+        x.l.next()
+    }
+    if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+        ret false
+    }
+    if !expectKeyword(x, "range", ESTMT) {
+        ret false
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    ret parseBlock(x)
+}
+
+// parseForClassicInit 处理 classic init 段（可带 var 声明或表达式 := 形式）。
+fn parseForClassicInit(x *Parser) bool {
+    var tInit: *lex.Token = x.l.peek()
+    if lex.Token.is(tInit, lex.KEYWORD, "var") {
+        x.l.next()
+        ret parseVarConst(x, "var")
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+        ret false
+    }
+    ret parseExpr(x)
+}
+
+// parseForClassicStmt 处理 kind==2 for init ; cond ; post { }。
+fn parseForClassicStmt(x *Parser) bool {
+    if !parseForClassicInit(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+        ret false
+    }
+    if !parseExpr(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+        ret false
+    }
+    if !consumeToBrace(x) {
+        ret false
+    }
+    ret parseBlock(x)
+}
+
 fn parseForStmt(x *Parser) bool {
     var kw: string = "for"
     var t: *lex.Token = x.l.peek()
@@ -40,139 +193,18 @@ fn parseForStmt(x *Parser) bool {
     if !expectKeyword(x, kw, ESTMT) {
         ret false
     }
-    var kind: int = scanForKind(x)
-    var t2: *lex.Token = x.l.peek()
-    if lex.Token.is(t2, lex.DELIMITER, ";") {
-        // for ; cond ; post { } —— cond 可空（for ; ; { }）
-        x.l.next()
-        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
-            if !parseExpr(x) {
-                ret false
-            }
-        }
-        if !expect(x, lex.DELIMITER, ";", ESTMT) {
-            ret false
-        }
-        for ; ; {
-            var t3: *lex.Token = x.l.peek()
-            if lex.Token.is(t3, lex.DELIMITER, "{") {
-                break
-            }
-            if t3 == nil || t3.Type == lex.NONE {
-                ret false
-            }
-            x.l.next()
-        }
-        ret parseBlock(x)
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
+        ret parseForSemicolonCond(x)
     }
     if lex.Token.is(x.l.peek(), lex.KEYWORD, "var") {
-        x.l.next()
-        var nameT: *lex.Token = expectName(x, ESTMT)
-        if nameT == nil {
-            ret false
-        }
-        // init: var name: T = expr；expr 直接解析到 ; 为止
-        if !expect(x, lex.DELIMITER, ":", ESTMT) {
-            ret false
-        }
-        if !skipType(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, "=", ESTMT) {
-            ret false
-        }
-        if !parseExpr(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, ";", ESTMT) {
-            ret false
-        }
-        if !parseExpr(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, ";", ESTMT) {
-            ret false
-        }
-        for ; ; {
-            var t2: *lex.Token = x.l.peek()
-            if lex.Token.is(t2, lex.DELIMITER, "{") {
-                break
-            }
-            if t2 == nil || t2.Type == lex.NONE {
-                ret false
-            }
-            x.l.next()
-        }
-        ret parseBlock(x)
+        ret parseForVarInit(x)
     }
+    var kind: int = scanForKind(x)
     if kind == 1 {
-        // range: IDENT [ "," IDENT ]* ":=" "range" EXPR { ... }
-        var n: int = 0
-        for ; ; {
-            var nt: *lex.Token = expectName(x, ESTMT)
-            if nt == nil {
-                ret false
-            }
-            var p: *lex.Token = x.l.peek()
-            if lex.Token.is(p, lex.DELIMITER, ",") {
-                x.l.next()
-                n = n + 1
-                continue
-            }
-            break
-        }
-        if !expect(x, lex.DELIMITER, ":=", ESTMT) {
-            ret false
-        }
-        if !expectKeyword(x, "range", ESTMT) {
-            ret false
-        }
-        if !parseExpr(x) {
-            ret false
-        }
-        ret parseBlock(x)
+        ret parseForRangeStmt(x)
     }
     if kind == 2 {
-        // classic: [var] EXPR ; EXPR ; EXPR { ... }（init 可含 := 或省略 var 声明）
-        var tInit: *lex.Token = x.l.peek()
-        if lex.Token.is(tInit, lex.KEYWORD, "var") {
-            x.l.next()
-            // init 段走 var 声明解析
-            if !parseVarConst(x, "var") {
-                ret false
-            }
-        } else {
-            if !parseExpr(x) {
-                ret false
-            }
-            if !expect(x, lex.DELIMITER, ":=", ESTMT) {
-                ret false
-            }
-            if !parseExpr(x) {
-                ret false
-            }
-        }
-        if !expect(x, lex.DELIMITER, ";", ESTMT) {
-            ret false
-        }
-        if !parseExpr(x) {
-            ret false
-        }
-        if !expect(x, lex.DELIMITER, ";", ESTMT) {
-            ret false
-        }
-        // post 子句：到 '{' 为止
-        for ; ; {
-            var t2: *lex.Token = x.l.peek()
-            if lex.Token.is(t2, lex.DELIMITER, "{") {
-                break
-            }
-            if t2 == nil || t2.Type == lex.NONE {
-                ret false
-            }
-            x.l.next()
-        }
-        ret parseBlock(x)
+        ret parseForClassicStmt(x)
     }
     if atOpen(x) {
         ret parseBlock(x)

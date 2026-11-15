@@ -93,50 +93,53 @@ fn fail(x *Parser, e int, pos int) {
     x.ep = unsafe.cast[uint](pos)
 }
 
+// dispatchSimpleKeyword 处理具名关键字（import/build/fn/struct/enum）。
+fn dispatchSimpleKeyword(x *Parser, kw string) bool {
+    if strings.eq(kw, "import") { ret parseImportFromKeyword(x) }
+    if strings.eq(kw, "build") { ret parseBuildFromKeyword(x) }
+    if strings.eq(kw, "fn") { ret parseFnFromKeyword(x) }
+    if strings.eq(kw, "struct") { ret parseStructDeclFromKeyword(x) }
+    if strings.eq(kw, "enum") { ret parseEnumFromKeyword(x) }
+    ret false
+}
+
+// parseTypeDeclKeyword 处理 `type` 关键字（可分组或单条）。
+fn parseTypeDeclKeyword(x *Parser, t *lex.Token) bool {
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
+        ret parseGroupedDecl(x, "type")
+    }
+    ret parseTypeFromKeyword(x, t)
+}
+
+// isVarConstLetKindVarConstLet case for var/const/let。
+fn isDeclKindVarConstLet(kw string) bool {
+    ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
+}
+
 // parseDeclKeyword 按关键字分派顶层声明。
 // 前瞻走 x.l.peek()（lexer 预取环首视图，幂等、不消费）；
 // 消费走 x.l.next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.prefetch()（入环不弹）。
 fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
-    if strings.eq(kw, "import") {
-        if !parseImportFromKeyword(x) {
-            ret false
-        }
-        ret true
-    }
-    if strings.eq(kw, "build") {
-        if !parseBuildFromKeyword(x) {
-            ret false
-        }
-        ret true
-    }
-    if strings.eq(kw, "fn") {
-        if !parseFnFromKeyword(x) {
-            ret false
-        }
+    if dispatchSimpleKeyword(x, kw) {
         ret true
     }
     if strings.eq(kw, "type") {
-        x.l.skipTerminators()
-        if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-            ret parseGroupedDecl(x, "type")
-        }
-        ret parseTypeFromKeyword(x, t)
+        ret parseTypeDeclKeyword(x, t)
     }
-    if strings.eq(kw, "struct") {
-        ret parseStructDeclFromKeyword(x)
-    }
-    if strings.eq(kw, "enum") {
-        ret parseEnumFromKeyword(x)
-    }
-    if strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let") {
-        return parseVarConstDispatch(x, kw)
+    if isDeclKindVarConstLet(kw) {
+        ret parseVarConstDispatch(x, kw)
     }
     fail(x, EDECL, t.Pos)
     ret false
 }
 
-// 以下 *FromKeyword 变体在关键字已被消费后继续解析（避免重复消费）。
+// isDeclKeyword 顶层声明关键字（含裸 var/const/let）。
 fn isDeclKeyword(kw string) bool {
+    ret isDeclKeywordHelper(kw)
+}
+
+fn isDeclKeywordHelper(kw string) bool {
     if strings.eq(kw, "import") { ret true }
     if strings.eq(kw, "build") { ret true }
     if strings.eq(kw, "fn") { ret true }
@@ -146,6 +149,39 @@ fn isDeclKeyword(kw string) bool {
     if strings.eq(kw, "var") { ret true }
     if strings.eq(kw, "const") { ret true }
     if strings.eq(kw, "let") { ret true }
+    ret false
+}
+
+// fileKeywordToken 处理 t.Type == KEYWORD 的情形：分派到 isDeclKeyword 或报错。
+fn fileKeywordToken(x *Parser, t *lex.Token) bool {
+    if !isDeclKeyword(t.Value) {
+        fail(x, EDECL, t.Pos)
+        ret false
+    }
+    x.l.next()
+    ret parseDeclKeyword(x, t.Value, t)
+}
+
+// fileImplicitVarStmt 处理 t.Type == NAME 的顶层隐式 var：name: T = v。
+fn fileImplicitVarStmt(x *Parser, t *lex.Token) bool {
+    var nameT: *lex.Token = x.l.next()
+    var p2: *lex.Token = x.l.peek()
+    if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+        if !expect(x, lex.DELIMITER, ":", EDECL) {
+            ret false
+        }
+        if !skipType(x) {
+            ret false
+        }
+        if !expect(x, lex.DELIMITER, "=", EDECL) {
+            ret false
+        }
+        restOfLineAtDepth0(x)
+        x.decls = x.decls + 1
+        x.vars = x.vars + 1
+        ret true
+    }
+    fail(x, EDECL, nameT.Pos)
     ret false
 }
 
@@ -161,45 +197,17 @@ fn file(x *Parser) {
             ret
         }
         if t.Type == lex.KEYWORD {
-            if isDeclKeyword(t.Value) {
-                var kw: string = t.Value
-                x.l.next()
-                var okDecl: bool = parseDeclKeyword(x, kw, t)
-                if !okDecl {
-                    ret
-                }
-                continue
+            if !fileKeywordToken(x, t) {
+                ret
             }
-            fail(x, EDECL, t.Pos)
-            ret
+            continue
         }
         if t.Type == lex.NAME {
-            // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
-            var nameT: *lex.Token = x.l.next()
-            var p2: *lex.Token = x.l.peek()
-            if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
-                if !expect(x, lex.DELIMITER, ":", EDECL) {
-                    ret
-                }
-                if !skipType(x) {
-                    ret
-                }
-                if !expect(x, lex.DELIMITER, "=", EDECL) {
-                    ret
-                }
-                restOfLineAtDepth0(x)
-                x.decls = x.decls + 1
-                x.vars = x.vars + 1
-                continue
+            if !fileImplicitVarStmt(x, t) {
+                ret
             }
-            fail(x, EDECL, nameT.Pos)
-            ret
+            continue
         }
-        if t.Type == lex.STRING || t.Type == lex.NUMBER {
-            fail(x, EDECL, t.Pos)
-            ret
-        }
-        // 顶层孤立的分隔符/其他：声明位置语法错误
         fail(x, EDECL, t.Pos)
         ret
     }

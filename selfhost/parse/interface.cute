@@ -3,6 +3,29 @@
 import "std:strings"
 import lex "../lexer"
 
+// parseInterfaceMember 解析接口体内一项（方法头或嵌入式接口的裸名）。
+fn parseInterfaceMember(x *Parser) bool {
+    var t: *lex.Token = x.l.peek()
+    if t.Type != lex.NAME {
+        fail(x, EDECL, t.Pos)
+        ret false
+    }
+    x.l.next()
+    var p: *lex.Token = x.l.peek()
+    if lex.Token.isLineEnd(p) {
+        ret true
+    }
+    if lex.Token.is(p, lex.DELIMITER, "(") {
+        x.l.next()
+        if !parseFuncParams(x) {
+            ret false
+        }
+        ret parseRetTypes(x)
+    }
+    fail(x, EDECL, p.Pos)
+    ret false
+}
+
 fn parseInterfaceBody(x *Parser) bool {
     if !expect(x, lex.DELIMITER, "{", EDECL) {
         ret false
@@ -18,29 +41,9 @@ fn parseInterfaceBody(x *Parser) bool {
             x.l.next()
             ret true
         }
-        if t.Type != lex.NAME {
-            fail(x, EDECL, t.Pos)
+        if !parseInterfaceMember(x) {
             ret false
         }
-        x.l.next()
-        // 嵌入式接口（仅 NAME 换行）
-        var p: *lex.Token = x.l.peek()
-        if lex.Token.isLineEnd(p) {
-            continue
-        }
-        if lex.Token.is(p, lex.DELIMITER, "(") {
-            x.l.next()
-            if !parseFuncParams(x) {
-                ret false
-            }
-            if !parseRetTypes(x) {
-                ret false
-            }
-            continue
-        }
-        // 不是方法头：记错
-        fail(x, EDECL, p.Pos)
-        ret false
     }
 }
 

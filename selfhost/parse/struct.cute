@@ -3,6 +3,72 @@
 import "std:strings"
 import lex "../lexer"
 
+// parseAnonymousEmbed 处理 @Name 匿名嵌入或 alias @Name。
+fn parseAnonymousEmbed(x *Parser) bool {
+    x.l.next()
+    ret expectName(x, EDECL) != nil
+}
+
+// consumeStructFieldTag 字段可选的 RAW 标签（`json:"..."` 归在 STRING token）。
+fn consumeStructFieldTag(x *Parser) bool {
+    var pTag: *lex.Token = x.l.peek()
+    if pTag != nil && pTag.Type == lex.STRING {
+        x.l.next()
+    }
+    ret true
+}
+
+// consumeStructFieldDefault 字段可选的默认值 = expr。
+fn consumeStructFieldDefault(x *Parser) bool {
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, "=") {
+        ret true
+    }
+    x.l.next()
+    restOfLineAtDepth0(x)
+    ret true
+}
+
+// parseTypedField 解析 field : Type（含可选的标签/默认值）。':' 已被调用方，位置指向类型起始。
+fn parseTypedField(x *Parser) bool {
+    if !skipType(x) {
+        ret false
+    }
+    consumeStructFieldTag(x)
+    consumeStructFieldDefault(x)
+    ret true
+}
+
+// parseStructField 解析一个字段：匿名嵌入 / 修饰符 / typed field / 别名嵌入。
+fn parseStructField(x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "@") {
+        ret parseAnonymousEmbed(x)
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "!") || lex.Token.is(x.l.peek(), lex.DELIMITER, "?") {
+        x.l.next()
+    }
+    var fieldName: *lex.Token = x.l.peek()
+    if fieldName == nil || fieldName.Type != lex.NAME {
+        if (fieldName) {
+            fail(x, EDECL, fieldName.Pos)
+        } else {
+            fail(x, EDECL, 0)
+        }
+        ret false
+    }
+    x.l.next()
+    var afterField: *lex.Token = x.l.peek()
+    if lex.Token.is(afterField, lex.DELIMITER, ":") {
+        x.l.next()
+        ret parseTypedField(x)
+    }
+    if lex.Token.is(afterField, lex.DELIMITER, "@") {
+        ret parseAnonymousEmbed(x)
+    }
+    // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
+    // NAME 已消费，其他也不消费——等待外层循环继续找 }。
+    ret true
+}
+
 fn parseStructBody(x *Parser) bool {
     if !expect(x, lex.DELIMITER, "{", EDECL) {
         ret false
@@ -18,59 +84,9 @@ fn parseStructBody(x *Parser) bool {
             x.l.next()
             ret true
         }
-        // 匿名嵌入父结构：@Name / alias @Name
-        if lex.Token.is(t, lex.DELIMITER, "@") {
-            x.l.next()
-            var parentN: *lex.Token = expectName(x, EDECL)
-            if parentN == nil {
-                ret false
-            }
-            continue
-        }
-        // 访问修饰符 !（只读）/ ?（只写）
-        var t0: *lex.Token = x.l.peek()
-        if lex.Token.is(t0, lex.DELIMITER, "!") || lex.Token.is(t0, lex.DELIMITER, "?") {
-            x.l.next()
-        }
-        // 尝试识别合法的字段形态（name: Type / field @Parent / 完整未识别静默忽略）
-        var fieldName: *lex.Token = x.l.peek()
-        if fieldName == nil || fieldName.Type != lex.NAME {
-            fail(x, EDECL, fieldName.Pos)
+        if !parseStructField(x) {
             ret false
         }
-        // 先看 fieldName 后面是什么决定怎么处理
-        x.l.next()
-        var afterField: *lex.Token = x.l.peek()
-        if lex.Token.is(afterField, lex.DELIMITER, ":") {
-            x.l.next()
-            if !skipType(x) {
-                ret false
-            }
-            // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
-            var pTag: *lex.Token = x.l.peek()
-            if pTag != nil && pTag.Type == lex.STRING {
-                x.l.next()
-            }
-            // 字段默认值 = expr
-            var pDef: *lex.Token = x.l.peek()
-            if lex.Token.is(pDef, lex.DELIMITER, "=") {
-                x.l.next()
-                restOfLineAtDepth0(x)
-            }
-            continue
-        }
-        if lex.Token.is(afterField, lex.DELIMITER, "@") {
-            // alias @Parent：fieldName @Parent
-            x.l.next()
-            var parentN: *lex.Token = expectName(x, EDECL)
-            if parentN == nil {
-                ret false
-            }
-            continue
-        }
-        // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
-        // NAME 已消费，什么也不做，回到循环态等待结构性 token；与 Go 参考一致
-        continue
     }
 }
 

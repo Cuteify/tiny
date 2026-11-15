@@ -3,9 +3,17 @@
 import "std:strings"
 import lex "../lexer"
 
-fn atCaseOrClose(x *Parser) bool {
-    var t: *lex.Token = x.l.peek()
-    if lex.Token.is(t, lex.KEYWORD, "case") || lex.Token.is(t, lex.KEYWORD, "default") {
+// isCaseClauseKeyword case 或 default。
+fn isCaseClauseKeyword(kw string) bool {
+    ret strings.eq(kw, "case") || strings.eq(kw, "default")
+}
+
+// atClauseBoundary 是否到了 case 端尾部（case/default/}/EOF/NONE）。
+fn atClauseBoundary(t *lex.Token) bool {
+    if t == nil || t.Type == lex.NONE {
+        ret true
+    }
+    if isCaseClauseKeyword(t.Value) {
         ret true
     }
     ret lex.Token.is(t, lex.DELIMITER, "}")
@@ -15,15 +23,7 @@ fn atCaseOrClose(x *Parser) bool {
 fn parseCaseBody(x *Parser) bool {
     for ; ; {
         x.l.skipTerminators()
-        var t: *lex.Token = x.l.peek()
-        if t == nil || t.Type == lex.NONE {
-            fail(x, ESTMT, 0)
-            ret false
-        }
-        if lex.Token.is(t, lex.KEYWORD, "case") || lex.Token.is(t, lex.KEYWORD, "default") {
-            ret true
-        }
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if atClauseBoundary(x.l.peek()) {
             ret true
         }
         if !parseStmt(x) {
@@ -32,13 +32,56 @@ fn parseCaseBody(x *Parser) bool {
     }
 }
 
-// parseSwitchStmt 解析 switch 语句（无目标 switch / 带目标）。
+// parseCaseValues 解析一个 case 后的表达式列表，逗号分隔。
+fn parseCaseValues(x *Parser) bool {
+    for ; ; {
+        if !parseExpr(x) {
+            ret false
+        }
+        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+            ret true
+        }
+        x.l.next()
+    }
+}
+
+// parseOneCase 解析 `case a, b, ...: body`。
+fn parseOneCase(x *Parser) bool {
+    x.l.next()
+    if !parseCaseValues(x) {
+        ret false
+    }
+    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+        ret false
+    }
+    ret parseCaseBody(x)
+}
+
+// parseDefaultClause 解析 `default: body`。
+fn parseDefaultClause(x *Parser) bool {
+    x.l.next()
+    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+        ret false
+    }
+    ret parseCaseBody(x)
+}
+
+// parseSwitchClause 解析一个 case/default 从句。
+fn parseSwitchClause(x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.KEYWORD, "case") {
+        ret parseOneCase(x)
+    }
+    if lex.Token.is(x.l.peek(), lex.KEYWORD, "default") {
+        ret parseDefaultClause(x)
+    }
+    ret false
+}
+
 fn parseSwitchStmt(x *Parser) bool {
     if !expectKeyword(x, "switch", ESTMT) {
         ret false
     }
-    var t: *lex.Token = x.l.peek()
-    if !lex.Token.is(t, lex.DELIMITER, "{") {
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, "{") {
         if !parseExpr(x) {
             ret false
         }
@@ -53,32 +96,8 @@ fn parseSwitchStmt(x *Parser) bool {
             x.l.next()
             ret true
         }
-        if lex.Token.is(t2, lex.KEYWORD, "case") {
-            x.l.next()
-            for ; ; {
-                if !parseExpr(x) {
-                    ret false
-                }
-                if lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
-                    x.l.next()
-                    continue
-                }
-                break
-            }
-            if !expect(x, lex.DELIMITER, ":", ESTMT) {
-                ret false
-            }
-            if !parseCaseBody(x) {
-                ret false
-            }
-            continue
-        }
-        if lex.Token.is(t2, lex.KEYWORD, "default") {
-            x.l.next()
-            if !expect(x, lex.DELIMITER, ":", ESTMT) {
-                ret false
-            }
-            if !parseCaseBody(x) {
+        if isCaseClauseKeyword(t2.Value) {
+            if !parseSwitchClause(x) {
                 ret false
             }
             continue

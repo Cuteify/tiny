@@ -6,18 +6,44 @@ type EnumBlock struct {
     Name: string
 }
 
+// parseEnumOptionalType 解析可选的 `: type` 底层类型注解。
+fn parseEnumOptionalType(x *Parser) bool {
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        ret true
+    }
+    x.l.next()
+    ret skipType(x)
+}
+
+// parseEnumMember 解析一个 enum 成员（name [= expr] [,] [;]）。
+fn parseEnumMember(x *Parser) bool {
+    var t: *lex.Token = x.l.peek()
+    if t.Type != lex.NAME {
+        fail(x, EDECL, t.Pos)
+        ret false
+    }
+    x.l.next()
+    x.l.skipTerminators()
+    var p2: *lex.Token = x.l.peek()
+    if lex.Token.is(p2, lex.DELIMITER, "=") {
+        x.l.next()
+        restOfLineAtDepth0(x)
+        ret true
+    }
+    if lex.Token.is(p2, lex.DELIMITER, ",") || lex.Token.is(p2, lex.DELIMITER, ";") {
+        x.l.next()
+    }
+    ret true
+}
+
 fn parseEnumFromKeyword(x *Parser) bool {
     var nameT: *lex.Token = expectName(x, EDECL)
     if nameT == nil {
         ret false
     }
     x.l.skipTerminators()
-    var p: *lex.Token = x.l.peek()
-    if lex.Token.is(p, lex.DELIMITER, ":") {
-        x.l.next()
-        if !skipType(x) {
-            ret false
-        }
+    if !parseEnumOptionalType(x) {
+        ret false
     }
     if !expect(x, lex.DELIMITER, "{", EDECL) {
         ret false
@@ -35,21 +61,8 @@ fn parseEnumFromKeyword(x *Parser) bool {
             x.decls = x.decls + 1
             ret true
         }
-        if t.Type != lex.NAME {
-            fail(x, EDECL, t.Pos)
+        if !parseEnumMember(x) {
             ret false
-        }
-        x.l.next()
-        x.l.skipTerminators()
-        var p2: *lex.Token = x.l.peek()
-        if lex.Token.is(p2, lex.DELIMITER, "=") {
-            x.l.next()
-            restOfLineAtDepth0(x)
-            continue
-        }
-        if lex.Token.is(p2, lex.DELIMITER, ",") || lex.Token.is(p2, lex.DELIMITER, ";") {
-            x.l.next()
-            continue
         }
     }
 }

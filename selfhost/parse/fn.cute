@@ -7,47 +7,57 @@ type FuncBlock struct {
     Name: string
 }
 
+// parseDotNameSuffix 可选的 `.name` 后缀（方法声明中的接收者名）。
+fn parseDotNameSuffix(x *Parser) bool {
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ".") {
+        ret true
+    }
+    x.l.next()
+    ret expectName(x, EDECL) != nil
+}
+
+// parseGenericParams 解析泛型参数列表 [T[, U....]]。
+fn parseGenericParams(x *Parser) bool {
+    x.l.skipTerminators()
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, "[") {
+        ret true
+    }
+    x.l.next()
+    for ; ; {
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
+        if lex.Token.is(t, lex.DELIMITER, "]") {
+            x.l.next()
+            ret true
+        }
+        var tp: *lex.Token = expectName(x, EDECL)
+        if tp == nil {
+            ret false
+        }
+        var p3: *lex.Token = x.l.peek()
+        if lex.Token.is(p3, lex.DELIMITER, "]") {
+            x.l.next()
+            ret true
+        }
+        if lex.Token.is(p3, lex.DELIMITER, ",") {
+            x.l.next()
+            continue
+        }
+        ret false
+    }
+}
+
 fn parseFnFromKeyword(x *Parser) bool {
-    // fn 关键字已被消费
     var nameT: *lex.Token = expectName(x, EDECL)
     if nameT == nil {
         ret false
     }
     x.l.skipTerminators()
-    var p: *lex.Token = x.l.peek()
-    if lex.Token.is(p, lex.DELIMITER, ".") {
-        x.l.next()
-        var m: *lex.Token = expectName(x, EDECL)
-        if m == nil {
-            ret false
-        }
+    if !parseDotNameSuffix(x) {
+        ret false
     }
-    x.l.skipTerminators()
-    var p2: *lex.Token = x.l.peek()
-    if lex.Token.is(p2, lex.DELIMITER, "[") {
-        x.l.next()
-        for ; ; {
-            x.l.skipTerminators()
-            var t: *lex.Token = x.l.peek()
-            if lex.Token.is(t, lex.DELIMITER, "]") {
-                x.l.next()
-                break
-            }
-            var tp: *lex.Token = expectName(x, EDECL)
-            if tp == nil {
-                ret false
-            }
-            var p3: *lex.Token = x.l.peek()
-            if lex.Token.is(p3, lex.DELIMITER, "]") {
-                x.l.next()
-                break
-            }
-            if lex.Token.is(p3, lex.DELIMITER, ",") {
-                x.l.next()
-                continue
-            }
-            break
-        }
+    if !parseGenericParams(x) {
+        ret false
     }
     x.l.skipTerminators()
     if !expect(x, lex.DELIMITER, "(", EDECL) {

@@ -3,102 +3,151 @@
 import "std:strings"
 import lex "../lexer"
 
+// isParamOpenBracket 参数默认值的开括号。
+fn isParamOpenBracket(v string) bool {
+    ret strings.eq(v, "(") || strings.eq(v, "[") || strings.eq(v, "{")
+}
+
+// isParamCloseBracket 形态深度的收尾括号（']'/'}'）。
+fn isParamCloseBracket(v string) bool {
+    ret strings.eq(v, "]") || strings.eq(v, "}")
+}
+
+// isParamCloseDelim 形态深度 0 时，默认值分隔符（','/NL/CR）。
+fn isParamCloseDelim(v string, depth int) bool {
+    if depth != 0 {
+        ret false
+    }
+    if strings.eq(v, ",") {
+        ret true
+    }
+    ret unsafe.cast[int](v[0]) == 10 || unsafe.cast[int](v[0]) == 13
+}
+
+// consumeParamDefaultValue 消费 `= expr` 的默认值：括号深度记录使多项式式默认值不误断。
+// dispatchDefaultDelim 对分隔符分档：1=深 2=括-sub 3=括-clos 4=其他 0=收尾。
+fn dispatchDefaultDelim(v string, depth int) int {
+    if isParamOpenBracket(v) {
+        ret 1
+    }
+    if strings.eq(v, ")") {
+        if depth == 0 {
+            ret 0
+        }
+        ret 2
+    }
+    if isParamCloseBracket(v) {
+        ret 3
+    }
+    if isParamCloseDelim(v, depth) {
+        ret 0
+    }
+    ret 4
+}
+
+fn consumeParamDefaultValue(x *Parser) bool {
+    x.l.next()
+    var depth: int = 0
+    for ; ; {
+        var t: *lex.Token = x.l.peek()
+        if t == nil || t.Type == lex.NONE {
+            ret true
+        }
+        if t.Type == lex.DELIMITER {
+            var kind: int = dispatchDefaultDelim(t.Value, depth)
+            if kind == 0 {
+                ret true
+            }
+            if kind == 1 {
+                depth = depth + 1
+            } else if kind == 2 {
+                depth = depth - 1
+            } else if kind == 3 {
+                if depth > 0 {
+                    depth = depth - 1
+                }
+            }
+            x.l.next()
+            continue
+        }
+        x.l.next()
+    }
+}
+
+// parseParamTypeAfterName 参数类型段：name [...] | name : T | name Type，省略类型时 name 即必须有默认。
+fn parseParamTypeAfterName(x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "...") {
+        x.l.next()
+        ret skipType(x)
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        x.l.next()
+        ret skipType(x)
+    }
+    ret skipType(x)
+}
+
+// parseParamVariadic 变参无名形态：...T，必须到 ')' 为止，否则报错。
+fn parseParamVariadic(x *Parser) bool {
+    x.l.next()
+    if !skipType(x) {
+        ret false
+    }
+    ret lex.Token.is(x.l.peek(), lex.DELIMITER, ")")
+}
+
+// parseParamOne 解析一个参数段（'...T' 无名或 'name [typeExpr]'）。
+fn parseParamOne(x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "...") {
+        ret parseParamVariadic(x)
+    }
+    var nameT: *lex.Token = x.l.next()
+    if nameT == nil || nameT.Type != lex.NAME {
+        if (nameT) {
+            fail(x, EDECL, nameT.Pos)
+        } else {
+            fail(x, EDECL, 0)
+        }
+        ret false
+    }
+    ret parseParamTypeAfterName(x)
+}
+
+// consumeParamSeparator 每参之后的分隔符：) 收尾 / , 进入下一参 / 换行继续。
+fn consumeParamSeparator(x *Parser) bool {
+    var pSep: *lex.Token = x.l.peek()
+    if lex.Token.is(pSep, lex.DELIMITER, ")") {
+        ret true
+    }
+    if lex.Token.is(pSep, lex.DELIMITER, ",") {
+        x.l.next()
+        ret true
+    }
+    if pSep != nil && pSep.Type == lex.DELIMITER && (unsafe.cast[int](pSep.Value[0]) == 10 || unsafe.cast[int](pSep.Value[0]) == 13) {
+        ret true
+    }
+    ret false
+}
+
+// parseFuncParams 参数列表主循环：')' 收尾，每个参数可带默认值。
 fn parseFuncParams(x *Parser) bool {
     for ; ; {
         x.l.skipTerminators()
-        var p: *lex.Token = x.l.peek()
-        if lex.Token.is(p, lex.DELIMITER, ")") {
+        if lex.Token.is(x.l.peek(), lex.DELIMITER, ")") {
             x.l.next()
             ret true
         }
-        // 变参 ...T（无名）
-        if lex.Token.is(p, lex.DELIMITER, "...") {
-            x.l.next()
-            if !skipType(x) {
-                ret false
-            }
-            var pEnd: *lex.Token = x.l.peek()
-            if lex.Token.is(pEnd, lex.DELIMITER, ")") {
-                continue
-            }
+        if !parseParamOne(x) {
             ret false
         }
-        // 具名参数 name ... / name: Type / name Type
-        var nameT: *lex.Token = x.l.next()
-        if nameT == nil || nameT.Type != lex.NAME {
-            if (nameT) {
-                fail(x, EDECL, nameT.Pos)
-            } else {
-                fail(x, EDECL, 0)
+        if lex.Token.is(x.l.peek(), lex.DELIMITER, "=") {
+            if !consumeParamDefaultValue(x) {
+                ret false
             }
+        }
+        if !consumeParamSeparator(x) {
             ret false
         }
-        // 变参具名形式 name ...Type
-        var pVar: *lex.Token = x.l.peek()
-        if lex.Token.is(pVar, lex.DELIMITER, "...") {
-            x.l.next()
-            if !skipType(x) {
-                ret false
-            }
-        } else if lex.Token.is(pVar, lex.DELIMITER, ":") {
-            x.l.next()
-            if !skipType(x) {
-                ret false
-            }
-        } else {
-            // 裸类型：name Type
-            if !skipType(x) {
-                ret false
-            }
-        }
-        // 默认值 = expr：跳过到 ',' 或 ')'
-        var pDef: *lex.Token = x.l.peek()
-        if lex.Token.is(pDef, lex.DELIMITER, "=") {
-            x.l.next()
-            var depth: int = 0
-            for ; ; {
-                var t: *lex.Token = x.l.peek()
-                if t == nil {
-                    ret true
-                }
-                if t.Type == lex.NONE {
-                    ret true
-                }
-                if t.Type == lex.DELIMITER {
-                    if strings.eq(t.Value, "(") || strings.eq(t.Value, "[") || strings.eq(t.Value, "{") {
-                        depth = depth + 1
-                    } else if strings.eq(t.Value, ")") {
-                        if depth == 0 {
-                            break
-                        }
-                        depth = depth - 1
-                    } else if strings.eq(t.Value, "]") || strings.eq(t.Value, "}") {
-                        if depth > 0 {
-                            depth = depth - 1
-                        }
-                    } else if strings.eq(t.Value, ",") && depth == 0 {
-                        break
-                    } else if unsafe.cast[int](t.Value[0]) == 10 && depth == 0 {
-                        break
-                    }
-                }
-                x.l.next()
-            }
-        }
-        // 分隔符
-        var pSep: *lex.Token = x.l.peek()
-        if lex.Token.is(pSep, lex.DELIMITER, ")") {
-            continue
-        }
-        if lex.Token.is(pSep, lex.DELIMITER, ",") {
-            x.l.next()
-            continue
-        }
-        // 最后一参之后的行尾：允许换行（参数跨行）
-        if pSep != nil && pSep.Type == lex.DELIMITER && (unsafe.cast[int](pSep.Value[0]) == 10 || unsafe.cast[int](pSep.Value[0]) == 13) {
-            continue
-        }
-        ret false
     }
 }
 
@@ -106,39 +155,40 @@ fn parseFuncParams(x *Parser) bool {
 // ============ M2：表达式与语句 ============
 
 // prec 二元运算符优先级（低值先结合；与 S3 opTable 一致）。
+// consumeCallArgsTail 逗号分隔的实参尾巴（可省略，“...” 为 spread）。
+fn consumeCallArgsTail(x *Parser) bool {
+    var t2: *lex.Token = x.l.peek()
+    if lex.Token.is(t2, lex.DELIMITER, ",") || lex.Token.is(t2, lex.DELIMITER, "...") {
+        x.l.next()
+        ret true
+    }
+    if lex.Token.is(t2, lex.DELIMITER, ")") {
+        ret true
+    }
+    if t2 == nil || t2.Type == lex.NONE {
+        fail(x, EEXPR, 0)
+        ret false
+    }
+    fail(x, EEXPR, t2.Pos)
+    ret false
+}
+
 fn parseCallArgs(x *Parser) bool {
     if !expect(x, lex.DELIMITER, "(", EEXPR) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
-        var t: *lex.Token = x.l.peek()
-        if lex.Token.is(t, lex.DELIMITER, ")") {
+        if lex.Token.is(x.l.peek(), lex.DELIMITER, ")") {
             x.l.next()
             ret true
         }
         if !parseExpr(x) {
             ret false
         }
-        var t2: *lex.Token = x.l.peek()
-        if lex.Token.is(t2, lex.DELIMITER, ",") {
-            x.l.next()
-            continue
-        }
-        if lex.Token.is(t2, lex.DELIMITER, ")") {
-            continue
-        }
-        if lex.Token.is(t2, lex.DELIMITER, "...") {
-            x.l.next()
-            continue
-        }
-        var t3: *lex.Token = x.l.peek()
-        if t3 == nil || t3.Type == lex.NONE {
-            fail(x, EEXPR, 0)
+        if !consumeCallArgsTail(x) {
             ret false
         }
-        fail(x, EEXPR, t3.Pos)
-        ret false
     }
 }
 
