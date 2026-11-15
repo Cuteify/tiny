@@ -2,16 +2,16 @@
 import "std:strings"
 import lex "../lexer"
 
-type VarBlock struct {
-    Name: string
-}
 
-type ConstBlock struct {
-    Name: string
-}
 
-fn parseVarConst(x *Parser, kind string) bool {
-    var nameT: *lex.Token = expectName(x, EDECL)
+
+
+
+
+fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string) bool {
+    var fileBlock: FileBlock
+    var typeBlock: TypeBlock
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
     }
@@ -19,14 +19,14 @@ fn parseVarConst(x *Parser, kind string) bool {
     var hasType: bool = lex.Token.is(t, lex.DELIMITER, ":")
     if hasType {
         x.l.next()
-        if !skipType(x) {
+        if !TypeBlock.skipType(typeBlock, x) {
             ret false
         }
     }
     var eqT: *lex.Token = x.l.peek()
     if lex.Token.is(eqT, lex.DELIMITER, "=") {
         x.l.next()
-        restOfLineAtDepth0(x)
+        FileBlock.restOfLineAtDepth0(fileBlock, x)
     } else if !hasType {
         // var x 无类型也无初值：声明但零值（允许）
     }
@@ -39,10 +39,11 @@ fn parseVarConst(x *Parser, kind string) bool {
     ret true
 }
 
-fn parseVarConstDispatch(x *Parser, kind string) bool {
+fn VarBlock.parseVarConstDispatch(r VarBlock, x *Parser, kind string) bool {
+    var typeBlock: TypeBlock
     x.l.skipTerminators()
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-        ret parseGroupedDecl(x, kind)
+        ret TypeBlock.parseGroupedDecl(typeBlock, x, kind)
     }
-    ret parseVarConst(x, kind)
+    ret VarBlock.parseVarConst(r, x, kind)
 }

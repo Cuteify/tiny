@@ -3,14 +3,17 @@
 import "std:strings"
 import lex "../lexer"
 
-fn parseIfStmt(x *Parser) bool {
-    if !expectKeyword(x, "if", ESTMT) {
+fn IfBlock.parseIfStmt(r IfBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
+    if !FileBlock.expectKeyword(fileBlock, x, "if", ESTMT) {
         ret false
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    if !parseBlock(x) {
+    if !StmtBlock.parseBlock(stmtBlock, x) {
         ret false
     }
     var t: *lex.Token = x.l.peek()
@@ -18,9 +21,9 @@ fn parseIfStmt(x *Parser) bool {
         x.l.next()
         var t2: *lex.Token = x.l.peek()
         if lex.Token.is(t2, lex.KEYWORD, "if") {
-            ret parseIfStmt(x)
+            ret IfBlock.parseIfStmt(r, x)
         }
-        ret parseBlock(x)
+        ret StmtBlock.parseBlock(stmtBlock, x)
     }
     ret true
 }

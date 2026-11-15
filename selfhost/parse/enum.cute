@@ -2,24 +2,25 @@
 import "std:strings"
 import lex "../lexer"
 
-type EnumBlock struct {
-    Name: string
-}
 
-// parseEnumOptionalType 解析可选的 `: type` 底层类型注解。
-fn parseEnumOptionalType(x *Parser) bool {
+
+
+// parseOptionalType 解析可选的 `: type` 底层类型注解。
+fn EnumBlock.parseOptionalType(r EnumBlock, x *Parser) bool {
+    var typeBlock: TypeBlock
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
         ret true
     }
     x.l.next()
-    ret skipType(x)
+    ret TypeBlock.skipType(typeBlock, x)
 }
 
-// parseEnumMember 解析一个 enum 成员（name [= expr] [,] [;]）。
-fn parseEnumMember(x *Parser) bool {
+// parseMember 解析一个 enum 成员（name [= expr] [,] [;]）。
+fn EnumBlock.parseMember(r EnumBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var t: *lex.Token = x.l.peek()
     if t.Type != lex.NAME {
-        fail(x, EDECL, t.Pos)
+        FileBlock.fail(fileBlock, x, EDECL, t.Pos)
         ret false
     }
     x.l.next()
@@ -27,7 +28,7 @@ fn parseEnumMember(x *Parser) bool {
     var p2: *lex.Token = x.l.peek()
     if lex.Token.is(p2, lex.DELIMITER, "=") {
         x.l.next()
-        restOfLineAtDepth0(x)
+        FileBlock.restOfLineAtDepth0(fileBlock, x)
         ret true
     }
     if lex.Token.is(p2, lex.DELIMITER, ",") || lex.Token.is(p2, lex.DELIMITER, ";") {
@@ -36,23 +37,26 @@ fn parseEnumMember(x *Parser) bool {
     ret true
 }
 
-fn parseEnumFromKeyword(x *Parser) bool {
-    var nameT: *lex.Token = expectName(x, EDECL)
+// parseFromKeyword 解析 `enum Name { ... }`。
+fn EnumBlock.parse(r EnumBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
     }
+    r.Name = nameT.Value
     x.l.skipTerminators()
-    if !parseEnumOptionalType(x) {
+    if !EnumBlock.parseOptionalType(r, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, "{", EDECL) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            fail(x, ESTMT, 0)
+            FileBlock.fail(fileBlock, x, ESTMT, 0)
             ret false
         }
         if lex.Token.is(t, lex.DELIMITER, "}") {
@@ -61,7 +65,7 @@ fn parseEnumFromKeyword(x *Parser) bool {
             x.decls = x.decls + 1
             ret true
         }
-        if !parseEnumMember(x) {
+        if !EnumBlock.parseMember(r, x) {
             ret false
         }
     }

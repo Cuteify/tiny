@@ -8,45 +8,45 @@ import "std:strings"
 import lex "../lexer"
 
 // expect 期望一个指定种类+值的 token（跳过行尾）；失败记错。
-fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
+fn FileBlock.expect(r FileBlock, x *Parser, kind: lex.TokenType, value string, e int) bool {
     x.l.skipLineEnds()
     var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
-        fail(x, e, 0)
+        FileBlock.fail(r, x, e, 0)
         ret false
     }
     if !lex.Token.is(t, kind, value) {
-        fail(x, e, t.Pos)
+        FileBlock.fail(r, x, e, t.Pos)
         ret false
     }
     ret true
 }
 
 // expectName 期望一个 NAME；失败记错并返回零指针。
-fn expectName(x *Parser, e int) *lex.Token {
+fn FileBlock.expectName(r FileBlock, x *Parser, e int) *lex.Token {
     x.l.skipLineEnds()
     var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
-        fail(x, e, 0)
+        FileBlock.fail(r, x, e, 0)
         ret 0
     }
     if t.Type != lex.NAME {
-        fail(x, e, t.Pos)
+        FileBlock.fail(r, x, e, t.Pos)
         ret 0
     }
     ret t
 }
 
 // expectKeyword 期望一个关键字；失败记错。
-fn expectKeyword(x *Parser, kw string, e int) bool {
+fn FileBlock.expectKeyword(r FileBlock, x *Parser, kw string, e int) bool {
     x.l.skipLineEnds()
     var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
-        fail(x, e, 0)
+        FileBlock.fail(r, x, e, 0)
         ret false
     }
     if !lex.Token.is(t, lex.KEYWORD, kw) {
-        fail(x, e, t.Pos)
+        FileBlock.fail(r, x, e, t.Pos)
         ret false
     }
     ret true
@@ -54,12 +54,12 @@ fn expectKeyword(x *Parser, kw string, e int) bool {
 
 // consumeBalanced 已吃进起始符后消费至配平；用于函数体/asm 块。
 // 遇到不平衡 EOF 记 e；返回 false。
-fn consumeBalanced(x *Parser, open string, close string, e int) bool {
+fn FileBlock.consumeBalanced(r FileBlock, x *Parser, open string, close string, e int) bool {
     var depth: int = 1
     for ; depth > 0; {
         var t: *lex.Token = x.l.next()
         if t == nil || t.Type == lex.NONE {
-            fail(x, e, 0)
+            FileBlock.fail(r, x, e, 0)
             ret false
         }
         if t.Type == lex.DELIMITER {
@@ -76,19 +76,9 @@ fn consumeBalanced(x *Parser, open string, close string, e int) bool {
     ret true
 }
 
-// isOpenBracket 括号/列表/花括号开。
-fn isOpenBracket(v string) bool {
-    ret strings.eq(v, "(") || strings.eq(v, "[") || strings.eq(v, "{")
-}
-
-// isCloseBracket 括号/列表/花括号闭。
-fn isCloseBracket(v string) bool {
-    ret strings.eq(v, ")") || strings.eq(v, "]") || strings.eq(v, "}")
-}
-
 // restOfLineAtDepth0 跳到行尾/回车/EOF；括号/列表/花括号深度内逗号保留。
 // 用于 var/const 初值与字段默认值（精确解析前）。
-fn restOfLineAtDepth0(x *Parser) {
+fn FileBlock.restOfLineAtDepth0(r FileBlock, x *Parser) {
     var depth: int = 0
     for ; ; {
         var t: *lex.Token = x.l.peek()
@@ -99,9 +89,9 @@ fn restOfLineAtDepth0(x *Parser) {
             ret
         }
         if t.Type == lex.DELIMITER {
-            if isOpenBracket(t.Value) {
+            if strings.eq(t.Value, "(") || strings.eq(t.Value, "[") || strings.eq(t.Value, "{") {
                 depth = depth + 1
-            } else if isCloseBracket(t.Value) {
+            } else if strings.eq(t.Value, ")") || strings.eq(t.Value, "]") || strings.eq(t.Value, "}") {
                 if depth == 0 {
                     ret
                 }

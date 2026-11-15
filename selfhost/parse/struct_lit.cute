@@ -3,8 +3,9 @@
 import "std:strings"
 import lex "../lexer"
 
-fn parseStructLit(x *Parser) bool {
-    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+fn ExpBlock.parseStructLit(r ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", ESTMT) {
         ret false
     }
     for ; ; {
@@ -16,14 +17,15 @@ fn parseStructLit(x *Parser) bool {
         }
         var nameT: *lex.Token = x.l.peek()
         if nameT.Type != lex.NAME {
-            fail(x, ESTMT, nameT.Pos)
+            FileBlock.fail(fileBlock, x, ESTMT, nameT.Pos)
             ret false
         }
         x.l.next()
-        if !expect(x, lex.DELIMITER, ":", ESTMT) {
+        if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
             ret false
         }
-        if !parseExpr(x) {
+        var eb: ExpBlock
+        if !ExpBlock.parseExpr(eb, x) {
             ret false
         }
         var t2: *lex.Token = x.l.peek()
@@ -34,7 +36,7 @@ fn parseStructLit(x *Parser) bool {
         if lex.Token.is(t2, lex.DELIMITER, "}") {
             continue
         }
-        fail(x, ESTMT, t2.Pos)
+        FileBlock.fail(fileBlock, x, ESTMT, t2.Pos)
         ret false
     }
 }

@@ -8,7 +8,7 @@ import lex "../lexer"
 // 决定 kind 之后，后续 Peek/next 按原序弹出这些 token，无需 pushBack 重放。
 // 退出条件：遇到 ; { NONE 或扫满 12 个。
 // scanForOneAhead 单步预取并扫到 for 头：命中就升级 kind；只决定，不消费环。
-fn scanForOneAhead(x *Parser, kind int) int {
+fn ForBlock.scanForOneAhead(r ForBlock, x *Parser, kind int) int {
     var t: *lex.Token = x.l.prefetch()
     if t.Type == lex.NONE {
         ret 0
@@ -28,11 +28,11 @@ fn scanForOneAhead(x *Parser, kind int) int {
     ret kind
 }
 
-fn scanForKind(x *Parser) int {
+fn ForBlock.scanForKind(r ForBlock, x *Parser) int {
     var kind: int = 3
     var n: int = 0
     for ; n < 12; {
-        var newKind: int = scanForOneAhead(x, kind)
+        var newKind: int = ForBlock.scanForOneAhead(r, x, kind)
         if newKind == 0 {
             break
         }
@@ -49,14 +49,15 @@ fn scanForKind(x *Parser) int {
 }
 
 // consumeToBrace 消费直到遇到 '{'（post 子句用）；遇 NONE 报错。
-fn consumeToBrace(x *Parser) bool {
+fn ForBlock.consumeToBrace(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     for ; ; {
         var t: *lex.Token = x.l.peek()
         if lex.Token.is(t, lex.DELIMITER, "{") {
             ret true
         }
         if t == nil || t.Type == lex.NONE {
-            fail(x, ESTMT, 0)
+            FileBlock.fail(fileBlock, x, ESTMT, 0)
             ret false
         }
         x.l.next()
@@ -64,70 +65,81 @@ fn consumeToBrace(x *Parser) bool {
 }
 
 // parseForSemicolonCond 处理 for ; cond ; post { }：cond/post 均可为空。
-fn parseForSemicolonCond(x *Parser) bool {
+fn ForBlock.parseForSemicolonCond(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
     x.l.next()
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
-        if !parseExpr(x) {
+        var eb: ExpBlock
+        if !ExpBlock.parseExpr(eb, x) {
             ret false
         }
     }
-    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ";", ESTMT) {
         ret false
     }
-    if !consumeToBrace(x) {
+    if !ForBlock.consumeToBrace(r, x) {
         ret false
     }
-    ret parseBlock(x)
+    ret StmtBlock.parseBlock(stmtBlock, x)
 }
 
 // parseForInitVarTyped 处理 `for var name: Type` 头部。
-fn parseForInitVarTyped(x *Parser) bool {
+fn ForBlock.parseForInitVarTyped(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var typeBlock: TypeBlock
     x.l.next()
-    var nameT: *lex.Token = expectName(x, ESTMT)
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, ESTMT)
     if nameT == nil {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
         ret false
     }
-    if !skipType(x) {
+    if !TypeBlock.skipType(typeBlock, x) {
         ret false
     }
-    ret expect(x, lex.DELIMITER, "=", ESTMT)
+    ret FileBlock.expect(fileBlock, x, lex.DELIMITER, "=", ESTMT)
 }
 
 // parseForInitCondPost 处理 `= expr ; cond ; post { }`。
-fn parseForInitCondPost(x *Parser) bool {
-    if !parseExpr(x) {
+fn ForBlock.parseForInitCondPost(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ";", ESTMT) {
         ret false
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ";", ESTMT) {
         ret false
     }
-    if !consumeToBrace(x) {
+    if !ForBlock.consumeToBrace(r, x) {
         ret false
     }
-    ret parseBlock(x)
+    ret StmtBlock.parseBlock(stmtBlock, x)
 }
 
 // parseForVarInit 处理 for var name: T = expr; cond ; post { }。
-fn parseForVarInit(x *Parser) bool {
-    if !parseForInitVarTyped(x) {
+fn ForBlock.parseForVarInit(r ForBlock, x *Parser) bool {
+    if !ForBlock.parseForInitVarTyped(r, x) {
         ret false
     }
-    ret parseForInitCondPost(x)
+    ret ForBlock.parseForInitCondPost(r, x)
 }
 
 // parseForRangeStmt 处理 range 形式 for i, v := range xs { }。
-fn parseForRangeStmt(x *Parser) bool {
+fn ForBlock.parseForRangeStmt(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
     for ; ; {
-        var nt: *lex.Token = expectName(x, ESTMT)
+        var nt: *lex.Token = FileBlock.expectName(fileBlock, x, ESTMT)
         if nt == nil {
             ret false
         }
@@ -136,82 +148,93 @@ fn parseForRangeStmt(x *Parser) bool {
         }
         x.l.next()
     }
-    if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":=", ESTMT) {
         ret false
     }
-    if !expectKeyword(x, "range", ESTMT) {
+    if !FileBlock.expectKeyword(fileBlock, x, "range", ESTMT) {
         ret false
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    ret parseBlock(x)
+    ret StmtBlock.parseBlock(stmtBlock, x)
 }
 
 // parseForClassicInit 处理 classic init 段（可带 var 声明或表达式 := 形式）。
-fn parseForClassicInit(x *Parser) bool {
+fn ForBlock.parseForClassicInit(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var varBlock: VarBlock
     var tInit: *lex.Token = x.l.peek()
     if lex.Token.is(tInit, lex.KEYWORD, "var") {
         x.l.next()
-        ret parseVarConst(x, "var")
+        ret VarBlock.parseVarConst(varBlock, x, "var")
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ":=", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":=", ESTMT) {
         ret false
     }
-    ret parseExpr(x)
+    var eb: ExpBlock
+    ret ExpBlock.parseExpr(eb, x)
 }
 
 // parseForClassicStmt 处理 kind==2 for init ; cond ; post { }。
-fn parseForClassicStmt(x *Parser) bool {
-    if !parseForClassicInit(x) {
+fn ForBlock.parseForClassicStmt(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
+    if !ForBlock.parseForClassicInit(r, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ";", ESTMT) {
         ret false
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ";", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ";", ESTMT) {
         ret false
     }
-    if !consumeToBrace(x) {
+    if !ForBlock.consumeToBrace(r, x) {
         ret false
     }
-    ret parseBlock(x)
+    ret StmtBlock.parseBlock(stmtBlock, x)
 }
 
-fn parseForStmt(x *Parser) bool {
+fn ForBlock.parseForStmt(r ForBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
     var kw: string = "for"
     var t: *lex.Token = x.l.peek()
     if lex.Token.is(t, lex.KEYWORD, "while") {
         kw = "while"
     }
-    if !expectKeyword(x, kw, ESTMT) {
+    if !FileBlock.expectKeyword(fileBlock, x, kw, ESTMT) {
         ret false
     }
     if lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
-        ret parseForSemicolonCond(x)
+        ret ForBlock.parseForSemicolonCond(r, x)
     }
     if lex.Token.is(x.l.peek(), lex.KEYWORD, "var") {
-        ret parseForVarInit(x)
+        ret ForBlock.parseForVarInit(r, x)
     }
-    var kind: int = scanForKind(x)
+    var kind: int = ForBlock.scanForKind(r, x)
     if kind == 1 {
-        ret parseForRangeStmt(x)
+        ret ForBlock.parseForRangeStmt(r, x)
     }
     if kind == 2 {
-        ret parseForClassicStmt(x)
+        ret ForBlock.parseForClassicStmt(r, x)
     }
-    if atOpen(x) {
-        ret parseBlock(x)
+    if StmtBlock.atOpen(stmtBlock, x) {
+        ret StmtBlock.parseBlock(stmtBlock, x)
     }
-    if !parseExpr(x) {
+    var eb: ExpBlock
+    if !ExpBlock.parseExpr(eb, x) {
         ret false
     }
-    ret parseBlock(x)
+    ret StmtBlock.parseBlock(stmtBlock, x)
 }
 

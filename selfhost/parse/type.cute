@@ -2,34 +2,35 @@
 import "std:strings"
 import lex "../lexer"
 
-type TypeBlock struct {
-    Name: string
-}
 
-fn skipListTypeAfterBracket(x *Parser) bool {
+
+
+fn TypeBlock.skipListTypeAfterBracket(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var p: *lex.Token = x.l.peek()
     if lex.Token.is(p, lex.DELIMITER, "]") {
         x.l.next()
-        ret skipType(x)
+        ret TypeBlock.skipType(r, x)
     }
     var num: *lex.Token = x.l.next()
     if num == nil || num.Type != lex.NUMBER {
         if (num) {
-            fail(x, ETYPE, num.Pos)
+            FileBlock.fail(fileBlock, x, ETYPE, num.Pos)
         } else {
-            fail(x, ETYPE, 0)
+            FileBlock.fail(fileBlock, x, ETYPE, 0)
         }
         ret false
     }
-    if !expect(x, lex.DELIMITER, "]", ETYPE) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", ETYPE) {
         ret false
     }
-    ret skipType(x)
+    ret TypeBlock.skipType(r, x)
 }
 
 // skipFnTypeArgs 消费 fn 类型参数列表；允许变参 ...T。
-fn skipFnTypeArgs(x *Parser) bool {
-    if !expect(x, lex.DELIMITER, "(", ETYPE) {
+fn TypeBlock.skipFnTypeArgs(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "(", ETYPE) {
         ret false
     }
     for ; ; {
@@ -41,7 +42,7 @@ fn skipFnTypeArgs(x *Parser) bool {
         if lex.Token.is(p, lex.DELIMITER, "...") {
             x.l.next()
         }
-        if !skipType(x) {
+        if !TypeBlock.skipType(r, x) {
             ret false
         }
         if lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
@@ -52,9 +53,10 @@ fn skipFnTypeArgs(x *Parser) bool {
 }
 
 // skipMaybeTypeReturnTail fn 类型的返回值：可能是括号括起来的多返回值、单类型或无。
-fn skipMaybeTypeReturnTail(x *Parser) bool {
+fn TypeBlock.skipMaybeTypeReturnTail(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-        ret consumeBalanced(x, "(", ")", ETYPE)
+        ret FileBlock.consumeBalanced(fileBlock, x, "(", ")", ETYPE)
     }
     var p4: *lex.Token = x.l.peek()
     if p4 == nil {
@@ -62,28 +64,29 @@ fn skipMaybeTypeReturnTail(x *Parser) bool {
     }
     if p4.Type == lex.KEYWORD || p4.Type == lex.NAME || p4.Type == lex.DELIMITER {
         if lex.Token.is(p4, lex.DELIMITER, "*") || lex.Token.is(p4, lex.DELIMITER, "[") || p4.Type != lex.DELIMITER {
-            ret skipType(x)
+            ret TypeBlock.skipType(r, x)
         }
     }
     ret true
 }
 
 // skipFnType fn 类型：... [fn] ( T1, T2, ... ) R
-fn skipFnType(x *Parser) bool {
-    if !skipFnTypeArgs(x) {
+fn TypeBlock.skipFnType(r TypeBlock, x *Parser) bool {
+    if !TypeBlock.skipFnTypeArgs(r, x) {
         ret false
     }
-    ret skipMaybeTypeReturnTail(x)
+    ret TypeBlock.skipMaybeTypeReturnTail(r, x)
 }
 
 // skipDotQualified 消费 `.NAME` 序列；t 已包含首段。
-fn skipDotQualified(x *Parser) bool {
+fn TypeBlock.skipDotQualified(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     for ; ; {
         if !lex.Token.is(x.l.peek(), lex.DELIMITER, ".") {
             ret true
         }
         x.l.next()
-        var part: *lex.Token = expectName(x, ETYPE)
+        var part: *lex.Token = FileBlock.expectName(fileBlock, x, ETYPE)
         if part == nil {
             ret false
         }
@@ -91,79 +94,82 @@ fn skipDotQualified(x *Parser) bool {
 }
 
 // skipNamedType 处理 `NAME` 或 `NAME.NAME...`（含 map[K]V 泛型形式）。
-fn skipNamedType(x *Parser, t *lex.Token) bool {
-    if !skipDotQualified(x) {
+fn TypeBlock.skipNamedType(r TypeBlock, x *Parser, t *lex.Token) bool {
+    var fileBlock: FileBlock
+    if !TypeBlock.skipDotQualified(r, x) {
         ret false
     }
     if strings.eq(t.Value, "map") && lex.Token.is(x.l.peek(), lex.DELIMITER, "[") {
         x.l.next()
-        if !skipType(x) {
+        if !TypeBlock.skipType(r, x) {
             ret false
         }
-        if !expect(x, lex.DELIMITER, "]", ETYPE) {
+        if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", ETYPE) {
             ret false
         }
-        ret skipType(x)
+        ret TypeBlock.skipType(r, x)
     }
     ret true
 }
 
-fn skipType(x *Parser) bool {
+fn TypeBlock.skipType(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.skipTerminators()
     var t: *lex.Token = x.l.next()
     if t == nil {
-        fail(x, ETYPE, 0)
+        FileBlock.fail(fileBlock, x, ETYPE, 0)
         ret false
     }
     if t.Type == lex.DELIMITER {
         if strings.eq(t.Value, "*") {
-            ret skipType(x)
+            ret TypeBlock.skipType(r, x)
         }
         if strings.eq(t.Value, "[") {
-            ret skipListTypeAfterBracket(x)
+            ret TypeBlock.skipListTypeAfterBracket(r, x)
         }
-        fail(x, ETYPE, t.Pos)
+        FileBlock.fail(fileBlock, x, ETYPE, t.Pos)
         ret false
     }
     if t.Type == lex.KEYWORD {
         if strings.eq(t.Value, "fn") {
-            ret skipFnType(x)
+            ret TypeBlock.skipFnType(r, x)
         }
-        fail(x, ETYPE, t.Pos)
+        FileBlock.fail(fileBlock, x, ETYPE, t.Pos)
         ret false
     }
     if t.Type == lex.NAME {
-        ret skipNamedType(x, t)
+        ret TypeBlock.skipNamedType(r, x, t)
     }
-    fail(x, ETYPE, t.Pos)
+    FileBlock.fail(fileBlock, x, ETYPE, t.Pos)
     ret false
 }
 
 
 // parseTypeGroupEntry 解析 `type (` 分组中的一条目（struct/interface/alias/N T 裸类型）。
-fn parseTypeGroupEntry(x *Parser) bool {
+fn TypeBlock.parseTypeGroupEntry(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var nameT: *lex.Token = x.l.next()
     if nameT == nil || nameT.Type != lex.NAME {
         if (nameT) {
-            fail(x, EDECL, nameT.Pos)
+            FileBlock.fail(fileBlock, x, EDECL, nameT.Pos)
         } else {
-            fail(x, EDECL, 0)
+            FileBlock.fail(fileBlock, x, EDECL, 0)
         }
         ret false
     }
     x.l.skipTerminators()
     var q: *lex.Token = x.l.peek()
     if lex.Token.is(q, lex.KEYWORD, "struct") {
-        ret parseTypeStructDecl(x)
+        ret TypeBlock.parseTypeStructDecl(r, x)
     }
     if lex.Token.is(q, lex.KEYWORD, "interface") {
-        ret parseTypeInterfaceDecl(x)
+        ret TypeBlock.parseTypeInterfaceDecl(r, x)
     }
     if lex.Token.is(q, lex.DELIMITER, "=") {
-        ret parseTypeAliasDecl(x)
+        ret TypeBlock.parseTypeAliasDecl(r, x)
     }
     // 裸新类型：N int / N []string / ...
-    if !skipType(x) {
+    if !TypeBlock.skipType(r, x) {
         ret false
     }
     x.decls = x.decls + 1
@@ -171,50 +177,53 @@ fn parseTypeGroupEntry(x *Parser) bool {
 }
 
 // parseGroupedBody 消费分组体直到 ')'：按 kind 在 type 与 var/const/let 间分派。
-fn parseGroupedBody(x *Parser, kind string) bool {
+fn TypeBlock.parseGroupedBody(r TypeBlock, x *Parser, kind string) bool {
+    var fileBlock: FileBlock
+    var varBlock: VarBlock
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            fail(x, ESTMT, 0)
+            FileBlock.fail(fileBlock, x, ESTMT, 0)
             ret false
         }
         if lex.Token.is(t, lex.DELIMITER, ")") {
             x.l.next()
             ret true
         }
-        if !isDeclKindType(kind) {
-            if !parseVarConst(x, kind) {
+        if !TypeBlock.isDeclKindType(r, kind) {
+            if !VarBlock.parseVarConst(varBlock, x, kind) {
                 ret false
             }
             continue
         }
-        if !parseTypeGroupEntry(x) {
+        if !TypeBlock.parseTypeGroupEntry(r, x) {
             ret false
         }
     }
 }
 
 // isDeclKindType group kind 判断。
-fn isDeclKindType(kind string) bool {
+fn TypeBlock.isDeclKindType(r TypeBlock, kind string) bool {
     ret strings.eq(kind, "type")
 }
 
 // parseGroupedDecl 解析分组声明 var/const/let/type ( ... )。
-fn parseGroupedDecl(x *Parser, kind string) bool {
+fn TypeBlock.parseGroupedDecl(r TypeBlock, x *Parser, kind string) bool {
     var p: *lex.Token = x.l.peek()
     if !lex.Token.is(p, lex.DELIMITER, "(") {
         ret false
     }
     x.l.next()
-    ret parseGroupedBody(x, kind)
+    ret TypeBlock.parseGroupedBody(r, x, kind)
 }
 
 // parseVarConst 解析单条 var/const/let 声明：[var|const] name[: Type] = v。
 // parseTypeStructDecl 处理 `type X struct {...}` 形式（struct body + 计数）。
-fn parseTypeStructDecl(x *Parser) bool {
+fn TypeBlock.parseTypeStructDecl(r TypeBlock, x *Parser) bool {
+    var structBlock: StructBlock
     x.l.next()
-    if !parseStructBody(x) {
+    if !StructBlock.parseStructBody(structBlock, x) {
         ret false
     }
     x.structs = x.structs + 1
@@ -223,9 +232,9 @@ fn parseTypeStructDecl(x *Parser) bool {
 }
 
 // parseTypeInterfaceDecl 处理 `type X interface { ... }` 形式。
-fn parseTypeInterfaceDecl(x *Parser) bool {
+fn TypeBlock.parseTypeInterfaceDecl(r TypeBlock, x *Parser) bool {
     x.l.next()
-    if !parseInterfaceBody(x) {
+    if !TypeBlock.parseInterfaceBody(r, x) {
         ret false
     }
     x.decls = x.decls + 1
@@ -233,9 +242,9 @@ fn parseTypeInterfaceDecl(x *Parser) bool {
 }
 
 // parseTypeAliasDecl 处理 `type X = Type` 真别名形式。
-fn parseTypeAliasDecl(x *Parser) bool {
+fn TypeBlock.parseTypeAliasDecl(r TypeBlock, x *Parser) bool {
     x.l.next()
-    if !skipType(x) {
+    if !TypeBlock.skipType(r, x) {
         ret false
     }
     x.decls = x.decls + 1
@@ -243,16 +252,18 @@ fn parseTypeAliasDecl(x *Parser) bool {
 }
 
 // parseTypeParentDecl 处理遗留的 `type X : Parent struct { ... }` 父类型语法。
-fn parseTypeParentDecl(x *Parser) bool {
+fn TypeBlock.parseTypeParentDecl(r TypeBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var structBlock: StructBlock
     x.l.next()
-    var parentN: *lex.Token = expectName(x, EDECL)
+    var parentN: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if parentN == nil {
         ret false
     }
-    if !expectKeyword(x, "struct", EDECL) {
+    if !FileBlock.expectKeyword(fileBlock, x, "struct", EDECL) {
         ret false
     }
-    if !parseStructBody(x) {
+    if !StructBlock.parseStructBody(structBlock, x) {
         ret false
     }
     x.structs = x.structs + 1
@@ -260,25 +271,26 @@ fn parseTypeParentDecl(x *Parser) bool {
     ret true
 }
 
-fn parseTypeFromKeyword(x *Parser, t *lex.Token) bool {
-    var nameT: *lex.Token = expectName(x, EDECL)
+fn TypeBlock.parseTypeFromKeyword(r TypeBlock, x *Parser, t *lex.Token) bool {
+    var fileBlock: FileBlock
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
     }
     x.l.skipTerminators()
     var q: *lex.Token = x.l.peek()
     if lex.Token.is(q, lex.KEYWORD, "struct") {
-        ret parseTypeStructDecl(x)
+        ret TypeBlock.parseTypeStructDecl(r, x)
     }
     if lex.Token.is(q, lex.KEYWORD, "interface") {
-        ret parseTypeInterfaceDecl(x)
+        ret TypeBlock.parseTypeInterfaceDecl(r, x)
     }
     if lex.Token.is(q, lex.DELIMITER, "=") {
-        ret parseTypeAliasDecl(x)
+        ret TypeBlock.parseTypeAliasDecl(r, x)
     }
     if lex.Token.is(q, lex.DELIMITER, ":") {
-        ret parseTypeParentDecl(x)
+        ret TypeBlock.parseTypeParentDecl(r, x)
     }
     // type X T —— 新类型定义（docs/LANGUAGE.md §5.1：type MyInt2 int）
-    ret skipType(x)
+    ret TypeBlock.skipType(r, x)
 }

@@ -2,10 +2,10 @@
 import "std:strings"
 import lex "../lexer"
 
-type FileBlock struct {
-}
 
-fn mk(src string) *Parser {
+
+
+fn FileBlock.mk(r FileBlock, src string) *Parser {
     var x: *Parser = new(Parser)
     x.l = lex.newLexer(src)
     x.e = OK
@@ -25,67 +25,67 @@ fn mk(src string) *Parser {
 }
 
 // err 返回首个错误码（OK 表示无错误）。
-fn err(x *Parser) int {
+fn FileBlock.err(r FileBlock, x *Parser) int {
     ret x.e
 }
 
 // errPos 返回首个错误的字节位置。
-fn errPos(x *Parser) uint {
+fn FileBlock.errPos(r FileBlock, x *Parser) uint {
     ret x.ep
 }
 
 // declCount 返回顶层声明数（import/build/fn/type/enum/var/const 均计入）。
-fn declCount(x *Parser) int {
+fn FileBlock.declCount(r FileBlock, x *Parser) int {
     ret x.decls
 }
 
 // importCount 返回 import 数（分组每个成员算一条）。
-fn importCount(x *Parser) int {
+fn FileBlock.importCount(r FileBlock, x *Parser) int {
     ret x.imports
 }
 
 // buildCount 返回 build 数。
-fn buildCount(x *Parser) int {
+fn FileBlock.buildCount(r FileBlock, x *Parser) int {
     ret x.builds
 }
 
 // structCount 返回 struct 数（含 type X struct 与旧式 struct X）。
-fn structCount(x *Parser) int {
+fn FileBlock.structCount(r FileBlock, x *Parser) int {
     ret x.structs
 }
 
 // enumCount 返回 enum 数。
-fn enumCount(x *Parser) int {
+fn FileBlock.enumCount(r FileBlock, x *Parser) int {
     ret x.enums
 }
 
 // fnCount 返回函数声明数。
-fn fnCount(x *Parser) int {
+fn FileBlock.fnCount(r FileBlock, x *Parser) int {
     ret x.fns
 }
 
 // varCount 返回 var 声明数。
-fn varCount(x *Parser) int {
+fn FileBlock.varCount(r FileBlock, x *Parser) int {
     ret x.vars
 }
 
 // constCount 返回 const 声明数。
-fn constCount(x *Parser) int {
+fn FileBlock.constCount(r FileBlock, x *Parser) int {
     ret x.consts
 }
 
 // stmtCount 返回语句数（块内语句）；M2 前恒为 0。
-fn stmtCount(x *Parser) int {
+fn FileBlock.stmtCount(r FileBlock, x *Parser) int {
     ret x.stmts
 }
 
 // exprCount 返回表达式数；M2 前恒为 0。
-fn exprCount(x *Parser) int {
+fn FileBlock.exprCount(r FileBlock, x *Parser) int {
     ret x.exprs
 }
 
 // fail 记录首个错误（不覆盖已记录的错误）。
-fn fail(x *Parser, e int, pos int) {
+fn FileBlock.fail(r FileBlock, x *Parser, e int, pos int) {
     if x.e != OK {
         ret
     }
@@ -94,52 +94,65 @@ fn fail(x *Parser, e int, pos int) {
 }
 
 // dispatchSimpleKeyword 处理具名关键字（import/build/fn/struct/enum）。
-fn dispatchSimpleKeyword(x *Parser, kw string) bool {
-    if strings.eq(kw, "import") { ret parseImportFromKeyword(x) }
-    if strings.eq(kw, "build") { ret parseBuildFromKeyword(x) }
-    if strings.eq(kw, "fn") { ret parseFnFromKeyword(x) }
-    if strings.eq(kw, "struct") { ret parseStructDeclFromKeyword(x) }
-    if strings.eq(kw, "enum") { ret parseEnumFromKeyword(x) }
+fn FileBlock.dispatchSimpleKeyword(r FileBlock, x *Parser, kw string) bool {
+    var structBlock: StructBlock
+    var importBlock: ImportBlock
+    if strings.eq(kw, "import") { ret ImportBlock.parseImportFromKeyword(importBlock, x) }
+    if strings.eq(kw, "build") {
+        var b: BuildBlock
+        ret BuildBlock.parse(b, x)
+    }
+    if strings.eq(kw, "fn") {
+        var f: FuncBlock
+        ret FuncBlock.parse(f, x)
+    }
+    if strings.eq(kw, "struct") { ret StructBlock.parseStructDeclFromKeyword(structBlock, x) }
+    if strings.eq(kw, "enum") {
+        var e: EnumBlock
+        ret EnumBlock.parse(e, x)
+    }
     ret false
 }
 
 // parseTypeDeclKeyword 处理 `type` 关键字（可分组或单条）。
-fn parseTypeDeclKeyword(x *Parser, t *lex.Token) bool {
+fn FileBlock.parseTypeDeclKeyword(r FileBlock, x *Parser, t *lex.Token) bool {
+    var typeBlock: TypeBlock
     x.l.skipTerminators()
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-        ret parseGroupedDecl(x, "type")
+        ret TypeBlock.parseGroupedDecl(typeBlock, x, "type")
     }
-    ret parseTypeFromKeyword(x, t)
+    ret TypeBlock.parseTypeFromKeyword(typeBlock, x, t)
 }
 
 // isVarConstLetKindVarConstLet case for var/const/let。
-fn isDeclKindVarConstLet(kw string) bool {
+fn FileBlock.isDeclKindVarConstLet(r FileBlock, kw string) bool {
     ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
 }
 
 // parseDeclKeyword 按关键字分派顶层声明。
 // 前瞻走 x.l.peek()（lexer 预取环首视图，幂等、不消费）；
 // 消费走 x.l.next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.prefetch()（入环不弹）。
-fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
-    if dispatchSimpleKeyword(x, kw) {
+fn FileBlock.parseDeclKeyword(r FileBlock, x *Parser, kw string, t *lex.Token) bool {
+    var varBlock: VarBlock
+    if FileBlock.dispatchSimpleKeyword(r, x, kw) {
         ret true
     }
     if strings.eq(kw, "type") {
-        ret parseTypeDeclKeyword(x, t)
+        ret FileBlock.parseTypeDeclKeyword(r, x, t)
     }
-    if isDeclKindVarConstLet(kw) {
-        ret parseVarConstDispatch(x, kw)
+    if FileBlock.isDeclKindVarConstLet(r, kw) {
+        ret VarBlock.parseVarConstDispatch(varBlock, x, kw)
     }
-    fail(x, EDECL, t.Pos)
+    FileBlock.fail(r, x, EDECL, t.Pos)
     ret false
 }
 
 // isDeclKeyword 顶层声明关键字（含裸 var/const/let）。
-fn isDeclKeyword(kw string) bool {
-    ret isDeclKeywordHelper(kw)
+fn FileBlock.isDeclKeyword(r FileBlock, kw string) bool {
+    ret FileBlock.isDeclKeywordHelper(r, kw)
 }
 
-fn isDeclKeywordHelper(kw string) bool {
+fn FileBlock.isDeclKeywordHelper(r FileBlock, kw string) bool {
     if strings.eq(kw, "import") { ret true }
     if strings.eq(kw, "build") { ret true }
     if strings.eq(kw, "fn") { ret true }
@@ -153,40 +166,41 @@ fn isDeclKeywordHelper(kw string) bool {
 }
 
 // fileKeywordToken 处理 t.Type == KEYWORD 的情形：分派到 isDeclKeyword 或报错。
-fn fileKeywordToken(x *Parser, t *lex.Token) bool {
-    if !isDeclKeyword(t.Value) {
-        fail(x, EDECL, t.Pos)
+fn FileBlock.fileKeywordToken(r FileBlock, x *Parser, t *lex.Token) bool {
+    if !FileBlock.isDeclKeyword(r, t.Value) {
+        FileBlock.fail(r, x, EDECL, t.Pos)
         ret false
     }
     x.l.next()
-    ret parseDeclKeyword(x, t.Value, t)
+    ret FileBlock.parseDeclKeyword(r, x, t.Value, t)
 }
 
 // fileImplicitVarStmt 处理 t.Type == NAME 的顶层隐式 var：name: T = v。
-fn fileImplicitVarStmt(x *Parser, t *lex.Token) bool {
+fn FileBlock.fileImplicitVarStmt(r FileBlock, x *Parser, t *lex.Token) bool {
+    var typeBlock: TypeBlock
     var nameT: *lex.Token = x.l.next()
     var p2: *lex.Token = x.l.peek()
     if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
-        if !expect(x, lex.DELIMITER, ":", EDECL) {
+        if !FileBlock.expect(r, x, lex.DELIMITER, ":", EDECL) {
             ret false
         }
-        if !skipType(x) {
+        if !TypeBlock.skipType(typeBlock, x) {
             ret false
         }
-        if !expect(x, lex.DELIMITER, "=", EDECL) {
+        if !FileBlock.expect(r, x, lex.DELIMITER, "=", EDECL) {
             ret false
         }
-        restOfLineAtDepth0(x)
+        FileBlock.restOfLineAtDepth0(r, x)
         x.decls = x.decls + 1
         x.vars = x.vars + 1
         ret true
     }
-    fail(x, EDECL, nameT.Pos)
+    FileBlock.fail(r, x, EDECL, nameT.Pos)
     ret false
 }
 
 // file 解析整个文件。
-fn file(x *Parser) {
+fn FileBlock.file(r FileBlock, x *Parser) {
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
@@ -197,18 +211,18 @@ fn file(x *Parser) {
             ret
         }
         if t.Type == lex.KEYWORD {
-            if !fileKeywordToken(x, t) {
+            if !FileBlock.fileKeywordToken(r, x, t) {
                 ret
             }
             continue
         }
         if t.Type == lex.NAME {
-            if !fileImplicitVarStmt(x, t) {
+            if !FileBlock.fileImplicitVarStmt(r, x, t) {
                 ret
             }
             continue
         }
-        fail(x, EDECL, t.Pos)
+        FileBlock.fail(r, x, EDECL, t.Pos)
         ret
     }
 }

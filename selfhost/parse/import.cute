@@ -2,19 +2,18 @@
 import "std:strings"
 import lex "../lexer"
 
-type ImportBlock struct {
-    Path: string
-    Alias: string
-}
+
+
 
 // expectImportString 消费一个 STRING 并期望失败记错；用于 import 路径。
-fn expectImportString(x *Parser) bool {
+fn ImportBlock.expectImportString(r ImportBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var strT: *lex.Token = x.l.next()
     if strT == nil || strT.Type != lex.STRING {
         if (strT) {
-            fail(x, EDECL, strT.Pos)
+            FileBlock.fail(fileBlock, x, EDECL, strT.Pos)
         } else {
-            fail(x, EDECL, 0)
+            FileBlock.fail(fileBlock, x, EDECL, 0)
         }
         ret false
     }
@@ -22,7 +21,8 @@ fn expectImportString(x *Parser) bool {
 }
 
 // parseImportOneItem 解析 import 分组里的一行（STRING / alias STRING / `,`）。
-fn parseImportOneItem(x *Parser) bool {
+fn ImportBlock.parseImportOneItem(r ImportBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var t: *lex.Token = x.l.peek()
     if t.Type == lex.STRING {
         x.l.next()
@@ -30,24 +30,25 @@ fn parseImportOneItem(x *Parser) bool {
     }
     if t.Type == lex.NAME {
         x.l.next()
-        ret expectImportString(x)
+        ret ImportBlock.expectImportString(r, x)
     }
     if lex.Token.is(t, lex.DELIMITER, ",") {
         x.l.next()
         ret true
     }
-    fail(x, EDECL, t.Pos)
+    FileBlock.fail(fileBlock, x, EDECL, t.Pos)
     ret false
 }
 
 // parseImportGroup 解析分组 `import ( ... )`：每行一个，可带 alias。
-fn parseImportGroup(x *Parser) bool {
+fn ImportBlock.parseImportGroup(r ImportBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.next()
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            fail(x, EDECL, 0)
+            FileBlock.fail(fileBlock, x, EDECL, 0)
             ret false
         }
         if lex.Token.is(t, lex.DELIMITER, ")") {
@@ -56,19 +57,19 @@ fn parseImportGroup(x *Parser) bool {
             x.decls = x.decls + 1
             ret true
         }
-        if !parseImportOneItem(x) {
+        if !ImportBlock.parseImportOneItem(r, x) {
             ret false
         }
     }
 }
 
 // parseImportSingle 解析单条 `import alias "path"`（含 alias="_" 形式）。
-fn parseImportSingle(x *Parser) bool {
+fn ImportBlock.parseImportSingle(r ImportBlock, x *Parser) bool {
     var maybeName: *lex.Token = x.l.peek()
     if maybeName != nil && maybeName.Type == lex.NAME {
         x.l.next()
     }
-    if !expectImportString(x) {
+    if !ImportBlock.expectImportString(r, x) {
         ret false
     }
     x.imports = x.imports + 1
@@ -76,9 +77,9 @@ fn parseImportSingle(x *Parser) bool {
     ret true
 }
 
-fn parseImportFromKeyword(x *Parser) bool {
+fn ImportBlock.parseImportFromKeyword(r ImportBlock, x *Parser) bool {
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-        ret parseImportGroup(x)
+        ret ImportBlock.parseImportGroup(r, x)
     }
-    ret parseImportSingle(x)
+    ret ImportBlock.parseImportSingle(r, x)
 }

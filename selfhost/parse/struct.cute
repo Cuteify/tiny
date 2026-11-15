@@ -4,13 +4,14 @@ import "std:strings"
 import lex "../lexer"
 
 // parseAnonymousEmbed 处理 @Name 匿名嵌入或 alias @Name。
-fn parseAnonymousEmbed(x *Parser) bool {
+fn StructBlock.parseAnonymousEmbed(r StructBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.next()
-    ret expectName(x, EDECL) != nil
+    ret FileBlock.expectName(fileBlock, x, EDECL) != nil
 }
 
 // consumeStructFieldTag 字段可选的 RAW 标签（`json:"..."` 归在 STRING token）。
-fn consumeStructFieldTag(x *Parser) bool {
+fn StructBlock.consumeStructFieldTag(r StructBlock, x *Parser) bool {
     var pTag: *lex.Token = x.l.peek()
     if pTag != nil && pTag.Type == lex.STRING {
         x.l.next()
@@ -19,29 +20,32 @@ fn consumeStructFieldTag(x *Parser) bool {
 }
 
 // consumeStructFieldDefault 字段可选的默认值 = expr。
-fn consumeStructFieldDefault(x *Parser) bool {
+fn StructBlock.consumeStructFieldDefault(r StructBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, "=") {
         ret true
     }
     x.l.next()
-    restOfLineAtDepth0(x)
+    FileBlock.restOfLineAtDepth0(fileBlock, x)
     ret true
 }
 
 // parseTypedField 解析 field : Type（含可选的标签/默认值）。':' 已被调用方，位置指向类型起始。
-fn parseTypedField(x *Parser) bool {
-    if !skipType(x) {
+fn StructBlock.parseTypedField(r StructBlock, x *Parser) bool {
+    var typeBlock: TypeBlock
+    if !TypeBlock.skipType(typeBlock, x) {
         ret false
     }
-    consumeStructFieldTag(x)
-    consumeStructFieldDefault(x)
+    StructBlock.consumeStructFieldTag(r, x)
+    StructBlock.consumeStructFieldDefault(r, x)
     ret true
 }
 
 // parseStructField 解析一个字段：匿名嵌入 / 修饰符 / typed field / 别名嵌入。
-fn parseStructField(x *Parser) bool {
+fn StructBlock.parseStructField(r StructBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "@") {
-        ret parseAnonymousEmbed(x)
+        ret StructBlock.parseAnonymousEmbed(r, x)
     }
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "!") || lex.Token.is(x.l.peek(), lex.DELIMITER, "?") {
         x.l.next()
@@ -49,9 +53,9 @@ fn parseStructField(x *Parser) bool {
     var fieldName: *lex.Token = x.l.peek()
     if fieldName == nil || fieldName.Type != lex.NAME {
         if (fieldName) {
-            fail(x, EDECL, fieldName.Pos)
+            FileBlock.fail(fileBlock, x, EDECL, fieldName.Pos)
         } else {
-            fail(x, EDECL, 0)
+            FileBlock.fail(fileBlock, x, EDECL, 0)
         }
         ret false
     }
@@ -59,40 +63,42 @@ fn parseStructField(x *Parser) bool {
     var afterField: *lex.Token = x.l.peek()
     if lex.Token.is(afterField, lex.DELIMITER, ":") {
         x.l.next()
-        ret parseTypedField(x)
+        ret StructBlock.parseTypedField(r, x)
     }
     if lex.Token.is(afterField, lex.DELIMITER, "@") {
-        ret parseAnonymousEmbed(x)
+        ret StructBlock.parseAnonymousEmbed(r, x)
     }
     // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
     // NAME 已消费，其他也不消费——等待外层循环继续找 }。
     ret true
 }
 
-fn parseStructBody(x *Parser) bool {
-    if !expect(x, lex.DELIMITER, "{", EDECL) {
+fn StructBlock.parseStructBody(r StructBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            fail(x, ESTMT, 0)
+            FileBlock.fail(fileBlock, x, ESTMT, 0)
             ret false
         }
         if lex.Token.is(t, lex.DELIMITER, "}") {
             x.l.next()
             ret true
         }
-        if !parseStructField(x) {
+        if !StructBlock.parseStructField(r, x) {
             ret false
         }
     }
 }
 
 // parseInterfaceBody 解析 interface { ... }（type X interface 复用）。
-fn parseStructDeclFromKeyword(x *Parser) bool {
-    var nameT: *lex.Token = expectName(x, EDECL)
+fn StructBlock.parseStructDeclFromKeyword(r StructBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
     }
@@ -100,12 +106,12 @@ fn parseStructDeclFromKeyword(x *Parser) bool {
     var p: *lex.Token = x.l.peek()
     if lex.Token.is(p, lex.DELIMITER, ":") {
         x.l.next()
-        var parentN: *lex.Token = expectName(x, EDECL)
+        var parentN: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
         if parentN == nil {
             ret false
         }
     }
-    if !parseStructBody(x) {
+    if !StructBlock.parseStructBody(r, x) {
         ret false
     }
     x.structs = x.structs + 1

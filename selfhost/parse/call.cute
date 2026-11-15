@@ -3,18 +3,367 @@
 import "std:strings"
 import lex "../lexer"
 
-// isParamOpenBracket 参数默认值的开括号。
-fn isParamOpenBracket(v string) bool {
+
+
+
+
+
+fn ExpBlock.prec(e ExpBlock, s string) int {
+    if strings.eq(s, "||") {
+        ret 1
+    }
+    if strings.eq(s, "&&") {
+        ret 2
+    }
+    if strings.eq(s, "==") || strings.eq(s, "!=") {
+        ret 3
+    }
+    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
+        ret 4
+    }
+    if strings.eq(s, "|") {
+        ret 5
+    }
+    if strings.eq(s, "^") {
+        ret 6
+    }
+    if strings.eq(s, "&") {
+        ret 7
+    }
+    if strings.eq(s, "<<") || strings.eq(s, ">>") {
+        ret 9
+    }
+    if strings.eq(s, "+") || strings.eq(s, "-") {
+        ret 10
+    }
+    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+        ret 11
+    }
+    ret 0
+}
+
+// parsePrimaryKeyword 处理 true/false/nil 关键字；非此三字时记 EEXPR。
+fn ExpBlock.parsePrimaryKeyword(e ExpBlock, x *Parser, t *lex.Token) bool {
+    var fileBlock: FileBlock
+    if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
+        x.exprs = x.exprs + 1
+        x.l.next()
+        ret true
+    }
+    FileBlock.fail(fileBlock, x, EEXPR, t.Pos)
+    ret false
+}
+
+// parsePrimaryName 处理单个 NAME：NAME{...} 结构体字面量需 NAME 与 '{' 严格相邻。
+fn ExpBlock.parsePrimaryName(e ExpBlock, x *Parser, t *lex.Token) bool {
+    x.exprs = x.exprs + 1
+    x.l.next()
+    var p: *lex.Token = x.l.peek()
+    if lex.Token.is(p, lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
+        ret ExpBlock.parseStructLit(e, x)
+    }
+    ret true
+}
+
+// parsePrimaryParen 处理括号分组表达式。
+fn ExpBlock.parsePrimaryParen(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    x.l.next()
+    x.l.skipTerminators()
+    if !ExpBlock.parseExpr(e, x) {
+        ret false
+    }
+    x.l.skipTerminators()
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ")", EEXPR) {
+        ret false
+    }
+    x.exprs = x.exprs + 1
+    ret true
+}
+
+// parseCompositePrimary 处理 []T{...} / [N]T{...} / map[K]V{...} 复合字面量。
+fn ExpBlock.parseCompositePrimary(e ExpBlock, x *Parser) bool {
+    if !ExpBlock.parseCompositeType(e, x) {
+        ret false
+    }
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "{") {
+        x.exprs = x.exprs + 1
+        ret ExpBlock.parseCompositeElems(e, x)
+    }
+    // 类型本身作为表达式实参，如 new([]int, 8)
+    x.exprs = x.exprs + 1
+    ret true
+}
+
+// isPrimaryKeywordValue 判断 token 是否为值型关键字（true/false/nil）。
+fn ExpBlock.isPrimaryKeywordValue(e ExpBlock, v string) bool {
+    ret strings.eq(v, "true") || strings.eq(v, "false") || strings.eq(v, "nil")
+}
+
+fn ExpBlock.parsePrimary(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    x.l.skipTerminators()
+    var t: *lex.Token = x.l.peek()
+    if t == nil {
+        FileBlock.fail(fileBlock, x, EEXPR, 0)
+        ret false
+    }
+    if t.Type == lex.NUMBER || t.Type == lex.STRING {
+        x.exprs = x.exprs + 1
+        x.l.next()
+        ret true
+    }
+    if t.Type == lex.KEYWORD {
+        ret ExpBlock.parsePrimaryKeyword(e, x, t)
+    }
+    if t.Type == lex.NAME {
+        ret ExpBlock.parsePrimaryName(e, x, t)
+    }
+    if lex.Token.is(t, lex.DELIMITER, "(") {
+        ret ExpBlock.parsePrimaryParen(e, x)
+    }
+    if lex.Token.is(t, lex.DELIMITER, "[") || strings.eq(t.Value, "map") {
+        ret ExpBlock.parseCompositePrimary(e, x)
+    }
+    FileBlock.fail(fileBlock, x, EEXPR, t.Pos)
+    ret false
+}
+
+// parseCompositeType 消费 []T / [N]T / map[K]V 前缀（不消耗 {）。
+// 反向不构建 AST。
+// parseMapTypeHead 解析 map[K]V 类型前缀（NAME "map" 已 peek、未消费）。
+fn ExpBlock.parseMapTypeHead(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var typeBlock: TypeBlock
+    x.l.next()
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "[", ETYPE) {
+        ret false
+    }
+    if !TypeBlock.skipType(typeBlock, x) {
+        ret false
+    }
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", ETYPE) {
+        ret false
+    }
+    ret TypeBlock.skipType(typeBlock, x)
+}
+
+// parseArrayTypeHead 解析切片 []T 与定长数组 [N]T 类型前缀（`[` 已 peek、未消费）。
+fn ExpBlock.parseArrayTypeHead(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var typeBlock: TypeBlock
+    x.l.next()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
+        x.l.next()
+        ret TypeBlock.skipType(typeBlock, x)
+    }
+    var num: *lex.Token = x.l.next()
+    if num == nil || num.Type != lex.NUMBER {
+        if num == nil {
+            FileBlock.fail(fileBlock, x, ETYPE, 0)
+        } else {
+            FileBlock.fail(fileBlock, x, ETYPE, num.Pos)
+        }
+        ret false
+    }
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", ETYPE) {
+        ret false
+    }
+    ret TypeBlock.skipType(typeBlock, x)
+}
+
+fn ExpBlock.parseCompositeType(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    x.l.skipTerminators()
+    var t: *lex.Token = x.l.peek()
+    if t.Type == lex.NAME && strings.eq(t.Value, "map") {
+        ret ExpBlock.parseMapTypeHead(e, x)
+    }
+    if lex.Token.is(t, lex.DELIMITER, "[") {
+        ret ExpBlock.parseArrayTypeHead(e, x)
+    }
+    FileBlock.fail(fileBlock, x, ETYPE, t.Pos)
+    ret false
+}
+
+// parseCompositeElems 解析 { 元素, ... }（已消耗 { 的前提下）。
+fn ExpBlock.parseCompositeElems(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EEXPR) {
+        ret false
+    }
+    for ; ; {
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
+        if lex.Token.is(t, lex.DELIMITER, "}") {
+            x.l.next()
+            ret true
+        }
+        if !ExpBlock.parseExpr(e, x) {
+            ret false
+        }
+        var t2: *lex.Token = x.l.peek()
+        if lex.Token.is(t2, lex.DELIMITER, ",") {
+            x.l.next()
+            continue
+        }
+        if lex.Token.is(t2, lex.DELIMITER, "}") {
+            continue
+        }
+        FileBlock.fail(fileBlock, x, EEXPR, t2.Pos)
+        ret false
+    }
+}
+
+// parsePostfix 后缀消歧：索引/切片/选择器/调用，循环到非后缀 token。
+// parseSelectorSuffix 解析 .name（选择器）。
+fn ExpBlock.parseSelectorSuffix(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    x.l.next()
+    ret FileBlock.expectName(fileBlock, x, EEXPR) != nil
+}
+
+// consumeSliceBoundEnd 判断当前到 ']' 或 ':' 为止：若不是，consume expr；其他接受。
+fn ExpBlock.consumeSliceBoundEnd(e ExpBlock, x *Parser) bool {
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "]") {
+        ret true
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        ret true
+    }
+    ret ExpBlock.parseExpr(e, x)
+}
+
+// parseIndexSuffix 处理 [i] / [i:j] / [i:] / [:j] / [i:j:step]
+fn ExpBlock.parseIndexSuffix(e ExpBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    x.l.next()
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        x.l.next()
+        if !ExpBlock.consumeSliceBoundEnd(e, x) {
+            ret false
+        }
+        ret FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", EEXPR)
+    }
+    if !ExpBlock.parseExpr(e, x) {
+        ret false
+    }
+    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        ret FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", EEXPR)
+    }
+    x.l.next()
+    if !ExpBlock.consumeSliceBoundEnd(e, x) {
+        ret false
+    }
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+        x.l.next()
+        if !ExpBlock.consumeSliceBoundEnd(e, x) {
+            ret false
+        }
+    }
+    ret FileBlock.expect(fileBlock, x, lex.DELIMITER, "]", EEXPR)
+}
+
+fn ExpBlock.parsePostfix(e ExpBlock, x *Parser) bool {
+    if !ExpBlock.parsePrimary(e, x) {
+        ret false
+    }
+    for ; ; {
+        var t: *lex.Token = x.l.peek()
+        if lex.Token.is(t, lex.DELIMITER, ".") {
+            if !ExpBlock.parseSelectorSuffix(e, x) {
+                ret false
+            }
+            continue
+        }
+        if lex.Token.is(t, lex.DELIMITER, "[") {
+            if !ExpBlock.parseIndexSuffix(e, x) {
+                ret false
+            }
+            continue
+        }
+        if lex.Token.is(t, lex.DELIMITER, "(") {
+            var cb: CallBlock
+            if !CallBlock.parseCallArgs(cb, x) {
+                ret false
+            }
+            continue
+        }
+        break
+    }
+    ret true
+}
+
+// parseUnary 解析前缀一元运算符（! - ~ * & + ^）。
+fn ExpBlock.parseUnary(e ExpBlock, x *Parser) bool {
+    var t: *lex.Token = x.l.peek()
+    var isUnary: bool = false
+    if lex.Token.is(t, lex.DELIMITER, "!") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "-") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "~") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "*") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "&") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "+") {
+        isUnary = true
+    } else if lex.Token.is(t, lex.DELIMITER, "^") {
+        isUnary = true
+    }
+    if isUnary {
+        x.l.next()
+        ret ExpBlock.parseUnary(e, x)
+    }
+    if !ExpBlock.parsePostfix(e, x) {
+        ret false
+    }
+    ret true
+}
+
+// parseBinaryExpr 优先级攀升；minPrec 以下的算符停止。
+fn ExpBlock.parseBinaryExpr(e ExpBlock, x *Parser, minPrec int) bool {
+    if !ExpBlock.parseUnary(e, x) {
+        ret false
+    }
+    for ; ; {
+        var t: *lex.Token = x.l.peek()
+        if t == nil || t.Type != lex.DELIMITER {
+            break
+        }
+        var p: int = ExpBlock.prec(e, t.Value)
+        if p == 0 || p < minPrec {
+            break
+        }
+        x.l.next()
+        if !ExpBlock.parseBinaryExpr(e, x, p + 1) {
+            ret false
+        }
+    }
+    ret true
+}
+
+// parseExpr 表达式入口。
+fn ExpBlock.parseExpr(e ExpBlock, x *Parser) bool {
+    ret ExpBlock.parseBinaryExpr(e, x, 1)
+}
+
+// isOpenBracket 参数默认值的开括号。
+fn CallBlock.isOpenBracket(c CallBlock, v string) bool {
     ret strings.eq(v, "(") || strings.eq(v, "[") || strings.eq(v, "{")
 }
 
-// isParamCloseBracket 形态深度的收尾括号（']'/'}'）。
-fn isParamCloseBracket(v string) bool {
+// isCloseBracket 形态深度的收尾括号（']'/'}'）。
+fn CallBlock.isCloseBracket(c CallBlock, v string) bool {
     ret strings.eq(v, "]") || strings.eq(v, "}")
 }
 
-// isParamCloseDelim 形态深度 0 时，默认值分隔符（','/NL/CR）。
-fn isParamCloseDelim(v string, depth int) bool {
+// isCloseDelim 形态深度 0 时，默认值分隔符（','/NL/CR）。
+fn CallBlock.isCloseDelim(c CallBlock, v string, depth int) bool {
     if depth != 0 {
         ret false
     }
@@ -24,10 +373,9 @@ fn isParamCloseDelim(v string, depth int) bool {
     ret unsafe.cast[int](v[0]) == 10 || unsafe.cast[int](v[0]) == 13
 }
 
-// consumeParamDefaultValue 消费 `= expr` 的默认值：括号深度记录使多项式式默认值不误断。
 // dispatchDefaultDelim 对分隔符分档：1=深 2=括-sub 3=括-clos 4=其他 0=收尾。
-fn dispatchDefaultDelim(v string, depth int) int {
-    if isParamOpenBracket(v) {
+fn CallBlock.dispatchDefaultDelim(c CallBlock, v string, depth int) int {
+    if CallBlock.isOpenBracket(c, v) {
         ret 1
     }
     if strings.eq(v, ")") {
@@ -36,16 +384,17 @@ fn dispatchDefaultDelim(v string, depth int) int {
         }
         ret 2
     }
-    if isParamCloseBracket(v) {
+    if CallBlock.isCloseBracket(c, v) {
         ret 3
     }
-    if isParamCloseDelim(v, depth) {
+    if CallBlock.isCloseDelim(c, v, depth) {
         ret 0
     }
     ret 4
 }
 
-fn consumeParamDefaultValue(x *Parser) bool {
+// consumeParamDefaultValue 消费 `= expr` 的默认值：括号深度记录使多项式式默认值不误断。
+fn CallBlock.consumeParamDefaultValue(c CallBlock, x *Parser) bool {
     x.l.next()
     var depth: int = 0
     for ; ; {
@@ -54,7 +403,7 @@ fn consumeParamDefaultValue(x *Parser) bool {
             ret true
         }
         if t.Type == lex.DELIMITER {
-            var kind: int = dispatchDefaultDelim(t.Value, depth)
+            var kind: int = CallBlock.dispatchDefaultDelim(c, t.Value, depth)
             if kind == 0 {
                 ret true
             }
@@ -75,46 +424,49 @@ fn consumeParamDefaultValue(x *Parser) bool {
 }
 
 // parseParamTypeAfterName 参数类型段：name [...] | name : T | name Type，省略类型时 name 即必须有默认。
-fn parseParamTypeAfterName(x *Parser) bool {
+fn CallBlock.parseParamTypeAfterName(c CallBlock, x *Parser) bool {
+    var typeBlock: TypeBlock
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "...") {
         x.l.next()
-        ret skipType(x)
+        ret TypeBlock.skipType(typeBlock, x)
     }
     if lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
         x.l.next()
-        ret skipType(x)
+        ret TypeBlock.skipType(typeBlock, x)
     }
-    ret skipType(x)
+    ret TypeBlock.skipType(typeBlock, x)
 }
 
 // parseParamVariadic 变参无名形态：...T，必须到 ')' 为止，否则报错。
-fn parseParamVariadic(x *Parser) bool {
+fn CallBlock.parseParamVariadic(c CallBlock, x *Parser) bool {
+    var typeBlock: TypeBlock
     x.l.next()
-    if !skipType(x) {
+    if !TypeBlock.skipType(typeBlock, x) {
         ret false
     }
     ret lex.Token.is(x.l.peek(), lex.DELIMITER, ")")
 }
 
 // parseParamOne 解析一个参数段（'...T' 无名或 'name [typeExpr]'）。
-fn parseParamOne(x *Parser) bool {
+fn CallBlock.parseParamOne(c CallBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "...") {
-        ret parseParamVariadic(x)
+        ret CallBlock.parseParamVariadic(c, x)
     }
     var nameT: *lex.Token = x.l.next()
     if nameT == nil || nameT.Type != lex.NAME {
         if (nameT) {
-            fail(x, EDECL, nameT.Pos)
+            FileBlock.fail(fileBlock, x, EDECL, nameT.Pos)
         } else {
-            fail(x, EDECL, 0)
+            FileBlock.fail(fileBlock, x, EDECL, 0)
         }
         ret false
     }
-    ret parseParamTypeAfterName(x)
+    ret CallBlock.parseParamTypeAfterName(c, x)
 }
 
 // consumeParamSeparator 每参之后的分隔符：) 收尾 / , 进入下一参 / 换行继续。
-fn consumeParamSeparator(x *Parser) bool {
+fn CallBlock.consumeParamSeparator(c CallBlock, x *Parser) bool {
     var pSep: *lex.Token = x.l.peek()
     if lex.Token.is(pSep, lex.DELIMITER, ")") {
         ret true
@@ -130,33 +482,30 @@ fn consumeParamSeparator(x *Parser) bool {
 }
 
 // parseFuncParams 参数列表主循环：')' 收尾，每个参数可带默认值。
-fn parseFuncParams(x *Parser) bool {
+fn CallBlock.parseFuncParams(c CallBlock, x *Parser) bool {
     for ; ; {
         x.l.skipTerminators()
         if lex.Token.is(x.l.peek(), lex.DELIMITER, ")") {
             x.l.next()
             ret true
         }
-        if !parseParamOne(x) {
+        if !CallBlock.parseParamOne(c, x) {
             ret false
         }
         if lex.Token.is(x.l.peek(), lex.DELIMITER, "=") {
-            if !consumeParamDefaultValue(x) {
+            if !CallBlock.consumeParamDefaultValue(c, x) {
                 ret false
             }
         }
-        if !consumeParamSeparator(x) {
+        if !CallBlock.consumeParamSeparator(c, x) {
             ret false
         }
     }
 }
 
-
-// ============ M2：表达式与语句 ============
-
-// prec 二元运算符优先级（低值先结合；与 S3 opTable 一致）。
 // consumeCallArgsTail 逗号分隔的实参尾巴（可省略，“...” 为 spread）。
-fn consumeCallArgsTail(x *Parser) bool {
+fn CallBlock.consumeCallArgsTail(c CallBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     var t2: *lex.Token = x.l.peek()
     if lex.Token.is(t2, lex.DELIMITER, ",") || lex.Token.is(t2, lex.DELIMITER, "...") {
         x.l.next()
@@ -166,15 +515,16 @@ fn consumeCallArgsTail(x *Parser) bool {
         ret true
     }
     if t2 == nil || t2.Type == lex.NONE {
-        fail(x, EEXPR, 0)
+        FileBlock.fail(fileBlock, x, EEXPR, 0)
         ret false
     }
-    fail(x, EEXPR, t2.Pos)
+    FileBlock.fail(fileBlock, x, EEXPR, t2.Pos)
     ret false
 }
 
-fn parseCallArgs(x *Parser) bool {
-    if !expect(x, lex.DELIMITER, "(", EEXPR) {
+fn CallBlock.parseCallArgs(c CallBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "(", EEXPR) {
         ret false
     }
     for ; ; {
@@ -183,21 +533,20 @@ fn parseCallArgs(x *Parser) bool {
             x.l.next()
             ret true
         }
-        if !parseExpr(x) {
+        var eb: ExpBlock
+        if !ExpBlock.parseExpr(eb, x) {
             ret false
         }
-        if !consumeCallArgsTail(x) {
+        if !CallBlock.consumeCallArgsTail(c, x) {
             ret false
         }
     }
 }
 
-// ============ 语句 ============
-
-// blockStmt 解析 { 语句 }；消费并配平花括号。
-fn parseRetTypes(x *Parser) bool {
+// parseRetTypes 解析函数的返回值类型列表。
+fn CallBlock.parseRetTypes(c CallBlock, x *Parser) bool {
+    var typeBlock: TypeBlock
     var t: *lex.Token = x.l.peek()
-    // 无返回值：换行或 directamente '{' / EOF
     if lex.Token.isLineEnd(t) {
         ret true
     }
@@ -213,7 +562,7 @@ fn parseRetTypes(x *Parser) bool {
                 x.l.next()
                 ret true
             }
-            if !skipType(x) {
+            if !TypeBlock.skipType(typeBlock, x) {
                 ret false
             }
             var p2: *lex.Token = x.l.peek()
@@ -228,6 +577,11 @@ fn parseRetTypes(x *Parser) bool {
             ret false
         }
     }
-    // 单返回值类型
-    ret skipType(x)
+    ret TypeBlock.skipType(typeBlock, x)
 }
+// exp.cute —— 表达式递归下降（运算优先级 climb）；与 Go exp.go 同级。
+// 加载顺序：依赖 helpers.cute。
+import "std:strings"
+import lex "../lexer"
+
+

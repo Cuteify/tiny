@@ -3,21 +3,22 @@
 import "std:strings"
 import lex "../lexer"
 
-type FuncBlock struct {
-    Name: string
-}
+
+
 
 // parseDotNameSuffix 可选的 `.name` 后缀（方法声明中的接收者名）。
-fn parseDotNameSuffix(x *Parser) bool {
+fn FuncBlock.parseDotNameSuffix(f FuncBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, ".") {
         ret true
     }
     x.l.next()
-    ret expectName(x, EDECL) != nil
+    ret FileBlock.expectName(fileBlock, x, EDECL) != nil
 }
 
 // parseGenericParams 解析泛型参数列表 [T[, U....]]。
-fn parseGenericParams(x *Parser) bool {
+fn FuncBlock.parseGenericParams(f FuncBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.skipTerminators()
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, "[") {
         ret true
@@ -30,7 +31,7 @@ fn parseGenericParams(x *Parser) bool {
             x.l.next()
             ret true
         }
-        var tp: *lex.Token = expectName(x, EDECL)
+        var tp: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
         if tp == nil {
             ret false
         }
@@ -47,29 +48,34 @@ fn parseGenericParams(x *Parser) bool {
     }
 }
 
-fn parseFnFromKeyword(x *Parser) bool {
-    var nameT: *lex.Token = expectName(x, EDECL)
+// parse 解析 `fn f[T]()` 或方法 `fn T.m()`。
+fn FuncBlock.parse(f FuncBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    var stmtBlock: StmtBlock
+    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
     }
+    f.Name = nameT.Value
     x.l.skipTerminators()
-    if !parseDotNameSuffix(x) {
+    if !FuncBlock.parseDotNameSuffix(f, x) {
         ret false
     }
-    if !parseGenericParams(x) {
+    if !FuncBlock.parseGenericParams(f, x) {
         ret false
     }
     x.l.skipTerminators()
-    if !expect(x, lex.DELIMITER, "(", EDECL) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "(", EDECL) {
         ret false
     }
-    if !parseFuncParams(x) {
+    var cb: CallBlock
+    if !CallBlock.parseFuncParams(cb, x) {
         ret false
     }
-    if !parseRetTypes(x) {
+    if !CallBlock.parseRetTypes(cb, x) {
         ret false
     }
-    if !parseBlock(x) {
+    if !StmtBlock.parseBlock(stmtBlock, x) {
         ret false
     }
     x.fns = x.fns + 1

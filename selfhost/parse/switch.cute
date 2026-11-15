@@ -4,38 +4,40 @@ import "std:strings"
 import lex "../lexer"
 
 // isCaseClauseKeyword case 或 default。
-fn isCaseClauseKeyword(kw string) bool {
+fn SwitchBlock.isCaseClauseKeyword(r SwitchBlock, kw string) bool {
     ret strings.eq(kw, "case") || strings.eq(kw, "default")
 }
 
 // atClauseBoundary 是否到了 case 端尾部（case/default/}/EOF/NONE）。
-fn atClauseBoundary(t *lex.Token) bool {
+fn SwitchBlock.atClauseBoundary(r SwitchBlock, t *lex.Token) bool {
     if t == nil || t.Type == lex.NONE {
         ret true
     }
-    if isCaseClauseKeyword(t.Value) {
+    if SwitchBlock.isCaseClauseKeyword(r, t.Value) {
         ret true
     }
     ret lex.Token.is(t, lex.DELIMITER, "}")
 }
 
 // parseCaseBody 解析 case/default 分支的语句（直到 case/default/}）。
-fn parseCaseBody(x *Parser) bool {
+fn SwitchBlock.parseCaseBody(r SwitchBlock, x *Parser) bool {
+    var stmtBlock: StmtBlock
     for ; ; {
         x.l.skipTerminators()
-        if atClauseBoundary(x.l.peek()) {
+        if SwitchBlock.atClauseBoundary(r, x.l.peek()) {
             ret true
         }
-        if !parseStmt(x) {
+        if !StmtBlock.parseStmt(stmtBlock, x) {
             ret false
         }
     }
 }
 
 // parseCaseValues 解析一个 case 后的表达式列表，逗号分隔。
-fn parseCaseValues(x *Parser) bool {
+fn SwitchBlock.parseCaseValues(r SwitchBlock, x *Parser) bool {
     for ; ; {
-        if !parseExpr(x) {
+        var eb: ExpBlock
+        if !ExpBlock.parseExpr(eb, x) {
             ret false
         }
         if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
@@ -46,47 +48,51 @@ fn parseCaseValues(x *Parser) bool {
 }
 
 // parseOneCase 解析 `case a, b, ...: body`。
-fn parseOneCase(x *Parser) bool {
+fn SwitchBlock.parseOneCase(r SwitchBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.next()
-    if !parseCaseValues(x) {
+    if !SwitchBlock.parseCaseValues(r, x) {
         ret false
     }
-    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
         ret false
     }
-    ret parseCaseBody(x)
+    ret SwitchBlock.parseCaseBody(r, x)
 }
 
 // parseDefaultClause 解析 `default: body`。
-fn parseDefaultClause(x *Parser) bool {
+fn SwitchBlock.parseDefaultClause(r SwitchBlock, x *Parser) bool {
+    var fileBlock: FileBlock
     x.l.next()
-    if !expect(x, lex.DELIMITER, ":", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
         ret false
     }
-    ret parseCaseBody(x)
+    ret SwitchBlock.parseCaseBody(r, x)
 }
 
 // parseSwitchClause 解析一个 case/default 从句。
-fn parseSwitchClause(x *Parser) bool {
+fn SwitchBlock.parseSwitchClause(r SwitchBlock, x *Parser) bool {
     if lex.Token.is(x.l.peek(), lex.KEYWORD, "case") {
-        ret parseOneCase(x)
+        ret SwitchBlock.parseOneCase(r, x)
     }
     if lex.Token.is(x.l.peek(), lex.KEYWORD, "default") {
-        ret parseDefaultClause(x)
+        ret SwitchBlock.parseDefaultClause(r, x)
     }
     ret false
 }
 
-fn parseSwitchStmt(x *Parser) bool {
-    if !expectKeyword(x, "switch", ESTMT) {
+fn SwitchBlock.parseSwitchStmt(r SwitchBlock, x *Parser) bool {
+    var fileBlock: FileBlock
+    if !FileBlock.expectKeyword(fileBlock, x, "switch", ESTMT) {
         ret false
     }
     if !lex.Token.is(x.l.peek(), lex.DELIMITER, "{") {
-        if !parseExpr(x) {
+        var eb: ExpBlock
+        if !ExpBlock.parseExpr(eb, x) {
             ret false
         }
     }
-    if !expect(x, lex.DELIMITER, "{", ESTMT) {
+    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", ESTMT) {
         ret false
     }
     for ; ; {
@@ -96,13 +102,13 @@ fn parseSwitchStmt(x *Parser) bool {
             x.l.next()
             ret true
         }
-        if isCaseClauseKeyword(t2.Value) {
-            if !parseSwitchClause(x) {
+        if SwitchBlock.isCaseClauseKeyword(r, t2.Value) {
+            if !SwitchBlock.parseSwitchClause(r, x) {
                 ret false
             }
             continue
         }
-        fail(x, ESTMT, t2.Pos)
+        FileBlock.fail(fileBlock, x, ESTMT, t2.Pos)
         ret false
     }
 }
