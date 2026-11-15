@@ -7,7 +7,7 @@ type FileBlock struct {
 
 fn mk(src string) *Parser {
     var x: *Parser = new(Parser)
-    x.l = lex.NewLexer(src)
+    x.l = lex.newLexer(src)
     x.e = OK
     x.ep = 0
     x.decls = 0
@@ -94,8 +94,8 @@ fn fail(x *Parser, e int, pos int) {
 }
 
 // parseDeclKeyword 按关键字分派顶层声明。
-// 前瞻走 x.l.Peek()（lexer 预取环首视图，幂等、不消费）；
-// 消费走 x.l.Next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.Prefetch()（入环不弹）。
+// 前瞻走 x.l.peek()（lexer 预取环首视图，幂等、不消费）；
+// 消费走 x.l.next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.prefetch()（入环不弹）。
 fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
     if strings.eq(kw, "import") {
         if !parseImportFromKeyword(x) {
@@ -116,8 +116,8 @@ fn parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
         ret true
     }
     if strings.eq(kw, "type") {
-        x.l.SkipTerminators()
-        if lex.Token.Is(x.l.Peek(), lex.DELIMITER, "(") {
+        x.l.skipTerminators()
+        if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
             ret parseGroupedDecl(x, "type")
         }
         ret parseTypeFromKeyword(x, t)
@@ -152,8 +152,8 @@ fn isDeclKeyword(kw string) bool {
 // file 解析整个文件。
 fn file(x *Parser) {
     for ; ; {
-        x.l.SkipTerminators()
-        var t: *lex.Token = x.l.Peek()
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
         if t == nil {
             ret
         }
@@ -163,7 +163,7 @@ fn file(x *Parser) {
         if t.Type == lex.KEYWORD {
             if isDeclKeyword(t.Value) {
                 var kw: string = t.Value
-                x.l.Next()
+                x.l.next()
                 var okDecl: bool = parseDeclKeyword(x, kw, t)
                 if !okDecl {
                     ret
@@ -175,8 +175,8 @@ fn file(x *Parser) {
         }
         if t.Type == lex.NAME {
             // 顶层隐式 var：name: T = v（无 var/const/let 关键字） / tuple： q, r := f()
-            var nameT: *lex.Token = x.l.Next()
-            var p2: *lex.Token = x.l.Peek()
+            var nameT: *lex.Token = x.l.next()
+            var p2: *lex.Token = x.l.peek()
             if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
                 if !expect(x, lex.DELIMITER, ":", EDECL) {
                     ret

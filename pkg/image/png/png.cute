@@ -4,9 +4,9 @@ import "std:image"
 // pkg/image/png/png.cute - PNG 编码存根（简化版）
 // 平台无关实现，底层复用 std:memory 和 std:image
 
-// Encode 将图像编码为简化格式的原始像素数据字符串
+// encode 将图像编码为简化格式的原始像素数据字符串
 // 返回格式: "RGBA:w:h:<raw bytes>"
-fn Encode(img **image.Image) string {
+fn encode(img **image.Image) string {
     var w: int = img.width
     var h: int = img.height
     var _p1: *ptr = img + 16
@@ -81,8 +81,8 @@ fn Encode(img **image.Image) string {
     ret strings.view(buf, totalLen, totalLen)
 }
 
-// NewReader 从数据字符串解码图像（简化版：解析 "RGBA:w:h:<raw>" 格式）
-fn NewReader(data string) *image.Image {
+// newReader 从数据字符串解码图像（简化版：解析 "RGBA:w:h:<raw>" 格式）
+fn newReader(data string) *image.Image {
     var p: ptr = strings.toCstring(data)
     var n: uint = strings.len(data)
     var pos: uint = 0
@@ -113,7 +113,7 @@ fn NewReader(data string) *image.Image {
         pos = pos + 1
     }
     // 创建图像
-    var img: *image.Image = image.NewRGBA(w, h)
+    var img: *image.Image = image.newRGBA(w, h)
     var _p20: *ptr = img + 16
     var pix: ptr = *_p20
     var pixelBytes: uint = w * h * 4

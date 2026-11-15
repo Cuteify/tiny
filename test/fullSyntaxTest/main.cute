@@ -86,7 +86,7 @@ fn main() {
     var shift: int = a << 2
     var rshift: int = a >> 1
     
-    // String operations
+    // string operations
     var s: string = "hello"
     var s2: string = " world"
     var concat: string = s + s2

@@ -59,8 +59,8 @@ fn readU32LE(ptr ptr) u32 {
     ret b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
-// NewReader 创建 zip 读取器，解析所有本地文件头
-fn NewReader(data string) *Reader {
+// newReader 创建 zip 读取器，解析所有本地文件头
+fn newReader(data string) *Reader {
     var buf: ptr = memory.malloc(40)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -142,14 +142,14 @@ fn NewReader(data string) *Reader {
     ret result
 }
 
-// Len 返回 zip 中的文件数量
-fn Len(r *Reader) int {
+// len 返回 zip 中的文件数量
+fn len(r *Reader) int {
     var _p18: *ptr = r + 24
     ret *_p18
 }
 
-// FileAt 返回指定索引的文件信息
-fn FileAt(r *Reader, index int) *File {
+// fileAt 返回指定索引的文件信息
+fn fileAt(r *Reader, index int) *File {
     var _p19: *ptr = r + 16
     var fileList: ptr = *_p19
     var _p20: *ptr = r + 24
@@ -173,8 +173,8 @@ fn FileAt(r *Reader, index int) *File {
     ret result
 }
 
-// Open 打开指定文件，设置为当前读取文件
-fn Open(r *Reader, index int) bool {
+// open 打开指定文件，设置为当前读取文件
+fn open(r *Reader, index int) bool {
     var _p27: *ptr = r + 24
     var fileCount: int = *_p27
     if index < 0 || index >= fileCount {
@@ -187,8 +187,8 @@ fn Open(r *Reader, index int) bool {
     ret true
 }
 
-// Read 从当前打开的文件中读取数据
-fn Read(r *Reader, buf ptr, n int) int {
+// read 从当前打开的文件中读取数据
+fn read(r *Reader, buf ptr, n int) int {
     var _p30: *ptr = r
     var dataPtr: ptr = *_p30
     var _p31: *ptr = r + 16

@@ -17,20 +17,20 @@ fn parseBuildFromKeyword(x *Parser) bool {
             ret false
         }
         for ; ; {
-            x.l.SkipTerminators()
-            var t: *lex.Token = x.l.Peek()
-            if lex.Token.Is(t, lex.DELIMITER, ")") {
-                x.l.Next()
+            x.l.skipTerminators()
+            var t: *lex.Token = x.l.peek()
+            if lex.Token.is(t, lex.DELIMITER, ")") {
+                x.l.next()
                 x.builds = x.builds + 1
                 x.decls = x.decls + 1
                 ret true
             }
             if t != nil && (t.Type == lex.NAME || t.Type == lex.STRING || t.Type == lex.KEYWORD) {
-                x.l.Next()
+                x.l.next()
                 continue
             }
-            if lex.Token.Is(t, lex.DELIMITER, ",") {
-                x.l.Next()
+            if lex.Token.is(t, lex.DELIMITER, ",") {
+                x.l.next()
                 continue
             }
             fail(x, EDECL, t.Pos)
@@ -42,20 +42,20 @@ fn parseBuildFromKeyword(x *Parser) bool {
             ret false
         }
         for ; ; {
-            x.l.SkipTerminators()
-            var t: *lex.Token = x.l.Peek()
-            if lex.Token.Is(t, lex.DELIMITER, ")") {
-                x.l.Next()
+            x.l.skipTerminators()
+            var t: *lex.Token = x.l.peek()
+            if lex.Token.is(t, lex.DELIMITER, ")") {
+                x.l.next()
                 x.builds = x.builds + 1
                 x.decls = x.decls + 1
                 ret true
             }
             if t != nil && t.Type == lex.NUMBER {
-                x.l.Next()
+                x.l.next()
                 continue
             }
-            if lex.Token.Is(t, lex.DELIMITER, ",") {
-                x.l.Next()
+            if lex.Token.is(t, lex.DELIMITER, ",") {
+                x.l.next()
                 continue
             }
             fail(x, EDECL, t.Pos)
@@ -77,7 +77,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
         if !expect(x, lex.DELIMITER, "(", EDECL) {
             ret false
         }
-        var t: *lex.Token = x.l.Next()
+        var t: *lex.Token = x.l.next()
         if t == nil || (t.Type != lex.STRING && t.Type != lex.NAME) {
             if (t) {
                 fail(x, EDECL, t.Pos)
@@ -97,7 +97,7 @@ fn parseBuildFromKeyword(x *Parser) bool {
         if !expect(x, lex.DELIMITER, "(", EDECL) {
             ret false
         }
-        var t: *lex.Token = x.l.Next()
+        var t: *lex.Token = x.l.next()
         if t == nil || t.Type != lex.NUMBER {
             if (t) {
                 fail(x, EDECL, t.Pos)

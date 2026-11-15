@@ -3,11 +3,11 @@ struct Point {
     y: int
 }
 
-fn Point.GetX(recv: *Point) int {
+fn Point.getX(recv: *Point) int {
     ret 42
 }
 
-fn Point.SetX(recv: *Point, x: int) {
+fn Point.setX(recv: *Point, x: int) {
     recv.x = x
 }
 
@@ -15,7 +15,7 @@ fn main() int {
     var p: Point
     p.x = 10
     p.y = 20
-    x: int = p.GetX()
-    p.SetX(15)
+    x: int = p.getX()
+    p.setX(15)
     ret x
 }

@@ -107,8 +107,8 @@ fn reset(b ptr) {
     *_p18 = unsafe.cast[ptr](0)
 }
 
-// String 将缓冲区内容转换为字符串
-fn String(b ptr) string {
+// string 将缓冲区内容转换为字符串
+fn string(b ptr) string {
     var _p19: *ptr = b
     var dataLen: uint = *_p19
     var _p20: *ptr = b + 16

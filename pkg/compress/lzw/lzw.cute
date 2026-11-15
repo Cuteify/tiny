@@ -20,8 +20,8 @@ type Reader struct {
     bufLen: int     // 缓冲区有效长度
 }
 
-// NewReader 创建 LZW 读取器
-fn NewReader(data string, litWidth int) *Reader {
+// newReader 创建 LZW 读取器
+fn newReader(data string, litWidth int) *Reader {
     var buf: ptr = memory.malloc(64)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -63,8 +63,8 @@ fn NewReader(data string, litWidth int) *Reader {
     ret result
 }
 
-// Read 从 LZW 读取器中读取解压数据
-fn Read(r *Reader, outBuf ptr, n int) int {
+// read 从 LZW 读取器中读取解压数据
+fn read(r *Reader, outBuf ptr, n int) int {
     var _p12: *ptr = r + 64
     var bufPos: int = *_p12
     var _p13: *ptr = r + 72
@@ -172,8 +172,8 @@ type Writer struct {
     prevCode: int    // 上一个代码
 }
 
-// NewWriter 创建 LZW 写入器
-fn NewWriter(litWidth int) *Writer {
+// newWriter 创建 LZW 写入器
+fn newWriter(litWidth int) *Writer {
     var buf: ptr = memory.malloc(48)
     var dictSize: int = 1 << litWidth
     var table: ptr = memory.malloc(dictSize * 8)
@@ -204,8 +204,8 @@ fn NewWriter(litWidth int) *Writer {
     ret result
 }
 
-// Write 向 LZW 写入器写入数据（简化：输出 Clear + 字面量 + EOF）
-fn Write(w *Writer, data ptr, n int) int {
+// write 向 LZW 写入器写入数据（简化：输出 Clear + 字面量 + EOF）
+fn write(w *Writer, data ptr, n int) int {
     var _p46: *ptr = w
     var litWidth: int = *_p46
     var _p47: *ptr = w + 24
@@ -258,8 +258,8 @@ fn Write(w *Writer, data ptr, n int) int {
     ret n
 }
 
-// Close 关闭 LZW 写入器，返回压缩数据
-fn Close(w *Writer) string {
+// close 关闭 LZW 写入器，返回压缩数据
+fn close(w *Writer) string {
     var _p59: *ptr = w + 24
     var outBuf: ptr = *_p59
     var _p60: *ptr = w + 32

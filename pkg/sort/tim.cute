@@ -119,7 +119,7 @@ fn _timRowLtCount(data: ptr, lo: int, hi: int, keyBuf: ptr, keyIdx: int) int {
 }
 
 // ————————— 行族主循环（a = 裸阵列头，n = 行数，buf = 24B 行临时区）—————————
-// 栈槽（run 起点 / run 长度）自管 8B 步距：_timRowStackGet/Set 经 *int 读写
+// 栈槽（run 起点 / run 长度）自管 8B 步距：_timRowStackGet/set 经 *int 读写
 // （x86 4B / x64 8B 双宽自洽，仅存 int 槽值），不跨文件借 arch 分片符号。
 
 // _timRowStackGet 读栈数组第 idx 槽（int 语义，8B 步距）

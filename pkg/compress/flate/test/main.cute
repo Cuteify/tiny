@@ -4,19 +4,19 @@ import "std:strings"
 fn main() int {
     var failures: int = 0
 
-    // Test flate Writer + Close
-    var w: *flate.Writer = flate.NewWriter()
+    // Test flate Writer + close
+    var w: *flate.Writer = flate.newWriter()
 
-    // Write some data
+    // write some data
     var src: string = "hello world"
     var srcPtr: ptr = strings.toCstring(src)
-    var written: int = flate.Write(w, srcPtr, strings.len(src))
+    var written: int = flate.write(w, srcPtr, strings.len(src))
     if written != 11 {
         failures = failures + 1
     }
 
-    // Close to get compressed data
-    var compressed: string = flate.Close(w)
+    // close to get compressed data
+    var compressed: string = flate.close(w)
     var compLen: uint = strings.len(compressed)
     // Compressed data should be non-empty
     if compLen == 0 {
@@ -24,9 +24,9 @@ fn main() int {
     }
 
     // Test flate Reader
-    var r: *flate.Reader = flate.NewReader(compressed)
+    var r: *flate.Reader = flate.newReader(compressed)
     var readBuf: ptr = memory.malloc(64)
-    var bytesRead: int = flate.Read(r, readBuf, 64)
+    var bytesRead: int = flate.read(r, readBuf, 64)
 
     // Should read back 11 bytes ("hello world")
     if bytesRead != 11 {

@@ -8,29 +8,29 @@ type ImportBlock struct {
 }
 
 fn parseImportFromKeyword(x *Parser) bool {
-    var saved: *lex.Token = x.l.Peek()
-    if lex.Token.Is(saved, lex.DELIMITER, "(") {
-        x.l.Next()
+    var saved: *lex.Token = x.l.peek()
+    if lex.Token.is(saved, lex.DELIMITER, "(") {
+        x.l.next()
         for ; ; {
-            x.l.SkipTerminators()
-            var t: *lex.Token = x.l.Peek()
+            x.l.skipTerminators()
+            var t: *lex.Token = x.l.peek()
             if t == nil {
                 fail(x, EDECL, 0)
                 ret false
             }
-            if lex.Token.Is(t, lex.DELIMITER, ")") {
-                x.l.Next()
+            if lex.Token.is(t, lex.DELIMITER, ")") {
+                x.l.next()
                 x.imports = x.imports + 1
                 x.decls = x.decls + 1
                 ret true
             }
             if t.Type == lex.STRING {
-                x.l.Next()
+                x.l.next()
                 continue
             }
             if t.Type == lex.NAME {
-                x.l.Next()
-                var strT: *lex.Token = x.l.Next()
+                x.l.next()
+                var strT: *lex.Token = x.l.next()
                 if strT == nil || strT.Type != lex.STRING {
                     if (strT) {
                         fail(x, EDECL, strT.Pos)
@@ -41,19 +41,19 @@ fn parseImportFromKeyword(x *Parser) bool {
                 }
                 continue
             }
-            if lex.Token.Is(t, lex.DELIMITER, ",") {
-                x.l.Next()
+            if lex.Token.is(t, lex.DELIMITER, ",") {
+                x.l.next()
                 continue
             }
             fail(x, EDECL, t.Pos)
             ret false
         }
     }
-    var t: *lex.Token = x.l.Peek()
+    var t: *lex.Token = x.l.peek()
     if t != nil && t.Type == lex.NAME {
-        x.l.Next()
+        x.l.next()
     }
-    var strT: *lex.Token = x.l.Next()
+    var strT: *lex.Token = x.l.next()
     if strT == nil || strT.Type != lex.STRING {
         if (strT) {
             fail(x, EDECL, strT.Pos)

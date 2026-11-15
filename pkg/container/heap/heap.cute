@@ -10,7 +10,7 @@ type Heap struct {
 }
 
 // New 创建并返回一个空的最小堆（默认容量 16）
-fn New() *Heap {
+fn new() *Heap {
     var h: *Heap = memory.malloc(24)
     h.data = memory.malloc(128) // 16 * 8 bytes
     h.len = 0
@@ -97,8 +97,8 @@ fn heapGrow(h *Heap) {
     h.cap = newCap
 }
 
-// Push 向堆中插入一个整数值
-fn Push(h *Heap, value int) {
+// push 向堆中插入一个整数值
+fn push(h *Heap, value int) {
     if h.len >= h.cap {
         heapGrow(h)
     }
@@ -108,8 +108,8 @@ fn Push(h *Heap, value int) {
     siftUp(h, h.len - 1)
 }
 
-// Pop 从堆中弹出最小值，空堆返回 0
-fn Pop(h *Heap) int {
+// pop 从堆中弹出最小值，空堆返回 0
+fn pop(h *Heap) int {
     if h.len == 0 {
         ret 0
     }
@@ -126,7 +126,7 @@ fn Pop(h *Heap) int {
     ret root
 }
 
-// Len 返回堆中元素数量
-fn Len(h *Heap) uint {
+// len 返回堆中元素数量
+fn len(h *Heap) uint {
     ret h.len
 }

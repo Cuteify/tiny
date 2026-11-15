@@ -15,8 +15,8 @@ fn stride(img *Image) int {
     ret img.width * 4
 }
 
-// NewRGBA 创建新的 RGBA 图像，像素初始化为全透明黑色
-fn NewRGBA(w int, h int) *Image {
+// newRGBA 创建新的 RGBA 图像，像素初始化为全透明黑色
+fn newRGBA(w int, h int) *Image {
     var img: ptr = memory.malloc(24)
     var _p1: *ptr = img
     *_p1 = unsafe.cast[ptr](w)  // width
@@ -42,8 +42,8 @@ fn pixelOffset(img *Image, x int, y int) int {
     ret (y * stride(img) + x * 4)
 }
 
-// Set 设置像素 (x, y) 的 RGBA 值
-fn Set(img *Image, x int, y int, r u8, g u8, b u8, a u8) {
+// set 设置像素 (x, y) 的 RGBA 值
+fn set(img *Image, x int, y int, r u8, g u8, b u8, a u8) {
     var off: int = pixelOffset(img, x, y)
     var _p5: *ptr = img + 16
     var pix: ptr = *_p5
@@ -57,8 +57,8 @@ fn Set(img *Image, x int, y int, r u8, g u8, b u8, a u8) {
     *_p9 = unsafe.cast[u8](a)
 }
 
-// GetR 获取像素 (x, y) 的红色分量
-fn GetR(img *Image, x int, y int) u8 {
+// getR 获取像素 (x, y) 的红色分量
+fn getR(img *Image, x int, y int) u8 {
     var off: int = pixelOffset(img, x, y)
     var _p10: *ptr = img + 16
     var pix: ptr = *_p10
@@ -66,8 +66,8 @@ fn GetR(img *Image, x int, y int) u8 {
     ret *_p11
 }
 
-// GetG 获取像素 (x, y) 的绿色分量
-fn GetG(img *Image, x int, y int) u8 {
+// getG 获取像素 (x, y) 的绿色分量
+fn getG(img *Image, x int, y int) u8 {
     var off: int = pixelOffset(img, x, y)
     var _p12: *ptr = img + 16
     var pix: ptr = *_p12
@@ -75,8 +75,8 @@ fn GetG(img *Image, x int, y int) u8 {
     ret *_p13
 }
 
-// GetB 获取像素 (x, y) 的蓝色分量
-fn GetB(img *Image, x int, y int) u8 {
+// getB 获取像素 (x, y) 的蓝色分量
+fn getB(img *Image, x int, y int) u8 {
     var off: int = pixelOffset(img, x, y)
     var _p14: *ptr = img + 16
     var pix: ptr = *_p14
@@ -84,8 +84,8 @@ fn GetB(img *Image, x int, y int) u8 {
     ret *_p15
 }
 
-// GetA 获取像素 (x, y) 的透明度分量
-fn GetA(img *Image, x int, y int) u8 {
+// getA 获取像素 (x, y) 的透明度分量
+fn getA(img *Image, x int, y int) u8 {
     var off: int = pixelOffset(img, x, y)
     var _p16: *ptr = img + 16
     var pix: ptr = *_p16
@@ -93,7 +93,7 @@ fn GetA(img *Image, x int, y int) u8 {
     ret *_p17
 }
 
-// Bounds 返回图像边界 (min_x, min_y, max_x, max_y)
-fn Bounds(img *Image) (int, int, int, int) {
+// bounds 返回图像边界 (min_x, min_y, max_x, max_y)
+fn bounds(img *Image) (int, int, int, int) {
     ret 0, 0, img.width, img.height
 }

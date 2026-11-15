@@ -1,7 +1,7 @@
 // helpers.cute —— parser 的 token 辅助（token 取/回退全部在 lexer 里）。
-//   取/消费：x.l.Next() / x.l.Peek()（lexer 管理的预取环）
+//   取/消费：x.l.next() / x.l.peek()（lexer 管理的预取环）
 //   行尾/语句终符：lex.Token.IsLineEnd / lex.Token.IsSemiOrNewline
-//   行尾跳过：x.l.SkipLineEnds() / x.l.SkipTerminators()
+//   行尾跳过：x.l.skipLineEnds() / x.l.skipTerminators()
 //   记账原语：expect / expectName / expectKeyword（parser 的错误码记账）
 // 加载顺序：依赖 blocks.cute。
 import "std:strings"
@@ -9,13 +9,13 @@ import lex "../lexer"
 
 // expect 期望一个指定种类+值的 token（跳过行尾）；失败记错。
 fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
-    x.l.SkipLineEnds()
-    var t: *lex.Token = x.l.Next()
+    x.l.skipLineEnds()
+    var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret false
     }
-    if !lex.Token.Is(t, kind, value) {
+    if !lex.Token.is(t, kind, value) {
         fail(x, e, t.Pos)
         ret false
     }
@@ -24,8 +24,8 @@ fn expect(x *Parser, kind: lex.TokenType, value string, e int) bool {
 
 // expectName 期望一个 NAME；失败记错并返回零指针。
 fn expectName(x *Parser, e int) *lex.Token {
-    x.l.SkipLineEnds()
-    var t: *lex.Token = x.l.Next()
+    x.l.skipLineEnds()
+    var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret 0
@@ -39,13 +39,13 @@ fn expectName(x *Parser, e int) *lex.Token {
 
 // expectKeyword 期望一个关键字；失败记错。
 fn expectKeyword(x *Parser, kw string, e int) bool {
-    x.l.SkipLineEnds()
-    var t: *lex.Token = x.l.Next()
+    x.l.skipLineEnds()
+    var t: *lex.Token = x.l.next()
     if t == nil || t.Type == lex.NONE {
         fail(x, e, 0)
         ret false
     }
-    if !lex.Token.Is(t, lex.KEYWORD, kw) {
+    if !lex.Token.is(t, lex.KEYWORD, kw) {
         fail(x, e, t.Pos)
         ret false
     }
@@ -57,7 +57,7 @@ fn expectKeyword(x *Parser, kw string, e int) bool {
 fn consumeBalanced(x *Parser, open string, close string, e int) bool {
     var depth: int = 1
     for ; depth > 0; {
-        var t: *lex.Token = x.l.Next()
+        var t: *lex.Token = x.l.next()
         if t == nil || t.Type == lex.NONE {
             fail(x, e, 0)
             ret false
@@ -81,7 +81,7 @@ fn consumeBalanced(x *Parser, open string, close string, e int) bool {
 fn restOfLineAtDepth0(x *Parser) {
     var depth: int = 0
     for ; ; {
-        var t: *lex.Token = x.l.Peek()
+        var t: *lex.Token = x.l.peek()
         if t == nil {
             ret
         }
@@ -96,10 +96,10 @@ fn restOfLineAtDepth0(x *Parser) {
                     ret
                 }
                 depth = depth - 1
-            } else if depth == 0 && lex.Token.IsLineEnd(t) {
+            } else if depth == 0 && lex.Token.isLineEnd(t) {
                 ret
             }
         }
-        x.l.Next()
+        x.l.next()
     }
 }

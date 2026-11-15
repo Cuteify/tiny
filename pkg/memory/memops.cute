@@ -8,21 +8,21 @@ import "std:syscall"
 // 先按 word（8B）对齐快拷，剩余按 byte 拷贝
 // 要求 dest 和 src 至少有 n 字节可访问
 fn memcpy(dest: ptr, src: ptr, n: uint) ptr {
-    // 先按 word（ptrSize=8）批量拷贝
-    var words: uint = n / ptrSize
+    // 先按 word（PTR_SIZE=8）批量拷贝
+    var words: uint = n / PTR_SIZE
     var i: uint = 0
     for ; i < words; {
-        var dstP: *ptr = dest + ptrSize * i
-        var srcP: *ptr = src + ptrSize * i
+        var dstP: *ptr = dest + PTR_SIZE * i
+        var srcP: *ptr = src + PTR_SIZE * i
         *dstP = *srcP
         i = i + 1
     }
     // 剩余不足一个 word 的部分按 byte 拷贝
-    var rem: uint = n - ptrSize * words
+    var rem: uint = n - PTR_SIZE * words
     var j: uint = 0
     for ; j < rem; {
-        var dstB: *u8 = dest + ptrSize * words + j
-        var srcB: *u8 = src + ptrSize * words + j
+        var dstB: *u8 = dest + PTR_SIZE * words + j
+        var srcB: *u8 = src + PTR_SIZE * words + j
         *dstB = *srcB
         j = j + 1
     }
@@ -35,17 +35,17 @@ fn memcpy(dest: ptr, src: ptr, n: uint) ptr {
 fn memset(s: ptr, c: u8, n: uint) ptr {
     // 快路径：c==0 按 word 批量清零 + byte 余量
     if c == 0 {
-        var words: uint = n / ptrSize
+        var words: uint = n / PTR_SIZE
         var i: uint = 0
         for ; i < words; {
-            var p: *ptr = s + ptrSize * i
+            var p: *ptr = s + PTR_SIZE * i
             *p = 0
             i = i + 1
         }
-        var rem: uint = n - ptrSize * words
+        var rem: uint = n - PTR_SIZE * words
         var j: uint = 0
         for ; j < rem; {
-            var bp: *u8 = s + ptrSize * words + j
+            var bp: *u8 = s + PTR_SIZE * words + j
             *bp = c
             j = j + 1
         }

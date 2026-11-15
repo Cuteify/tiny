@@ -15,17 +15,17 @@ fn parseVarConst(x *Parser, kind string) bool {
     if nameT == nil {
         ret false
     }
-    var t: *lex.Token = x.l.Peek()
-    var hasType: bool = lex.Token.Is(t, lex.DELIMITER, ":")
+    var t: *lex.Token = x.l.peek()
+    var hasType: bool = lex.Token.is(t, lex.DELIMITER, ":")
     if hasType {
-        x.l.Next()
+        x.l.next()
         if !skipType(x) {
             ret false
         }
     }
-    var eqT: *lex.Token = x.l.Peek()
-    if lex.Token.Is(eqT, lex.DELIMITER, "=") {
-        x.l.Next()
+    var eqT: *lex.Token = x.l.peek()
+    if lex.Token.is(eqT, lex.DELIMITER, "=") {
+        x.l.next()
         restOfLineAtDepth0(x)
     } else if !hasType {
         // var x 无类型也无初值：声明但零值（允许）
@@ -40,8 +40,8 @@ fn parseVarConst(x *Parser, kind string) bool {
 }
 
 fn parseVarConstDispatch(x *Parser, kind string) bool {
-    x.l.SkipTerminators()
-    if lex.Token.Is(x.l.Peek(), lex.DELIMITER, "(") {
+    x.l.skipTerminators()
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
         ret parseGroupedDecl(x, kind)
     }
     ret parseVarConst(x, kind)

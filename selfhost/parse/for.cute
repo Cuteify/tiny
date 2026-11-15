@@ -4,14 +4,14 @@ import "std:strings"
 import lex "../lexer"
 
 // scanForKind 多 token 前瞻判断 for 的三种形态（3=普通 / 2=:= / 1=range）。
-// 用 x.l.Prefetch() 把前瞻 token 扫入 lexer 预取环、不弹出——
-// 决定 kind 之后，后续 Peek/Next 按原序弹出这些 token，无需 pushBack 重放。
+// 用 x.l.prefetch() 把前瞻 token 扫入 lexer 预取环、不弹出——
+// 决定 kind 之后，后续 Peek/next 按原序弹出这些 token，无需 pushBack 重放。
 // 退出条件：遇到 ; { NONE 或扫满 12 个。
 fn scanForKind(x *Parser) int {
     var kind: int = 3
     var n: int = 0
     for ; n < 12; {
-        var t: *lex.Token = x.l.Prefetch()
+        var t: *lex.Token = x.l.prefetch()
         if t.Type == lex.NONE {
             break
         }
@@ -33,19 +33,19 @@ fn scanForKind(x *Parser) int {
 // parsePrimary 解析字面量、名字、括号表达式、复合字面量（表达式叶子计数）。
 fn parseForStmt(x *Parser) bool {
     var kw: string = "for"
-    var t: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t, lex.KEYWORD, "while") {
+    var t: *lex.Token = x.l.peek()
+    if lex.Token.is(t, lex.KEYWORD, "while") {
         kw = "while"
     }
     if !expectKeyword(x, kw, ESTMT) {
         ret false
     }
     var kind: int = scanForKind(x)
-    var t2: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t2, lex.DELIMITER, ";") {
+    var t2: *lex.Token = x.l.peek()
+    if lex.Token.is(t2, lex.DELIMITER, ";") {
         // for ; cond ; post { } —— cond 可空（for ; ; { }）
-        x.l.Next()
-        if !lex.Token.Is(x.l.Peek(), lex.DELIMITER, ";") {
+        x.l.next()
+        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ";") {
             if !parseExpr(x) {
                 ret false
             }
@@ -54,19 +54,19 @@ fn parseForStmt(x *Parser) bool {
             ret false
         }
         for ; ; {
-            var t3: *lex.Token = x.l.Peek()
-            if lex.Token.Is(t3, lex.DELIMITER, "{") {
+            var t3: *lex.Token = x.l.peek()
+            if lex.Token.is(t3, lex.DELIMITER, "{") {
                 break
             }
             if t3 == nil || t3.Type == lex.NONE {
                 ret false
             }
-            x.l.Next()
+            x.l.next()
         }
         ret parseBlock(x)
     }
-    if lex.Token.Is(x.l.Peek(), lex.KEYWORD, "var") {
-        x.l.Next()
+    if lex.Token.is(x.l.peek(), lex.KEYWORD, "var") {
+        x.l.next()
         var nameT: *lex.Token = expectName(x, ESTMT)
         if nameT == nil {
             ret false
@@ -94,14 +94,14 @@ fn parseForStmt(x *Parser) bool {
             ret false
         }
         for ; ; {
-            var t2: *lex.Token = x.l.Peek()
-            if lex.Token.Is(t2, lex.DELIMITER, "{") {
+            var t2: *lex.Token = x.l.peek()
+            if lex.Token.is(t2, lex.DELIMITER, "{") {
                 break
             }
             if t2 == nil || t2.Type == lex.NONE {
                 ret false
             }
-            x.l.Next()
+            x.l.next()
         }
         ret parseBlock(x)
     }
@@ -113,9 +113,9 @@ fn parseForStmt(x *Parser) bool {
             if nt == nil {
                 ret false
             }
-            var p: *lex.Token = x.l.Peek()
-            if lex.Token.Is(p, lex.DELIMITER, ",") {
-                x.l.Next()
+            var p: *lex.Token = x.l.peek()
+            if lex.Token.is(p, lex.DELIMITER, ",") {
+                x.l.next()
                 n = n + 1
                 continue
             }
@@ -134,9 +134,9 @@ fn parseForStmt(x *Parser) bool {
     }
     if kind == 2 {
         // classic: [var] EXPR ; EXPR ; EXPR { ... }（init 可含 := 或省略 var 声明）
-        var tInit: *lex.Token = x.l.Peek()
-        if lex.Token.Is(tInit, lex.KEYWORD, "var") {
-            x.l.Next()
+        var tInit: *lex.Token = x.l.peek()
+        if lex.Token.is(tInit, lex.KEYWORD, "var") {
+            x.l.next()
             // init 段走 var 声明解析
             if !parseVarConst(x, "var") {
                 ret false
@@ -163,14 +163,14 @@ fn parseForStmt(x *Parser) bool {
         }
         // post 子句：到 '{' 为止
         for ; ; {
-            var t2: *lex.Token = x.l.Peek()
-            if lex.Token.Is(t2, lex.DELIMITER, "{") {
+            var t2: *lex.Token = x.l.peek()
+            if lex.Token.is(t2, lex.DELIMITER, "{") {
                 break
             }
             if t2 == nil || t2.Type == lex.NONE {
                 ret false
             }
-            x.l.Next()
+            x.l.next()
         }
         ret parseBlock(x)
     }

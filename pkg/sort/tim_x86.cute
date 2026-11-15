@@ -322,7 +322,7 @@ fn _timUintMerge(data: ptr, b1: int, l1: int, l2: int, temp: ptr, esz: int) {
     }
 }
 
-// ————————— 主循环（栈式驱动；_timStackGet/Set 走 int 槽，栈深 < 32）—————————
+// ————————— 主循环（栈式驱动；_timStackGet/set 走 int 槽，栈深 < 32）—————————
 
 // _timStackGet 读索引数组的第 idx 槽（int 语义；x64 8B）
 fn _timStackGet(base: ptr, idx: int, esz: int) int {

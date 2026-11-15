@@ -16,8 +16,8 @@ type Float struct {
     exponent: int  // 指数
 }
 
-// NewInt 从 int 创建大整数
-fn NewInt(x int) Int {
+// newInt 从 int 创建大整数
+fn newInt(x int) Int {
     var r: Int
     r.sign = 0
     if x < 0 {
@@ -41,8 +41,8 @@ fn NewInt(x int) Int {
     ret r
 }
 
-// NewFloat 从 f64 创建大浮点（占位实现）
-fn NewFloat(x f64) Float {
+// newFloat 从 f64 创建大浮点（占位实现）
+fn newFloat(x f64) Float {
     var r: Float
     r.sign = 0
     r.mantissa = []uint32{}
@@ -51,74 +51,74 @@ fn NewFloat(x f64) Float {
     ret r
 }
 
-// Add 两个大整数相加（占位）
-fn Add(a Int, b Int) Int {
+// add 两个大整数相加（占位）
+fn add(a Int, b Int) Int {
     // TODO: 实现
     ret a
 }
 
-// Sub 两个大整数相减（占位）
-fn Sub(a Int, b Int) Int {
+// sub 两个大整数相减（占位）
+fn sub(a Int, b Int) Int {
     // TODO: 实现
     ret a
 }
 
-// Mul 两个大整数相乘（占位）
-fn Mul(a Int, b Int) Int {
+// mul 两个大整数相乘（占位）
+fn mul(a Int, b Int) Int {
     // TODO: 实现
     ret a
 }
 
-// Div 两个大整数相除（占位）
-fn Div(a Int, b Int) Int {
+// div 两个大整数相除（占位）
+fn div(a Int, b Int) Int {
     // TODO: 实现
     ret a
 }
 
-// Mod 两个大整数取模（占位）
-fn Mod(a Int, b Int) Int {
+// mod 两个大整数取模（占位）
+fn mod(a Int, b Int) Int {
     // TODO: 实现
     ret a
 }
 
-// Eq 判断两个大整数是否相等（占位）
-fn Eq(a Int, b Int) bool {
+// eq 判断两个大整数是否相等（占位）
+fn eq(a Int, b Int) bool {
     // TODO: 实现
     ret true
 }
 
-// Cmp 比较两个大整数（占位）
-fn Cmp(a Int, b Int) int {
+// cmp 比较两个大整数（占位）
+fn cmp(a Int, b Int) int {
     // TODO: 实现
     ret 0
 }
 
-// String 将大整数转换为字符串（占位）
-fn String(x Int) string {
+// string 将大整数转换为字符串（占位）
+fn string(x Int) string {
     // TODO: 实现
     ret "0"
 }
 
-// Bytes 将大整数转换为字节切片（占位）
-fn Bytes(x Int) []uint8 {
+// bytes 将大整数转换为字节切片（占位）
+fn bytes(x Int) []uint8 {
     // TODO: 实现
     ret []uint8{}
 }
 
-// SetBytes 从字节切片设置大整数（占位）
-fn SetBytes(buf []uint8) Int {
+// setBytes 从字节切片设置大整数（占位）
+fn setBytes(buf []uint8) Int {
     // TODO: 实现
-    ret NewInt(0)
+    ret newInt(0)
 }
 
-// BitLen 返回大整数的位长度（占位）
-fn BitLen(x Int) int {
+// bitLen 返回大整数的位长度（占位）
+fn bitLen(x Int) int {
     // TODO: 实现
     ret 0
 }
 
-// GCD 返回两个大整数的最大公约数（占位）
-fn GCD(a Int, b Int) Int {
+// gcd 返回两个大整数的最大公约数（占位）
+fn gcd(a Int, b Int) Int {
     // TODO: 实现
-    ret NewInt(1)
+    ret newInt(1)
 }

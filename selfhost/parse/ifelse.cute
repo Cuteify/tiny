@@ -13,11 +13,11 @@ fn parseIfStmt(x *Parser) bool {
     if !parseBlock(x) {
         ret false
     }
-    var t: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t, lex.KEYWORD, "else") {
-        x.l.Next()
-        var t2: *lex.Token = x.l.Peek()
-        if lex.Token.Is(t2, lex.KEYWORD, "if") {
+    var t: *lex.Token = x.l.peek()
+    if lex.Token.is(t, lex.KEYWORD, "else") {
+        x.l.next()
+        var t2: *lex.Token = x.l.peek()
+        if lex.Token.is(t2, lex.KEYWORD, "if") {
             ret parseIfStmt(x)
         }
         ret parseBlock(x)

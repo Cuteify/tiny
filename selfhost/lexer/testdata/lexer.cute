@@ -2,32 +2,32 @@
 //
 // 词法分析器：输入源码读入字符串（宿主负责读文件），输出 token 流。
 // 结构、命名、逻辑与 Go 参考实现一一对应；约定差异：
-//   1. Token/Error 按 *Token/*Error 传递/缓存：本编译器不支持多字段结构体
+//   1. Token/error 按 *Token/*error 传递/缓存：本编译器不支持多字段结构体
 //      按值返回（docs §15 “结构体按值/多返回值”限制都适用）；
 //   2. 字节访问直接用 string[i]（Cute 原生 s[i] 返回 byte），不带 C 指针；
 //   3. 下划线删除、进制/浮点解析走 std:strings（replaceAll / parseUint /
 //      parseFloat），不重复写到应用层。
 //
 // 本文件按依赖顺序组织（callee 先于 caller，Cute 方法派发无前向解析）：
-// Error、Lexer、NewLexer、TokenCoord、
+// error、Lexer、newLexer、tokenCoord、
 // consume、makeToken、numberBase、handleNumber、handleComment、
-// handleString、Prefetch、Next。
+// handleString、Prefetch、next。
 // 字符分类助手（isDigit/isSpaceByte/isIntDigit）已迁入 std:strings；
 // 关键字/分隔符表见 buf.cute。
 import "std:strings"
 
-// prefetchCap 预取 FIFO 队列的固定长度（8）。队列满时新 token 不入队。
-const prefetchCap: int = 8
+// PREFETCH_CAP 预取 FIFO 队列的固定长度（8）。队列满时新 token 不入队。
+const PREFETCH_CAP: int = 8
 
-// Error 词法错误（Pos/Line/Col 为出错 token 的起点）。
-type Error struct {
+// error 词法错误（Pos/Line/Col 为出错 token 的起点）。
+type error struct {
     Pos: int
     Line: int
     Col: int
     Msg: string
 }
 
-fn Error.Error(e *Error) string {
+fn error.error(e *error) string {
     var lc: string = strings.itoa(e.Line) + ":" + strings.itoa(e.Col)
     ret e.Msg + " (at " + lc + ", byte " + strings.itoa(e.Pos) + ")"
 }
@@ -38,7 +38,7 @@ type Lexer struct {
     Pos: int    // 字节偏移光标
     Line: int    // 行号
     Col: int    // 列号
-    Err: *Error // 首个词法错误；一旦出错，Next 恒返回 NONE
+    Err: *error // 首个词法错误；一旦出错，next 恒返回 NONE
 
     // 内部扫描游标；宿主使用 Pos/Line/Col。
     pfPos: int
@@ -47,8 +47,8 @@ type Lexer struct {
     pfCache: *RingBuffer
 }
 
-// NewLexer 以源文本创建词法分析器。
-fn NewLexer(text string) *Lexer {
+// newLexer 以源文本创建词法分析器。
+fn newLexer(text string) *Lexer {
     var l: *Lexer = new(Lexer)
     l.Text = text
     l.Line = 1
@@ -57,12 +57,12 @@ fn NewLexer(text string) *Lexer {
     l.pfCol = 1
     l.Pos = 0
     l.pfPos = 0
-    l.pfCache = NewRingBuffer(prefetchCap)
+    l.pfCache = newRingBuffer(PREFETCH_CAP)
     ret l
 }
 
-// TokenCoord 构造 consume 用的 token 形态（仅 Pos/EndPos 生效）。
-fn TokenCoord(pos int, endPos int) *Token {
+// tokenCoord 构造 consume 用的 token 形态（仅 Pos/EndPos 生效）。
+fn tokenCoord(pos int, endPos int) *Token {
     ret Token{Pos: pos, EndPos: endPos}
 }
 
@@ -91,7 +91,7 @@ fn Lexer.makeToken(l *Lexer, t *Token) *Token {
     l.consume(t)
     t.EndLine = l.pfLine
     t.EndCol = l.pfCol
-    l.pfCache.Write(t)
+    l.pfCache.write(t)
     ret t
 }
 
@@ -193,7 +193,7 @@ fn Lexer.handleComment(l *Lexer, delimiter string) {
             if unsafe.cast[int](b) == 10 { break }
             j = j + 1
         }
-        l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](j)))
+        l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j)))
         ret
     }
     // 块注释：/* ... */（非嵌套，可跨行）
@@ -205,11 +205,11 @@ fn Lexer.handleComment(l *Lexer, delimiter string) {
         j = j + 1
     }
     if j + 1 < plen {
-        l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](j + 2)))
+        l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j + 2)))
         ret
     }
     // 未闭合：消费到文件尾（行列随之推进）
-    l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
+    l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
 }
 
 // handleString 处理字符串、字符、裸串
@@ -236,13 +236,13 @@ fn Lexer.handleString(l *Lexer, delimiter string) *Token {
         i = i + 1
     }
     // 未闭合：消费到文件尾
-    l.consume(TokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
+    l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
     var te: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
     ret te
 }
 
 // Prefetch 预取
-fn Lexer.Prefetch(l *Lexer) *Token {
+fn Lexer.prefetch(l *Lexer) *Token {
     var plen: uint = len(l.Text)
 
     // 跳过空白（Go 参考 isSpace 语义：空格/Tab/CR/LF 全被跳过，不产生 token）
@@ -255,7 +255,7 @@ fn Lexer.Prefetch(l *Lexer) *Token {
         }
         break
     }
-    l.consume(TokenCoord(l.pfPos, unsafe.cast[int](i)))
+    l.consume(tokenCoord(l.pfPos, unsafe.cast[int](i)))
     if unsafe.cast[uint](l.pfPos) >= plen {
         // EOF
         var t: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
@@ -300,7 +300,7 @@ fn Lexer.Prefetch(l *Lexer) *Token {
         var delimiter: string = l.Text[i:i + unsafe.cast[uint](delimLen)]
         if strings.eq(delimiter, "//") || strings.eq(delimiter, "/*") {
             l.handleComment(delimiter)
-            ret l.Prefetch()
+            ret l.prefetch()
         }
 
         // 处理字符串
@@ -337,17 +337,17 @@ fn Lexer.Prefetch(l *Lexer) *Token {
     ret te
 }
 
-// Next 返回下一个 token；缓存读穿或预取。
-fn Lexer.Next(l *Lexer) *Token {
+// next 返回下一个 token；缓存读穿或预取。
+fn Lexer.next(l *Lexer) *Token {
     // hit == 0 表示缓存空（无可弹出的 token）
-    var hit: *Token = l.pfCache.Read()
+    var hit: *Token = l.pfCache.read()
     if unsafe.cast[uint](hit) != 0 {
         l.Pos = hit.EndPos
         l.Line = hit.EndLine
         l.Col = hit.EndCol
         ret hit
     }
-    var tok: *Token = l.Prefetch()
+    var tok: *Token = l.prefetch()
     if tok.Type == NONE {
         // EOF
         l.Pos = l.pfPos
@@ -357,9 +357,9 @@ fn Lexer.Next(l *Lexer) *Token {
     }
     // 语义差异（与 Go 参考一处差异，见 README）：
     // makeToken 既把 token 写入预取缓存、又把它返回给调用者；若不弹出，
-    // 纯 Next() 循环会把每个词素返回两次。这里弹出刚写入的这份副本，
-    // 使 Next() 成为纯消费 API；Prefetch() 本身仍是预取扫描（与 Go main 一致）。
-    var dropT: *Token = l.pfCache.Read()
+    // 纯 next() 循环会把每个词素返回两次。这里弹出刚写入的这份副本，
+    // 使 next() 成为纯消费 API；Prefetch() 本身仍是预取扫描（与 Go main 一致）。
+    var dropT: *Token = l.pfCache.read()
     if unsafe.cast[uint](dropT) == 0 {
         // 缓存满了或已被弹出：防御性分支，直接返回新 token 即可
         l.Pos = tok.EndPos

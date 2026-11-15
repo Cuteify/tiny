@@ -1,8 +1,8 @@
 // pkg/maps/maps.cute —— Wave Mp v2:独立泛型 hash map(开放寻址+墓碑,FNV-1a 手写)
 // PLAN §4.4:hashmap 删包,text/template 切 std:maps(唯一外部用户);本包就地重写
 // 依赖铁律 P7:只 import memory;string 键 hash(FNV-1a)/eq(逐字节)手写,不 import strings
-// 形状:开放寻址+墓碑;载荷 0.75→2× 成长(rehash);桶数组单块 malloc(P8,槽内偏移按 ptrSize 取齐)
-// K 初批:int/uint/ptr/string——键宽 sizeof[K]()(mono 单位);string 判据 ksz==3*ptrSize→内容路径
+// 形状:开放寻址+墓碑;载荷 0.75→2× 成长(rehash);桶数组单块 malloc(P8,槽内偏移按 PTR_SIZE 取齐)
+// K 初批:int/uint/ptr/string——键宽 sizeof[K]()(mono 单位);string 判据 ksz==3*PTR_SIZE→内容路径
 //   数值/ptr 键=键字节流 FNV+逐字节 eq;string 键=内容字节流 FNV+逐字节 eq
 // V 全运行期带宽:vsz 由 new 实参给出;值域只做字节拷贝/清零/比较;string 值为视图(数据块所有权留在调用方)
 // API:new/set/get(零值+ok)/has/delete/len/clear/keys/values/clone/equal
@@ -12,7 +12,7 @@
 
 import "std:memory"
 
-// ---- 内部头(非泛型具体 struct;偏移单点 = 头 6 槽 × ptrSize) ----
+// ---- 内部头(非泛型具体 struct;偏移单点 = 头 6 槽 × PTR_SIZE) ----
 type mapHdr struct {
     slots: ptr   // @0 插槽阵列基地址(单块 malloc)
     cap: uint    // @ps 槽数
@@ -35,7 +35,7 @@ type strView struct {
 
 // ==== 内部非泛型 helpers ====
 
-// _roundUp 将 x 上取整为 a 的倍数(a = ptrSize;纯 uint 数学,免 cast[int])
+// _roundUp 将 x 上取整为 a 的倍数(a = PTR_SIZE;纯 uint 数学,免 cast[int])
 fn _roundUpU(x uint, a uint) uint {
     var q: uint = (x + a) - 1
     ret (q / a) * a

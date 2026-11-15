@@ -10,8 +10,8 @@ type RGBA struct {
     A: u8
 }
 
-// RGBAModel 创建 RGBA 颜色值
-fn RGBAModel(r u8, g u8, b u8, a u8) RGBA {
+// rGBAModel 创建 RGBA 颜色值
+fn rGBAModel(r u8, g u8, b u8, a u8) RGBA {
     var c: RGBA
     c.R = r
     c.G = g
@@ -21,8 +21,8 @@ fn RGBAModel(r u8, g u8, b u8, a u8) RGBA {
 }
 
 // 预定义颜色常量
-var Black: RGBA = RGBAModel(0, 0, 0, 255)
-var White: RGBA = RGBAModel(255, 255, 255, 255)
-var Red: RGBA = RGBAModel(255, 0, 0, 255)
-var Green: RGBA = RGBAModel(0, 255, 0, 255)
-var Blue: RGBA = RGBAModel(0, 0, 255, 255)
+var Black: RGBA = rGBAModel(0, 0, 0, 255)
+var White: RGBA = rGBAModel(255, 255, 255, 255)
+var Red: RGBA = rGBAModel(255, 0, 0, 255)
+var Green: RGBA = rGBAModel(0, 255, 0, 255)
+var Blue: RGBA = rGBAModel(0, 0, 255, 255)

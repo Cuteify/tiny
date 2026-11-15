@@ -12,7 +12,7 @@ type Index struct {
 
 // New 创建后缀数组索引
 // data: 要索引的字符串
-fn New(data string) *Index {
+fn new(data string) *Index {
     var idx: *Index = memory.malloc(32)
     idx.data = data
     var dataLen: uint = strings.len(data)
@@ -97,9 +97,9 @@ fn compareSuffixes(dataPtr: ptr, dataLen: uint, pos1: int, pos2: int) int {
     ret 0
 }
 
-// Search 在后缀数组中搜索字符串 s
+// search 在后缀数组中搜索字符串 s
 // 返回 s 在原字符串中首次出现的位置索引，未找到返回 -1
-fn Search(idx *Index, s string) int {
+fn search(idx *Index, s string) int {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var n: int = idx.n

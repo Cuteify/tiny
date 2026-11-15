@@ -1,6 +1,6 @@
 // 分组声明与裸 interface 回归测试：ret 42 表示通过。
 var g = 5
-const c = 7
+const C = 7
 
 type (
     M = int
@@ -22,8 +22,8 @@ var (
     a4 = 3
 )
 const (
-    cc = 10
-    cd: int = 32
+    CC = 10
+    CD: int = 32
 )
 let (
     le = 9
@@ -35,8 +35,8 @@ fn later() int {
 
 fn useX() int {
     var local = 40
-    const lconst = 2
-    ret local + lconst - a1
+    const LCONST = 2
+    ret local + LCONST - a1
 }
 
 fn main() int {
@@ -45,7 +45,7 @@ fn main() int {
     v.y = 5
     useB()
     var neverUsed: int = g + later()
-    if a1 + a2 + a3 + a4 + cc + cd + le + g + c + v.x + v.y + useX() + neverUsed != 0 {
+    if a1 + a2 + a3 + a4 + CC + CD + le + g + C + v.x + v.y + useX() + neverUsed != 0 {
     }
     ret 42
 }

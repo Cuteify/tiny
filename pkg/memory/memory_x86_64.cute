@@ -8,7 +8,7 @@ build os("linux")
 build arch("x86_64")
 import "std:syscall"
 
-const ptrSize: uint = 8
+const PTR_SIZE: uint = 8
 
 // ===== 加载/存储原语（已废弃，改用类型化指针）=====
 // fn load8(addr: ptr) u8 { ... }
@@ -35,42 +35,42 @@ fn hdrSetSizeRaw(p: ptr, s: uint) {
 // hdrFooter 读 footer（块尾部的 size 副本）
 fn hdrFooter(p: ptr, size: uint) uint {
     var pureSize: uint = size & ~3
-    var _p: *ptr = p + pureSize - ptrSize
+    var _p: *ptr = p + pureSize - PTR_SIZE
     ret *_p
 }
 
 // hdrSetFooter 写 footer
 fn hdrSetFooter(p: ptr, size: uint) {
     var pureSize: uint = size & ~3
-    var _p: *ptr = p + pureSize - ptrSize
+    var _p: *ptr = p + pureSize - PTR_SIZE
     *_p = size
 }
 
 // ===== RC/Flags 操作（仅用于 mallocRC 分配的块）=====
-// RC block 布局: [header] [RC at p-2*ptrSize] [flags at p-ptrSize] [data at p]
+// RC block 布局: [header] [RC at p-2*PTR_SIZE] [flags at p-PTR_SIZE] [data at p]
 // 用户指针 ptr 指向 data，RC 在 ptr-16，flags 在 ptr-8
 
 // rcLoad 读 RC 计数器（ptr-16）
 fn rcLoad(p: ptr) uint {
-    var _p: *ptr = p - 2 * ptrSize
+    var _p: *ptr = p - 2 * PTR_SIZE
     ret *_p
 }
 
 // rcStore 写 RC 计数器
 fn rcStore(p: ptr, v: uint) {
-    var _p: *ptr = p - 2 * ptrSize
+    var _p: *ptr = p - 2 * PTR_SIZE
     *_p = v
 }
 
 // flagLoad 读 flags 字段（ptr-8）
 fn flagLoad(p: ptr) uint {
-    var _p: *ptr = p - ptrSize
+    var _p: *ptr = p - PTR_SIZE
     ret *_p
 }
 
 // flagStore 写 flags 字段
 fn flagStore(p: ptr, v: uint) {
-    var _p: *ptr = p - ptrSize
+    var _p: *ptr = p - PTR_SIZE
     *_p = v
 }
 
@@ -78,24 +78,24 @@ fn flagStore(p: ptr, v: uint) {
 
 // freeNext 读空闲块链表 next 指针（数据区起始）
 fn freeNext(p: ptr) ptr {
-    var _p: *ptr = p + ptrSize
+    var _p: *ptr = p + PTR_SIZE
     ret *_p
 }
 
 // freeSetNext 写空闲块链表 next 指针
 fn freeSetNext(p: ptr, v: ptr) {
-    var _p: *ptr = p + ptrSize
+    var _p: *ptr = p + PTR_SIZE
     *_p = v
 }
 
-// freePrev 读空闲块链表 prev 指针（数据区 +ptrSize）
+// freePrev 读空闲块链表 prev 指针（数据区 +PTR_SIZE）
 fn freePrev(p: ptr) ptr {
-    var _p: *ptr = p + 2 * ptrSize
+    var _p: *ptr = p + 2 * PTR_SIZE
     ret *_p
 }
 
 // freeSetPrev 写空闲块链表 prev 指针
 fn freeSetPrev(p: ptr, v: ptr) {
-    var _p: *ptr = p + 2 * ptrSize
+    var _p: *ptr = p + 2 * PTR_SIZE
     *_p = v
 }

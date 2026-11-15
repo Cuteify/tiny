@@ -8,28 +8,28 @@ fn parseInterfaceBody(x *Parser) bool {
         ret false
     }
     for ; ; {
-        x.l.SkipTerminators()
-        var t: *lex.Token = x.l.Peek()
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
         if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
-        if lex.Token.Is(t, lex.DELIMITER, "}") {
-            x.l.Next()
+        if lex.Token.is(t, lex.DELIMITER, "}") {
+            x.l.next()
             ret true
         }
         if t.Type != lex.NAME {
             fail(x, EDECL, t.Pos)
             ret false
         }
-        x.l.Next()
+        x.l.next()
         // 嵌入式接口（仅 NAME 换行）
-        var p: *lex.Token = x.l.Peek()
-        if lex.Token.IsLineEnd(p) {
+        var p: *lex.Token = x.l.peek()
+        if lex.Token.isLineEnd(p) {
             continue
         }
-        if lex.Token.Is(p, lex.DELIMITER, "(") {
-            x.l.Next()
+        if lex.Token.is(p, lex.DELIMITER, "(") {
+            x.l.next()
             if !parseFuncParams(x) {
                 ret false
             }
@@ -51,7 +51,7 @@ fn parseInterfaceFromKeyword(x *Parser) bool {
     if nameT == nil {
         ret false
     }
-    x.l.SkipTerminators()
+    x.l.skipTerminators()
     if !parseInterfaceBody(x) {
         ret false
     }

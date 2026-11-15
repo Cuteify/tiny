@@ -7,7 +7,7 @@
 // Go 侧参考实现的关键点全部照抄；与 Go 的差异仅在 Cute 必要处。
 //
 // 与 Go 的差异：
-//   1. Token/Error 按 *Token/*Error 传递/缓存：本编译器不支持多字段结构体
+//   1. Token/error 按 *Token/*error 传递/缓存：本编译器不支持多字段结构体
 //      按值返回（docs §15 “结构体按值/多返回值”限制都适用）；
 //   2. 关键字/分隔符表 presort 为字面量，isKeyword/isDelimiter 内做二分查找；
 //      Go 侧的 init() sort.Strings 折叠进作者化排序，顺序与 Go 运行结果一致；
@@ -38,7 +38,7 @@ type Token struct {
     EndCol: int
 }
 
-fn TokenType.String(t TokenType) string {
+fn TokenType.string(t TokenType) string {
     switch t {
     case NONE:
         ret "NONE"
@@ -57,18 +57,18 @@ fn TokenType.String(t TokenType) string {
     }
 }
 
-fn Token.String(t *Token) string {
-    var sb: string = "[" + TokenType.String(t.Type) + "]" + RenderVisible(t.Value)
+fn Token.string(t *Token) string {
+    var sb: string = "[" + TokenType.string(t.Type) + "]" + renderVisible(t.Value)
     ret sb
 }
 
-fn Token.Len(t *Token) int {
+fn Token.len(t *Token) int {
     ret unsafe.cast[int](strings.len(t.Value))
 }
 
 // IsLineEnd 行尾判定：LF 与 CR 的一字节 DELIMITER token。
 // nil / NONE / 其它类型一律返回 false（parser 的行尾跳循环靠它终止）。
-fn Token.IsLineEnd(t *Token) bool {
+fn Token.isLineEnd(t *Token) bool {
     if unsafe.cast[uint](t) == 0 {
         ret false
     }
@@ -85,7 +85,7 @@ fn Token.IsLineEnd(t *Token) bool {
 
 // IsSemiOrNewline 语句终结符判定：DELIMITER ";" 或 IsLineEnd(t)。
 // nil / NONE / 其它类型返回 false。
-fn Token.IsSemiOrNewline(t *Token) bool {
+fn Token.isSemiOrNewline(t *Token) bool {
     if unsafe.cast[uint](t) == 0 {
         ret false
     }
@@ -95,11 +95,11 @@ fn Token.IsSemiOrNewline(t *Token) bool {
     if strings.eq(t.Value, ";") {
         ret true
     }
-    ret Token.IsLineEnd(t)
+    ret Token.isLineEnd(t)
 }
 
 // Is 按种类+值判断 token（类型安全的 kind/value 匹配，调用方不必各自 nil/Type/eq）。
-fn Token.Is(t *Token, kind: TokenType, value string) bool {
+fn Token.is(t *Token, kind: TokenType, value string) bool {
     if unsafe.cast[uint](t) == 0 {
         ret false
     }
@@ -109,11 +109,11 @@ fn Token.Is(t *Token, kind: TokenType, value string) bool {
     ret strings.eq(t.Value, value)
 }
 
-// RenderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
-// 与 Go 参考 token.go 的 RenderVisible 逐字节一致（一行一 token 输出不被破坏）。
+// renderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
+// 与 Go 参考 token.go 的 renderVisible 逐字节一致（一行一 token 输出不被破坏）。
 // 单缓冲 O(n)：最坏情况下每个输入字节产出 2 个输出字节，按 2n+1 预分配；
 // 原实现每字符 malloc(2)+字符串拼接 O(n²) 行为已废弃。
-fn RenderVisible(s string) string {
+fn renderVisible(s string) string {
     var n: uint = strings.len(s)
     if n == 0 {
         ret s
@@ -148,7 +148,7 @@ fn RenderVisible(s string) string {
     ret buf[:w]
 }
 
-// RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 Write 返回 false。
+// RingBuffer 环形缓冲区（预取 FIFO 用）：固定容量，满后 write 返回 false。
 type RingBuffer struct {
     buf: []*Token
     ReadPos: int
@@ -156,7 +156,7 @@ type RingBuffer struct {
     f: bool // f=true 代表缓冲区已满
 }
 
-fn NewRingBuffer(size int) *RingBuffer {
+fn newRingBuffer(size int) *RingBuffer {
     if size <= 0 {
         // Go panic("size must > 0")
         panic("size must > 0")
@@ -168,18 +168,18 @@ fn NewRingBuffer(size int) *RingBuffer {
 }
 
 // IsFull 是否满
-fn RingBuffer.IsFull(r *RingBuffer) bool {
+fn RingBuffer.isFull(r *RingBuffer) bool {
     ret r.f
 }
 
 // IsEmpty 是否空
-fn RingBuffer.IsEmpty(r *RingBuffer) bool {
+fn RingBuffer.isEmpty(r *RingBuffer) bool {
     ret !r.f && r.ReadPos == r.WritePos
 }
 
-// Write 写入元素，成功返回true，满了返回false
-fn RingBuffer.Write(r *RingBuffer, c *Token) bool {
-    if r.IsFull() {
+// write 写入元素，成功返回true，满了返回false
+fn RingBuffer.write(r *RingBuffer, c *Token) bool {
+    if r.isFull() {
         ret false
     }
 
@@ -195,10 +195,10 @@ fn RingBuffer.Write(r *RingBuffer, c *Token) bool {
     ret true
 }
 
-// Read 读出一个元素；空时返回零指针（0）。
+// read 读出一个元素；空时返回零指针（0）。
 // Go 的第二返回值（false/true）映射为 "返回零指针时表示空"。
-fn RingBuffer.Read(r *RingBuffer) *Token {
-    if r.IsEmpty() {
+fn RingBuffer.read(r *RingBuffer) *Token {
+    if r.isEmpty() {
         ret 0
     }
 
@@ -213,16 +213,16 @@ fn RingBuffer.Read(r *RingBuffer) *Token {
 
 // Clear 重置读写下标与满标记（不动槽位，也不释放已写入的 *Token）。
 // 用于位置回卷后丢弃预取残留——buffer 直接复用，零分配。
-fn RingBuffer.Clear(r *RingBuffer) {
+fn RingBuffer.clear(r *RingBuffer) {
     r.ReadPos = 0
     r.WritePos = 0
     r.f = false
 }
 
-// Front 只读地查看环首元素；空时返回零指针（不弹出）。
+// front 只读地查看环首元素；空时返回零指针（不弹出）。
 // parser 的 peek 语义直接由这里经 lex.Prefetch 承接，不进环也不消费。
-fn RingBuffer.Front(r *RingBuffer) *Token {
-    if r.IsEmpty() {
+fn RingBuffer.front(r *RingBuffer) *Token {
+    if r.isEmpty() {
         ret 0
     }
     ret r.buf[r.ReadPos]
@@ -230,7 +230,7 @@ fn RingBuffer.Front(r *RingBuffer) *Token {
 
 // Resize 扩容：把现有有效数据迁移到新buffer
 // 注意：Resize 环形buffer比较麻烦，不能直接copy底层数组
-fn RingBuffer.Resize(r *RingBuffer, newSize int) {
+fn RingBuffer.resize(r *RingBuffer, newSize int) {
     if newSize <= len(r.buf) {
         // 简化：这里只支持扩容，缩容不处理，或者你自己扩展
         ret
@@ -239,8 +239,8 @@ fn RingBuffer.Resize(r *RingBuffer, newSize int) {
 
     // 把所有有效数据依次读出写入新buf
     var idx: int = 0
-    for ; !r.IsEmpty(); {
-        var v: *Token = r.Read()
+    for ; !r.isEmpty(); {
+        var v: *Token = r.read()
         newBuf[idx] = v
         idx = idx + 1
     }

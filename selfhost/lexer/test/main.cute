@@ -23,13 +23,13 @@ fn main() int {
         console.println(path)
         ret 2
     }
-    var l: *lex.Lexer = lex.NewLexer(sf.Src)
+    var l: *lex.Lexer = lex.newLexer(sf.Src)
     for ; true; {
-        var t: *lex.Token = l.Next()
+        var t: *lex.Token = l.next()
         if t.Type == lex.NONE {
             break
         }
-        console.println(lex.Token.String(t))
+        console.println(lex.Token.string(t))
     }
     ret 42
 }

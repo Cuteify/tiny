@@ -73,8 +73,8 @@ fn parseTarName(ptr ptr, maxLen uint) string {
     ret strings.view(strPtr, i, i)
 }
 
-// NewReader 创建 tar 读取器
-fn NewReader(data string) *Reader {
+// newReader 创建 tar 读取器
+fn newReader(data string) *Reader {
     var buf: ptr = memory.malloc(40)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -94,8 +94,8 @@ fn NewReader(data string) *Reader {
     ret result
 }
 
-// Next 读取下一个 tar 头部，返回 *Header 或 nil（EOF）
-fn Next(r *Reader) *Header {
+// next 读取下一个 tar 头部，返回 *Header 或 nil（EOF）
+fn next(r *Reader) *Header {
     var _p11: *ptr = r
     var dataPtr: ptr = *_p11
     var _p12: *ptr = r + 8
@@ -166,8 +166,8 @@ fn Next(r *Reader) *Header {
     ret result
 }
 
-// Read 从当前文件内容中读取数据
-fn Read(r *Reader, buf ptr, n int) int {
+// read 从当前文件内容中读取数据
+fn read(r *Reader, buf ptr, n int) int {
     var _p22: *ptr = r
     var dataPtr: ptr = *_p22
     var _p23: *ptr = r + 8
@@ -179,7 +179,7 @@ fn Read(r *Reader, buf ptr, n int) int {
     var _p26: *ptr = r + 32
     var fileSize: uint = *_p26
 
-    // 文件内容起始位置 = pos - fileSize（因为 Next 已经跳过了头部）
+    // 文件内容起始位置 = pos - fileSize（因为 next 已经跳过了头部）
     var contentStart: uint = pos - fileSize
     var offset: uint = contentStart + filePos
 

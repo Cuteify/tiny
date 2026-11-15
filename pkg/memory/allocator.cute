@@ -2,9 +2,9 @@ import "std:syscall"
 // ===== Cuteify Memory Manager v3 — Allocator Core =====
 //
 // 内存布局：
-//   [header: ptrSize bytes] [user data ...] [footer: ptrSize bytes]
+//   [header: PTR_SIZE bytes] [user data ...] [footer: PTR_SIZE bytes]
 //   header 存储块大小 | 标志位，footer 与 header 相同（用于向前合并时读取前一块信息）
-//   用户指针 ptr 指向 data 起始位置，header 在 ptr - ptrSize
+//   用户指针 ptr 指向 data 起始位置，header 在 ptr - PTR_SIZE
 //
 // 块大小分级（tier）：
 //   TINY   (≤1024B)  — class 0-32，按 12.5% 递增，最小 32B
@@ -18,7 +18,7 @@ import "std:syscall"
 // 堆内等待相邻合并或进程回收，不会返回 OS。
 //
 // 空闲块内部布局（复用 data 区域存储链表指针）：
-//   [next: ptr] [prev: ptr] ... （在 data 区域的前 2*ptrSize 字节）
+//   [next: ptr] [prev: ptr] ... （在 data 区域的前 2*PTR_SIZE 字节）
 //
 // [P8 镜像] strHdr 为 string 24B 头覆写视图（Go 序 p@0/n@8/c@16，与
 // strings.str 同形）。P7 反向禁止 memory import L2——镜像收敛记录见
@@ -65,7 +65,7 @@ fn tierOf(size: uint) uint {
 }
 
 // blkSizeOfTiny 根据 tiny class 编号计算块大小
-// class 0 = 32B，后续每级增长 max(当前大小/8, 16B)，最终对齐到 ptrSize
+// class 0 = 32B，后续每级增长 max(当前大小/8, 16B)，最终对齐到 PTR_SIZE
 // 例：cls=0→32, cls=1→48, cls=2→64, cls=3→80, cls=4→96 ...
 fn blkSizeOfTiny(cls: uint) uint {
     if cls == 0 {
@@ -82,8 +82,8 @@ fn blkSizeOfTiny(cls: uint) uint {
         s = s + step
         i = i + 1
     }
-    // 对齐到 ptrSize（向上取整到 8 的倍数）
-    ret (s + ptrSize - 1) & ~(ptrSize - 1)
+    // 对齐到 PTR_SIZE（向上取整到 8 的倍数）
+    ret (s + PTR_SIZE - 1) & ~(PTR_SIZE - 1)
 }
 
 // blkSizeOfSmall 根据 small class 编号计算块大小（class 0=2048B, class 1=4096B）
@@ -308,7 +308,7 @@ fn coalesce(blk: ptr) ptr {
     // === 向后合并 ===
     // 计算下一个块的地址，如果在堆范围内且空闲则合并
     var nextBlk: ptr = blk + pure
-    if nextBlk + ptrSize <= brkTop {
+    if nextBlk + PTR_SIZE <= brkTop {
         var ns: uint = hdrSizeRaw(nextBlk)
         if ns != 0 && (ns & IS_FREE) != 0 {
             // 下一块空闲：从链表摘除，累加大小
@@ -320,8 +320,8 @@ fn coalesce(blk: ptr) ptr {
     // === 向前合并 ===
     // 通过 PREV_FREE 标志判断前一块是否空闲
     if (raw & PREV_FREE) != 0 {
-        // 读前一块的 footer（在 blk - ptrSize），获取前一块大小
-        var prevFooterP: *ptr = blk - ptrSize
+        // 读前一块的 footer（在 blk - PTR_SIZE），获取前一块大小
+        var prevFooterP: *ptr = blk - PTR_SIZE
         var prevFooter: uint = *prevFooterP
         var prevSize: uint = prevFooter & ~FLAG_MASK
         var prevBlk: ptr = blk - prevSize
@@ -341,7 +341,7 @@ fn coalesce(blk: ptr) ptr {
     // === 更新后继块的 PREV_FREE 标记 ===
     // 合并后的块是空闲的，所以后继块应该知道"我的前驱是空闲的"
     var nextAfter: ptr = blk + pure
-    if nextAfter + ptrSize <= brkTop {
+    if nextAfter + PTR_SIZE <= brkTop {
         var ns2: uint = hdrSizeRaw(nextAfter)
         if ns2 != 0 {
             hdrSetSizeRaw(nextAfter, ns2 | PREV_FREE)
@@ -362,9 +362,9 @@ fn malloc(size: uint) ptr {
     initFreeHeads()
 
     // 用户请求大小 + header + footer 的开销
-    var req: uint = size + ptrSize * 2
-    // 最小块大小 = 4 * ptrSize（确保能放下 next/prev 指针）
-    var minReq: uint = ptrSize * 4
+    var req: uint = size + PTR_SIZE * 2
+    // 最小块大小 = 4 * PTR_SIZE（确保能放下 next/prev 指针）
+    var minReq: uint = PTR_SIZE * 4
     if req < minReq {
         req = minReq
     }
@@ -372,7 +372,7 @@ fn malloc(size: uint) ptr {
     // === 路径 1: HUGE 块 — 直接 brk 分配，不进空闲链表 ===
     // F6: req 与 LARGE 路径同式 round8，header/footer 与后继块自然对齐
     if req > LARGE_MAX {
-        var aligned: uint = (req + ptrSize - 1) & ~(ptrSize - 1)
+        var aligned: uint = (req + PTR_SIZE - 1) & ~(PTR_SIZE - 1)
         var old: ptr = syscall.brk(0)
         var nb: ptr = syscall.brk(old + aligned)
         if nb < old + aligned {
@@ -380,13 +380,13 @@ fn malloc(size: uint) ptr {
         }
         hdrSetSizeRaw(old, aligned)
         hdrSetFooter(old, aligned)
-        ret old + ptrSize  // 跳过 header
+        ret old + PTR_SIZE  // 跳过 header
     }
 
     // === 路径 2: LARGE 块 — brk 分配 + coalesce 合并 ===
     if req > MIDDLE_MAX {
-        // 对齐到 ptrSize
-        var aligned: uint = (req + ptrSize - 1) & ~(ptrSize - 1)
+        // 对齐到 PTR_SIZE
+        var aligned: uint = (req + PTR_SIZE - 1) & ~(PTR_SIZE - 1)
         var old: ptr = syscall.brk(0)
         var nb: ptr = syscall.brk(old + aligned)
         if nb < old + aligned {
@@ -404,14 +404,14 @@ fn malloc(size: uint) ptr {
         // 清除后继块的 PREV_FREE（我们的块不再是空闲的）
         var nextM: ptr = merged + mPure
         var brkTop: ptr = syscall.brk(0)
-        if nextM + ptrSize <= brkTop {
+        if nextM + PTR_SIZE <= brkTop {
             var ns: uint = hdrSizeRaw(nextM)
             if ns != 0 {
                 hdrSetSizeRaw(nextM, ns & ~PREV_FREE)
                 hdrSetFooter(nextM, ns & ~PREV_FREE)
             }
         }
-        ret merged + ptrSize
+        ret merged + PTR_SIZE
     }
 
     // === 路径 3: TINY/SMALL 块 — 空闲链表分配 ===
@@ -437,10 +437,10 @@ fn malloc(size: uint) ptr {
     // 按「规范尺寸 <= 实际尺寸」入链）。余量够最小块则拆块回链；不足则整块
     // 使用。两种形态都必须以实际尺寸为物理边界，不能按规范尺寸硬写 footer。
     var rawSize: uint = hdrSizeRaw(head) & ~FLAG_MASK
-    // 空闲链表最小可表示块 = max(4*ptrSize, class 0 规范尺寸)。x86 的 4*ptrSize=16
+    // 空闲链表最小可表示块 = max(4*PTR_SIZE, class 0 规范尺寸)。x86 的 4*PTR_SIZE=16
     // 小于 class 0 规范尺寸 32；若拆出 16B 余块，freeListClassOf 会返回 60 而
     // 不入链（IS_FREE 却不在任何链表的不变式破口）。故下限取 class 0 规范尺寸。
-    var minBlk: uint = ptrSize * 4
+    var minBlk: uint = PTR_SIZE * 4
     if minBlk < blkSizeOf(0) {
         minBlk = blkSizeOf(0)
     }
@@ -465,7 +465,7 @@ fn malloc(size: uint) ptr {
         // 余块空闲 → 其后继块标 PREV_FREE
         var afterRem: ptr = remBlk + rem
         var brkRem: ptr = syscall.brk(0)
-        if afterRem + ptrSize <= brkRem {
+        if afterRem + PTR_SIZE <= brkRem {
             var nsr: uint = hdrSizeRaw(afterRem)
             if nsr != 0 {
                 hdrSetSizeRaw(afterRem, nsr | PREV_FREE)
@@ -481,7 +481,7 @@ fn malloc(size: uint) ptr {
     // 清除后继块的 PREV_FREE（我们的块不再是空闲的）
     var nextBlk: ptr = head + useSize
     var brkTop: ptr = syscall.brk(0)
-    if nextBlk + ptrSize <= brkTop {
+    if nextBlk + PTR_SIZE <= brkTop {
         var ns: uint = hdrSizeRaw(nextBlk)
         if ns != 0 {
             hdrSetSizeRaw(nextBlk, ns & ~PREV_FREE)
@@ -489,7 +489,7 @@ fn malloc(size: uint) ptr {
         }
     }
 
-    ret head + ptrSize  // 跳过 header，返回用户指针
+    ret head + PTR_SIZE  // 跳过 header，返回用户指针
 }
 
 // freeAt 释放指定 blk（块起始地址，非用户指针）的内存，供 free/freeRC 共用
@@ -533,7 +533,7 @@ fn freeAt(blk: ptr) bool {
 }
 
 // free 释放用户指针指向的内存
-// 运行时检测 flags 字段（ptr-ptrSize）：
+// 运行时检测 flags 字段（ptr-PTR_SIZE）：
 //   - (flags & RC_BIT) != 0 → mallocRC 分配的块，走 rcDec（引用计数释放）
 //   - 否则走 freeAt（直接释放）
 // 返回 true 表示调用方对这块内存的所有权引用已释放（nil/RC 递减/普通释放），
@@ -542,15 +542,15 @@ fn free(ptr: ptr) bool {
     if ptr == 0 {
         ret true
     }
-    // 读 flags 字段（在用户指针的前一个 ptrSize 位置）
+    // 读 flags 字段（在用户指针的前一个 PTR_SIZE 位置）
     var flags: uint = flagLoad(ptr)
     if (flags & RC_BIT) != 0 {
         // mallocRC 分配的块：走引用计数释放
         rcDec(ptr)
         ret true
     }
-    // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - ptrSize）
-    var base: ptr = ptr - ptrSize
+    // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - PTR_SIZE）
+    var base: ptr = ptr - PTR_SIZE
     ret freeAt(base)
 }
 
@@ -583,10 +583,10 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
         ret 0
     }
     // 计算当前块的实际大小（不含 header/footer）
-    var blk: ptr = ptr - ptrSize
+    var blk: ptr = ptr - PTR_SIZE
     var oldPure: uint = hdrSizeRaw(blk) & ~FLAG_MASK
     // 新请求需要的总大小（含 header/footer）
-    var req: uint = newSize + ptrSize * 2
+    var req: uint = newSize + PTR_SIZE * 2
 
     // 新大小 <= 当前块大小，无需扩展
     if req <= oldPure {
@@ -596,7 +596,7 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
     // 尝试原地扩展：检查下一块是否空闲
     var nextBlk: ptr = blk + oldPure
     var brkTop: ptr = syscall.brk(0)
-    if nextBlk + ptrSize <= brkTop {
+    if nextBlk + PTR_SIZE <= brkTop {
         var ns: uint = hdrSizeRaw(nextBlk)
         if ns != 0 && (ns & IS_FREE) != 0 {
             // 下一块空闲，尝试合并
@@ -608,7 +608,7 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
                 hdrSetFooter(blk, merged)
                 // 清除新后继的 PREV_FREE
                 var nn: ptr = blk + merged
-                if nn + ptrSize <= brkTop {
+                if nn + PTR_SIZE <= brkTop {
                     var nn2: uint = hdrSizeRaw(nn)
                     if nn2 != 0 {
                         hdrSetSizeRaw(nn, nn2 & ~PREV_FREE)
@@ -626,7 +626,7 @@ fn realloc(ptr: ptr, newSize: uint) ptr {
         ret 0
     }
     // 复制数据（取旧数据和新大小中的较小值）
-    var copySize: uint = oldPure - ptrSize * 2
+    var copySize: uint = oldPure - PTR_SIZE * 2
     if copySize > newSize {
         copySize = newSize
     }
@@ -661,7 +661,7 @@ fn ptrToStringHeader(p: ptr) ptr {
         bp = bp + 1
         n = n + 1
     }
-    var hb: uint = ptrSize * 3
+    var hb: uint = PTR_SIZE * 3
     var h: ptr = malloc(hb)
     if h == 0 {
         ret 0

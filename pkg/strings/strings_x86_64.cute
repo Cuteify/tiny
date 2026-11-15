@@ -867,9 +867,9 @@ fn fields(s string) ptr {
 // 死循环挂死——探针 stw05/05a/05b 三形态挂证（parse 阶段烧 CPU 分钟级）。发布面 hang 不可接受，
 // R15 延期；fields 体间零调用不受牵连。待编译器修复 fn 类型形参后再落此函数。
 
-// ===== Wave St：Builder MVP（builderNew/Write/WriteString/Len/String/Free + _bGrow）=====
+// ===== Wave St：Builder MVP（builderNew/write/WriteString/len/string/Free + _bGrow）=====
 // 控制块 24B 三槽：p@0=数据 buf / n@8=当前长度 / c@16=容量（strView 同形，字段复用）。
-// String() 不调 bufToString（其 view-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
+// string() 不调 bufToString（其 view-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
 
 // builderNew 建一个容量 capacity 的字节 Builder；capacity<1 按 1 处理
 fn builderNew(capacity uint) ptr {

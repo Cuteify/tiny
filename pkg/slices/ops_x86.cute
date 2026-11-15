@@ -1,5 +1,5 @@
 // pkg/slices/slice_x86.cute - x86 平台指针/整数大小操作
-// ptrSize=4: 使用 store32/load32
+// PTR_SIZE=4: 使用 store32/load32
 
 build os("linux")
 build arch("x86")

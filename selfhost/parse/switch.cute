@@ -4,26 +4,26 @@ import "std:strings"
 import lex "../lexer"
 
 fn atCaseOrClose(x *Parser) bool {
-    var t: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t, lex.KEYWORD, "case") || lex.Token.Is(t, lex.KEYWORD, "default") {
+    var t: *lex.Token = x.l.peek()
+    if lex.Token.is(t, lex.KEYWORD, "case") || lex.Token.is(t, lex.KEYWORD, "default") {
         ret true
     }
-    ret lex.Token.Is(t, lex.DELIMITER, "}")
+    ret lex.Token.is(t, lex.DELIMITER, "}")
 }
 
 // parseCaseBody 解析 case/default 分支的语句（直到 case/default/}）。
 fn parseCaseBody(x *Parser) bool {
     for ; ; {
-        x.l.SkipTerminators()
-        var t: *lex.Token = x.l.Peek()
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
         if t == nil || t.Type == lex.NONE {
             fail(x, ESTMT, 0)
             ret false
         }
-        if lex.Token.Is(t, lex.KEYWORD, "case") || lex.Token.Is(t, lex.KEYWORD, "default") {
+        if lex.Token.is(t, lex.KEYWORD, "case") || lex.Token.is(t, lex.KEYWORD, "default") {
             ret true
         }
-        if lex.Token.Is(t, lex.DELIMITER, "}") {
+        if lex.Token.is(t, lex.DELIMITER, "}") {
             ret true
         }
         if !parseStmt(x) {
@@ -37,8 +37,8 @@ fn parseSwitchStmt(x *Parser) bool {
     if !expectKeyword(x, "switch", ESTMT) {
         ret false
     }
-    var t: *lex.Token = x.l.Peek()
-    if !lex.Token.Is(t, lex.DELIMITER, "{") {
+    var t: *lex.Token = x.l.peek()
+    if !lex.Token.is(t, lex.DELIMITER, "{") {
         if !parseExpr(x) {
             ret false
         }
@@ -47,20 +47,20 @@ fn parseSwitchStmt(x *Parser) bool {
         ret false
     }
     for ; ; {
-        x.l.SkipTerminators()
-        var t2: *lex.Token = x.l.Peek()
-        if lex.Token.Is(t2, lex.DELIMITER, "}") {
-            x.l.Next()
+        x.l.skipTerminators()
+        var t2: *lex.Token = x.l.peek()
+        if lex.Token.is(t2, lex.DELIMITER, "}") {
+            x.l.next()
             ret true
         }
-        if lex.Token.Is(t2, lex.KEYWORD, "case") {
-            x.l.Next()
+        if lex.Token.is(t2, lex.KEYWORD, "case") {
+            x.l.next()
             for ; ; {
                 if !parseExpr(x) {
                     ret false
                 }
-                if lex.Token.Is(x.l.Peek(), lex.DELIMITER, ",") {
-                    x.l.Next()
+                if lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+                    x.l.next()
                     continue
                 }
                 break
@@ -73,8 +73,8 @@ fn parseSwitchStmt(x *Parser) bool {
             }
             continue
         }
-        if lex.Token.Is(t2, lex.KEYWORD, "default") {
-            x.l.Next()
+        if lex.Token.is(t2, lex.KEYWORD, "default") {
+            x.l.next()
             if !expect(x, lex.DELIMITER, ":", ESTMT) {
                 ret false
             }

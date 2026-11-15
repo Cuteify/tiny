@@ -4,10 +4,10 @@ import "std:memory"
 fn main() int {
     var failures: int = 0
 
-    // Test 1: NewReader from string, read contents
-    var r: *io.Reader = io.NewReader("hello world")
+    // Test 1: newReader from string, read contents
+    var r: *io.Reader = io.newReader("hello world")
     var buf: ptr = memory.malloc(16)
-    var n: int = io.Read(r, buf, 5)
+    var n: int = io.read(r, buf, 5)
     if n != 5 {
         failures = failures + 1
     }
@@ -33,47 +33,47 @@ fn main() int {
         failures = failures + 1
     }
 
-    // Test 2: ReadAll from reader
-    var r2: *io.Reader = io.NewReader("abc")
-    var all: string = io.ReadAll(r2)
+    // Test 2: readAll from reader
+    var r2: *io.Reader = io.newReader("abc")
+    var all: string = io.readAll(r2)
     if !strings.eq(all, "abc") {
         failures = failures + 1
     }
 
-    // Test 3: NewWriter, write data, check String()
-    var w: *io.Writer = io.NewWriter()
+    // Test 3: newWriter, write data, check string()
+    var w: *io.Writer = io.newWriter()
     var src: ptr = strings.toCstring("test")
-    io.Write(w, src, 4)
-    var result: string = io.String(w)
+    io.write(w, src, 4)
+    var result: string = io.string(w)
     if !strings.eq(result, "test") {
         failures = failures + 1
     }
 
     // Test 4: WriteString
-    var w2: *io.Writer = io.NewWriter()
-    io.WriteString(w2, "hello")
-    var result2: string = io.String(w2)
+    var w2: *io.Writer = io.newWriter()
+    io.writeString(w2, "hello")
+    var result2: string = io.string(w2)
     if !strings.eq(result2, "hello") {
         failures = failures + 1
     }
 
-    // Test 5: Copy from Reader to Writer
-    var r3: *io.Reader = io.NewReader("copy me")
-    var w3: *io.Writer = io.NewWriter()
-    var copied: int = io.Copy(w3, r3)
+    // Test 5: copy from Reader to Writer
+    var r3: *io.Reader = io.newReader("copy me")
+    var w3: *io.Writer = io.newWriter()
+    var copied: int = io.copy(w3, r3)
     if copied != 7 {
         failures = failures + 1
     }
-    var result3: string = io.String(w3)
+    var result3: string = io.string(w3)
     if !strings.eq(result3, "copy me") {
         failures = failures + 1
     }
 
-    // Test 6: LimitReader
-    var r4: *io.Reader = io.NewReader("abcdefgh")
-    var lr: *io.Reader = io.LimitReader(r4, 3)
+    // Test 6: limitReader
+    var r4: *io.Reader = io.newReader("abcdefgh")
+    var lr: *io.Reader = io.limitReader(r4, 3)
     var lbuf: ptr = memory.malloc(8)
-    var ln: int = io.Read(lr, lbuf, 8)
+    var ln: int = io.read(lr, lbuf, 8)
     if ln != 3 {
         failures = failures + 1
     }

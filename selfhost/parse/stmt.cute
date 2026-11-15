@@ -46,19 +46,19 @@ fn isAssignOp(t *lex.Token) bool {
 // scanForKind 有界向前感知 for 头的种类：1=range，2=classic（含 :=），3=其它。
 // 顺序消费并推回 ring buffer，保持源序；不消耗 "{" ";" "range"（留给后续）。
 fn parseBlock(x *Parser) bool {
-    x.l.SkipTerminators()
+    x.l.skipTerminators()
     if !expect(x, lex.DELIMITER, "{", ESTMT) {
         ret false
     }
     for ; ; {
-        x.l.SkipTerminators()
-        var t: *lex.Token = x.l.Peek()
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
         if t.Type == lex.NONE {
             fail(x, ESTMT, 0)
             ret false
         }
-        if lex.Token.Is(t, lex.DELIMITER, "}") {
-            x.l.Next()
+        if lex.Token.is(t, lex.DELIMITER, "}") {
+            x.l.next()
             ret true
         }
         if !parseStmt(x) {
@@ -75,31 +75,31 @@ fn parseSimpleStmt(x *Parser) bool {
     }
     // 多目标：a, b := f() / a, b = f()
     for ; ; {
-        if !lex.Token.Is(x.l.Peek(), lex.DELIMITER, ",") {
+        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
             break
         }
-        x.l.Next()
+        x.l.next()
         if !parseExpr(x) {
             ret false
         }
     }
-    var t: *lex.Token = x.l.Peek()
+    var t: *lex.Token = x.l.peek()
     if isAssignOp(t) {
-        x.l.Next()
+        x.l.next()
         if !parseExpr(x) {
             ret false
         }
         ret true
     }
-    if lex.Token.Is(t, lex.DELIMITER, "++") || lex.Token.Is(t, lex.DELIMITER, "--") {
-        x.l.Next()
+    if lex.Token.is(t, lex.DELIMITER, "++") || lex.Token.is(t, lex.DELIMITER, "--") {
+        x.l.next()
         ret true
     }
     // 非赋值形式的语句后必须是语句边界（换行 / ';' / '}' / EOF）
-    if lex.Token.IsLineEnd(t) {
+    if lex.Token.isLineEnd(t) {
         ret true
     }
-    if lex.Token.Is(t, lex.DELIMITER, "}") {
+    if lex.Token.is(t, lex.DELIMITER, "}") {
         ret true
     }
     if t != nil && t.Type == lex.DELIMITER {
@@ -116,25 +116,25 @@ fn parseSimpleStmt(x *Parser) bool {
 
 // atCase 判断当前是否 case/default/}。
 fn parseRetStmt(x *Parser) bool {
-    var t: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t, lex.KEYWORD, "ret") {
-        x.l.Next()
+    var t: *lex.Token = x.l.peek()
+    if lex.Token.is(t, lex.KEYWORD, "ret") {
+        x.l.next()
     } else {
-        x.l.Next()
+        x.l.next()
     }
-    var p: *lex.Token = x.l.Peek()
-    if lex.Token.IsLineEnd(p) {
+    var p: *lex.Token = x.l.peek()
+    if lex.Token.isLineEnd(p) {
         ret true
     }
-    if lex.Token.Is(p, lex.DELIMITER, "}") {
+    if lex.Token.is(p, lex.DELIMITER, "}") {
         ret true
     }
     if !parseExpr(x) {
         ret false
     }
     for ; ; {
-        if lex.Token.Is(x.l.Peek(), lex.DELIMITER, ",") {
-            x.l.Next()
+        if lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+            x.l.next()
             if !parseExpr(x) {
                 ret false
             }
@@ -159,13 +159,13 @@ fn parseDeferStmt(x *Parser) bool {
 
 // parseBreakContinue 解析 break/continue 语句。
 fn parseBreakContinue(x *Parser) bool {
-    var t: *lex.Token = x.l.Peek()
-    if lex.Token.Is(t, lex.KEYWORD, "break") {
-        x.l.Next()
+    var t: *lex.Token = x.l.peek()
+    if lex.Token.is(t, lex.KEYWORD, "break") {
+        x.l.next()
         ret true
     }
-    if lex.Token.Is(t, lex.KEYWORD, "continue") {
-        x.l.Next()
+    if lex.Token.is(t, lex.KEYWORD, "continue") {
+        x.l.next()
         ret true
     }
     ret false
@@ -173,18 +173,18 @@ fn parseBreakContinue(x *Parser) bool {
 
 // parseStmt 语句分派；消费语句并累计 stmts。
 fn parseStmt(x *Parser) bool {
-    x.l.SkipTerminators()
-    var t: *lex.Token = x.l.Peek()
+    x.l.skipTerminators()
+    var t: *lex.Token = x.l.peek()
     if t == nil || t.Type == lex.NONE {
         ret true
     }
     // 隐式 var：name: T = v（无关键字）。
-    // 不消费 nameTok：x.l.Prefetch() 把后继 token 扫入环（不弹出），
+    // 不消费 nameTok：x.l.prefetch() 把后继 token 扫入环（不弹出），
     // 决定走 ":" 分支时先显式弹出 nameTok；其余形态 nameTok 仍在环首，自然落入后续解析。
     if t.Type == lex.NAME {
-        var p2: *lex.Token = x.l.Prefetch()
-        if lex.Token.Is(p2, lex.DELIMITER, ":") {
-            x.l.Next() // 弹出 nameTok
+        var p2: *lex.Token = x.l.prefetch()
+        if lex.Token.is(p2, lex.DELIMITER, ":") {
+            x.l.next() // 弹出 nameTok
             if !expect(x, lex.DELIMITER, ":", ESTMT) {
                 ret false
             }
@@ -205,7 +205,7 @@ fn parseStmt(x *Parser) bool {
     if t.Type == lex.KEYWORD {
         if strings.eq(t.Value, "var") || strings.eq(t.Value, "const") || strings.eq(t.Value, "let") {
             var kw: string = t.Value
-            x.l.Next()
+            x.l.next()
             if !parseVarConstDispatch(x, kw) {
                 ret false
             }
@@ -255,13 +255,13 @@ fn parseStmt(x *Parser) bool {
             ret true
         }
         if strings.eq(t.Value, "fallthrough") {
-            x.l.Next()
+            x.l.next()
             x.stmts = x.stmts + 1
             ret true
         }
         if strings.eq(t.Value, "build") {
             // fn 体内允许的 build 指令（标记当前函数 / 内联汇编 / 对齐等）
-            x.l.Next()
+            x.l.next()
             if !parseBuildFromKeyword(x) {
                 ret false
             }
@@ -285,6 +285,6 @@ fn parseStmt(x *Parser) bool {
 
 // atOpen 判别当前 token 是否为 { 。
 fn atOpen(x *Parser) bool {
-    var t: *lex.Token = x.l.Peek()
-    ret lex.Token.Is(t, lex.DELIMITER, "{")
+    var t: *lex.Token = x.l.peek()
+    ret lex.Token.is(t, lex.DELIMITER, "{")
 }

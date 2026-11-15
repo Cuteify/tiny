@@ -8,19 +8,19 @@ fn parseStructBody(x *Parser) bool {
         ret false
     }
     for ; ; {
-        x.l.SkipTerminators()
-        var t: *lex.Token = x.l.Peek()
+        x.l.skipTerminators()
+        var t: *lex.Token = x.l.peek()
         if t == nil {
             fail(x, ESTMT, 0)
             ret false
         }
-        if lex.Token.Is(t, lex.DELIMITER, "}") {
-            x.l.Next()
+        if lex.Token.is(t, lex.DELIMITER, "}") {
+            x.l.next()
             ret true
         }
         // 匿名嵌入父结构：@Name / alias @Name
-        if lex.Token.Is(t, lex.DELIMITER, "@") {
-            x.l.Next()
+        if lex.Token.is(t, lex.DELIMITER, "@") {
+            x.l.next()
             var parentN: *lex.Token = expectName(x, EDECL)
             if parentN == nil {
                 ret false
@@ -28,40 +28,40 @@ fn parseStructBody(x *Parser) bool {
             continue
         }
         // 访问修饰符 !（只读）/ ?（只写）
-        var t0: *lex.Token = x.l.Peek()
-        if lex.Token.Is(t0, lex.DELIMITER, "!") || lex.Token.Is(t0, lex.DELIMITER, "?") {
-            x.l.Next()
+        var t0: *lex.Token = x.l.peek()
+        if lex.Token.is(t0, lex.DELIMITER, "!") || lex.Token.is(t0, lex.DELIMITER, "?") {
+            x.l.next()
         }
         // 尝试识别合法的字段形态（name: Type / field @Parent / 完整未识别静默忽略）
-        var fieldName: *lex.Token = x.l.Peek()
+        var fieldName: *lex.Token = x.l.peek()
         if fieldName == nil || fieldName.Type != lex.NAME {
             fail(x, EDECL, fieldName.Pos)
             ret false
         }
         // 先看 fieldName 后面是什么决定怎么处理
-        x.l.Next()
-        var afterField: *lex.Token = x.l.Peek()
-        if lex.Token.Is(afterField, lex.DELIMITER, ":") {
-            x.l.Next()
+        x.l.next()
+        var afterField: *lex.Token = x.l.peek()
+        if lex.Token.is(afterField, lex.DELIMITER, ":") {
+            x.l.next()
             if !skipType(x) {
                 ret false
             }
             // 字段 RAW 标签：string `json:"..."`（lexer 将反引号串归入 STRING token）
-            var pTag: *lex.Token = x.l.Peek()
+            var pTag: *lex.Token = x.l.peek()
             if pTag != nil && pTag.Type == lex.STRING {
-                x.l.Next()
+                x.l.next()
             }
             // 字段默认值 = expr
-            var pDef: *lex.Token = x.l.Peek()
-            if lex.Token.Is(pDef, lex.DELIMITER, "=") {
-                x.l.Next()
+            var pDef: *lex.Token = x.l.peek()
+            if lex.Token.is(pDef, lex.DELIMITER, "=") {
+                x.l.next()
                 restOfLineAtDepth0(x)
             }
             continue
         }
-        if lex.Token.Is(afterField, lex.DELIMITER, "@") {
+        if lex.Token.is(afterField, lex.DELIMITER, "@") {
             // alias @Parent：fieldName @Parent
-            x.l.Next()
+            x.l.next()
             var parentN: *lex.Token = expectName(x, EDECL)
             if parentN == nil {
                 ret false
@@ -80,10 +80,10 @@ fn parseStructDeclFromKeyword(x *Parser) bool {
     if nameT == nil {
         ret false
     }
-    x.l.SkipTerminators()
-    var p: *lex.Token = x.l.Peek()
-    if lex.Token.Is(p, lex.DELIMITER, ":") {
-        x.l.Next()
+    x.l.skipTerminators()
+    var p: *lex.Token = x.l.peek()
+    if lex.Token.is(p, lex.DELIMITER, ":") {
+        x.l.next()
         var parentN: *lex.Token = expectName(x, EDECL)
         if parentN == nil {
             ret false

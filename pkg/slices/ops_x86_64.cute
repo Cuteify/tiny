@@ -1,5 +1,5 @@
 // pkg/slices/slice_x86_64.cute - x86_64 平台指针/整数大小操作
-// ptrSize=8: 使用 store64/load64
+// PTR_SIZE=8: 使用 store64/load64
 
 build os("linux")
 build arch("x86_64")

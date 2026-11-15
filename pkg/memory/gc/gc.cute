@@ -1,9 +1,9 @@
 import "std:memory"
 var gLargeHead: ptr = 0
 
-// ===== Inline RC — RC counter at ptr-2*ptrSize =====
+// ===== Inline RC — RC counter at ptr-2*PTR_SIZE =====
 // 每个 mallocRC 分配的块在数据区前有 [RC counter][flags]
-// rcInc/rcDec 直接读写 ptr-2*ptrSize 位置，无需 side-table
+// rcInc/rcDec 直接读写 ptr-2*PTR_SIZE 位置，无需 side-table
 
 // rcInc 增加引用计数
 fn rcInc(p: ptr) {

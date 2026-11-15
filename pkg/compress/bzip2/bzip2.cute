@@ -12,8 +12,8 @@ type Reader struct {
     err: bool     // 是否发生错误
 }
 
-// NewReader 创建 bzip2 读取器（桩实现，返回错误状态）
-fn NewReader(data string) *Reader {
+// newReader 创建 bzip2 读取器（桩实现，返回错误状态）
+fn newReader(data string) *Reader {
     var buf: ptr = memory.malloc(32)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -32,14 +32,14 @@ fn NewReader(data string) *Reader {
     ret result
 }
 
-// Read 从 bzip2 读取器中读取数据（桩实现，始终返回 0）
-fn Read(r ptr, buf ptr, n int) int {
+// read 从 bzip2 读取器中读取数据（桩实现，始终返回 0）
+fn read(r ptr, buf ptr, n int) int {
     // bzip2 解压暂未实现
     ret 0
 }
 
 // Err 返回是否发生错误
-fn Err(r ptr) bool {
+fn errFn(r ptr) bool {
     var _p5: *ptr = r + 24
     ret *_p5 != 0
 }
