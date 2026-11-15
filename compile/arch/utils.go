@@ -25,7 +25,14 @@ func ArgSaveBytes(fn *parser.FuncBlock) int {
 	if fn != nil {
 		for i := 0; i < len(fn.Args); i++ {
 			size := fn.Args[i].Type.Size()
-			save += ((size + typeSys.TargetPointerSize - 1) / typeSys.TargetPointerSize) * typeSys.TargetPointerSize
+			slots := (size + typeSys.TargetPointerSize - 1) / typeSys.TargetPointerSize
+			// 空结构体（size==0）在 setArgsOffset 里也占一个满 8B 槽带
+			// （保存参数环按 1 字存参、参数条带按 1 槽推进）；这里必须一致预扣，
+			// 否则局部槽游标从参数带顶部起步，回咬第二参数保存槽（nameT 实证）。
+			if slots < 1 {
+				slots = 1
+			}
+			save += slots * typeSys.TargetPointerSize
 		}
 	}
 	return save
@@ -335,8 +342,12 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 					}
 				} else {
 					varSize := v.Type.Size()
+					// 零值结构体（空 struct，Size==0）按满 8B 槽分配：
+					// 置零/拷贝发射（"零值结构体 x"）按 QWORD 存参，
+					// 4B 槽会让回写跨槽覆盖前一个仍占字的变量（零值 eb 实证，
+					// 覆盖上一个保存的参数 x==0 → Parser.l 为 nil 崩栈）。
 					if varSize == 0 {
-						varSize = 4
+						varSize = 8
 					}
 					*offset -= varSize
 					v.Offset = *offset

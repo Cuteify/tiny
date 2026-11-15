@@ -1,6 +1,7 @@
 package packageFmt
 
 import (
+	"sort"
 	"strings"
 	"unsafe"
 )
@@ -51,6 +52,27 @@ func RegisterType(pkgPath, typeName string, t any) {
 // LookupType 按包路径 + 类型名查询全局类型表
 func LookupType(pkgPath, typeName string) any {
 	return typeTable[FixPathName(pkgPath)+"/"+typeName]
+}
+
+// LookupTypeSuffix 跨包裸类型名查询：按 "/"+typeName 后缀扫描全局类型表。
+// 根 parser 的 Post-Check 期 p.Package 是根包，lookupGlobalType 按根包路径查
+// 不到依赖包里登记的类型（dep 里 `ExpBlock.parseExpr(x)` 的 ExpBlock 就是这种形态），
+// 这里兜底返回全部后缀命中的类型，按 key 排序保证确定性。
+// 多包同名类型没有护栏：命中多个时交回全部，调用方按首个取用。
+func LookupTypeSuffix(typeName string) []any {
+	suffix := "/" + typeName
+	keys := make([]string, 0, 8)
+	for k := range typeTable {
+		if strings.HasSuffix(k, suffix) {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]any, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, typeTable[k])
+	}
+	return out
 }
 
 // 全局变量注册表：解析期/编译期跨文件、跨包全局变量查找。

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"cuteify/lexer"
+	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
@@ -14,13 +15,13 @@ type CallBlock struct {
 	Func         *FuncBlock
 	Node         *Node
 	ThisVar      *VarBlock
-	NewType      typeSys.Type // new(T) 的目标类型（内建堆对象创建）
+	NewType      typeSys.Type   // new(T) 的目标类型（内建堆对象创建）
 	NewTypes     []typeSys.Type // 泛型调用的显式类型实参 f[T, U](…)；单类型退化为 NewType 同表
-	ConvertType  typeSys.Type // int(x)/f64(x) 等显式数值转换的目标类型
-	IsRC         bool         // 是否为 RC（引用计数）调用
-	IsVariadic   bool         // 调用是否包含变参参数
-	VariadicType typeSys.Type // 变参参数的元素类型
-	VariadicArgs []*ArgBlock  // 变参参数列表
+	ConvertType  typeSys.Type   // int(x)/f64(x) 等显式数值转换的目标类型
+	IsRC         bool           // 是否为 RC（引用计数）调用
+	IsVariadic   bool           // 调用是否包含变参参数
+	VariadicType typeSys.Type   // 变参参数的元素类型
+	VariadicArgs []*ArgBlock    // 变参参数列表
 }
 
 // safeTypeName nil 安全的类型名（首趟未解析的跨包调用实参 Type 为 nil）
@@ -107,6 +108,35 @@ func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
 	return out
 }
 
+// staticTypeMethodCandidates 处理 “类型名.方法(...)” 静态方法调用：
+// receiverName 解析为类型（而非变量）时，返回该类型方法表中同名方法。
+// 未命中（不是类型名/方法不存在）返回 nil，调用方按普通名解析。
+// 与动态路径的区别：接收者是第一个显式实参，不再自动前置。
+func staticTypeMethodCandidates(p *Parser, receiverName Name, method string) []*FuncBlock {
+	if p == nil || receiverName.Length() == 0 {
+		return nil
+	}
+	var t typeSys.Type
+	if results := p.Find(receiverName, FindTypeType); len(results) > 0 {
+		if tt, ok := results[0].Value.(typeSys.Type); ok {
+			t = tt
+		}
+	}
+	// Post-Check（根 parser）下 p.Package 是根包，裸类型名只按当前包查找会
+	// miss 依赖包里登记的类型——扫全局类型注册表的 "/"+name 后缀兜底。
+	if t == nil && !receiverName.IsPath() {
+		if ts := packageFmt.LookupTypeSuffix(receiverName.String()); len(ts) > 0 {
+			if tt, ok := ts[0].(typeSys.Type); ok {
+				t = tt
+			}
+		}
+	}
+	if t == nil {
+		return nil
+	}
+	return methodCandidates(t, method)
+}
+
 // applyReceiverConversion 按选中候选的接收者形态做 P ↔ *P 转换（编译器自动取址/解引用）。
 func applyReceiverConversion(call *CallBlock, sel *FuncBlock, receiver *Expression) {
 	if call == nil || sel == nil || receiver == nil || len(sel.Args) == 0 || len(call.Args) == 0 {
@@ -189,7 +219,7 @@ func matchCallCandidate(c *CallBlock, fb *FuncBlock) (ok bool, score int) {
 	if n == len(fb.Args) {
 		score += callScoreExactArity
 	} else {
-		score -= (absInt(len(fb.Args)-n)) * 1000
+		score -= (absInt(len(fb.Args) - n)) * 1000
 	}
 	for i := 0; i < n; i++ {
 		arg := c.Args[i]
@@ -342,6 +372,7 @@ func (c *CallBlock) Check(p *Parser) bool {
 	// 列表内建 len/cap/ptr 不走本路径：保留 ThisVar 通道（arch 按 ThisVar.Kind()=="list" 直分派）。
 	// 非路径接收者（如 f().m()）无法取地址/重入，保持原路（按普通名报错）。
 	var receiverExp *Expression
+	staticCall := false
 	if c.Func == nil && c.ThisVar == nil && c.Name.IsPath() {
 		methodName := c.Name.Last()
 		receiverName := c.Name.Fork()
@@ -414,6 +445,12 @@ func (c *CallBlock) Check(p *Parser) bool {
 					receiverExp = nil
 				}
 			case recvType == nil:
+				// 静态类型方法调用：点号左边是类型名（Type.method(...)）。
+				// 接收者已由调用点作为第一个显式实参传入（与 Go 一致）。
+				if static := staticTypeMethodCandidates(p, receiverName, methodName); len(static) > 0 {
+					candidates = appendUniqueFuncs(candidates, static...)
+					staticCall = true
+				}
 				receiverExp = nil
 			}
 			if receiverExp != nil {
@@ -462,6 +499,9 @@ func (c *CallBlock) Check(p *Parser) bool {
 		if receiverExp != nil && sel.Class != nil && len(sel.Args) > 0 && len(c.Args) > 0 {
 			// 按选中候选的接收者形态做 P ↔ *P 转换（编译器自动取址/解引用）。
 			applyReceiverConversion(c, sel, receiverExp)
+		} else if staticCall && len(c.Args) > 0 && sel.Class != nil && len(sel.Args) > 0 {
+			// 静态方法调用：第一个显式实参就是接收者，按同样规则转换。
+			applyReceiverConversion(c, sel, c.Args[0].Value)
 		}
 		c.ThisVar = nil
 	}
@@ -988,10 +1028,10 @@ func (cb *CallBlock) typeSubst() map[string]typeSys.Type {
 }
 
 // resolveFnVarName 解析 f(x) 或 __env.f(x) 形式的函数指针调用：
-//   1) 优先按普通局部变量/参数/字段解析（多段路径同样能走通）；
-//   2) 失败则直接用 Find 按路径项/字段回落；
-//   3) 排除“裸函数名”（Define.Type == FindTypeFunc 且值是 *FuncBlock）——那是“函数引用”，
-//      不是 fn 值变量。
+//  1. 优先按普通局部变量/参数/字段解析（多段路径同样能走通）；
+//  2. 失败则直接用 Find 按路径项/字段回落；
+//  3. 排除“裸函数名”（Define.Type == FindTypeFunc 且值是 *FuncBlock）——那是“函数引用”，
+//     不是 fn 值变量。
 func resolveFnVarName(p *Parser, name Name) *VarBlock {
 	if name.Length() == 0 {
 		return nil
