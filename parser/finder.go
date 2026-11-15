@@ -3,7 +3,6 @@ package parser
 import (
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
-	"fmt"
 )
 
 /*
@@ -224,6 +223,21 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		}
 	}
 
+	// 裸名补包路径前缀后的候选（根包的全局声明带 /abs/path 前缀）；
+	// 仅在包级作用域使用：函数体内的局部名永远不对前缀化的全局名命中。
+	var plainPrefixed Name
+	if !name.IsPath() && p.Package != nil && p.Package.Path != "" {
+		forked := name.Fork()
+		forked.SetPkgPath(p.Package.Path)
+		plainPrefixed = forked
+	}
+	nameEq := func(cand Name) bool {
+		if cand.Eq(name) {
+			return true
+		}
+		return plainPrefixed.Length() > 0 && cand.Eq(plainPrefixed)
+	}
+
 	nowBlock := p.ThisBlock
 	for nowBlock != nil {
 		if nowBlock == p.Block || nowBlock.Father == nil {
@@ -246,7 +260,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 
 			switch v := child.Value.(type) {
 			case *TypeBlock:
-				if (typ&FindTypeType) != 0 && v.Name.Eq(name) {
+				if (typ&FindTypeType) != 0 && nameEq(v.Name) {
 					res = append(res, FindResult{Node: child, Value: v.Type(), Path: []any{v.Type()}, Type: FindTypeType})
 				}
 				// 枚举命名空间限定访问 `Enum.Member`：同作用域内按成员名匹配
@@ -272,7 +286,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 					}
 				}
 			case *FuncBlock:
-				if (typ&FindTypeFunc) != 0 && v.Name.Eq(name) {
+				if (typ&FindTypeFunc) != 0 && nameEq(v.Name) {
 					res = append(res, FindResult{Node: child, Value: v, Path: []any{v}, Type: FindTypeFunc})
 				}
 			case *ForBlock:
@@ -328,7 +342,7 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 					} else {
 						// 多返回值解构 `a, b := f()` 只生成一个 owner VarBlock，
 						// 除首个名字外的变量也要命中同一个 owner。
-						if (v.Name.Eq(name) || v.multiNameHit(name)) && (typ&FindTypeVar) != 0 {
+						if (nameEq(v.Name) || v.multiNameHit(name)) && (typ&FindTypeVar) != 0 {
 							multiIndex := 0
 							if len(v.MultiNames) > 1 {
 								for i, mn := range v.MultiNames {
@@ -452,8 +466,7 @@ func enterTypeFind(name Name, t typeSys.Type) (ok bool, res FindResult) {
 			}
 			// 啥也找不到
 			if !findField {
-				fmt.Println("not find field", n[0].Name)
-				ok = false
+					ok = false
 				return
 			}
 			n = n[1:]

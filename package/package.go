@@ -199,6 +199,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 	if err != nil {
 		return nil, err // 返回错误
 	}
+	// 跨文件前向引用：文件按字母序解析时，被引用的类型可能还没解析。
+	// 先扫描全部 .cute 的类型声明，按依赖拓扑排序后再解析。
+	files = topoOrderCuteFiles(packagePath, files)
 
 	// 打开package.json文件（Wave L：package.json 可选——缺失时合成默认信息，name = 目录名）
 	packageInfo := &packageFmt.Info{}
@@ -437,7 +440,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		}
 
 		for round := 0; round < 50; round++ {
-			if !rootNode.Check() {
+			// Check 返回 false 表示仍有未解析节点；合并树上再跑一轮即可。
+			// 全部通过（达到不动点）就提前结束。
+			if rootNode.Check() {
 				break
 			}
 		}
