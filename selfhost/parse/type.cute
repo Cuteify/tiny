@@ -96,6 +96,8 @@ fn TypeBlock.skipDotQualified(r TypeBlock, x *Parser) bool {
 // skipNamedType 处理 `NAME` 或 `NAME.NAME...`（含 map[K]V 泛型形式）。
 fn TypeBlock.skipNamedType(r TypeBlock, x *Parser, t *lex.Token) bool {
     var fileBlock: FileBlock
+    // S4 Useful：类型引用记限定/裸名（裸名同登记命中；点链限定名不展开，见 check.cute 口径）。
+    FileBlock.markUse(fileBlock, x, t.Value)
     if !TypeBlock.skipDotQualified(r, x) {
         ret false
     }
@@ -159,11 +161,15 @@ fn TypeBlock.parseTypeGroupEntry(r TypeBlock, x *Parser) bool {
     }
     x.l.skipTerminators()
     var q: *lex.Token = x.l.peek()
+    // S4 Check：type 登记（struct/interface/alias/其他）。
+    if !FileBlock.registerTypeDecl(fileBlock, x, nameT.Value, q, nameT.Pos) {
+        ret false
+    }
     if lex.Token.is(q, lex.KEYWORD, "struct") {
         ret TypeBlock.parseTypeStructDecl(r, x)
     }
     if lex.Token.is(q, lex.KEYWORD, "interface") {
-        ret TypeBlock.parseTypeInterfaceDecl(r, x)
+        ret TypeBlock.parseTypeInterfaceDecl(r, x, nameT.Value)
     }
     if lex.Token.is(q, lex.DELIMITER, "=") {
         ret TypeBlock.parseTypeAliasDecl(r, x)
@@ -192,7 +198,7 @@ fn TypeBlock.parseGroupedBody(r TypeBlock, x *Parser, kind string) bool {
             ret true
         }
         if !TypeBlock.isDeclKindType(r, kind) {
-            if !VarBlock.parseVarConst(varBlock, x, kind) {
+            if !VarBlock.parseVarConst(varBlock, x, kind, 1) {
                 ret false
             }
             continue
@@ -232,8 +238,9 @@ fn TypeBlock.parseTypeStructDecl(r TypeBlock, x *Parser) bool {
 }
 
 // parseTypeInterfaceDecl 处理 `type X interface { ... }` 形式。
-fn TypeBlock.parseTypeInterfaceDecl(r TypeBlock, x *Parser) bool {
+fn TypeBlock.parseTypeInterfaceDecl(r TypeBlock, x *Parser, ifaceName: string) bool {
     x.l.next()
+    x.ifaceName = ifaceName
     if !TypeBlock.parseInterfaceBody(r, x) {
         ret false
     }
@@ -279,11 +286,15 @@ fn TypeBlock.parseTypeFromKeyword(r TypeBlock, x *Parser, t *lex.Token) bool {
     }
     x.l.skipTerminators()
     var q: *lex.Token = x.l.peek()
+    // S4 Check：type 登记（struct/interface/alias/其他）。
+    if !FileBlock.registerTypeDecl(fileBlock, x, nameT.Value, q, nameT.Pos) {
+        ret false
+    }
     if lex.Token.is(q, lex.KEYWORD, "struct") {
         ret TypeBlock.parseTypeStructDecl(r, x)
     }
     if lex.Token.is(q, lex.KEYWORD, "interface") {
-        ret TypeBlock.parseTypeInterfaceDecl(r, x)
+        ret TypeBlock.parseTypeInterfaceDecl(r, x, nameT.Value)
     }
     if lex.Token.is(q, lex.DELIMITER, "=") {
         ret TypeBlock.parseTypeAliasDecl(r, x)

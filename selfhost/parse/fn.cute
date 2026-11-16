@@ -6,15 +6,6 @@ import lex "../lexer"
 
 
 
-// parseDotNameSuffix 可选的 `.name` 后缀（方法声明中的接收者名）。
-fn FuncBlock.parseDotNameSuffix(f FuncBlock, x *Parser) bool {
-    var fileBlock: FileBlock
-    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ".") {
-        ret true
-    }
-    x.l.next()
-    ret FileBlock.expectName(fileBlock, x, EDECL) != nil
-}
 
 // parseGenericParams 解析泛型参数列表 [T[, U....]]。
 fn FuncBlock.parseGenericParams(f FuncBlock, x *Parser) bool {
@@ -58,7 +49,23 @@ fn FuncBlock.parse(f FuncBlock, x *Parser) bool {
     }
     f.Name = nameT.Value
     x.l.skipTerminators()
-    if !FuncBlock.parseDotNameSuffix(f, x) {
+    // 可选的 `.name` 后缀（方法声明中的接收者名）；合成限定注册名 P.m。
+    var methodSuffixT: *lex.Token = nil
+    if lex.Token.is(x.l.peek(), lex.DELIMITER, ".") {
+        x.l.next()
+        methodSuffixT = FileBlock.expectName(fileBlock, x, EDECL)
+        if methodSuffixT == nil {
+            ret false
+        }
+    }
+    // S4 Check：fn 登记（方法用限定名 "Type.method"）。
+    var fnName: string = f.Name
+    if methodSuffixT != nil {
+        var nv: string = methodSuffixT.Value
+        var fnPrefix: string = f.Name
+        fnName = fnPrefix + "." + nv
+    }
+    if !FileBlock.registerDecl(fileBlock, x, fnName, REG_FN, nameT.Pos) {
         ret false
     }
     if !FuncBlock.parseGenericParams(f, x) {

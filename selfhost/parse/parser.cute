@@ -141,7 +141,7 @@ fn FileBlock.parseDeclKeyword(r FileBlock, x *Parser, kw string, t *lex.Token) b
         ret FileBlock.parseTypeDeclKeyword(r, x, t)
     }
     if FileBlock.isDeclKindVarConstLet(r, kw) {
-        ret VarBlock.parseVarConstDispatch(varBlock, x, kw)
+        ret VarBlock.parseVarConstDispatch(varBlock, x, kw, 1)
     }
     FileBlock.fail(r, x, EDECL, t.Pos)
     ret false
@@ -199,8 +199,9 @@ fn FileBlock.fileImplicitVarStmt(r FileBlock, x *Parser, t *lex.Token) bool {
     ret false
 }
 
-// file 解析整个文件。
-fn FileBlock.file(r FileBlock, x *Parser) {
+// fileLoop 主循环（关键字登记/隐式 var/报错）。循环本体与 file() 分离，
+// 便于 file() 在任意结果下统一收敛 S4 Check。
+fn FileBlock.fileLoop(r FileBlock, x *Parser) {
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
@@ -225,4 +226,10 @@ fn FileBlock.file(r FileBlock, x *Parser) {
         FileBlock.fail(r, x, EDECL, t.Pos)
         ret
     }
+}
+
+// file 解析整个文件；无论成功或失败，退出时收敛 S4 Check（unusedFns/ifaceBuf）。
+fn FileBlock.file(r FileBlock, x *Parser) {
+    FileBlock.fileLoop(r, x)
+    FileBlock.finalizeCheck(r, x)
 }

@@ -27,6 +27,13 @@ fn bad(src string, want int) bool {
     ret true
 }
 
+// ok 合法源返回 true（err 为 OK）。
+fn ok(src string) bool {
+    var r: parse.FileBlock
+    var p: *parse.Parser = parsed(src)
+    ret parse.FileBlock.err(r, p) == parse.OK
+}
+
 // caseEmpty：空输入合法，所有计数为 0。
 fn caseEmpty() int {
     var r: parse.FileBlock
@@ -142,6 +149,42 @@ fn caseNegative() int {
     ret 0
 }
 
+// caseCheck：S4 Check 阶段登记验证（重复声明 / Useful / 接口登记 / 登记计数）。
+fn caseCheck() int {
+    // 1) 同名 fn 重复声明 → EDECL。
+    var dup: string = "fn f() {\n    ret 0\n}\nfn f() {\n    ret 1\n}\n"
+    if !bad(dup, parse.EDECL) { ret 1 }
+
+    // 2) 不同 receiver 的同名方法不误报（P.get 与 Q.get）。
+    var msrc: string = "type P int\ntype Q int\nfn P.get() int {\n    ret 1\n}\nfn Q.get() int {\n    ret 2\n}\nfn main() int {\n    ret 0\n}\n"
+    if !ok(msrc) { ret 2 }
+
+    // 3) 接口登记：两条接口、方法顺序保序、方法名带尾逗号。
+    var isrc: string = "type Stringer interface {\n    stringify() string\n}\ntype R interface {\n    read(buf: string) int\n    size() int\n    reset()\n}\nfn main() int {\n    ret 0\n}\n"
+    var r: parse.FileBlock
+    var p: *parse.Parser = parsed(isrc)
+    if parse.FileBlock.err(r, p) != parse.OK { ret 3 }
+    if parse.FileBlock.ifaceDefCount(r, p) != 2 { ret 4 }
+    if !strings.eq(parse.FileBlock.ifaceDefAt(r, p, 0), "Stringer:stringify,") { ret 5 }
+    if !strings.eq(parse.FileBlock.ifaceDefAt(r, p, 1), "R:read,size,reset,") { ret 6 }
+
+    // 4) unusedFnCount：未引用的 fn 计为未 Useful，main 与被引用的计入。
+    var us: string = "fn usedFn() int {\n    ret 1\n}\nfn unusedFn() int {\n    ret 2\n}\nfn main() int {\n    ret usedFn()\n}\n"
+    var p4: *parse.Parser = parsed(us)
+    if parse.FileBlock.err(r, p4) != parse.OK { ret 7 }
+    if parse.FileBlock.unusedFnCount(r, p4) != 1 { ret 8 }
+
+    // 5) registeredDeclCount：us 源恰 3 个 fn。
+    if parse.FileBlock.registeredDeclCount(r, p4) != 3 { ret 9 }
+
+    // 6) main 恒为 Useful：us 源没有 main → unused = 0 的反例场景。
+    var nm: string = "fn main() int {\n    ret 0\n}\n"
+    var p5: *parse.Parser = parsed(nm)
+    if parse.FileBlock.unusedFnCount(r, p5) != 0 { ret 10 }
+
+    ret 0
+}
+
 fn printCounter(name string, n int) {
     console.print("|")
     console.print(name)
@@ -193,5 +236,7 @@ fn main() int {
     if r != 0 { ret 3 }
     r = caseNegative()
     if r != 0 { ret 4 }
+    r = caseCheck()
+    if r != 0 { ret 5 }
     ret 42
 }

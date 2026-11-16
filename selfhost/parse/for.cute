@@ -168,7 +168,7 @@ fn ForBlock.parseForClassicInit(r ForBlock, x *Parser) bool {
     var tInit: *lex.Token = x.l.peek()
     if lex.Token.is(tInit, lex.KEYWORD, "var") {
         x.l.next()
-        ret VarBlock.parseVarConst(varBlock, x, "var")
+        ret VarBlock.parseVarConst(varBlock, x, "var", 0)
     }
     var eb: ExpBlock
     if !ExpBlock.parseExpr(eb, x) {

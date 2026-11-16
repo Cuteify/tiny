@@ -287,7 +287,7 @@ fn StmtBlock.dispatchStmtKeyword(r StmtBlock, x *Parser, kw string) bool {
     var varBlock: VarBlock
     if StmtBlock.isStmtKeywordLocalDecl(r, kw) {
         x.l.next()
-        if !VarBlock.parseVarConstDispatch(varBlock, x, kw) {
+        if !VarBlock.parseVarConstDispatch(varBlock, x, kw, 0) {
             ret false
         }
         x.stmts = x.stmts + 1

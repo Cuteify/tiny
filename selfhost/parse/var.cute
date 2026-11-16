@@ -8,12 +8,22 @@ import lex "../lexer"
 
 
 
-fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string) bool {
+fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string, global int) bool {
     var fileBlock: FileBlock
     var typeBlock: TypeBlock
     var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
     if nameT == nil {
         ret false
+    }
+    // S4 Check：var/const 登记（仅全局声明；函数体局部 var 不登记）。
+    if global != 0 {
+        var k0: int = REG_VAR
+        if strings.eq(kind, "const") {
+            k0 = REG_CONST
+        }
+        if !FileBlock.registerDecl(fileBlock, x, nameT.Value, k0, nameT.Pos) {
+            ret false
+        }
     }
     var t: *lex.Token = x.l.peek()
     var hasType: bool = lex.Token.is(t, lex.DELIMITER, ":")
@@ -39,11 +49,14 @@ fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string) bool {
     ret true
 }
 
-fn VarBlock.parseVarConstDispatch(r VarBlock, x *Parser, kind string) bool {
+fn VarBlock.parseVarConstDispatch(r VarBlock, x *Parser, kind string, global int) bool {
     var typeBlock: TypeBlock
     x.l.skipTerminators()
     if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
         ret TypeBlock.parseGroupedDecl(typeBlock, x, kind)
     }
-    ret VarBlock.parseVarConst(r, x, kind)
+    if !VarBlock.parseVarConst(r, x, kind, global) {
+        ret false
+    }
+    ret true
 }

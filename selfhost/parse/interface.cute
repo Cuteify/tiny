@@ -17,6 +17,10 @@ fn TypeBlock.parseInterfaceMember(r TypeBlock, x *Parser) bool {
         ret true
     }
     if lex.Token.is(p, lex.DELIMITER, "(") {
+        // 编译器 bug：局部空串 + 堆字段链式拼接会丢失字段操作数，先落局部变量再拼。
+        var mname: string = t.Value
+        var ibuf: string = x.ifaceBuf
+        x.ifaceBuf = ibuf + mname + ","
         x.l.next()
         var cb: CallBlock
         if !CallBlock.parseFuncParams(cb, x) {
@@ -30,6 +34,7 @@ fn TypeBlock.parseInterfaceMember(r TypeBlock, x *Parser) bool {
 
 fn TypeBlock.parseInterfaceBody(r TypeBlock, x *Parser) bool {
     var fileBlock: FileBlock
+    x.ifaceBuf = ""
     if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
@@ -42,6 +47,8 @@ fn TypeBlock.parseInterfaceBody(r TypeBlock, x *Parser) bool {
         }
         if lex.Token.is(t, lex.DELIMITER, "}") {
             x.l.next()
+            // S4 Check：接口登记（*InterfaceType 入）。
+            FileBlock.registerIface(fileBlock, x, x.ifaceName)
             ret true
         }
         if !TypeBlock.parseInterfaceMember(r, x) {
@@ -58,6 +65,11 @@ fn TypeBlock.parseInterfaceFromKeyword(r TypeBlock, x *Parser) bool {
     if nameT == nil {
         ret false
     }
+    // S4 Check：接口登记（遗留接口语法）。
+    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_IFACE, nameT.Pos) {
+        ret false
+    }
+    x.ifaceName = nameT.Value
     x.l.skipTerminators()
     if !TypeBlock.parseInterfaceBody(r, x) {
         ret false

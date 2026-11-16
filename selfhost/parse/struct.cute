@@ -102,6 +102,10 @@ fn StructBlock.parseStructDeclFromKeyword(r StructBlock, x *Parser) bool {
     if nameT == nil {
         ret false
     }
+    // S4 Check：struct 登记（遗留 struct 语法）。
+    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_STRUCT, nameT.Pos) {
+        ret false
+    }
     x.l.skipTerminators()
     var p: *lex.Token = x.l.peek()
     if lex.Token.is(p, lex.DELIMITER, ":") {

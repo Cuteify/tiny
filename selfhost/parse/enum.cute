@@ -44,6 +44,10 @@ fn EnumBlock.parse(r EnumBlock, x *Parser) bool {
     if nameT == nil {
         ret false
     }
+    // S4 Check：类型登记（enum）。
+    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_ENUM, nameT.Pos) {
+        ret false
+    }
     r.Name = nameT.Value
     x.l.skipTerminators()
     if !EnumBlock.parseOptionalType(r, x) {

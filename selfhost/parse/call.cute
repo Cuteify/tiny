@@ -56,9 +56,15 @@ fn ExpBlock.parsePrimaryKeyword(e ExpBlock, x *Parser, t *lex.Token) bool {
 
 // parsePrimaryName 处理单个 NAME：NAME{...} 结构体字面量需 NAME 与 '{' 严格相邻。
 fn ExpBlock.parsePrimaryName(e ExpBlock, x *Parser, t *lex.Token) bool {
+    var fileBlock: FileBlock
     x.exprs = x.exprs + 1
     x.l.next()
+    x.lastName = t.Value
     var p: *lex.Token = x.l.peek()
+    // S4 Useful：裸名紧邻 '(' → 视为对该全局函数的调用，标记。
+    if lex.Token.is(p, lex.DELIMITER, "(") {
+        FileBlock.markUse(fileBlock, x, t.Value)
+    }
     if lex.Token.is(p, lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
         ret ExpBlock.parseStructLit(e, x)
     }
@@ -221,7 +227,21 @@ fn ExpBlock.parseCompositeElems(e ExpBlock, x *Parser) bool {
 fn ExpBlock.parseSelectorSuffix(e ExpBlock, x *Parser) bool {
     var fileBlock: FileBlock
     x.l.next()
-    ret FileBlock.expectName(fileBlock, x, EEXPR) != nil
+    var t2: *lex.Token = FileBlock.expectName(fileBlock, x, EEXPR)
+    if t2 == nil {
+        ret false
+    }
+    // S4 Useful：Receiver 是已登记类型且其后紧接 '(' → 限定名调用，
+    // 按 "Type.method" 限定标记（跨包方法同限定名，这里精确命中自身登记）。
+    var ln: string = x.lastName
+    var t2v: string = t2.Value
+    if ln != "" && lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
+        FileBlock.markUse(fileBlock, x, ln + "." + t2v)
+    }
+    // 裸名也标记（当限定名未登记命中而裸名恰好是全局函数时——保守兜底）。
+    FileBlock.markUse(fileBlock, x, t2v)
+    x.lastName = t2v
+    ret true
 }
 
 // consumeSliceBoundEnd 判断当前到 ']' 或 ':' 为止：若不是，consume expr；其他接受。
