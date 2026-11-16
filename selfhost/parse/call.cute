@@ -32,7 +32,7 @@ fn ExpBlock.prec(  s string) int {
 }
 
 // parsePrimaryKeyword 处理 true/false/nil 关键字；非此三字时记 EEXPR。
-fn ExpBlock.parsePrimaryKeyword(  x *Parser, t *lex.Token) bool {
+fn ExpBlock.parsePrimaryKeyword(x *Parser, t *lex.Token) bool {
     var fileBlock: FileBlock
     if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
         x.exprs = x.exprs + 1
@@ -54,8 +54,9 @@ fn ExpBlock.parsePrimaryName(x *Parser, t *lex.Token) bool {
     if p.is( lex.DELIMITER, "(") {
         fileBlock.markUse( x, t.Value)
     }
+    var lp: ExpBlock
     if p.is( lex.DELIMITER, "{") && unsafe.cast[int](p.Pos) == t.EndPos {
-        ret ExpBlock.parseStructLit( x)
+        ret lp.parseStructLit( x)
     }
     ret true
 }
@@ -635,9 +636,5 @@ fn CallBlock.parseRetTypes(  x *Parser) bool {
     }
     ret typeBlock.skipType( x)
 }
-// exp.cute —— 表达式递归下降（运算优先级 climb）；与 Go exp.go 同级。
-// 加载顺序：依赖 helpers.cute。
-import "std:strings"
-import lex "../lexer"
 
 
