@@ -9,39 +9,32 @@ import lex "../lexer"
 
 
 fn ExpBlock.prec(e ExpBlock, s string) int {
-    // 注意：不能用 switch s { case "..": } —— cute 的 string switch 是指针比较
-    // （case 只匹配编译期内联常量，运行时串永远不匹配），见本文件编译期验证。
-    if s == "||" {
+    // 字符串 switch：自 2026-11-17 起与 == 等价（std:strings.eq 内容比较，
+    // 不再按字符串视图指针比对——token Value 是源缓冲区视图，pointer cmp 永远不命中）。
+    switch s {
+    case "||":
         ret 1
-    }
-    if s == "&&" {
+    case "&&":
         ret 2
-    }
-    if s == "==" || s == "!=" {
+    case "==", "!=":
         ret 3
-    }
-    if s == "<" || s == "<=" || s == ">" || s == ">=" {
+    case "<", "<=", ">", ">=":
         ret 4
-    }
-    if s == "|" {
+    case "|":
         ret 5
-    }
-    if s == "^" {
+    case "^":
         ret 6
-    }
-    if s == "&" {
+    case "&":
         ret 7
-    }
-    if s == "<<" || s == ">>" {
+    case "<<", ">>":
         ret 9
-    }
-    if s == "+" || s == "-" {
+    case "+", "-":
         ret 10
-    }
-    if s == "*" || s == "/" || s == "%" {
+    case "*", "/", "%":
         ret 11
+    default:
+        ret 0
     }
-    ret 0
 }
 
 // parsePrimaryKeyword 处理 true/false/nil 关键字；非此三字时记 EEXPR。

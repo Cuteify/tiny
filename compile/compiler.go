@@ -689,6 +689,12 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 
 	var code string
 
+	// 字符串目标：switch 逐 case 比对字符串内容（等价于 a == "literal"——
+	// 原生 cmp/je 只比对视图指针，运行时缓冲区视图永远不命中内联常量）。
+	if switchBlock.Target != nil && typeSys.CheckKind(switchBlock.Target.Type, "string") {
+		return c.compileStringSwitchBlock(n, switchBlock, label, endLabel, scratchReg1, scratchReg2)
+	}
+
 	// 编译 switch 目标表达式到寄存器
 	if switchBlock.Target != nil {
 		code += c.Ctx.Arch.Exp(switchBlock.Target, scratchReg1, "switch target")
@@ -743,6 +749,132 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 	}
 
 	// 按源码顺序编译每个 case 的 body
+	code += c.compileSwitchBodies(caseNodes, label, endLabel)
+	code += utils.Format(endLabel + ":")
+	return code
+}
+
+// compileStringSwitchBlock 字符串目标 switch：与 if a == "literal" 等价。
+// 目标只求值一次（放在栈 spill 的三个槽里）；每个 case 值通过
+// std:strings.eq 比较——逐内容比较，不依赖字符串内联常量的指针一致性。
+func (c *Compiler) compileStringSwitchBlock(n *parser.Node, switchBlock *parser.SwitchBlock, label, endLabel, scratchReg1, scratchReg2 string) string {
+	// 收集 case 节点（源码顺序；case_n_i 标签编号一致）
+	caseNodes := make([]*parser.Node, 0, len(switchBlock.Cases))
+	for _, child := range n.Children {
+		if _, ok := child.Value.(*parser.CaseBlock); ok {
+			caseNodes = append(caseNodes, child)
+		}
+	}
+	eqFB := parser.LookupIntrinsicFunc("std:strings", "eq")
+	if eqFB == nil {
+		// 未能解析 std:strings.eq：退回到不安全的指针 cmp（仍优于编译期 panic）。
+		// 现有 corpus 都依赖 std:strings，这一步实际上不可达。
+		return c.compileSwitchBlockScalar(n, switchBlock, label, endLabel, scratchReg1, scratchReg2)
+	}
+	eqName := eqFB.MangledName()
+
+	var code string
+
+	// 目标 spill：24 字节三槽 + 24 字节 case 值 scratch + 8 字节对齐
+	code += utils.Format("sub rsp, 56; switch target spill")
+	code += c.Ctx.Arch.Exp(switchBlock.Target, "[rsp+0]", "switch target")
+
+	// 为每个 case 生成比较跳转
+	defaultLabel := ""
+	for i, child := range caseNodes {
+		sc := child.Value.(*parser.CaseBlock)
+		caseLabel := fmt.Sprintf("case_%s_%d", label, i)
+		if sc.IsDefault {
+			defaultLabel = caseLabel
+			continue
+		}
+		for _, val := range sc.Values {
+			code += c.Ctx.Arch.Exp(val, "[rsp+32]", "switch case value")
+			code += utils.Format("mov RDI, QWORD [rsp+0]")
+			code += utils.Format("mov RSI, QWORD [rsp+8]")
+			code += utils.Format("mov RDX, QWORD [rsp+16]")
+			code += utils.Format("mov RCX, QWORD [rsp+32]")
+			code += utils.Format("mov R8, QWORD [rsp+40]")
+			code += utils.Format("mov R9, QWORD [rsp+48]")
+			code += utils.Format("call " + eqName)
+			code += utils.Format("cmp RAX, 0")
+			code += utils.Format("jne " + caseLabel)
+			// 未命中直接落入下一 case 的比较
+		}
+	}
+
+	// 没有任何 case 匹配：跳到 default 或结束
+	if defaultLabel != "" {
+		code += utils.Format("jmp " + defaultLabel)
+	} else {
+		code += utils.Format("jmp " + endLabel)
+	}
+	code += utils.Format("add rsp, 56")
+
+	// 按源码顺序编译每个 case 的 body（与标量版共用逻辑）
+	code += c.compileSwitchBodies(caseNodes, label, endLabel)
+	code += utils.Format(endLabel + ":")
+	return code
+}
+
+// compileSwitchBlockScalar 标量 cmp/je 版（保留给 switch 目标非 string 的情形）。
+func (c *Compiler) compileSwitchBlockScalar(n *parser.Node, switchBlock *parser.SwitchBlock, label, endLabel, scratchReg1, scratchReg2 string) string {
+	caseNodes := make([]*parser.Node, 0, len(switchBlock.Cases))
+	for _, child := range n.Children {
+		if _, ok := child.Value.(*parser.CaseBlock); ok {
+			caseNodes = append(caseNodes, child)
+		}
+	}
+
+	var code string
+
+	// 编译 switch 目标表达式到寄存器
+	if switchBlock.Target != nil {
+		code += c.Ctx.Arch.Exp(switchBlock.Target, scratchReg1, "switch target")
+	}
+
+	defaultLabel := ""
+	for i, child := range caseNodes {
+		sc := child.Value.(*parser.CaseBlock)
+		caseLabel := fmt.Sprintf("case_%s_%d", label, i)
+		if sc.IsDefault {
+			defaultLabel = caseLabel
+			continue
+		}
+		for _, val := range sc.Values {
+			code += c.Ctx.Arch.Exp(val, scratchReg2, "case value")
+			if switchBlock.Target == nil {
+				code += utils.Format("test " + scratchReg2 + ", " + scratchReg2)
+				code += utils.Format("jnz " + caseLabel)
+				continue
+			}
+			leftSavedReg := c.Ctx.Reg.AllocCalleeSaveBind(val, c.Ctx.Arch.CalleeSaveRegs(), c.Ctx.Arch.CalleeSaveReg())
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存switch目标到callee-save")
+			}
+			code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
+			if leftSavedReg != "" {
+				code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复switch目标")
+				c.Ctx.Reg.Free(val)
+			}
+			code += utils.Format("je " + caseLabel)
+		}
+	}
+
+	if defaultLabel != "" {
+		code += utils.Format("jmp " + defaultLabel)
+	} else {
+		code += utils.Format("jmp " + endLabel)
+	}
+
+	code += c.compileSwitchBodies(caseNodes, label, endLabel)
+	code += utils.Format(endLabel + ":")
+	return code
+}
+
+// compileSwitchBodies 编译 case body 列表（fallthrough 与隐式 break 逻辑）。
+func (c *Compiler) compileSwitchBodies(caseNodes []*parser.Node, label, endLabel string) string {
+	var code string
 	for i, child := range caseNodes {
 		code += utils.Format(fmt.Sprintf("case_%s_%d:", label, i))
 
@@ -756,17 +888,11 @@ func (c *Compiler) compileSwitchBlock(n *parser.Node) string {
 		}
 
 		if hasFallthrough && i+1 < len(caseNodes) {
-			// fallthrough：直接进入下一个 case 的 body 标签。
 			code += utils.Format(fmt.Sprintf("jmp case_%s_%d; fallthrough", label, i+1))
 		} else {
-			// 隐式 break：跳出 switch。最后一个 case 的 fallthrough
-			// 已在 Parse 期报错，这里兜底跳出口。
 			code += utils.Format("jmp " + endLabel)
 		}
 	}
-
-	// 结束标签
-	code += utils.Format(endLabel + ":")
 	return code
 }
 
