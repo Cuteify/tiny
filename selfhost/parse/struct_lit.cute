@@ -2,41 +2,40 @@
 // 加载顺序：依赖 call.cute、helpers.cute。
 import "std:strings"
 import lex "../lexer"
-
-fn ExpBlock.parseStructLit(r ExpBlock, x *Parser) bool {
+fn ExpBlock.parseStructLit(  x *Parser) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", ESTMT) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", ESTMT) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if t.is( lex.DELIMITER, "}") {
             x.l.next()
             ret true
         }
         var nameT: *lex.Token = x.l.peek()
         if nameT.Type != lex.NAME {
-            FileBlock.fail(fileBlock, x, ESTMT, nameT.Pos)
+            fileBlock.fail( x, ESTMT, nameT.Pos)
             ret false
         }
         x.l.next()
-        if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
+        if !fileBlock.expect( x, lex.DELIMITER, ":", ESTMT) {
             ret false
         }
         var eb: ExpBlock
-        if !ExpBlock.parseExpr(eb, x) {
+        if !eb.parseExpr( x) {
             ret false
         }
         var t2: *lex.Token = x.l.peek()
-        if lex.Token.is(t2, lex.DELIMITER, ",") {
+        if t2.is( lex.DELIMITER, ",") {
             x.l.next()
             continue
         }
-        if lex.Token.is(t2, lex.DELIMITER, "}") {
+        if t2.is( lex.DELIMITER, "}") {
             continue
         }
-        FileBlock.fail(fileBlock, x, ESTMT, t2.Pos)
+        fileBlock.fail( x, ESTMT, t2.Pos)
         ret false
     }
 }

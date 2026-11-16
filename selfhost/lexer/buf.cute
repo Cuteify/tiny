@@ -37,9 +37,8 @@ type Token struct {
     EndLine: int
     EndCol: int
 }
-
-fn TokenType.string(t TokenType) string {
-    switch t {
+fn TokenType.string(self) string {
+    switch self {
     case NONE:
         ret "NONE"
     case STRING:
@@ -56,57 +55,56 @@ fn TokenType.string(t TokenType) string {
         ret "NONE"
     }
 }
-
-fn Token.string(t *Token) string {
-    var sb: string = "[" + TokenType.string(t.Type) + "]" + renderVisible(t.Value)
+fn Token.string(&self) string {
+    var tt: TokenType = self.Type
+    var sb: string = "[" + tt.string() + "]" + renderVisible(self.Value)
     ret sb
 }
-
-fn Token.len(t *Token) int {
-    ret unsafe.cast[int](strings.len(t.Value))
+fn Token.len(&self) int {
+    ret unsafe.cast[int](strings.len(self.Value))
 }
 
 // IsLineEnd 行尾判定：LF 与 CR 的一字节 DELIMITER token。
 // nil / NONE / 其它类型一律返回 false（parser 的行尾跳循环靠它终止）。
-fn Token.isLineEnd(t *Token) bool {
-    if unsafe.cast[uint](t) == 0 {
+fn Token.isLineEnd(&self) bool {
+    if unsafe.cast[uint](self) == 0 {
         ret false
     }
-    if t.Type != DELIMITER {
+    if self.Type != DELIMITER {
         ret false
     }
-    if len(t.Value) != 1 {
+    if len(self.Value) != 1 {
         ret false
     }
-    var b: byte = t.Value[0]
+    var b: byte = self.Value[0]
     var bi: int = unsafe.cast[int](b)
     ret bi == 10 || bi == 13
 }
 
 // IsSemiOrNewline 语句终结符判定：DELIMITER ";" 或 IsLineEnd(t)。
 // nil / NONE / 其它类型返回 false。
-fn Token.isSemiOrNewline(t *Token) bool {
-    if unsafe.cast[uint](t) == 0 {
+fn Token.isSemiOrNewline(&self) bool {
+    if unsafe.cast[uint](self) == 0 {
         ret false
     }
-    if t.Type != DELIMITER {
+    if self.Type != DELIMITER {
         ret false
     }
-    if strings.eq(t.Value, ";") {
+    if strings.eq(self.Value, ";") {
         ret true
     }
-    ret Token.isLineEnd(t)
+    ret self.isLineEnd()
 }
 
 // Is 按种类+值判断 token（类型安全的 kind/value 匹配，调用方不必各自 nil/Type/eq）。
-fn Token.is(t *Token, kind: TokenType, value string) bool {
-    if unsafe.cast[uint](t) == 0 {
+fn Token.is(&self, kind: TokenType, value string) bool {
+    if unsafe.cast[uint](self) == 0 {
         ret false
     }
-    if t.Type != kind {
+    if self.Type != kind {
         ret false
     }
-    ret strings.eq(t.Value, value)
+    ret strings.eq(self.Value, value)
 }
 
 // renderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。
@@ -168,70 +166,70 @@ fn newRingBuffer(size int) *RingBuffer {
 }
 
 // IsFull 是否满
-fn RingBuffer.isFull(r *RingBuffer) bool {
-    ret r.f
+fn RingBuffer.isFull(&self) bool {
+    ret self.f
 }
 
 // IsEmpty 是否空
-fn RingBuffer.isEmpty(r *RingBuffer) bool {
-    ret !r.f && r.ReadPos == r.WritePos
+fn RingBuffer.isEmpty(&self) bool {
+    ret !self.f && self.ReadPos == self.WritePos
 }
 
 // write 写入元素，成功返回true，满了返回false
-fn RingBuffer.write(r *RingBuffer, c *Token) bool {
-    if r.isFull() {
+fn RingBuffer.write(&self, c *Token) bool {
+    if self.isFull() {
         ret false
     }
 
     // 先写当前位置
-    r.buf[r.WritePos] = c
+    self.buf[self.WritePos] = c
     // 移动写指针，取模环绕
-    r.WritePos = (r.WritePos + 1) % len(r.buf)
+    self.WritePos = (self.WritePos + 1) % len(self.buf)
 
     // 写完之后，如果写指针追上读指针 → 变满
-    if r.WritePos == r.ReadPos {
-        r.f = true
+    if self.WritePos == self.ReadPos {
+        self.f = true
     }
     ret true
 }
 
 // read 读出一个元素；空时返回零指针（0）。
 // Go 的第二返回值（false/true）映射为 "返回零指针时表示空"。
-fn RingBuffer.read(r *RingBuffer) *Token {
-    if r.isEmpty() {
+fn RingBuffer.read(&self) *Token {
+    if self.isEmpty() {
         ret 0
     }
 
-    var val: *Token = r.buf[r.ReadPos]
+    var val: *Token = self.buf[self.ReadPos]
     // 移动读指针
-    r.ReadPos = (r.ReadPos + 1) % len(r.buf)
+    self.ReadPos = (self.ReadPos + 1) % len(self.buf)
 
     // 读完之后，肯定不再是满状态
-    r.f = false
+    self.f = false
     ret val
 }
 
 // Clear 重置读写下标与满标记（不动槽位，也不释放已写入的 *Token）。
 // 用于位置回卷后丢弃预取残留——buffer 直接复用，零分配。
-fn RingBuffer.clear(r *RingBuffer) {
-    r.ReadPos = 0
-    r.WritePos = 0
-    r.f = false
+fn RingBuffer.clear(&self) {
+    self.ReadPos = 0
+    self.WritePos = 0
+    self.f = false
 }
 
 // front 只读地查看环首元素；空时返回零指针（不弹出）。
 // parser 的 peek 语义直接由这里经 lex.Prefetch 承接，不进环也不消费。
-fn RingBuffer.front(r *RingBuffer) *Token {
-    if r.isEmpty() {
+fn RingBuffer.front(&self) *Token {
+    if self.isEmpty() {
         ret 0
     }
-    ret r.buf[r.ReadPos]
+    ret self.buf[self.ReadPos]
 }
 
 // Resize 扩容：把现有有效数据迁移到新buffer
 // 注意：Resize 环形buffer比较麻烦，不能直接copy底层数组
-fn RingBuffer.resize(r *RingBuffer, newSize int) {
-    if newSize <= len(r.buf) {
+fn RingBuffer.resize(&self, newSize int) {
+    if newSize <= len(self.buf) {
         // 简化：这里只支持扩容，缩容不处理，或者你自己扩展
         ret
     }
@@ -239,14 +237,14 @@ fn RingBuffer.resize(r *RingBuffer, newSize int) {
 
     // 把所有有效数据依次读出写入新buf
     var idx: int = 0
-    for ; !r.isEmpty(); {
-        var v: *Token = r.read()
+    for ; !self.isEmpty(); {
+        var v: *Token = self.read()
         newBuf[idx] = v
         idx = idx + 1
     }
 
-    r.buf = newBuf
-    r.ReadPos = 0
-    r.WritePos = idx
-    r.f = false
+    self.buf = newBuf
+    self.ReadPos = 0
+    self.WritePos = idx
+    self.f = false
 }

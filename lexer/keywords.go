@@ -144,7 +144,7 @@ var (
 		"struct":    TYPE,
 		"interface": TYPE,
 		"enum":      TYPE,
-		"self":      NAME,
+		"self":       NAME,    // self 承载方法接收者，作为 NAME 处理（Expression 消费完全不受影响）
 		"true":      BOOL,
 		"false":     BOOL,
 		"nil":       BOOL,

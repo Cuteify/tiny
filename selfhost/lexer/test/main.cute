@@ -29,7 +29,7 @@ fn main() int {
         if t.Type == lex.NONE {
             break
         }
-        console.println(lex.Token.string(t))
+        console.println(t.string())
     }
     ret 42
 }

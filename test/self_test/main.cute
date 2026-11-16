@@ -3,9 +3,8 @@ struct Dog {
     name: string
     age: int
 }
-
-fn Dog.stringify(recv: *Dog) string {
-    ret recv.name
+fn Dog.stringify(&self) string {
+    ret self.name
 }
 
 fn main() int {

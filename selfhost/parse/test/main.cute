@@ -10,18 +10,18 @@ import util "../../testutil"
 
 fn parsed(src string) *parse.Parser {
     var r: parse.FileBlock
-    var p: *parse.Parser = parse.FileBlock.mk(r, src)
-    parse.FileBlock.file(r, p)
+    var p: *parse.Parser = r.mk( src)
+    r.file( p)
     ret p
 }
 
 fn bad(src string, want int) bool {
     var r: parse.FileBlock
     var p: *parse.Parser = parsed(src)
-    if parse.FileBlock.err(r, p) != want {
+    if r.err( p) != want {
         ret false
     }
-    if parse.FileBlock.errPos(r, p) > strings.len(src) {
+    if r.errPos( p) > strings.len(src) {
         ret false
     }
     ret true
@@ -31,24 +31,24 @@ fn bad(src string, want int) bool {
 fn ok(src string) bool {
     var r: parse.FileBlock
     var p: *parse.Parser = parsed(src)
-    ret parse.FileBlock.err(r, p) == parse.OK
+    ret r.err( p) == parse.OK
 }
 
 // caseEmpty：空输入合法，所有计数为 0。
 fn caseEmpty() int {
     var r: parse.FileBlock
     var p: *parse.Parser = parsed("")
-    if parse.FileBlock.err(r, p) != parse.OK { ret 1 }
-    if parse.FileBlock.declCount(r, p) != 0 { ret 2 }
-    if parse.FileBlock.importCount(r, p) != 0 { ret 3 }
-    if parse.FileBlock.buildCount(r, p) != 0 { ret 4 }
-    if parse.FileBlock.enumCount(r, p) != 0 { ret 5 }
-    if parse.FileBlock.structCount(r, p) != 0 { ret 6 }
-    if parse.FileBlock.constCount(r, p) != 0 { ret 7 }
-    if parse.FileBlock.varCount(r, p) != 0 { ret 8 }
-    if parse.FileBlock.fnCount(r, p) != 0 { ret 9 }
-    if parse.FileBlock.stmtCount(r, p) != 0 { ret 10 }
-    if parse.FileBlock.exprCount(r, p) != 0 { ret 11 }
+    if r.err( p) != parse.OK { ret 1 }
+    if r.declCount( p) != 0 { ret 2 }
+    if r.importCount( p) != 0 { ret 3 }
+    if r.buildCount( p) != 0 { ret 4 }
+    if r.enumCount( p) != 0 { ret 5 }
+    if r.structCount( p) != 0 { ret 6 }
+    if r.constCount( p) != 0 { ret 7 }
+    if r.varCount( p) != 0 { ret 8 }
+    if r.fnCount( p) != 0 { ret 9 }
+    if r.stmtCount( p) != 0 { ret 10 }
+    if r.exprCount( p) != 0 { ret 11 }
     ret 0
 }
 
@@ -84,22 +84,22 @@ fn caseDecls() int {
     src = src + "const MAX: int = 10\n"
     src = src + "var total: int = 0\n"
     src = src + "var count: int = 1\n"
-    src = src + "fn Point.set(v: int) {\n"
+    src = src + "fn Point.set(self, v: int) {\n"
     src = src + "    self.x = v\n"
     src = src + "}\n"
-    src = src + "fn Point.get() int {\n"
+    src = src + "fn Point.get(self) int {\n"
     src = src + "    ret self.x\n"
     src = src + "}\n"
     var p: *parse.Parser = parsed(src)
-    if parse.FileBlock.err(r, p) != parse.OK { ret 1 }
-    if parse.FileBlock.declCount(r, p) != 16 { ret 2 }
-    if parse.FileBlock.importCount(r, p) != 3 { ret 3 }
-    if parse.FileBlock.buildCount(r, p) != 1 { ret 4 }
-    if parse.FileBlock.enumCount(r, p) != 1 { ret 5 }
-    if parse.FileBlock.structCount(r, p) != 2 { ret 6 }
-    if parse.FileBlock.constCount(r, p) != 1 { ret 7 }
-    if parse.FileBlock.varCount(r, p) != 2 { ret 8 }
-    if parse.FileBlock.fnCount(r, p) != 2 { ret 9 }
+    if r.err( p) != parse.OK { ret 1 }
+    if r.declCount( p) != 16 { ret 2 }
+    if r.importCount( p) != 3 { ret 3 }
+    if r.buildCount( p) != 1 { ret 4 }
+    if r.enumCount( p) != 1 { ret 5 }
+    if r.structCount( p) != 2 { ret 6 }
+    if r.constCount( p) != 1 { ret 7 }
+    if r.varCount( p) != 2 { ret 8 }
+    if r.fnCount( p) != 2 { ret 9 }
     ret 0
 }
 
@@ -122,10 +122,10 @@ fn caseGrouped() int {
     src = src + "    Q = []int\n"
     src = src + ")\n"
     var p: *parse.Parser = parsed(src)
-    if parse.FileBlock.err(r, p) != parse.OK { ret 1 }
-    if parse.FileBlock.varCount(r, p) != 2 { ret 2 }
-    if parse.FileBlock.constCount(r, p) != 2 { ret 3 }
-    if parse.FileBlock.structCount(r, p) != 1 { ret 4 }
+    if r.err( p) != parse.OK { ret 1 }
+    if r.varCount( p) != 2 { ret 2 }
+    if r.constCount( p) != 2 { ret 3 }
+    if r.structCount( p) != 1 { ret 4 }
     return 0
 }
 
@@ -163,24 +163,24 @@ fn caseCheck() int {
     var isrc: string = "type Stringer interface {\n    stringify() string\n}\ntype R interface {\n    read(buf: string) int\n    size() int\n    reset()\n}\nfn main() int {\n    ret 0\n}\n"
     var r: parse.FileBlock
     var p: *parse.Parser = parsed(isrc)
-    if parse.FileBlock.err(r, p) != parse.OK { ret 3 }
-    if parse.FileBlock.ifaceDefCount(r, p) != 2 { ret 4 }
-    if !strings.eq(parse.FileBlock.ifaceDefAt(r, p, 0), "Stringer:stringify,") { ret 5 }
-    if !strings.eq(parse.FileBlock.ifaceDefAt(r, p, 1), "R:read,size,reset,") { ret 6 }
+    if r.err( p) != parse.OK { ret 3 }
+    if r.ifaceDefCount( p) != 2 { ret 4 }
+    if !strings.eq(r.ifaceDefAt( p, 0), "Stringer:stringify,") { ret 5 }
+    if !strings.eq(r.ifaceDefAt( p, 1), "R:read,size,reset,") { ret 6 }
 
     // 4) unusedFnCount：未引用的 fn 计为未 Useful，main 与被引用的计入。
     var us: string = "fn usedFn() int {\n    ret 1\n}\nfn unusedFn() int {\n    ret 2\n}\nfn main() int {\n    ret usedFn()\n}\n"
     var p4: *parse.Parser = parsed(us)
-    if parse.FileBlock.err(r, p4) != parse.OK { ret 7 }
-    if parse.FileBlock.unusedFnCount(r, p4) != 1 { ret 8 }
+    if r.err( p4) != parse.OK { ret 7 }
+    if r.unusedFnCount( p4) != 1 { ret 8 }
 
     // 5) registeredDeclCount：us 源恰 3 个 fn。
-    if parse.FileBlock.registeredDeclCount(r, p4) != 3 { ret 9 }
+    if r.registeredDeclCount( p4) != 3 { ret 9 }
 
     // 6) main 恒为 Useful：us 源没有 main → unused = 0 的反例场景。
     var nm: string = "fn main() int {\n    ret 0\n}\n"
     var p5: *parse.Parser = parsed(nm)
-    if parse.FileBlock.unusedFnCount(r, p5) != 0 { ret 10 }
+    if r.unusedFnCount( p5) != 0 { ret 10 }
 
     ret 0
 }
@@ -202,23 +202,23 @@ fn fileMain(path string) int {
     }
     var src: string = sf.Src
 
-    var p: *parse.Parser = parse.FileBlock.mk(r, src)
-    parse.FileBlock.file(r, p)
-    if parse.FileBlock.err(r, p) != parse.OK {
+    var p: *parse.Parser = r.mk( src)
+    r.file( p)
+    if r.err( p) != parse.OK {
         console.println("PARSER_SELFTEST|WRONG")
         ret 1
     }
     console.print("PARSE_OK")
-    printCounter("decls", parse.FileBlock.declCount(r, p))
-    printCounter("imports", parse.FileBlock.importCount(r, p))
-    printCounter("builds", parse.FileBlock.buildCount(r, p))
-    printCounter("enums", parse.FileBlock.enumCount(r, p))
-    printCounter("structs", parse.FileBlock.structCount(r, p))
-    printCounter("consts", parse.FileBlock.constCount(r, p))
-    printCounter("vars", parse.FileBlock.varCount(r, p))
-    printCounter("fns", parse.FileBlock.fnCount(r, p))
-    printCounter("stmts", parse.FileBlock.stmtCount(r, p))
-    printCounter("exprs", parse.FileBlock.exprCount(r, p))
+    printCounter("decls", r.declCount( p))
+    printCounter("imports", r.importCount( p))
+    printCounter("builds", r.buildCount( p))
+    printCounter("enums", r.enumCount( p))
+    printCounter("structs", r.structCount( p))
+    printCounter("consts", r.constCount( p))
+    printCounter("vars", r.varCount( p))
+    printCounter("fns", r.fnCount( p))
+    printCounter("stmts", r.stmtCount( p))
+    printCounter("exprs", r.exprCount( p))
     console.println("")
     ret 42
 }

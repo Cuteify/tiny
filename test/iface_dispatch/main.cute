@@ -8,8 +8,7 @@ type Dog struct {
     name: string
     age: int
 }
-
-fn Dog.stringify(recv: *Dog) string {
+fn Dog.stringify() string {
     ret "dog"
 }
 

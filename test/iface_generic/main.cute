@@ -14,19 +14,16 @@ struct Dog {
     name: string
     age: int
 }
-
-fn Dog.stringify(recv: *Dog) string {
+fn Dog.stringify() string {
     ret "dog"
 }
 
 struct Bot {
     count: int
 }
-
-fn Bot.increment(recv: *Bot) {
+fn Bot.increment() {
 }
-
-fn Bot.getCount(recv: *Bot) int {
+fn Bot.getCount() int {
     ret 0
 }
 

@@ -512,6 +512,7 @@ func findSelf(p *Parser, name Name, typ FindType) FindResult {
 		if _, ok := nowBlock.Value.(*FuncBlock); ok {
 			break
 		}
+		nowBlock = nowBlock.Father
 	}
 	if nowBlock == nil {
 		p.Error.MissError("Call Error", p.Lexer.Cursor, "self must be in function")
@@ -527,7 +528,11 @@ func findSelf(p *Parser, name Name, typ FindType) FindResult {
 	}
 
 	if name.Length() == 1 && name.First() == "self" {
-		return FindResult{Node: nowBlock, Value: fn.Class, Path: []any{fn}, Type: FindTypeSelf}
+		// Path[0]/Value 形状选 *ArgBlock：字段偏移与 RBP 槽位计算按 receiver 实参的 Offset 走。
+		if len(fn.Args) > 0 && fn.Args[0] != nil {
+			return FindResult{Node: nowBlock, Value: fn.Args[0], Path: []any{fn.Args[0]}, Type: FindTypeSelf}
+		}
+		return FindResult{Node: nowBlock, Value: fn.Class, Path: []any{fn.Class}, Type: FindTypeSelf}
 	} else {
 		ok, r := enterTypeFind(name[1:], fn.Class)
 		if ok && (r.Type&typ) != 0 {

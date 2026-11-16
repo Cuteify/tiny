@@ -67,21 +67,17 @@ fn bitops(a: int, b: int) int {
 fn neg(a: int) int {
     ret -a
 }
-
-fn Point.add(recv: *Point, other: Point) int {
-    ret recv.x + other.x
+fn Point.add(&self, other: Point) int {
+    ret self.x + other.x
 }
-
-fn Point.sub(recv: *Point, other: Point) int {
-    ret recv.x - other.x
+fn Point.sub(&self, other: Point) int {
+    ret self.x - other.x
 }
-
-fn Point.eq(recv: *Point, other: Point) bool {
-    ret recv.x == other.x
+fn Point.eq(&self, other: Point) bool {
+    ret self.x == other.x
 }
-
-fn Point.getX(recv: *Point) int {
-    ret recv.x
+fn Point.getX(&self) int {
+    ret self.x
 }
 
 fn main() i32 {

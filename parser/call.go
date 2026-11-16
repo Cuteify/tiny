@@ -86,6 +86,26 @@ func receiverNameCheckable(name Name) bool {
 	return true
 }
 
+// hasSelfReceiver 报告 fb 是否声明了 self/&self 接收者。
+// parseFuncSignature 强制该接收者名为 "self"，故只需看第一个形参。
+// 第一个形参不是 self 的方法即“无接收者方法”：调用时不传递接收者，obj 丢弃。
+func hasSelfReceiver(fb *FuncBlock) bool {
+	return fb != nil && fb.Class != nil && len(fb.Args) > 0 && fb.Args[0] != nil &&
+		fb.Args[0].Name != nil && fb.Args[0].Name.Last() == "self"
+}
+
+// splitSelfReceiverCandidates 把候选拆成 (带接收者, 无接收者) 两组，供调用点按 arity/类型打分。
+func splitSelfReceiverCandidates(candidates []*FuncBlock) (receiver, static []*FuncBlock) {
+	for _, fb := range candidates {
+		if hasSelfReceiver(fb) {
+			receiver = append(receiver, fb)
+		} else {
+			static = append(static, fb)
+		}
+	}
+	return receiver, static
+}
+
 // methodCandidates 收集接收者类型上所有同名方法（含重载）。
 // enterTypeFind 只返回 Methods() 里第一个命中项，无法支撑同 arity 方法重载。
 func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
@@ -108,10 +128,50 @@ func methodCandidates(t typeSys.Type, method string) []*FuncBlock {
 	return out
 }
 
-// staticTypeMethodCandidates 处理 “类型名.方法(...)” 静态方法调用：
-// receiverName 解析为类型（而非变量）时，返回该类型方法表中同名方法。
-// 未命中（不是类型名/方法不存在）返回 nil，调用方按普通名解析。
-// 与动态路径的区别：接收者是第一个显式实参，不再自动前置。
+// selectMethodCandidates 在 (带接收者组, 无接收者组) 两组中按 arity/类型打分。
+// 隐式接收者组（obj.m(...)）：receiver 组优先（Go 语义）；无 match 回退 static 组，
+// 调用方回滚 c.Args 为用户显式参数（无接收者不传递）。
+// 静态/普通名组（T.m(...) / pkg.m(...)）：两组各自打分，receiver 组胜出（方法优先于静态方法）。
+func selectMethodCandidates(c *CallBlock, receiverExp *Expression,
+	receiverCandidates, staticCandidates []*FuncBlock, base []*ArgBlock) (sel *FuncBlock, compatible int, ambiguous bool) {
+	if receiverExp != nil {
+		// 当前 c.Args 已前置接收者（base）；先试 receiver 组
+		sr, cr, ar := selectCallCandidate(c, receiverCandidates)
+		if sr != nil {
+			// receiver 组胜出：不回滚 c.Args
+			return sr, cr, ar
+		}
+		// 回退：无接收者组，回滚到用户显式参数（不传递接收者）
+		c.Args = base
+		if len(staticCandidates) == 0 {
+			return nil, cr, ar
+		}
+		ss, cs, as := selectCallCandidate(c, staticCandidates)
+		if ss != nil {
+			return ss, cs, as
+		}
+		return nil, cs, as
+	}
+	// receiverExp == nil：两组对同一组用户参数打分，方法组优先
+	sr, cr, ar := selectCallCandidate(c, receiverCandidates)
+	ss, cs, as := selectCallCandidate(c, staticCandidates)
+	switch {
+	case sr != nil && ss == nil:
+		return sr, cr, ar
+	case ss != nil && sr == nil:
+		return ss, cs, as
+	case sr != nil && ss != nil:
+		// 两组都匹配：方法（带 receiver）优先于静态/自由方法
+		return sr, cr, ar
+	default:
+		// 两组都不匹配：按较兼容组报错（可复用 ambiguous/compatible）
+		if cr >= cs {
+			return nil, cr, ar
+		}
+		return nil, cs, as
+	}
+}
+
 func staticTypeMethodCandidates(p *Parser, receiverName Name, method string) []*FuncBlock {
 	if p == nil || receiverName.Length() == 0 {
 		return nil
@@ -464,10 +524,13 @@ func (c *CallBlock) Check(p *Parser) bool {
 		}
 	}
 
+	receiverCandidates, staticCandidates := splitSelfReceiverCandidates(candidates)
+	base := c.Args
 	// 接收者作为第一个参数显式传入（编译器自动传入第一个参数）。
+	// 只有选中的候选带 self/&self 接收者时被消费；无接收者候选的回退会先回滚 c.Args。
 	if receiverExp != nil {
 		arg := &ArgBlock{Value: receiverExp, Name: receiverExp.Var.Name, Type: receiverExp.Type}
-		c.Args = append([]*ArgBlock{arg}, c.Args...)
+		c.Args = append([]*ArgBlock{arg}, base...)
 	}
 
 	if c.Func == nil && c.ThisVar == nil && len(candidates) > 0 {
@@ -478,7 +541,7 @@ func (c *CallBlock) Check(p *Parser) bool {
 				arg.Value.Check(p)
 			}
 		}
-		sel, compatible, ambiguous := selectCallCandidate(c, candidates)
+		sel, compatible, ambiguous := selectMethodCandidates(c, receiverExp, receiverCandidates, staticCandidates, base)
 		if sel == nil {
 			if p.FinalCheck {
 				if ambiguous {
@@ -496,12 +559,16 @@ func (c *CallBlock) Check(p *Parser) bool {
 			return false
 		}
 		c.Func = sel
-		if receiverExp != nil && sel.Class != nil && len(sel.Args) > 0 && len(c.Args) > 0 {
+		if receiverExp != nil && hasSelfReceiver(sel) {
 			// 按选中候选的接收者形态做 P ↔ *P 转换（编译器自动取址/解引用）。
 			applyReceiverConversion(c, sel, receiverExp)
-		} else if staticCall && len(c.Args) > 0 && sel.Class != nil && len(sel.Args) > 0 {
-			// 静态方法调用：第一个显式实参就是接收者，按同样规则转换。
-			applyReceiverConversion(c, sel, c.Args[0].Value)
+		} else if staticCall && hasSelfReceiver(sel) {
+			// 成员函数不能脱离成员派发：Type.method(recv, ...) 静态调用形式
+			// 仅允许无接收者方法（Cls.method(args) 命名空间式自由函数）。
+			// 有 self/&self 接收者的成员函数必须 obj.m(args)。
+			p.Error.MissError("Call Error", p.Lexer.Cursor,
+				"member function '"+sel.Name.String()+"' has a self receiver; call it as <receiver>."+sel.Name.String()+"(...)")
+			return false
 		}
 		c.ThisVar = nil
 	}

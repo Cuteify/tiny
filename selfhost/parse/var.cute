@@ -1,17 +1,10 @@
 // var.cute —— var/const/let 声明与分组。
 import "std:strings"
 import lex "../lexer"
-
-
-
-
-
-
-
-fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string, global int) bool {
+fn VarBlock.parseVarConst(  x *Parser, kind string, global int) bool {
     var fileBlock: FileBlock
     var typeBlock: TypeBlock
-    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+    var nameT: *lex.Token = fileBlock.expectName( x, EDECL)
     if nameT == nil {
         ret false
     }
@@ -21,22 +14,22 @@ fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string, global int) bool {
         if strings.eq(kind, "const") {
             k0 = REG_CONST
         }
-        if !FileBlock.registerDecl(fileBlock, x, nameT.Value, k0, nameT.Pos) {
+        if !fileBlock.registerDecl( x, nameT.Value, k0, nameT.Pos) {
             ret false
         }
     }
     var t: *lex.Token = x.l.peek()
-    var hasType: bool = lex.Token.is(t, lex.DELIMITER, ":")
+    var hasType: bool = t.is( lex.DELIMITER, ":")
     if hasType {
         x.l.next()
-        if !TypeBlock.skipType(typeBlock, x) {
+        if !typeBlock.skipType( x) {
             ret false
         }
     }
     var eqT: *lex.Token = x.l.peek()
-    if lex.Token.is(eqT, lex.DELIMITER, "=") {
+    if eqT.is( lex.DELIMITER, "=") {
         x.l.next()
-        FileBlock.restOfLineAtDepth0(fileBlock, x)
+        fileBlock.restOfLineAtDepth0( x)
     } else if !hasType {
         // var x 无类型也无初值：声明但零值（允许）
     }
@@ -48,14 +41,14 @@ fn VarBlock.parseVarConst(r VarBlock, x *Parser, kind string, global int) bool {
     x.decls = x.decls + 1
     ret true
 }
-
-fn VarBlock.parseVarConstDispatch(r VarBlock, x *Parser, kind string, global int) bool {
+fn VarBlock.parseVarConstDispatch(&self, x *Parser, kind string, global int) bool {
     var typeBlock: TypeBlock
     x.l.skipTerminators()
-    if lex.Token.is(x.l.peek(), lex.DELIMITER, "(") {
-        ret TypeBlock.parseGroupedDecl(typeBlock, x, kind)
+    var tpeek: *lex.Token = x.l.peek()
+    if tpeek.is(lex.DELIMITER, "(") {
+        ret typeBlock.parseGroupedDecl( x, kind)
     }
-    if !VarBlock.parseVarConst(r, x, kind, global) {
+    if !VarBlock.parseVarConst( x, kind, global) {
         ret false
     }
     ret true

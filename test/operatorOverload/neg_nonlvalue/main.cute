@@ -2,9 +2,8 @@
 type Vec struct {
     data: []int
 }
-
-fn Vec.get(recv: *Vec, i int) int {
-    ret recv.data[i]
+fn Vec.get(&self, i int) int {
+    ret self.data[i]
 }
 
 fn makeVec() Vec {

@@ -15,8 +15,10 @@
   `Block = interface{...}`（selfhost 用 Go 参考同名同形 interface）。
 - user-facing API 兼容 `selfhost/parse/parse.cute` 旧形态（`mk`、`file`、`err`、`errPos`、
   `declKindCounting`、……对拍所需的最小 API），便于 `scripts/selfhost_parse.sh` 沿用语料。
-- **两种接口都支持**：`fn Foo.bar(recv: *Foo)` 单 receiver 与 Go 风格
-  `(recv Foo) fn.bar` 前驱 receiver（等价形式）。
+- 方法形态：`fn Type.name(self|&self, args...) ret { ... }`，接收者类型由 `Type.` 前缀推断；`self` = 值接收者，`&self` = `*Type` 指针接收者。
+- 方法调用：`value.method(args)` 或 `ptr.method(args)`；成员方法不静态派发（保持 member dispatch），无 `self` 的静态方法用 `Cls.method(args)`。
+- 接口方法声明 **不写 receiver**（`m() X`）。
+- 成员 dispatch 对 `obj.m(args)` 中的 `obj` 求值；无 receiver 方法则丢弃 obj 的值。
 - 12+ block 种类全实现：`Arg, Break, Call, Case, Cont, Defer, Else, Func, If, Import, Return, Struct, Switch, Type, Var`
   （`Fallthrough` 为 NoOp，仅在 Switch 内处理）。
 - 结构体/枚举/类型/常量/import/build 全部解析；类型引用（限定/裸/指针/列表/基础）并全量还原。
@@ -133,15 +135,17 @@ Parser 打印/返回:
 `decls / imports / builds / enums / structs / consts / vars / fns / stmts / exprs`。
 按旧 `selfhost/parse/test/main.cute` 中约定；全部保留后跑 `PARSE_OK` 恢复。
 
-### 4.5 接口具名接收者
+### 4.5 方法接收者
 
-方法必须放 `FuncBlock`：
+方法接收者 = 第一个参数，命名为 `self`（值 receiver）或 `&self`（指针 receiver），类型由方法名前缀推断：
 
-```cuteify
-fn (self *Counter) increment() { ... }   // Go 形状：*Counter.increment
-fn Counter.increment(c *Counter) { ... }  // Cuteify 简写：Counter.increment(c *Counter)
+```cute
+fn Counter.increment(&self) { ... }   // receiver = *Counter，方法内改动调用方可见
+fn Counter.get(self) int { ... }      // receiver = Counter，按值复制
 ```
-接口 `Counter interface { increment() }` 的实现不关心接收者形状，只要 parse 能接受两种 token 排列。
+
+**不写 receiver** = 无 receiver 静态方法（省一次 receiver 传递；调用 `c.increment()` 时 obj 被求值后丢弃）。
+接口 `Counter interface { increment() }` 的实现不关心接收者 `self` / `&self` / 无 receiver 哪种形态，只要签名匹配。
 
 ### 4.6 Peek / SetCursor（需求 >1 token 的决策）
 

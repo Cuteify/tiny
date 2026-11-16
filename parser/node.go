@@ -59,6 +59,17 @@ func (n *Node) Check() bool {
 		return true
 
 	}
+	// 进入块作用域：把 p.ThisBlock 设为本节点（与解析期一致，逐层恢复）。
+	// 包合并后的 rootNode.Check 重新遍历整棵树，不维护这个指针的话，
+	// FindTypeSelf / 同作用域查找无法定位所属函数（ParseDefine 总会失败）。
+	p := n.Parser
+	shouldRestore := false
+	old := (*Node)(nil)
+	if p != nil {
+		old = p.ThisBlock
+		p.ThisBlock = n
+		shouldRestore = true
+	}
 
 	ok := true
 	for _, child := range n.Children {
@@ -77,6 +88,9 @@ func (n *Node) Check() bool {
 		n.Checked = true
 	}
 
+	if shouldRestore {
+		p.ThisBlock = old
+	}
 	return ok
 }
 

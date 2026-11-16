@@ -8,7 +8,7 @@ import lex "../lexer"
 //   kind=2：bits（NUMBER）
 //   kind=3：link（NAME|STRING）
 //   kind=4：align（NUMBER）
-fn BuildBlock.isAcceptToken(b *BuildBlock, t *lex.Token, kind int) bool {
+fn BuildBlock.isAcceptToken(  t *lex.Token, kind int) bool {
     if t == nil {
         ret false
     }
@@ -25,152 +25,151 @@ fn BuildBlock.isAcceptToken(b *BuildBlock, t *lex.Token, kind int) bool {
 }
 
 // parseBuildList 通用循环：消费 ')' 结束；接受的 token 一律 next 即可。
-fn BuildBlock.parseBuildList(b *BuildBlock, x *Parser, kind int) bool {
+fn BuildBlock.parseBuildList(&self, x *Parser, kind int) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "(", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "(", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
-        if lex.Token.is(t, lex.DELIMITER, ")") {
+        if t.is( lex.DELIMITER, ")") {
             x.l.next()
             ret true
         }
-        if lex.Token.is(t, lex.DELIMITER, ",") {
+        if t.is( lex.DELIMITER, ",") {
             x.l.next()
             continue
         }
-        if BuildBlock.isAcceptToken(b, t, kind) {
+        if BuildBlock.isAcceptToken( t, kind) {
             x.l.next()
             continue
         }
         if (t) {
-            FileBlock.fail(fileBlock, x, EDECL, t.Pos)
+            fileBlock.fail( x, EDECL, t.Pos)
         } else {
-            FileBlock.fail(fileBlock, x, EDECL, 0)
+            fileBlock.fail( x, EDECL, 0)
         }
         ret false
     }
 }
 
 // parseBuildCountedToken 通用：expect('(', 接受一个 t, expect(')'), 记 build。
-fn BuildBlock.parseBuildCountedToken(b *BuildBlock, x *Parser, kind int) bool {
+fn BuildBlock.parseBuildCountedToken(&self, x *Parser, kind int) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "(", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "(", EDECL) {
         ret false
     }
     var t: *lex.Token = x.l.next()
-    if !BuildBlock.isAcceptToken(b, t, kind) {
+    if !BuildBlock.isAcceptToken( t, kind) {
         if (t) {
-            FileBlock.fail(fileBlock, x, EDECL, t.Pos)
+            fileBlock.fail( x, EDECL, t.Pos)
         } else {
-            FileBlock.fail(fileBlock, x, EDECL, 0)
+            fileBlock.fail( x, EDECL, 0)
         }
         ret false
     }
-    ret FileBlock.expect(fileBlock, x, lex.DELIMITER, ")", EDECL)
+    ret fileBlock.expect( x, lex.DELIMITER, ")", EDECL)
 }
 
 // isBuildLinkKind 判断 kind 是否属于 link 类（string/name 参数）。
-fn BuildBlock.isBuildLinkKind(b *BuildBlock, k string) bool {
+fn BuildBlock.isBuildLinkKind(  k string) bool {
     ret strings.eq(k, "link") || strings.eq(k, "ext") || strings.eq(k, "extret") || strings.eq(k, "export")
 }
 
 // finishParseCountedBuilds 统一计数：成功的 build 都把 builds/decls +1。
-fn BuildBlock.finishParseCountedBuilds(b *BuildBlock, x *Parser) {
+fn BuildBlock.finishParseCountedBuilds(  x *Parser) {
     x.builds = x.builds + 1
     x.decls = x.decls + 1
 }
 
 // parseBuildOsArch 处理 build os(linux,...) / build arch(x86_64,...)。
-fn BuildBlock.parseBuildOsArch(b *BuildBlock, x *Parser) bool {
-    if !BuildBlock.parseBuildList(b, x, 1) {
+fn BuildBlock.parseBuildOsArch(&self, x *Parser) bool {
+    if !self.parseBuildList( x, 1) {
         ret false
     }
-    BuildBlock.finishParseCountedBuilds(b, x)
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // parseBuildBits 处理 build bits(32|64)。
-fn BuildBlock.parseBuildBits(b *BuildBlock, x *Parser) bool {
-    if !BuildBlock.parseBuildList(b, x, 2) {
+fn BuildBlock.parseBuildBits(&self, x *Parser) bool {
+    if !self.parseBuildList( x, 2) {
         ret false
     }
-    BuildBlock.finishParseCountedBuilds(b, x)
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // parseBuildAsm 处理 build asm { ... }。
-fn BuildBlock.parseBuildAsm(b *BuildBlock, x *Parser) bool {
+fn BuildBlock.parseBuildAsm(&self, x *Parser) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
-    if !FileBlock.consumeBalanced(fileBlock, x, "{", "}", EDECL) {
+    if !fileBlock.consumeBalanced( x, "{", "}", EDECL) {
         ret false
     }
-    BuildBlock.finishParseCountedBuilds(b, x)
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // parseBuildLink 处理 build link/ext/extret/export("name" / name)。
-fn BuildBlock.parseBuildLink(b *BuildBlock, x *Parser) bool {
-    if !BuildBlock.parseBuildCountedToken(b, x, 3) {
+fn BuildBlock.parseBuildLink(&self, x *Parser) bool {
+    if !self.parseBuildCountedToken( x, 3) {
         ret false
     }
-    BuildBlock.finishParseCountedBuilds(b, x)
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // parseBuildAlign 处理 build align(N)（N 为数字）。
-fn BuildBlock.parseBuildAlign(b *BuildBlock, x *Parser) bool {
-    if !BuildBlock.parseBuildCountedToken(b, x, 4) {
+fn BuildBlock.parseBuildAlign(&self, x *Parser) bool {
+    if !self.parseBuildCountedToken( x, 4) {
         ret false
     }
-    BuildBlock.finishParseCountedBuilds(b, x)
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // parseBuildNoAlign 处理 build noalign。
-fn BuildBlock.parseBuildNoAlign(b *BuildBlock, x *Parser) bool {
-    BuildBlock.finishParseCountedBuilds(b, x)
+fn BuildBlock.parseBuildNoAlign(&self, x *Parser) bool {
+    BuildBlock.finishParseCountedBuilds( x)
     ret true
 }
 
 // dispatchBuildKind 按 kind 分派到对应裸 build 的 handler。
 // 成功返回 true（并已计数）；未知 kind 返回 false（不计数，由调用方报错）。
-fn BuildBlock.dispatchBuildKind(b *BuildBlock, x *Parser, kind string) bool {
+fn BuildBlock.dispatchBuildKind(&self, x *Parser, kind string) bool {
     if strings.eq(kind, "os") || strings.eq(kind, "arch") {
-        ret BuildBlock.parseBuildOsArch(b, x)
+        ret self.parseBuildOsArch( x)
     }
     if strings.eq(kind, "bits") {
-        ret BuildBlock.parseBuildBits(b, x)
+        ret self.parseBuildBits( x)
     }
     if strings.eq(kind, "asm") {
-        ret BuildBlock.parseBuildAsm(b, x)
+        ret self.parseBuildAsm( x)
     }
-    if BuildBlock.isBuildLinkKind(b, kind) {
-        ret BuildBlock.parseBuildLink(b, x)
+    if BuildBlock.isBuildLinkKind( kind) {
+        ret self.parseBuildLink( x)
     }
     if strings.eq(kind, "align") {
-        ret BuildBlock.parseBuildAlign(b, x)
+        ret self.parseBuildAlign( x)
     }
     if strings.eq(kind, "noalign") {
-        ret BuildBlock.parseBuildNoAlign(b, x)
+        ret self.parseBuildNoAlign( x)
     }
     ret false
 }
-
-fn BuildBlock.parse(b *BuildBlock, x *Parser) bool {
+fn BuildBlock.parse(&self, x *Parser) bool {
     var fileBlock: FileBlock
-    var kindT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+    var kindT: *lex.Token = fileBlock.expectName( x, EDECL)
     if kindT == nil {
         ret false
     }
-    if BuildBlock.dispatchBuildKind(b, x, kindT.Value) {
+    if self.dispatchBuildKind( x, kindT.Value) {
         ret true
     }
-    FileBlock.fail(fileBlock, x, EDECL, kindT.Pos)
+    fileBlock.fail( x, EDECL, kindT.Pos)
     ret false
 }

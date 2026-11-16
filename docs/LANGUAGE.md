@@ -97,7 +97,7 @@
 | `import` | ✅ | 文件顶层导入 |
 | `true` / `false` | ✅ | 布尔字面量 |
 | `nil` | ✅ | 空指针常量（词法上归入 BOOL） |
-| `self` | ✅ | 词法表中登记为 NAME（普通标识符）；仅方法接收者位置有特殊含义 |
+| `self` / `&self` | ✅ | 方法接收者位置的专属关键字：`self` = 值接收者（按方法名前缀 `Type.` 推断出 `Type`），`&self` = 指针接收者（推断 `*Type`）。`self` 不是普通标识符，仅方法接收者位置可用；函数体里可直接作接收者引用；`this` ❌ 不是关键字，也不是可用的接收者名 |
 | `continue` | ✅ | 支持 `continue`、`continue N`、`continue(N)`；只统计 for 循环 |
 | `defer` | ❌ | 关键字被 parser 静默丢弃；后续调用按普通语句立即执行 |
 | `while` | ✅ | `while cond { ... }`；复用 for 代码生成 |
@@ -281,35 +281,43 @@ q, r := divide(17, 5)
 
 ### 3.4 方法 ✅
 
-方法签名是“**接收者作为显式首形参**”的普通函数：
+方法签名是“**接收者写在方法名前缀之后、用 `self`/`&self` 关键字作首个形参**”的普通函数；
+接收者的类型由方法名前缀 `Type.` **推断**，不再显式写在参数里：
 
 ```cute
-type Point struct { x: int; y: int }
+type Point struct { x: int, y: int }
 
-fn Point.move(p: *Point, dx int, dy int) {
-    p.x += dx
-    p.y += dy
+fn Point.move(&self, dx int, dy int) {
+    self.x += dx
+    self.y += dy
 }
 
-fn Point.getX(p: Point) int {
-    ret p.x
+fn Point.getX(self) int {
+    ret self.x
+}
+
+fn Point.copy(self) Point {
+    ret self
 }
 
 fn main() int {
     var p: Point
     p.x = 10
+    p.y = 20
     p.move(5, 10)
-    ret p.getX()
+    ret p.getX() + p.copy().y
 }
 ```
 
-- 方法名是 `Type.name`（或 `Type.name` 且首形参类型为 `Type`/`*Type`）。
-- 接收者为指针（`p: *Point`）：方法内改动生效到调用方对象；
-  接收者为值（`p: Point`）：方法内改动只对副本生效。
-- 指针接收者可直接 `ptr.method(...)`；值接收者用 `value.method(...)`。
-- `self` ❌：不是合法接收者名；`(self P) m()` / `(self *P) m()` 这类旧接收者语法已废弃且当前不编译通过——用显式首形参。
-- `this` ❌：同上，不是合法标识符。
-- 方法体可以多行；单行体也能用，但若最后一条是字段赋值，需要在 `}` 前加 `;`（`fn P.set(v: int) { self.x = v; }`）。
+- 方法名是 `Type.name`（class prefix 决定所属类型）。
+- 接收者为 `self`（值接收者）：按方法名前缀推断类型为 `Type`，方法内改动只对副本生效（按值复制）。
+- 接收者为 `&self`（指针接收者）：按方法名前缀推断类型为 `*Type`，方法内改动生效到调用方对象。
+- **如果方法体不需要用到接收者，不要写 `self`/`&self`**：无 receiver 方法不传递接收者，调用点 `obj.m(args)` 的 `obj` 被求值后丢弃，编译时也不产生接收者传参——多省一次参数传递。没有接收者的方法用 `Cls.method(args)` 静态派发调用（和普通自由函数同形）。
+- **有接收者的方法必须用实例形式调用**：`obj.m(args)`，不支持 `Point.m(v, …)` 这种静态派发——成员函数不能脱离成员调用，除非它没有 `self`/`&self`（这种静态方法用 `Point.m(args)`）。
+- 调用派发规则：按 arity / 实参类型 在两个候选组里选打分最高：方法（带 `self`/`&self` 接收者）→ receiver 组，方法优先于同名静态方法；无接收者方法走静态分发。`type.m` 形式的 pkg 限定调用照常解析，按修饰函数名打分。
+- 值接收者可直接 `value.method(...)`；指针接收者可直接 `ptr.method(...)`（语法一致）。指针接收者是左值时编译器自动取址（`obj.m(args)` → 把 lvalue 的地址作为 receiver 传入）。
+- `self` 是 receiver 位置的专属关键字：接收者必须写作 `self`（值）或 `&self`（指针），其余参数照常用 `name: Type`。`self` 在其他位置使用即报错（语法上保留给 receiver 及其 slot 0 的引用语义）；`this` ❌ 不是关键字，也不是接收者名。
+- 方法体可以多行；单行体也能用，但若最后一条是字段赋值，需要在 `}` 前加 `;`（`fn P.set(self, v: int) { self.x = v; }`）。
 
 ### 3.5 泛型 ⚠️
 
@@ -750,8 +758,8 @@ var q: *P = new(P, 7, 8)    // 按字段顺序初始化
 
 ### 6.7 结构体方法 ✅
 
-见 §3.4。方法=接收者显式首形参的普通函数；值接收者按值复制，指针接收者改原对象。
-方法内不可用 `self` / `this`。
+见 §3.4。方法=接收者写在签名首位的普通函数；值接收者按值复制，指针接收者改原对象。
+没有用到接收者的方法可以不写 `self`。
 
 ### 6.8 对齐控制 ✅
 
@@ -1641,7 +1649,7 @@ import (
 | `var ( ... )` | 多条 `var/const/let/type x: T = v` | ✅ |
 | `interface I { ... }` | `type I interface { ... }` | ✅ |
 | 参数 `a int` | `a: int` | ✅ |
-| 方法 `fn P.m()` | 接收者 `self` 自动可用 | ✅ |
+| 方法 `fn P.m()` | 接收者 `self` / `&self` 显式写明（类型由方法名前缀推断）；不用则可不写 | ✅ |
 | 枚举裸成员 `Red` | `Color.Red`（但后者不支持） | ✅ |
 | 负索引 `a[-1]` | 运行期 `a[len-1]` | ✅（x86_64） |
 | 负步长 `a[::-1]` | 反向切片 | ✅（列表/字符串） |

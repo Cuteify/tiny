@@ -2,13 +2,11 @@ struct Point {
     x: int
     y: int
 }
-
-fn Point.getX(recv: *Point) int {
+fn Point.getX() int {
     ret 42
 }
-
-fn Point.setX(recv: *Point, x: int) {
-    recv.x = x
+fn Point.setX(&self, x: int) {
+    self.x = x
 }
 
 fn main() int {

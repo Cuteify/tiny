@@ -27,7 +27,7 @@ const REG_VAR: int = 7
 const REG_CONST: int = 8
 
 // regFind 找到 name 节点，nil = 未登记。
-fn FileBlock.regFind(r FileBlock, x *Parser, name string) *RegNode {
+fn FileBlock.regFind(  x *Parser, name string) *RegNode {
     var cur: *RegNode = x.regHead
     for ; cur != nil; {
         if strings.eq(cur.Name, name) {
@@ -39,18 +39,18 @@ fn FileBlock.regFind(r FileBlock, x *Parser, name string) *RegNode {
 }
 
 // markUse 把 name 对应的全局登记标记为 Useful。未命中静默忽略。
-fn FileBlock.markUse(r FileBlock, x *Parser, name string) {
-    var n: *RegNode = FileBlock.regFind(r, x, name)
+fn FileBlock.markUse(x *Parser, name string) {
+    var n: *RegNode = FileBlock.regFind( x, name)
     if n != nil {
         n.Useful = true
     }
 }
 
 // registerDecl 登记一处顶层声明；重复声明记 EDECL 并返回 false（调用方停 parse）。
-fn FileBlock.registerDecl(r FileBlock, x *Parser, name string, kind int, pos int) bool {
-    var dup: *RegNode = FileBlock.regFind(r, x, name)
+fn FileBlock.registerDecl(x *Parser, name string, kind int, pos int) bool {
+    var dup: *RegNode = FileBlock.regFind( x, name)
     if dup != nil {
-        FileBlock.fail(r, x, EDECL, pos)
+        FileBlock.fail( x, EDECL, pos)
         ret false
     }
     var item: *RegNode = new(RegNode)
@@ -64,24 +64,24 @@ fn FileBlock.registerDecl(r FileBlock, x *Parser, name string, kind int, pos int
 }
 
 // registerTypeDecl 按 type 声明的引导 token 分派登记 kind。
-fn FileBlock.registerTypeDecl(r FileBlock, x *Parser, name string, q *lex.Token, pos int) bool {
+fn FileBlock.registerTypeDecl(x *Parser, name string, q *lex.Token, pos int) bool {
     var kind: int = REG_TYPE
     if q != nil {
-        if lex.Token.is(q, lex.KEYWORD, "struct") {
+        if q.is( lex.KEYWORD, "struct") {
             kind = REG_STRUCT
-        } else if lex.Token.is(q, lex.KEYWORD, "interface") {
+        } else if q.is( lex.KEYWORD, "interface") {
             kind = REG_IFACE
-        } else if lex.Token.is(q, lex.DELIMITER, "=") {
+        } else if q.is( lex.DELIMITER, "=") {
             kind = REG_ALIAS
         }
     }
-    ret FileBlock.registerDecl(r, x, name, kind, pos)
+    ret FileBlock.registerDecl( x, name, kind, pos)
 }
 
 // registerIface 把接口 name 及其方法集合入登记（*InterfaceType 入）。
 // 约定：调用方（type/struct 声明路径）已在 REG_IFACE 登记同名接口；
 // 这里只追加 "name:m1,m2,…" 登记条目，不重复登记。
-fn FileBlock.registerIface(r FileBlock, x *Parser, name string) bool {
+fn FileBlock.registerIface(  x *Parser, name string) bool {
     // 编译器 bug：左操作数为空/短串拼接堆字段易丢失，落局部变量再拼。
     var ibuf: string = x.ifaceBuf
     var item: *StrNode = new(StrNode)
@@ -94,7 +94,7 @@ fn FileBlock.registerIface(r FileBlock, x *Parser, name string) bool {
 
 // ifaceDefAt 取第 i 条接口登记（插入序，从 0 数），越界返回空。
 // 存储是头插栈 → 顺序反转；按 反向步进取第 i 个。
-fn FileBlock.ifaceDefAt(r FileBlock, x *Parser, i int) string {
+fn FileBlock.ifaceDefAt(  x *Parser, i int) string {
     var n: int = x.ifaceCount
     if i < 0 || i >= n {
         ret ""
@@ -110,24 +110,24 @@ fn FileBlock.ifaceDefAt(r FileBlock, x *Parser, i int) string {
 }
 
 // registeredDeclCount 已登记的顶层声明数（import/build 不登记）。
-fn FileBlock.registeredDeclCount(r FileBlock, x *Parser) int {
+fn FileBlock.registeredDeclCount(  x *Parser) int {
     ret x.regCount
 }
 
 // ifaceDefCount 已登记的接口数。
-fn FileBlock.ifaceDefCount(r FileBlock, x *Parser) int {
+fn FileBlock.ifaceDefCount(  x *Parser) int {
     ret x.ifaceCount
 }
 
 // unusedFnCount 未被标记 Useful 的自由函数数（方法豁免：口径见文件头）。
-fn FileBlock.unusedFnCount(r FileBlock, x *Parser) int {
+fn FileBlock.unusedFnCount(  x *Parser) int {
     ret x.unusedFns
 }
 
 // finalizeCheck 文件解析完毕后收敛：
 //   1) 计数未 Useful 的自由函数（方法限定名带点 → 豁免）；
 //   2) 把 ifaceBuf/ifaceName 重置（一文件一 parser，给调用方复用留口子）。
-fn FileBlock.finalizeCheck(r FileBlock, x *Parser) {
+fn FileBlock.finalizeCheck(  x *Parser) {
     var cur: *RegNode = x.regHead
     var count: int = 0
     for ; cur != nil; {

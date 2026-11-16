@@ -279,6 +279,9 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		}
 		if path.Ext(file.Name()) == ".cute" {
 			cuteFile := path.Join(packagePath, file.Name())
+			if os.Getenv("CUTE_DEBUG_FILES") != "" {
+				fmt.Fprintf(os.Stderr, "CUTE_DEBUG_FILES parsing %s\n", cuteFile)
+			}
 			// 非根包（std/子包）保留文件级 build arch/os 过滤：这些文件通常
 			// 整文件同架构（memory_x86.cute / memory_x86_64.cute）。
 			// 根包不能整文件过滤：顶层 build 只作用于紧随其后的声明，

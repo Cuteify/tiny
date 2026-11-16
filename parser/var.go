@@ -550,8 +550,19 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 					v.Define = result
 				}
 			case FindTypeSelf:
-				if fn, ok := result.Value.(*FuncBlock); ok {
-					v.Type = fn.Class
+				switch vv := result.Value.(type) {
+				case *ArgBlock:
+					v.Type = vv.Type
+					v.Offset = vv.Offset
+					v.Define = result
+				case typeSys.Type:
+					v.Type = vv
+					v.Define = result
+				case *FuncBlock:
+					v.Type = vv.Class
+					if len(vv.Args) > 0 && vv.Args[0] != nil {
+						v.Offset = vv.Args[0].Offset
+					}
 					v.Define = result
 				}
 			case FindTypeField:

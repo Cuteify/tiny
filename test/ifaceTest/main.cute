@@ -6,8 +6,7 @@ type Stringer interface {
 struct Foo {
     val u64
 }
-
-fn Foo.stringify(recv: *Foo) string {
+fn Foo.stringify() string {
     ret "Foo"
 }
 

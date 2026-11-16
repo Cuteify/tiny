@@ -4,54 +4,53 @@ import "std:strings"
 import lex "../lexer"
 
 // parseInterfaceMember 解析接口体内一项（方法头或嵌入式接口的裸名）。
-fn TypeBlock.parseInterfaceMember(r TypeBlock, x *Parser) bool {
+fn TypeBlock.parseInterfaceMember(  x *Parser) bool {
     var fileBlock: FileBlock
     var t: *lex.Token = x.l.peek()
     if t.Type != lex.NAME {
-        FileBlock.fail(fileBlock, x, EDECL, t.Pos)
+        fileBlock.fail( x, EDECL, t.Pos)
         ret false
     }
     x.l.next()
     var p: *lex.Token = x.l.peek()
-    if lex.Token.isLineEnd(p) {
+    if p.isLineEnd() {
         ret true
     }
-    if lex.Token.is(p, lex.DELIMITER, "(") {
+    if p.is( lex.DELIMITER, "(") {
         // 编译器 bug：局部空串 + 堆字段链式拼接会丢失字段操作数，先落局部变量再拼。
         var mname: string = t.Value
         var ibuf: string = x.ifaceBuf
         x.ifaceBuf = ibuf + mname + ","
         x.l.next()
         var cb: CallBlock
-        if !CallBlock.parseFuncParams(cb, x) {
+        if !cb.parseFuncParams( x) {
             ret false
         }
-        ret CallBlock.parseRetTypes(cb, x)
+        ret cb.parseRetTypes( x)
     }
-    FileBlock.fail(fileBlock, x, EDECL, p.Pos)
+    fileBlock.fail( x, EDECL, p.Pos)
     ret false
 }
-
-fn TypeBlock.parseInterfaceBody(r TypeBlock, x *Parser) bool {
+fn TypeBlock.parseInterfaceBody(&self, x *Parser) bool {
     var fileBlock: FileBlock
     x.ifaceBuf = ""
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            FileBlock.fail(fileBlock, x, ESTMT, 0)
+            fileBlock.fail( x, ESTMT, 0)
             ret false
         }
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if t.is( lex.DELIMITER, "}") {
             x.l.next()
             // S4 Check：接口登记（*InterfaceType 入）。
-            FileBlock.registerIface(fileBlock, x, x.ifaceName)
+            fileBlock.registerIface( x, x.ifaceName)
             ret true
         }
-        if !TypeBlock.parseInterfaceMember(r, x) {
+        if !TypeBlock.parseInterfaceMember( x) {
             ret false
         }
     }
@@ -59,19 +58,19 @@ fn TypeBlock.parseInterfaceBody(r TypeBlock, x *Parser) bool {
 
 
 // parseGroupedDecl 解析 var ( ... ) / const ( ... ) / let ( ... ) / type ( ... ) 分组声明。
-fn TypeBlock.parseInterfaceFromKeyword(r TypeBlock, x *Parser) bool {
+fn TypeBlock.parseInterfaceFromKeyword(&self, x *Parser) bool {
     var fileBlock: FileBlock
-    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+    var nameT: *lex.Token = fileBlock.expectName( x, EDECL)
     if nameT == nil {
         ret false
     }
     // S4 Check：接口登记（遗留接口语法）。
-    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_IFACE, nameT.Pos) {
+    if !fileBlock.registerDecl( x, nameT.Value, REG_IFACE, nameT.Pos) {
         ret false
     }
     x.ifaceName = nameT.Value
     x.l.skipTerminators()
-    if !TypeBlock.parseInterfaceBody(r, x) {
+    if !self.parseInterfaceBody( x) {
         ret false
     }
     x.decls = x.decls + 1

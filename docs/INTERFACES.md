@@ -18,7 +18,7 @@ Interface 是 **boxed value**：运行期是 `{vtable_ptr, data_ptr}`，2 个指
 | 项 | 说明 |
 |---|---|
 | 声明 | `type I interface { m() X }` 与裸 `interface I { m() X }`；嵌入接口 **暂不支持** |
-| 方法 | 参数列表 `name: Type`；返回类型只能单个 `NAME`，多返回不解析；可选接收者 `self`/`recv` |
+| 方法 | 参数列表 `name: Type`；返回类型只能单个 `NAME`，多返回不解析；接口方法本身不写 receiver（接口语义） |
 | 赋值 | 具体类型 → 接口值：`var s: I = d`；需要 `AutoType` 走 interface 分支，`ImplementsInterface` 按方法名匹配 |
 | 动态派发 | vtable 调用：`[vtable+index*8] = concrete.MangledName`；`boxInterface` 生成 `.data` 段；`ThisVar.Type = *InterfaceType` 走 interface dispatch |
 | error 接口 | 仍以 Go 参考形态存在；`e == nil` 判等已回退为普通比较 |
@@ -49,7 +49,7 @@ Interface 是 **boxed value**：运行期是 `{vtable_ptr, data_ptr}`，2 个指
 | 接口嵌入 `interface A { ... }` 中嵌 `interface B { ... }` | ❌ | follow-up 未纳入本阶段 |
 | 接口方法多返回值 | ❌ | `parseMethod` 只取单个 NAME 返回 |
 | 接口方法参数/返回结构化（`[]T`、`[N]T`、多返回） | ❌ | 未支持，同上 |
-| 接口嵌入具名 receiver 形式 `(self T) fn` 的 `interface Self` | 🟡 | 仅解析，Trivial 通过 |
+| 接口嵌入具名 receiver 形式 `(self T) fn` 的 `interface Self` | ❌ 已废弃 | 确立为“接收者 `self` / `&self` 关键字 + 方法名前缀推断” |
 | 大结构体（>8B）值语义 | ❌ | `LANGUAGE.md §15` 登记 |
 | `error == nil` 比较 | 🟡 | 走普通指针比较 |
 
@@ -67,7 +67,7 @@ type Stringer interface {
     stringify() string
 }
 type Dog struct { name: string }
-fn Dog.stringify(recv: *Dog) string { ret "dog" }
+fn Dog.stringify(&self) string { ret "dog" }
 fn main() int {
     var s: Stringer = Dog{name: "d"}
     var r: string = s.stringify()

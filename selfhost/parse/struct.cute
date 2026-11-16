@@ -4,14 +4,14 @@ import "std:strings"
 import lex "../lexer"
 
 // parseAnonymousEmbed 处理 @Name 匿名嵌入或 alias @Name。
-fn StructBlock.parseAnonymousEmbed(r StructBlock, x *Parser) bool {
+fn StructBlock.parseAnonymousEmbed(  x *Parser) bool {
     var fileBlock: FileBlock
     x.l.next()
-    ret FileBlock.expectName(fileBlock, x, EDECL) != nil
+    ret fileBlock.expectName( x, EDECL) != nil
 }
 
 // consumeStructFieldTag 字段可选的 RAW 标签（`json:"..."` 归在 STRING token）。
-fn StructBlock.consumeStructFieldTag(r StructBlock, x *Parser) bool {
+fn StructBlock.consumeStructFieldTag(  x *Parser) bool {
     var pTag: *lex.Token = x.l.peek()
     if pTag != nil && pTag.Type == lex.STRING {
         x.l.next()
@@ -20,102 +20,104 @@ fn StructBlock.consumeStructFieldTag(r StructBlock, x *Parser) bool {
 }
 
 // consumeStructFieldDefault 字段可选的默认值 = expr。
-fn StructBlock.consumeStructFieldDefault(r StructBlock, x *Parser) bool {
+fn StructBlock.consumeStructFieldDefault(  x *Parser) bool {
     var fileBlock: FileBlock
-    if !lex.Token.is(x.l.peek(), lex.DELIMITER, "=") {
+    var tpeek: *lex.Token = x.l.peek()
+    if !tpeek.is(lex.DELIMITER, "=") {
         ret true
     }
     x.l.next()
-    FileBlock.restOfLineAtDepth0(fileBlock, x)
+    fileBlock.restOfLineAtDepth0( x)
     ret true
 }
 
 // parseTypedField 解析 field : Type（含可选的标签/默认值）。':' 已被调用方，位置指向类型起始。
-fn StructBlock.parseTypedField(r StructBlock, x *Parser) bool {
+fn StructBlock.parseTypedField(x *Parser) bool {
     var typeBlock: TypeBlock
-    if !TypeBlock.skipType(typeBlock, x) {
+    if !typeBlock.skipType( x) {
         ret false
     }
-    StructBlock.consumeStructFieldTag(r, x)
-    StructBlock.consumeStructFieldDefault(r, x)
+    StructBlock.consumeStructFieldTag( x)
+    StructBlock.consumeStructFieldDefault( x)
     ret true
 }
 
 // parseStructField 解析一个字段：匿名嵌入 / 修饰符 / typed field / 别名嵌入。
-fn StructBlock.parseStructField(r StructBlock, x *Parser) bool {
+fn StructBlock.parseStructField(x *Parser) bool {
     var fileBlock: FileBlock
-    if lex.Token.is(x.l.peek(), lex.DELIMITER, "@") {
-        ret StructBlock.parseAnonymousEmbed(r, x)
+    var tpeek: *lex.Token = x.l.peek()
+    if tpeek.is(lex.DELIMITER, "@") {
+        ret StructBlock.parseAnonymousEmbed( x)
     }
-    if lex.Token.is(x.l.peek(), lex.DELIMITER, "!") || lex.Token.is(x.l.peek(), lex.DELIMITER, "?") {
+    var tpeek: *lex.Token = x.l.peek()
+    if tpeek.is(lex.DELIMITER, "!") || tpeek.is(lex.DELIMITER, "?") {
         x.l.next()
     }
     var fieldName: *lex.Token = x.l.peek()
     if fieldName == nil || fieldName.Type != lex.NAME {
         if (fieldName) {
-            FileBlock.fail(fileBlock, x, EDECL, fieldName.Pos)
+            fileBlock.fail( x, EDECL, fieldName.Pos)
         } else {
-            FileBlock.fail(fileBlock, x, EDECL, 0)
+            fileBlock.fail( x, EDECL, 0)
         }
         ret false
     }
     x.l.next()
     var afterField: *lex.Token = x.l.peek()
-    if lex.Token.is(afterField, lex.DELIMITER, ":") {
+    if afterField.is( lex.DELIMITER, ":") {
         x.l.next()
-        ret StructBlock.parseTypedField(r, x)
+        ret StructBlock.parseTypedField( x)
     }
-    if lex.Token.is(afterField, lex.DELIMITER, "@") {
-        ret StructBlock.parseAnonymousEmbed(r, x)
+    if afterField.is( lex.DELIMITER, "@") {
+        ret StructBlock.parseAnonymousEmbed( x)
     }
     // 未识别形态（含 `name Type` 单独出现、priv/val 等修饰符）：
     // NAME 已消费，其他也不消费——等待外层循环继续找 }。
     ret true
 }
-
-fn StructBlock.parseStructBody(r StructBlock, x *Parser) bool {
+fn StructBlock.parseStructBody(x *Parser) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            FileBlock.fail(fileBlock, x, ESTMT, 0)
+            fileBlock.fail( x, ESTMT, 0)
             ret false
         }
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if t.is( lex.DELIMITER, "}") {
             x.l.next()
             ret true
         }
-        if !StructBlock.parseStructField(r, x) {
+        if !StructBlock.parseStructField( x) {
             ret false
         }
     }
 }
 
 // parseInterfaceBody 解析 interface { ... }（type X interface 复用）。
-fn StructBlock.parseStructDeclFromKeyword(r StructBlock, x *Parser) bool {
+fn StructBlock.parseStructDeclFromKeyword(x *Parser) bool {
     var fileBlock: FileBlock
-    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+    var nameT: *lex.Token = fileBlock.expectName( x, EDECL)
     if nameT == nil {
         ret false
     }
     // S4 Check：struct 登记（遗留 struct 语法）。
-    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_STRUCT, nameT.Pos) {
+    if !fileBlock.registerDecl( x, nameT.Value, REG_STRUCT, nameT.Pos) {
         ret false
     }
     x.l.skipTerminators()
     var p: *lex.Token = x.l.peek()
-    if lex.Token.is(p, lex.DELIMITER, ":") {
+    if p.is( lex.DELIMITER, ":") {
         x.l.next()
-        var parentN: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+        var parentN: *lex.Token = fileBlock.expectName( x, EDECL)
         if parentN == nil {
             ret false
         }
     }
-    if !StructBlock.parseStructBody(r, x) {
+    if !StructBlock.parseStructBody( x) {
         ret false
     }
     x.structs = x.structs + 1

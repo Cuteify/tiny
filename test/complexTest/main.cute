@@ -7,14 +7,12 @@ type Vector2D struct {
     x: int
     y: int
 }
-
-fn Vector2D.length(v: Vector2D) int {
-    ret v.x * v.x + v.y * v.y
+fn Vector2D.length(&self) int {
+    ret self.x * self.x + self.y * self.y
 }
-
-fn Vector2D.scale(v: *Vector2D, factor int) {
-    v.x *= factor
-    v.y *= factor
+fn Vector2D.scale(&self, factor int) {
+    self.x *= factor
+    self.y *= factor
 }
 
 // 矩阵结构体
@@ -23,13 +21,11 @@ type Matrix struct {
     rows: int
     cols: int
 }
-
-fn Matrix.get(m: Matrix, r int, c int) int {
-    ret m.data[r * m.cols + c]
+fn Matrix.get(&self, r int, c int) int {
+    ret self.data[r * self.cols + c]
 }
-
-fn Matrix.set(m: *Matrix, r int, c int, val int) {
-    m.data[r * m.cols + c] = val
+fn Matrix.set(&self, r int, c int, val int) {
+    self.data[r * self.cols + c] = val
 }
 
 // 递归函数

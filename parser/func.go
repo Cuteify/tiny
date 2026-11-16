@@ -482,6 +482,43 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 	// 自动机，找到分割符号 = 或者 )
 	token := p.Lexer.Next()
 
+	// receiver 序列（可选）：`self`（普通、值 receiver，类型由方法名前缀推断）
+	//   `&self`（指针 receiver，类型为 *T）
+	// 只有 f.Class != nil 才允许（否则报错）。
+	receiverSeen := false
+	if token.Value == "self" && f.Class != nil {
+		f.Args = append(f.Args, &ArgBlock{Name: NewName("self"), Type: f.Class})
+		receiverSeen = true
+	} else if token.Value == "&" && f.Class != nil {
+		nextTok := p.Lexer.Next()
+		if nextTok.Value != "self" || nextTok.Type != lexer.NAME {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"expected 'self' after '&' in receiver position, got '"+nextTok.Value+"'")
+			return
+		}
+		f.Args = append(f.Args, &ArgBlock{Name: NewName("self"), Type: typeSys.MakePointer(f.Class)})
+		receiverSeen = true
+	} else if token.Value == "self" && f.Class == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'self' is reserved for method receivers")
+		return
+	} else if token.Value == "&" && f.Class == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'&self' is reserved for method receivers")
+		return
+	}
+	if receiverSeen {
+		token = p.Lexer.Next()
+		// 紧随其后应当是 ')'（receiver 独占）或 ','（其后跟随其余参数）
+		if token.Value == ")" {
+			return
+		}
+		if token.Value != "," {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"expected ',' or ')' after method receiver, got '"+token.Value+"'")
+			return
+		}
+		token = p.Lexer.Next()
+	}
+
 	// 状态
 	bracketCount := 0
 	argTmp := &ArgBlock{}
@@ -497,11 +534,12 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		pending = nil
 	}
 
-	// 存入第一个参数的名字
+	// 此刻 token 是首个普通参数名（或可能是 ')'—— receiver-only 的方法形态 `fn T.m(self)`）。
+	if token.Value == ")" {
+		return
+	}
 	if token.Type != lexer.NAME {
-		if token.Value != ")" || token.Type != lexer.SEPARATOR {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "Need )")
-		}
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need parameter name")
 		return
 	}
 
@@ -993,33 +1031,41 @@ func (p *Parser) parseFuncSignature(f *FuncBlock, namedFunc bool) {
 	// 返回类型
 	f.ParseRetType(p)
 
-	// 方法：接收者必须是第一个参数，类型为所属类型 T 或 *T；
-	// 调用点由编译器自动传入接收者，参数名不允许使用 self/this。
-	if f.Class != nil && len(f.Args) > 0 {
-		first := f.Args[0]
-		recName := ""
-		if first != nil && first.Name != nil && first.Name.Length() > 0 {
-			recName = first.Name.Last()
-		}
-		if recName == "self" || recName == "this" {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-				"method receiver parameter must not be named 'self' or 'this'; name it explicitly (e.g. p)")
-		}
-		if first != nil && first.Type != nil {
-			wantName := f.Class.Type()
-			gotName := first.Type.Type()
-			if first.Type.IsPointer() {
-				if elem := first.Type.Elem(); elem != nil {
-					gotName = elem.Type()
+	// 方法：接收者必须是第一个参数，命名为 self（值 T）或 &self（指针 *T）；
+	// self 是关键字而非普通标识符；this 不是关键字，不是合法的 receiver 名称。
+	// 接收者的类型不写在参数里，由方法名前缀 T 推断（值接收者复制，指针接收者直接改原对象）。
+	if f.Class != nil {
+		if len(f.Args) > 0 {
+			first := f.Args[0]
+			recName := ""
+			firstType := typeSys.Type(nil)
+			if first != nil {
+				firstType = first.Type
+				if first.Name != nil && first.Name.Length() > 0 {
+					recName = first.Name.Last()
 				}
 			}
-			if gotName != wantName {
-				p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-					"method on '"+wantName+"' requires its first parameter to be of type '"+wantName+"' or '*"+wantName+"' (got '"+first.Type.Type()+"')")
+			if recName == "self" && firstType != nil {
+				// 按 firstType 的指针-ness 识别 receiver 形态（prologue 已经正确注入了类型）。
+				selfT := typeSys.MakePointer(f.Class)
+				if firstType.IsPointer() {
+					want := selfT
+					if !typeSys.TypeEqual(firstType, want) {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+							"method on '"+f.Class.Type()+"' receiver type mismatch: want '*"+f.Class.Type()+"' (got '"+firstType.Type()+"')")
+					}
+				} else {
+					want := f.Class
+					if !typeSys.TypeEqual(firstType, want) {
+						p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+							"method on '"+f.Class.Type()+"' receiver type mismatch: want '"+f.Class.Type()+"' (got '"+firstType.Type()+"')")
+					}
+				}
 			}
+			// 其余：无接收者方法（接收者不传递）——合法。
+		} else {
+			// 没有首个参数：走“无接收者方法”路径——receiver 不传递；
+			// 见 call.go 的 hasSelfReceiver / splitSelfReceiverCandidates。
 		}
-	} else if f.Class != nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor,
-			"method on '"+f.Class.Type()+"' requires a first parameter of type '"+f.Class.Type()+"' or '*"+f.Class.Type()+"' (the receiver)")
 	}
 }

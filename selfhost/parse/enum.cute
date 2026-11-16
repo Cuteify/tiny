@@ -6,70 +6,71 @@ import lex "../lexer"
 
 
 // parseOptionalType 解析可选的 `: type` 底层类型注解。
-fn EnumBlock.parseOptionalType(r EnumBlock, x *Parser) bool {
+fn EnumBlock.parseOptionalType(  x *Parser) bool {
     var typeBlock: TypeBlock
-    if !lex.Token.is(x.l.peek(), lex.DELIMITER, ":") {
+    var tpeek: *lex.Token = x.l.peek()
+    if !tpeek.is(lex.DELIMITER, ":") {
         ret true
     }
     x.l.next()
-    ret TypeBlock.skipType(typeBlock, x)
+    ret typeBlock.skipType( x)
 }
 
 // parseMember 解析一个 enum 成员（name [= expr] [,] [;]）。
-fn EnumBlock.parseMember(r EnumBlock, x *Parser) bool {
+fn EnumBlock.parseMember(  x *Parser) bool {
     var fileBlock: FileBlock
     var t: *lex.Token = x.l.peek()
     if t.Type != lex.NAME {
-        FileBlock.fail(fileBlock, x, EDECL, t.Pos)
+        fileBlock.fail( x, EDECL, t.Pos)
         ret false
     }
     x.l.next()
     x.l.skipTerminators()
     var p2: *lex.Token = x.l.peek()
-    if lex.Token.is(p2, lex.DELIMITER, "=") {
+    if p2.is( lex.DELIMITER, "=") {
         x.l.next()
-        FileBlock.restOfLineAtDepth0(fileBlock, x)
+        fileBlock.restOfLineAtDepth0( x)
         ret true
     }
-    if lex.Token.is(p2, lex.DELIMITER, ",") || lex.Token.is(p2, lex.DELIMITER, ";") {
+    if p2.is( lex.DELIMITER, ",") || p2.is( lex.DELIMITER, ";") {
         x.l.next()
     }
     ret true
 }
 
 // parseFromKeyword 解析 `enum Name { ... }`。
-fn EnumBlock.parse(r EnumBlock, x *Parser) bool {
+fn EnumBlock.parse(&self, x *Parser) bool {
     var fileBlock: FileBlock
-    var nameT: *lex.Token = FileBlock.expectName(fileBlock, x, EDECL)
+    var nameT: *lex.Token = fileBlock.expectName( x, EDECL)
     if nameT == nil {
         ret false
     }
     // S4 Check：类型登记（enum）。
-    if !FileBlock.registerDecl(fileBlock, x, nameT.Value, REG_ENUM, nameT.Pos) {
+    if !fileBlock.registerDecl( x, nameT.Value, REG_ENUM, nameT.Pos) {
         ret false
     }
-    r.Name = nameT.Value
+    self.Name = nameT.Value
     x.l.skipTerminators()
-    if !EnumBlock.parseOptionalType(r, x) {
+    if !EnumBlock.parseOptionalType( x) {
         ret false
     }
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", EDECL) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", EDECL) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t == nil {
-            FileBlock.fail(fileBlock, x, ESTMT, 0)
+            fileBlock.fail( x, ESTMT, 0)
             ret false
         }
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if t.is( lex.DELIMITER, "}") {
             x.l.next()
             x.enums = x.enums + 1
             x.decls = x.decls + 1
             ret true
         }
-        if !EnumBlock.parseMember(r, x) {
+        if !EnumBlock.parseMember( x) {
             ret false
         }
     }

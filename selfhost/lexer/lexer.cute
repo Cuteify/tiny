@@ -26,10 +26,9 @@ type error struct {
     Col: int
     Msg: string
 }
-
-fn error.error(e *error) string {
-    var lc: string = strings.itoa(e.Line) + ":" + strings.itoa(e.Col)
-    ret e.Msg + " (at " + lc + ", byte " + strings.itoa(e.Pos) + ")"
+fn error.error(&self) string {
+    var lc: string = strings.itoa(self.Line) + ":" + strings.itoa(self.Col)
+    ret self.Msg + " (at " + lc + ", byte " + strings.itoa(self.Pos) + ")"
 }
 
 // Lexer 词法分析器。
@@ -97,59 +96,59 @@ fn coordFromTokenEnd(t *Token) *Coord {
 }
 
 // savePos 保存 host 光标（Pos/Line/Col）当前值。
-fn Lexer.savePos(l *Lexer) *Coord {
-    ret Coord{Pos: l.Pos, Line: l.Line, Col: l.Col}
+fn Lexer.savePos(&self) *Coord {
+    ret Coord{Pos: self.Pos, Line: self.Line, Col: self.Col}
 }
 
 // savePfPos 保存预取光标（pfPos/pfLine/pfCol）当前值。
-fn Lexer.savePfPos(l *Lexer) *Coord {
-    ret Coord{Pos: l.pfPos, Line: l.pfLine, Col: l.pfCol}
+fn Lexer.savePfPos(&self) *Coord {
+    ret Coord{Pos: self.pfPos, Line: self.pfLine, Col: self.pfCol}
 }
 
 // setPos 以 *Coord 的绝对值更新 host 光标；不做任何算术、不读当前值。
 // 同时把预取机（pfPos/pfLine/pfCol + pfCache）回卷到同一份快照——
 // prefetch 对本次位置修改完全无感：下一次 Prefetch 一律从快照处重新扫描，
 // 修改前残留在预取环里的 token 一律丢弃，pf 光标不会漂移出 host 光标。
-fn Lexer.setPos(l *Lexer, c *Coord) {
+fn Lexer.setPos(&self, c *Coord) {
     if unsafe.cast[uint](c) == 0 {
         panic("Lexer.setPos: nil Coord")
     }
-    l.Pos = c.Pos
-    l.Line = c.Line
-    l.Col = c.Col
+    self.Pos = c.Pos
+    self.Line = c.Line
+    self.Col = c.Col
     // 预取回退：pf 光标对齐到快照 + 清空预取环（不释放 *Token，host 手里的指针保持有效）
-    l.pfPos = c.Pos
-    l.pfLine = c.Line
-    l.pfCol = c.Col
-    l.pfCache.clear()
+    self.pfPos = c.Pos
+    self.pfLine = c.Line
+    self.pfCol = c.Col
+    self.pfCache.clear()
 }
 
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
-fn Lexer.consume(l *Lexer, t *Token) {
-    var text: string = l.Text
+fn Lexer.consume(&self, t *Token) {
+    var text: string = self.Text
     var k: uint = unsafe.cast[uint](t.Pos)
     var end: uint = unsafe.cast[uint](t.EndPos)
     for ; k < end; {
         var b: byte = text[k]
         if unsafe.cast[int](b) == 10 {
-            l.pfLine = l.pfLine + 1
-            l.pfCol = 1
+            self.pfLine = self.pfLine + 1
+            self.pfCol = 1
         } else {
-            l.pfCol = l.pfCol + 1
+            self.pfCol = self.pfCol + 1
         }
         k = k + 1
     }
-    l.pfPos = t.EndPos
+    self.pfPos = t.EndPos
 }
 
 // makeToken 统一构造 token：行列号（起点、结束）在此单点计算，写入预取缓存并推进光标。
-fn Lexer.makeToken(l *Lexer, t *Token) *Token {
-    t.Line = l.pfLine
-    t.Col = l.pfCol
-    l.consume(t)
-    t.EndLine = l.pfLine
-    t.EndCol = l.pfCol
-    l.pfCache.write(t)
+fn Lexer.makeToken(&self, t *Token) *Token {
+    t.Line = self.pfLine
+    t.Col = self.pfCol
+    self.consume(t)
+    t.EndLine = self.pfLine
+    t.EndCol = self.pfCol
+    self.pfCache.write(t)
     ret t
 }
 
@@ -175,10 +174,10 @@ fn numberBase(text string, i int) uint {
 }
 
 // handleNumber 扫描数字 token（0x/0b/0o 进制前缀、十进制、小数、科学计数法）。
-fn Lexer.handleNumber(l *Lexer) *Token {
-    var text: string = l.Text
+fn Lexer.handleNumber(&self) *Token {
+    var text: string = self.Text
     var plen: uint = len(text)
-    var i: uint = unsafe.cast[uint](l.pfPos)
+    var i: uint = unsafe.cast[uint](self.pfPos)
 
     // 进制前缀：0x / 0b / 0o（数字内允许下划线）
     var base: uint = numberBase(text, unsafe.cast[int](i))
@@ -193,13 +192,13 @@ fn Lexer.handleNumber(l *Lexer) *Token {
             if vok {
                 var xnum: uint = vu
                 var xstr: string = text[i:e]
-                ret l.makeToken(Token{Type: NUMBER, Value: xstr, Number: f64(xnum),
+                ret self.makeToken(Token{Type: NUMBER, Value: xstr, Number: f64(xnum),
                     Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
             }
         }
         // 前缀后无有效数字：退回 NAME（如 0x），与 Go 参考一致（只取前缀两个字节）
         var nm: string = text[i:i+2]
-        ret l.makeToken(Token{Type: NAME, Value: nm,
+        ret self.makeToken(Token{Type: NAME, Value: nm,
             Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](i + 2)})
     }
 
@@ -234,15 +233,15 @@ fn Lexer.handleNumber(l *Lexer) *Token {
         num = vf
     }
     var numStr: string = text[i:e]
-    ret l.makeToken(Token{Type: NUMBER, Value: numStr, Number: num,
+    ret self.makeToken(Token{Type: NUMBER, Value: numStr, Number: num,
         Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
 }
 
 // handleComment 处理 // 与 /* */ 注释
-fn Lexer.handleComment(l *Lexer, delimiter string) {
-    var text: string = l.Text
+fn Lexer.handleComment(&self, delimiter string) {
+    var text: string = self.Text
     var plen: uint = len(text)
-    var start: uint = unsafe.cast[uint](l.pfPos)
+    var start: uint = unsafe.cast[uint](self.pfPos)
     if strings.eq(delimiter, "//") {
         // 行注释：保留其后的换行
         var j: uint = start + 2
@@ -251,7 +250,7 @@ fn Lexer.handleComment(l *Lexer, delimiter string) {
             if unsafe.cast[int](b) == 10 { break }
             j = j + 1
         }
-        l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j)))
+        self.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j)))
         ret
     }
     // 块注释：/* ... */（非嵌套，可跨行）
@@ -263,19 +262,19 @@ fn Lexer.handleComment(l *Lexer, delimiter string) {
         j = j + 1
     }
     if j + 1 < plen {
-        l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j + 2)))
+        self.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](j + 2)))
         ret
     }
     // 未闭合：消费到文件尾（行列随之推进）
-    l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
+    self.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
 }
 
 // handleString 处理字符串、字符、裸串
-fn Lexer.handleString(l *Lexer, delimiter string) *Token {
-    var text: string = l.Text
+fn Lexer.handleString(&self, delimiter string) *Token {
+    var text: string = self.Text
     var plen: uint = len(text)
-    var q: byte = text[unsafe.cast[uint](l.pfPos)]
-    var start: uint = unsafe.cast[uint](l.pfPos)
+    var q: byte = text[unsafe.cast[uint](self.pfPos)]
+    var start: uint = unsafe.cast[uint](self.pfPos)
     var dl: uint = len(delimiter)
 
     var i: uint = start + dl
@@ -288,53 +287,53 @@ fn Lexer.handleString(l *Lexer, delimiter string) *Token {
             if unsafe.cast[int](q) == 39 && len(str) != 1 && !(len(str) >= 1 && unsafe.cast[int](str[0]) == 92) {
                 panic("")
             }
-            ret l.makeToken(Token{Type: STRING, Value: str,
+            ret self.makeToken(Token{Type: STRING, Value: str,
                 Pos: unsafe.cast[int](start), EndPos: unsafe.cast[int](i + dl)})
         }
         i = i + 1
     }
     // 未闭合：消费到文件尾
-    l.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
-    var te: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
+    self.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
+    var te: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
     ret te
 }
 
 // Prefetch 预取
-fn Lexer.prefetch(l *Lexer) *Token {
-    var plen: uint = len(l.Text)
+fn Lexer.prefetch(&self) *Token {
+    var plen: uint = len(self.Text)
 
     // 跳过空白（Go 参考 SkipSep 语义：只跳过空格/Tab）
     // LF/CR 与 Go 一致产出 DELIMITER token（换行是语句终结符）；
     // delimTable 里的 LF/CR 条目现在对 token 化生效。
-    var i: uint = unsafe.cast[uint](l.pfPos)
+    var i: uint = unsafe.cast[uint](self.pfPos)
     for ; i < plen; {
-        var ib: int = unsafe.cast[int](l.Text[i])
+        var ib: int = unsafe.cast[int](self.Text[i])
         if ib == 32 || ib == 9 {
             i = i + 1
             continue
         }
         break
     }
-    l.consume(tokenCoord(l.pfPos, unsafe.cast[int](i)))
-    if unsafe.cast[uint](l.pfPos) >= plen {
+    self.consume(tokenCoord(self.pfPos, unsafe.cast[int](i)))
+    if unsafe.cast[uint](self.pfPos) >= plen {
         // EOF
-        var t: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
+        var t: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
         ret t
     }
 
-    var firstByte: byte = l.Text[unsafe.cast[uint](l.pfPos)]
+    var firstByte: byte = self.Text[unsafe.cast[uint](self.pfPos)]
     // secondByte 前置加载须先确认越界，否则文本以 "." 结尾时会读 Text[plen]：
     // 与 Go 参考短路 && 的行为对齐。
     var secondByte: byte = unsafe.cast[byte](0)
-    if unsafe.cast[uint](l.pfPos) + 1 < plen {
-        secondByte = l.Text[unsafe.cast[uint](l.pfPos) + 1]
+    if unsafe.cast[uint](self.pfPos) + 1 < plen {
+        secondByte = self.Text[unsafe.cast[uint](self.pfPos) + 1]
     }
-    if strings.isDigit(firstByte) || (unsafe.cast[int](firstByte) == 46 && unsafe.cast[uint](l.pfPos) + 1 < plen && strings.isDigit(secondByte)) {
-        ret l.handleNumber()
+    if strings.isDigit(firstByte) || (unsafe.cast[int](firstByte) == 46 && unsafe.cast[uint](self.pfPos) + 1 < plen && strings.isDigit(secondByte)) {
+        ret self.handleNumber()
     }
 
     // 主循环
-    i = unsafe.cast[uint](l.pfPos)
+    i = unsafe.cast[uint](self.pfPos)
     for ; i < plen; {
         // 找到分隔符
         var delimLen: int = 0
@@ -344,7 +343,7 @@ fn Lexer.prefetch(l *Lexer) *Token {
                 e = e - 1
                 continue
             }
-            var cand: string = l.Text[i:i + unsafe.cast[uint](e)]
+            var cand: string = self.Text[i:i + unsafe.cast[uint](e)]
             if isDelimiter(cand) {
                 delimLen = e
                 break
@@ -358,112 +357,112 @@ fn Lexer.prefetch(l *Lexer) *Token {
 
         // 处理注释：若注释直接附着在词素尾部（如 int//x），
         // 必须先把已扫描的词素返回，避免 handleComment 吞掉前缀（Go 参考先返回前缀 token）。
-        var delimiter: string = l.Text[i:i + unsafe.cast[uint](delimLen)]
+        var delimiter: string = self.Text[i:i + unsafe.cast[uint](delimLen)]
         if strings.eq(delimiter, "//") || strings.eq(delimiter, "/*") {
-            if unsafe.cast[int](i) > l.pfPos {
-                var head: string = l.Text[unsafe.cast[uint](l.pfPos):i]
+            if unsafe.cast[int](i) > self.pfPos {
+                var head: string = self.Text[unsafe.cast[uint](self.pfPos):i]
                 var headTyp: TokenType = NAME
                 if isKeyword(head) {
                     headTyp = KEYWORD
                 }
-                ret l.makeToken(Token{Type: headTyp, Value: head,
-                    Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
+                ret self.makeToken(Token{Type: headTyp, Value: head,
+                    Pos: self.pfPos, EndPos: unsafe.cast[int](i)})
             }
-            l.handleComment(delimiter)
-            ret l.prefetch()
+            self.handleComment(delimiter)
+            ret self.prefetch()
         }
 
         // 处理字符串
         if len(delimiter) == 1 && (unsafe.cast[int](delimiter[0]) == 96 || unsafe.cast[int](delimiter[0]) == 39 || unsafe.cast[int](delimiter[0]) == 34) {
-            ret l.handleString(delimiter)
+            ret self.handleString(delimiter)
         }
 
-        if unsafe.cast[int](i) > l.pfPos {
+        if unsafe.cast[int](i) > self.pfPos {
             // 词素 token（NAME / KEYWORD）
-            var val: string = l.Text[unsafe.cast[uint](l.pfPos):i]
+            var val: string = self.Text[unsafe.cast[uint](self.pfPos):i]
             var tokenTyp: TokenType = NAME
             if isKeyword(val) {
                 tokenTyp = KEYWORD
             }
-            ret l.makeToken(Token{Type: tokenTyp, Value: val,
-                Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
+            ret self.makeToken(Token{Type: tokenTyp, Value: val,
+                Pos: self.pfPos, EndPos: unsafe.cast[int](i)})
         }
 
         // delimiter token
-        ret l.makeToken(Token{Type: DELIMITER, Value: delimiter,
-            Pos: l.pfPos, EndPos: unsafe.cast[int](i + unsafe.cast[uint](delimLen))})
+        ret self.makeToken(Token{Type: DELIMITER, Value: delimiter,
+            Pos: self.pfPos, EndPos: unsafe.cast[int](i + unsafe.cast[uint](delimLen))})
     }
     // 主循环因 EOF 退出：结尾的词法 token 需要单独处理
-    if unsafe.cast[int](i) > l.pfPos {
-        var val: string = l.Text[unsafe.cast[uint](l.pfPos):i]
+    if unsafe.cast[int](i) > self.pfPos {
+        var val: string = self.Text[unsafe.cast[uint](self.pfPos):i]
         var tokenTyp2: TokenType = NAME
         if isKeyword(val) {
             tokenTyp2 = KEYWORD
         }
-        ret l.makeToken(Token{Type: tokenTyp2, Value: val,
-            Pos: l.pfPos, EndPos: unsafe.cast[int](i)})
+        ret self.makeToken(Token{Type: tokenTyp2, Value: val,
+            Pos: self.pfPos, EndPos: unsafe.cast[int](i)})
     }
-    var te: *Token = Token{Type: NONE, Value: "", Line: l.pfLine, Col: l.pfCol}
+    var te: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
     ret te
 }
 
 // next 返回下一个 token；缓存读穿或预取。
-fn Lexer.next(l *Lexer) *Token {
+fn Lexer.next(&self) *Token {
     // hit == 0 表示缓存空（无可弹出的 token）
-    var hit: *Token = l.pfCache.read()
+    var hit: *Token = self.pfCache.read()
     if unsafe.cast[uint](hit) != 0 {
-        l.setPos(coordFromTokenEnd(hit))
+        self.setPos(coordFromTokenEnd(hit))
         ret hit
     }
-    var tok: *Token = l.prefetch()
+    var tok: *Token = self.prefetch()
     if tok.Type == NONE {
         // EOF：以预取光标位置为准（consume() 已把 pfPos 推进到文件尾）
-        l.setPos(l.savePfPos())
+        self.setPos(self.savePfPos())
         ret tok
     }
     // 语义差异（与 Go 参考一处差异，见 README）：
     // makeToken 既把 token 写入预取缓存、又把它返回给调用者；若不弹出，
     // 纯 next() 循环会把每个词素返回两次。这里弹出刚写入的这份副本，
     // 使 next() 成为纯消费 API；Prefetch() 本身仍是预取扫描（与 Go main 一致）。
-    var dropT: *Token = l.pfCache.read()
+    var dropT: *Token = self.pfCache.read()
     if unsafe.cast[uint](dropT) == 0 {
         // 缓存满了或已被弹出：防御性分支，直接返回新 token 即可
-        l.setPos(coordFromTokenEnd(tok))
+        self.setPos(coordFromTokenEnd(tok))
         ret tok
     }
-    l.setPos(coordFromTokenEnd(tok))
+    self.setPos(coordFromTokenEnd(tok))
     ret tok
 }
 
 // Peek 返回下一个将消费的 token 而不消费它（幂等）：
 // 环有缓存则看环首；否则以 Prefetch() 扫描一个 token 入环后环首即它。
 // 与 next() 严格按同一顺序；不会重复推进或重复扫描。
-fn Lexer.peek(l *Lexer) *Token {
-    var hit: *Token = l.pfCache.front()
+fn Lexer.peek(&self) *Token {
+    var hit: *Token = self.pfCache.front()
     if unsafe.cast[uint](hit) != 0 {
         ret hit
     }
-    ret l.prefetch()
+    ret self.prefetch()
 }
 
 // SkipLineEnds 吃掉换行/回车 token（LF/CR）；分号留给 Expect 消费。
-fn Lexer.skipLineEnds(l *Lexer) {
+fn Lexer.skipLineEnds(&self) {
     for ; ; {
-        var t: *Token = l.peek()
+        var t: *Token = self.peek()
         if t == nil || !t.isLineEnd() {
             ret
         }
-        l.next()
+        self.next()
     }
 }
 
 // SkipTerminators 吃掉换行/回车/分号（语句边界容忍）。
-fn Lexer.skipTerminators(l *Lexer) {
+fn Lexer.skipTerminators(&self) {
     for ; ; {
-        var t: *Token = l.peek()
+        var t: *Token = self.peek()
         if t == nil || !t.isSemiOrNewline() {
             ret
         }
-        l.next()
+        self.next()
     }
 }

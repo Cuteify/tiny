@@ -85,14 +85,20 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 	}
 	call := &CallBlock{
 		Name: NewName(receiver.Type.Type(), method),
-		Args: make([]*ArgBlock, 0, len(args)+1),
 	}
-	// 接收者作为第一个参数显式传入（新 ABI：编译器自动传入第一个参数）。
-	call.Args = append(call.Args, &ArgBlock{Value: receiver, Name: NewName("_receiver"), Type: receiver.Type})
+	recvArg := &ArgBlock{Value: receiver, Name: NewName("_receiver"), Type: receiver.Type}
+	base := make([]*ArgBlock, 0, len(args))
 	for _, arg := range args {
-		call.Args = append(call.Args, &ArgBlock{Value: arg, Type: arg.Type})
+		base = append(base, &ArgBlock{Value: arg, Type: arg.Type})
 	}
-	sel, _, ambiguous := selectCallCandidate(call, candidates)
+	receiverCandidates, staticCandidates := splitSelfReceiverCandidates(candidates)
+	call.Args = append([]*ArgBlock{recvArg}, base...)
+	sel, _, ambiguous := selectCallCandidate(call, receiverCandidates)
+	if sel == nil && len(staticCandidates) > 0 {
+		// 回退：无接收者方法，obj 求值后被丢弃，接收者不参与传参
+		call.Args = base
+		sel, _, ambiguous = selectCallCandidate(call, staticCandidates)
+	}
 	if sel == nil {
 		if ambiguous {
 			p.Error.MissError("Call Error", p.Lexer.Cursor,
@@ -100,7 +106,9 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 		}
 		return false
 	}
-	applyReceiverConversion(call, sel, receiver)
+	if hasSelfReceiver(sel) {
+		applyReceiverConversion(call, sel, receiver)
+	}
 	call.Func = sel
 	sel.Useful = true
 	if !call.Check(p) {

@@ -12,9 +12,8 @@ type Node struct {
     value: int
     next: *Node
 }
-
-fn Point.distanceToOrigin(recv: *Point) int {
-    ret recv.x * recv.x + recv.y * recv.y
+fn Point.distanceToOrigin(&self) int {
+    ret self.x * self.x + self.y * self.y
 }
 
 fn main() int {

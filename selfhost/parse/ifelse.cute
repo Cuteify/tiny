@@ -2,28 +2,27 @@
 // 加载顺序：依赖 exp.cute、helpers.cute。
 import "std:strings"
 import lex "../lexer"
-
-fn IfBlock.parseIfStmt(r IfBlock, x *Parser) bool {
+fn IfBlock.parseIfStmt(x *Parser) bool {
     var fileBlock: FileBlock
     var stmtBlock: StmtBlock
-    if !FileBlock.expectKeyword(fileBlock, x, "if", ESTMT) {
+    if !fileBlock.expectKeyword( x, "if", ESTMT) {
         ret false
     }
     var eb: ExpBlock
-    if !ExpBlock.parseExpr(eb, x) {
+    if !eb.parseExpr( x) {
         ret false
     }
-    if !StmtBlock.parseBlock(stmtBlock, x) {
+    if !stmtBlock.parseBlock( x) {
         ret false
     }
     var t: *lex.Token = x.l.peek()
-    if lex.Token.is(t, lex.KEYWORD, "else") {
+    if t.is( lex.KEYWORD, "else") {
         x.l.next()
         var t2: *lex.Token = x.l.peek()
-        if lex.Token.is(t2, lex.KEYWORD, "if") {
-            ret IfBlock.parseIfStmt(r, x)
+        if t2.is( lex.KEYWORD, "if") {
+            ret IfBlock.parseIfStmt( x)
         }
-        ret StmtBlock.parseBlock(stmtBlock, x)
+        ret stmtBlock.parseBlock( x)
     }
     ret true
 }

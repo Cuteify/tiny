@@ -8,9 +8,8 @@ type Node struct {
     v: int
     next: *Node
 }
-
-fn Point.distance(recv: *Point) int {
-    ret recv.x * recv.x + recv.y * recv.y
+fn Point.distance(&self) int {
+    ret self.x * self.x + self.y * self.y
 }
 
 fn main() int {

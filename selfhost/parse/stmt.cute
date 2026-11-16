@@ -2,67 +2,67 @@
 // 加载顺序：依赖 exp.cute、call.cute、for.cute、ifelse.cute、switch.cute、helpers.cute。
 import "std:strings"
 import lex "../lexer"
-
-fn StmtBlock.isAssignOp(r StmtBlock, t *lex.Token) bool {
+fn StmtBlock.isAssignOp(t *lex.Token) bool {
     if t == nil || t.Type != lex.DELIMITER {
         ret false
     }
-    ret StmtBlock.isAssignOpValue(r, t.Value)
+    ret StmtBlock.isAssignOpValue( t.Value)
 }
 
 // isAssignOpValue 复合赋值运算符表：=, :=, +=, -=, *=, /=, %=, ^=, &=, |=, <<=, >>=。
-fn StmtBlock.isAssignOpValue(r StmtBlock, v string) bool {
+fn StmtBlock.isAssignOpValue(  v string) bool {
     ret strings.eq(v, "=") || strings.eq(v, ":=") || strings.eq(v, "+=") || strings.eq(v, "-=") || strings.eq(v, "*=") || strings.eq(v, "/=") || strings.eq(v, "%=") || strings.eq(v, "^=") || strings.eq(v, "&=") || strings.eq(v, "|=") || strings.eq(v, "<<=") || strings.eq(v, ">>=")
 }
 
 // scanForKind 有界向前感知 for 头的种类：1=range，2=classic（含 :=），3=其它。
 // 顺序消费并推回 ring buffer，保持源序；不消耗 "{" ";" "range"（留给后续）。
-fn StmtBlock.parseBlock(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseBlock(x *Parser) bool {
     var fileBlock: FileBlock
     x.l.skipTerminators()
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "{", ESTMT) {
+    if !fileBlock.expect( x, lex.DELIMITER, "{", ESTMT) {
         ret false
     }
     for ; ; {
         x.l.skipTerminators()
         var t: *lex.Token = x.l.peek()
         if t.Type == lex.NONE {
-            FileBlock.fail(fileBlock, x, ESTMT, 0)
+            fileBlock.fail( x, ESTMT, 0)
             ret false
         }
-        if lex.Token.is(t, lex.DELIMITER, "}") {
+        if t.is( lex.DELIMITER, "}") {
             x.l.next()
             ret true
         }
-        if !StmtBlock.parseStmt(r, x) {
+        if !StmtBlock.parseStmt( x) {
             ret false
         }
     }
 }
 
 // consumeTupleTargetExprs 消费 `a, b, c := f()` 的多目标模式（每个 `,` 跟一个 expr）。
-fn StmtBlock.consumeTupleTargetExprs(r StmtBlock, x *Parser) bool {
+fn StmtBlock.consumeTupleTargetExprs(  x *Parser) bool {
     for ; ; {
-        if !lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+        var tpeek: *lex.Token = x.l.peek()
+        if !tpeek.is(lex.DELIMITER, ",") {
             ret true
         }
         x.l.next()
         var eb: ExpBlock
-        if !ExpBlock.parseExpr(eb, x) {
+        if !eb.parseExpr( x) {
             ret false
         }
     }
 }
 
 // isStatementPostfixEnd 检测非赋值语句的合法收尾（NL / ';' / '}' / EOF/NONE）。
-fn StmtBlock.isStatementPostfixEnd(r StmtBlock, t *lex.Token) bool {
+fn StmtBlock.isStatementPostfixEnd(  t *lex.Token) bool {
     if t == nil {
         ret true
     }
-    if lex.Token.is(t, lex.DELIMITER, "++") || lex.Token.is(t, lex.DELIMITER, "--") {
+    if t.is( lex.DELIMITER, "++") || t.is( lex.DELIMITER, "--") {
         ret true
     }
-    if lex.Token.isLineEnd(t) || t.Type == lex.NONE {
+    if t.isLineEnd() || t.Type == lex.NONE {
         ret true
     }
     if t.Type == lex.DELIMITER {
@@ -73,55 +73,56 @@ fn StmtBlock.isStatementPostfixEnd(r StmtBlock, t *lex.Token) bool {
 
 // parseSimpleStmt 整形最常见的语句：赋值/自增自减/纯表达式（仅调用语句）。
 // 支持多目标形式：a, b := f()（tuple 目标）。
-fn StmtBlock.parseSimpleStmt(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseSimpleStmt(x *Parser) bool {
     var fileBlock: FileBlock
     var eb: ExpBlock
-    if !ExpBlock.parseExpr(eb, x) {
+    if !eb.parseExpr( x) {
         ret false
     }
-    if !StmtBlock.consumeTupleTargetExprs(r, x) {
+    if !StmtBlock.consumeTupleTargetExprs( x) {
         ret false
     }
     var t: *lex.Token = x.l.peek()
-    if StmtBlock.isAssignOp(r, t) {
+    if StmtBlock.isAssignOp( t) {
         x.l.next()
         var eb: ExpBlock
-        ret ExpBlock.parseExpr(eb, x)
+        ret eb.parseExpr( x)
     }
-    if lex.Token.is(t, lex.DELIMITER, "++") || lex.Token.is(t, lex.DELIMITER, "--") {
+    if t.is( lex.DELIMITER, "++") || t.is( lex.DELIMITER, "--") {
         x.l.next()
         ret true
     }
-    if StmtBlock.isStatementPostfixEnd(r, t) {
+    if StmtBlock.isStatementPostfixEnd( t) {
         ret true
     }
-    FileBlock.fail(fileBlock, x, ESTMT, t.Pos)
+    fileBlock.fail( x, ESTMT, t.Pos)
     ret false
 }
 // atCase 判断当前是否 case/default/}。
-fn StmtBlock.parseRetStmt(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseRetStmt(  x *Parser) bool {
     var t: *lex.Token = x.l.peek()
-    if lex.Token.is(t, lex.KEYWORD, "ret") {
+    if t.is( lex.KEYWORD, "ret") {
         x.l.next()
     } else {
         x.l.next()
     }
     var p: *lex.Token = x.l.peek()
-    if lex.Token.isLineEnd(p) {
+    if p.isLineEnd() {
         ret true
     }
-    if lex.Token.is(p, lex.DELIMITER, "}") {
+    if p.is( lex.DELIMITER, "}") {
         ret true
     }
     var eb: ExpBlock
-    if !ExpBlock.parseExpr(eb, x) {
+    if !eb.parseExpr( x) {
         ret false
     }
     for ; ; {
-        if lex.Token.is(x.l.peek(), lex.DELIMITER, ",") {
+        var tpeek: *lex.Token = x.l.peek()
+        if tpeek.is(lex.DELIMITER, ",") {
             x.l.next()
             var eb: ExpBlock
-            if !ExpBlock.parseExpr(eb, x) {
+            if !eb.parseExpr( x) {
                 ret false
             }
             continue
@@ -132,27 +133,27 @@ fn StmtBlock.parseRetStmt(r StmtBlock, x *Parser) bool {
 }
 
 // parseDeferStmt 解析 defer 语句（仅调用形态）。
-fn StmtBlock.parseDeferStmt(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseDeferStmt(  x *Parser) bool {
     var fileBlock: FileBlock
-    if !FileBlock.expectKeyword(fileBlock, x, "defer", ESTMT) {
+    if !fileBlock.expectKeyword( x, "defer", ESTMT) {
         ret false
     }
     // defer 后必须是调用式表达式
     var eb: ExpBlock
-    if !ExpBlock.parseExpr(eb, x) {
+    if !eb.parseExpr( x) {
         ret false
     }
     ret true
 }
 
 // parseBreakContinue 解析 break/continue 语句。
-fn StmtBlock.parseBreakContinue(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseBreakContinue(  x *Parser) bool {
     var t: *lex.Token = x.l.peek()
-    if lex.Token.is(t, lex.KEYWORD, "break") {
+    if t.is( lex.KEYWORD, "break") {
         x.l.next()
         ret true
     }
-    if lex.Token.is(t, lex.KEYWORD, "continue") {
+    if t.is( lex.KEYWORD, "continue") {
         x.l.next()
         ret true
     }
@@ -160,67 +161,66 @@ fn StmtBlock.parseBreakContinue(r StmtBlock, x *Parser) bool {
 }
 
 // isStmtKeywordLocalDecl 局部声明类关键字（带 kw 形式）。
-fn StmtBlock.isStmtKeywordLocalDecl(r StmtBlock, kw string) bool {
+fn StmtBlock.isStmtKeywordLocalDecl(  kw string) bool {
     ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
 }
 
 // isStmtKeywordReturn 返回类关键字（值可带 ret/return 两种拼写）。
-fn StmtBlock.isStmtKeywordReturn(r StmtBlock, kw string) bool {
+fn StmtBlock.isStmtKeywordReturn(  kw string) bool {
     ret strings.eq(kw, "ret") || strings.eq(kw, "return")
 }
 
 // isStmtKeywordFinisher break/continue/fallthrough 等终止符关键字。
-fn StmtBlock.isStmtKeywordFinisher(r StmtBlock, kw string) bool {
+fn StmtBlock.isStmtKeywordFinisher(  kw string) bool {
     ret strings.eq(kw, "break") || strings.eq(kw, "continue") || strings.eq(kw, "fallthrough")
 }
 
 // parseImplicitVarStmt 处理 name: T = v（无 var/const/let 关键字的隐式声明）。
 // nameTok 不消费：x.l.prefetch() 把后继 token 扫入环（不弹出）；
 // 命中 ":" 分支时显式弹出 nameTok；其它形态 nameTok 仍在环首。
-fn StmtBlock.parseImplicitVarStmt(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseImplicitVarStmt(  x *Parser) bool {
     var fileBlock: FileBlock
     var typeBlock: TypeBlock
     var p2: *lex.Token = x.l.prefetch()
-    if !lex.Token.is(p2, lex.DELIMITER, ":") {
+    if !p2.is( lex.DELIMITER, ":") {
         ret false
     }
     x.l.next()
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, ":", ESTMT) {
+    if !fileBlock.expect( x, lex.DELIMITER, ":", ESTMT) {
         ret false
     }
-    if !TypeBlock.skipType(typeBlock, x) {
+    if !typeBlock.skipType( x) {
         ret false
     }
-    if !FileBlock.expect(fileBlock, x, lex.DELIMITER, "=", ESTMT) {
+    if !fileBlock.expect( x, lex.DELIMITER, "=", ESTMT) {
         ret false
     }
-    FileBlock.restOfLineAtDepth0(fileBlock, x)
+    fileBlock.restOfLineAtDepth0( x)
     x.vars = x.vars + 1
     x.decls = x.decls + 1
     x.stmts = x.stmts + 1
     ret true
 }
-
-fn StmtBlock.dispatchControlClause(r StmtBlock, x *Parser, kw string) bool {
+fn StmtBlock.dispatchControlClause(  x *Parser, kw string) bool {
     var forBlock: ForBlock
     var ifBlock: IfBlock
     var switchBlock: SwitchBlock
     if strings.eq(kw, "if") {
-        if !IfBlock.parseIfStmt(ifBlock, x) {
+        if !ifBlock.parseIfStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
     if strings.eq(kw, "for") || strings.eq(kw, "while") {
-        if !ForBlock.parseForStmt(forBlock, x) {
+        if !forBlock.parseForStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
     if strings.eq(kw, "switch") {
-        if !SwitchBlock.parseSwitchStmt(switchBlock, x) {
+        if !switchBlock.parseSwitchStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
@@ -228,24 +228,23 @@ fn StmtBlock.dispatchControlClause(r StmtBlock, x *Parser, kw string) bool {
     }
     ret false
 }
-
-fn StmtBlock.dispatchTerminalClause(r StmtBlock, x *Parser, kw string) bool {
-    if StmtBlock.isStmtKeywordReturn(r, kw) {
-        if !StmtBlock.parseRetStmt(r, x) {
+fn StmtBlock.dispatchTerminalClause(x *Parser, kw string) bool {
+    if StmtBlock.isStmtKeywordReturn( kw) {
+        if !StmtBlock.parseRetStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
     if strings.eq(kw, "defer") {
-        if !StmtBlock.parseDeferStmt(r, x) {
+        if !StmtBlock.parseDeferStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
     if strings.eq(kw, "break") || strings.eq(kw, "continue") {
-        if !StmtBlock.parseBreakContinue(r, x) {
+        if !StmtBlock.parseBreakContinue( x) {
             ret false
         }
         x.stmts = x.stmts + 1
@@ -258,69 +257,66 @@ fn StmtBlock.dispatchTerminalClause(r StmtBlock, x *Parser, kw string) bool {
     }
     ret false
 }
-
-fn StmtBlock.dispatchBuildClause(r StmtBlock, x *Parser) bool {
+fn StmtBlock.dispatchBuildClause(  x *Parser) bool {
     x.l.next()
     var bb: BuildBlock
-    if !BuildBlock.parse(bb, x) {
+    if !bb.parse( x) {
         ret false
     }
     x.stmts = x.stmts + 1
     ret true
 }
-
-fn StmtBlock.dispatchStmtBody(r StmtBlock, x *Parser, kw string) bool {
-    if StmtBlock.dispatchControlClause(r, x, kw) {
+fn StmtBlock.dispatchStmtBody(x *Parser, kw string) bool {
+    if StmtBlock.dispatchControlClause( x, kw) {
         ret true
     }
-    if StmtBlock.dispatchTerminalClause(r, x, kw) {
+    if StmtBlock.dispatchTerminalClause( x, kw) {
         ret true
     }
     if strings.eq(kw, "build") {
-        ret StmtBlock.dispatchBuildClause(r, x)
+        ret StmtBlock.dispatchBuildClause( x)
     }
     ret false
 }
 
 // dispatchStmtKeyword 按 keyword 分派到对应语句解析器并记 stmts；未知返回 false。
-fn StmtBlock.dispatchStmtKeyword(r StmtBlock, x *Parser, kw string) bool {
+fn StmtBlock.dispatchStmtKeyword(x *Parser, kw string) bool {
     var varBlock: VarBlock
-    if StmtBlock.isStmtKeywordLocalDecl(r, kw) {
+    if StmtBlock.isStmtKeywordLocalDecl( kw) {
         x.l.next()
-        if !VarBlock.parseVarConstDispatch(varBlock, x, kw, 0) {
+        if !varBlock.parseVarConstDispatch( x, kw, 0) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    ret StmtBlock.dispatchStmtBody(r, x, kw)
+    ret StmtBlock.dispatchStmtBody( x, kw)
 }
 
 // isStmtCandidateKeywordValue NAME 开头是语句、KEYWORD 开头也是语句：两条路。
-fn StmtBlock.isStmtCandidateFinisher(r StmtBlock, v string) bool {
+fn StmtBlock.isStmtCandidateFinisher(  v string) bool {
     ret strings.eq(v, "break") || strings.eq(v, "continue") || strings.eq(v, "fallthrough") || strings.eq(v, "defer") || strings.eq(v, "build")
 }
-
-fn StmtBlock.parseStmt(r StmtBlock, x *Parser) bool {
+fn StmtBlock.parseStmt(x *Parser) bool {
     x.l.skipTerminators()
     var t: *lex.Token = x.l.peek()
     if t == nil || t.Type == lex.NONE {
         ret true
     }
-    if t.Type == lex.NAME && StmtBlock.parseImplicitVarStmt(r, x) {
+    if t.Type == lex.NAME && StmtBlock.parseImplicitVarStmt( x) {
         ret true
     }
-    if t.Type == lex.KEYWORD && StmtBlock.dispatchStmtKeyword(r, x, t.Value) {
+    if t.Type == lex.KEYWORD && StmtBlock.dispatchStmtKeyword( x, t.Value) {
         ret true
     }
-    if lex.Token.is(t, lex.DELIMITER, "{") {
-        if !StmtBlock.parseBlock(r, x) {
+    if t.is( lex.DELIMITER, "{") {
+        if !StmtBlock.parseBlock( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    if !StmtBlock.parseSimpleStmt(r, x) {
+    if !StmtBlock.parseSimpleStmt( x) {
         ret false
     }
     x.stmts = x.stmts + 1
@@ -328,7 +324,7 @@ fn StmtBlock.parseStmt(r StmtBlock, x *Parser) bool {
 }
 
 // atOpen 判别当前 token 是否为 { 。
-fn StmtBlock.atOpen(r StmtBlock, x *Parser) bool {
+fn StmtBlock.atOpen(  x *Parser) bool {
     var t: *lex.Token = x.l.peek()
-    ret lex.Token.is(t, lex.DELIMITER, "{")
+    ret t.is( lex.DELIMITER, "{")
 }

@@ -60,16 +60,16 @@ fn printCounter(name string, n int) {
 fn main() int {
     var r: parse.FileBlock
     var src: string = readAll()
-    var p: *parse.Parser = parse.FileBlock.mk(r, src)
-    parse.FileBlock.file(r, p)
+    var p: *parse.Parser = r.mk( src)
+    r.file( p)
 
-    if parse.FileBlock.err(r, p) != parse.OK {
+    if r.err( p) != parse.OK {
         var line: int = 1
         var col: int = 1
-        var pos: uint = parse.FileBlock.errPos(r, p)
+        var pos: uint = r.errPos( p)
         advance(src, 0, pos, &line, &col)
         console.print("PARSE_ERROR|code=")
-        printInt(parse.FileBlock.err(r, p))
+        printInt(r.err( p))
         console.print("|at=")
         printInt(line)
         console.print(":")
@@ -81,16 +81,16 @@ fn main() int {
     }
 
     console.print("PARSE_OK")
-    printCounter("decls", parse.FileBlock.declCount(r, p))
-    printCounter("imports", parse.FileBlock.importCount(r, p))
-    printCounter("builds", parse.FileBlock.buildCount(r, p))
-    printCounter("enums", parse.FileBlock.enumCount(r, p))
-    printCounter("structs", parse.FileBlock.structCount(r, p))
-    printCounter("consts", parse.FileBlock.constCount(r, p))
-    printCounter("vars", parse.FileBlock.varCount(r, p))
-    printCounter("fns", parse.FileBlock.fnCount(r, p))
-    printCounter("stmts", parse.FileBlock.stmtCount(r, p))
-    printCounter("exprs", parse.FileBlock.exprCount(r, p))
+    printCounter("decls", r.declCount( p))
+    printCounter("imports", r.importCount( p))
+    printCounter("builds", r.buildCount( p))
+    printCounter("enums", r.enumCount( p))
+    printCounter("structs", r.structCount( p))
+    printCounter("consts", r.constCount( p))
+    printCounter("vars", r.varCount( p))
+    printCounter("fns", r.fnCount( p))
+    printCounter("stmts", r.stmtCount( p))
+    printCounter("exprs", r.exprCount( p))
     console.print("\n")
     ret 0
 }
