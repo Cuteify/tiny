@@ -9,34 +9,36 @@ import lex "../lexer"
 
 
 fn ExpBlock.prec(e ExpBlock, s string) int {
-    if strings.eq(s, "||") {
+    // 注意：不能用 switch s { case "..": } —— cute 的 string switch 是指针比较
+    // （case 只匹配编译期内联常量，运行时串永远不匹配），见本文件编译期验证。
+    if s == "||" {
         ret 1
     }
-    if strings.eq(s, "&&") {
+    if s == "&&" {
         ret 2
     }
-    if strings.eq(s, "==") || strings.eq(s, "!=") {
+    if s == "==" || s == "!=" {
         ret 3
     }
-    if strings.eq(s, "<") || strings.eq(s, "<=") || strings.eq(s, ">") || strings.eq(s, ">=") {
+    if s == "<" || s == "<=" || s == ">" || s == ">=" {
         ret 4
     }
-    if strings.eq(s, "|") {
+    if s == "|" {
         ret 5
     }
-    if strings.eq(s, "^") {
+    if s == "^" {
         ret 6
     }
-    if strings.eq(s, "&") {
+    if s == "&" {
         ret 7
     }
-    if strings.eq(s, "<<") || strings.eq(s, ">>") {
+    if s == "<<" || s == ">>" {
         ret 9
     }
-    if strings.eq(s, "+") || strings.eq(s, "-") {
+    if s == "+" || s == "-" {
         ret 10
     }
-    if strings.eq(s, "*") || strings.eq(s, "/") || strings.eq(s, "%") {
+    if s == "*" || s == "/" || s == "%" {
         ret 11
     }
     ret 0
