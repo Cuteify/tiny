@@ -7,7 +7,7 @@ fn main() int {
 
     // Test string flag - should return default value
     var name: string = flag.defineString("name", "default", "test flag")
-    if !strings.eq(name, "default") {
+    if (name) != ("default") {
         failures = failures + 1
     }
 

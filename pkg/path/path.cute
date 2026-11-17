@@ -614,7 +614,7 @@ fn rel(basePath string, targetPath string) string {
     var targetClean: string = clean(targetPath)
 
     // 如果相同，返回 "."
-    if strings.eq(baseClean, targetClean) {
+    if (baseClean) == (targetClean) {
         ret "."
     }
 

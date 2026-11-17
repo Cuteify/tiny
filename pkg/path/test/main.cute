@@ -6,19 +6,19 @@ fn main() int {
 
     // Test 1: path.base
     var b: string = path.base("/home/user/file.txt")
-    if !strings.eq(b, "file.txt") {
+    if (b) != ("file.txt") {
         failures = failures + 1
     }
 
     // Test 2: path.dir
     var d: string = path.dir("/home/user/file.txt")
-    if !strings.eq(d, "/home/user") {
+    if (d) != ("/home/user") {
         failures = failures + 1
     }
 
     // Test 3: path.ext
     var e: string = path.ext("file.txt")
-    if !strings.eq(e, ".txt") {
+    if (e) != (".txt") {
         failures = failures + 1
     }
 
@@ -26,7 +26,7 @@ fn main() int {
     var c: string = path.clean("/home//user/../user/./file.txt")
     // clean removes double slashes and processes . and ..
     // Expected: /home/user/file.txt
-    if !strings.eq(c, "/home/user/file.txt") {
+    if (c) != ("/home/user/file.txt") {
         failures = failures + 1
     }
 
@@ -44,24 +44,24 @@ fn main() int {
 
     // Test 7: path.split 多返回值（Batch 2：a, b := f() 已支持）
     sd1, sf1 := path.split("/home/user/file.txt")
-    if !strings.eq(sd1, "/home/user") {
+    if (sd1) != ("/home/user") {
         failures = failures + 1
     }
-    if !strings.eq(sf1, "file.txt") {
+    if (sf1) != ("file.txt") {
         failures = failures + 1
     }
     sd2, sf2 := path.split("file.txt")
-    if !strings.eq(sd2, ".") {
+    if (sd2) != (".") {
         failures = failures + 1
     }
-    if !strings.eq(sf2, "file.txt") {
+    if (sf2) != ("file.txt") {
         failures = failures + 1
     }
     sd3, sf3 := path.split("/")
-    if !strings.eq(sd3, "/") {
+    if (sd3) != ("/") {
         failures = failures + 1
     }
-    if !strings.eq(sf3, "") {
+    if (sf3) != ("") {
         failures = failures + 1
     }
 

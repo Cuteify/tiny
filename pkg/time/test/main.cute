@@ -41,19 +41,19 @@ fn main() int {
 
     // Test 8: time.durationString(1000000000) == "1s"
     var ds1: string = time.durationString(1000000000)
-    if !strings.eq(ds1, "1s") {
+    if (ds1) != ("1s") {
         failures = failures + 1
     }
 
     // Test 9: time.durationString(3600000000000) == "1h"
     var ds2: string = time.durationString(3600000000000)
-    if !strings.eq(ds2, "1h") {
+    if (ds2) != ("1h") {
         failures = failures + 1
     }
 
     // Test 10: time.durationString(61000000000) == "1m1s"
     var ds3: string = time.durationString(61000000000)
-    if !strings.eq(ds3, "1m1s") {
+    if (ds3) != ("1m1s") {
         failures = failures + 1
     }
 

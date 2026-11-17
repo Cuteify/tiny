@@ -30,7 +30,7 @@ const REG_CONST: int = 8
 fn FileBlock.regFind(  x *Parser, name string) *RegNode {
     var cur: *RegNode = x.regHead
     for ; cur != nil; {
-        if strings.eq(cur.Name, name) {
+        if (cur.Name) == (name) {
             ret cur
         }
         cur = cur.Next
@@ -56,7 +56,7 @@ fn FileBlock.registerDecl(x *Parser, name string, kind int, pos int) bool {
     var item: *RegNode = new(RegNode)
     item.Name = name
     item.Kind = kind
-    item.Useful = kind == REG_FN && strings.eq(name, "main")
+    item.Useful = kind == REG_FN && (name) == ("main")
     item.Next = x.regHead
     x.regHead = item
     x.regCount = x.regCount + 1

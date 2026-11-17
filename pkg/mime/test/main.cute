@@ -6,19 +6,19 @@ fn main() int {
 
     // Test mime.typeByExtension(".html")
     var htmlType: string = mime.typeByExtension(".html")
-    if !strings.eq(htmlType, "text/html") {
+    if (htmlType) != ("text/html") {
         failures = failures + 1
     }
 
     // Test mime.typeByExtension(".json")
     var jsonType: string = mime.typeByExtension(".json")
-    if !strings.eq(jsonType, "application/json") {
+    if (jsonType) != ("application/json") {
         failures = failures + 1
     }
 
     // Test mime.typeByExtension(".png")
     var pngType: string = mime.typeByExtension(".png")
-    if !strings.eq(pngType, "image/png") {
+    if (pngType) != ("image/png") {
         failures = failures + 1
     }
 

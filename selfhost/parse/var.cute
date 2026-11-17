@@ -11,7 +11,7 @@ fn VarBlock.parseVarConst(  x *Parser, kind string, global int) bool {
     // S4 Check：var/const 登记（仅全局声明；函数体局部 var 不登记）。
     if global != 0 {
         var k0: int = REG_VAR
-        if strings.eq(kind, "const") {
+        if (kind) == ("const") {
             k0 = REG_CONST
         }
         if !fileBlock.registerDecl( x, nameT.Value, k0, nameT.Pos) {
@@ -33,7 +33,7 @@ fn VarBlock.parseVarConst(  x *Parser, kind string, global int) bool {
     } else if !hasType {
         // var x 无类型也无初值：声明但零值（允许）
     }
-    if strings.eq(kind, "const") {
+    if (kind) == ("const") {
         x.consts = x.consts + 1
     } else {
         x.vars = x.vars + 1

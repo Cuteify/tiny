@@ -14,15 +14,15 @@ fn ForBlock.scanForOneAhead(  x *Parser, kind int) int {
         ret 0
     }
     if t.Type == lex.DELIMITER {
-        if strings.eq(t.Value, ";") || strings.eq(t.Value, "{") {
+        if (t.Value) == (";") || (t.Value) == ("{") {
             ret 0
         }
-        if strings.eq(t.Value, ":=") && kind == 3 {
+        if (t.Value) == (":=") && kind == 3 {
             ret 2
         }
         ret kind
     }
-    if t.Type == lex.KEYWORD && strings.eq(t.Value, "range") {
+    if t.Type == lex.KEYWORD && (t.Value) == ("range") {
         ret 1
     }
     ret kind

@@ -3,8 +3,8 @@
 import "std:strings"
 import lex "../lexer"
 fn ExpBlock.prec(  s string) int {
-    // 字符串 switch：自 2026-11-17 起与 == 等价（std:strings.eq 内容比较，
-    // 不再按字符串视图指针比对——token Value 是源缓冲区视图，pointer cmp 永远不命中）。
+    // 字符串 switch：自 2026-11-17 起与 == 等价（内容比较，不再按字符串视图指针比对——
+    // token Value 是源缓冲区视图，pointer cmp 永远不命中）。
     switch s {
     case "||":
         ret 1
@@ -34,7 +34,7 @@ fn ExpBlock.prec(  s string) int {
 // parsePrimaryKeyword 处理 true/false/nil 关键字；非此三字时记 EEXPR。
 fn ExpBlock.parsePrimaryKeyword(x *Parser, t *lex.Token) bool {
     var fileBlock: FileBlock
-    if strings.eq(t.Value, "true") || strings.eq(t.Value, "false") || strings.eq(t.Value, "nil") {
+    if (t.Value) == ("true") || (t.Value) == ("false") || (t.Value) == ("nil") {
         x.exprs = x.exprs + 1
         x.l.next()
         ret true
@@ -95,7 +95,7 @@ fn ExpBlock.parseCompositePrimary(x *Parser) bool {
 
 // isPrimaryKeywordValue 判断 token 是否为值型关键字（true/false/nil）。
 fn ExpBlock.isPrimaryKeywordValue(  v string) bool {
-    ret strings.eq(v, "true") || strings.eq(v, "false") || strings.eq(v, "nil")
+    ret (v) == ("true") || (v) == ("false") || (v) == ("nil")
 }
 fn ExpBlock.parsePrimary(x *Parser) bool {
     var fileBlock: FileBlock
@@ -119,7 +119,7 @@ fn ExpBlock.parsePrimary(x *Parser) bool {
     if t.is( lex.DELIMITER, "(") {
         ret ExpBlock.parsePrimaryParen( x)
     }
-    if t.is( lex.DELIMITER, "[") || strings.eq(t.Value, "map") {
+    if t.is( lex.DELIMITER, "[") || (t.Value) == ("map") {
         ret ExpBlock.parseCompositePrimary( x)
     }
     fileBlock.fail( x, EEXPR, t.Pos)
@@ -173,7 +173,7 @@ fn ExpBlock.parseCompositeType(x *Parser) bool {
     var fileBlock: FileBlock
     x.l.skipTerminators()
     var t: *lex.Token = x.l.peek()
-    if t.Type == lex.NAME && strings.eq(t.Value, "map") {
+    if t.Type == lex.NAME && (t.Value) == ("map") {
         ret ExpBlock.parseMapTypeHead( x)
     }
     if t.is( lex.DELIMITER, "[") {
@@ -369,12 +369,12 @@ fn ExpBlock.parseExpr(x *Parser) bool {
 
 // isOpenBracket 参数默认值的开括号。
 fn CallBlock.isOpenBracket(  v string) bool {
-    ret strings.eq(v, "(") || strings.eq(v, "[") || strings.eq(v, "{")
+    ret (v) == ("(") || (v) == ("[") || (v) == ("{")
 }
 
 // isCloseBracket 形态深度的收尾括号（']'/'}'）。
 fn CallBlock.isCloseBracket(  v string) bool {
-    ret strings.eq(v, "]") || strings.eq(v, "}")
+    ret (v) == ("]") || (v) == ("}")
 }
 
 // isCloseDelim 形态深度 0 时，默认值分隔符（','/NL/CR）。
@@ -382,7 +382,7 @@ fn CallBlock.isCloseDelim(  v string, depth int) bool {
     if depth != 0 {
         ret false
     }
-    if strings.eq(v, ",") {
+    if (v) == (",") {
         ret true
     }
     ret unsafe.cast[int](v[0]) == 10 || unsafe.cast[int](v[0]) == 13
@@ -393,7 +393,7 @@ fn CallBlock.dispatchDefaultDelim(v string, depth int) int {
     if CallBlock.isOpenBracket( v) {
         ret 1
     }
-    if strings.eq(v, ")") {
+    if (v) == (")") {
         if depth == 0 {
             ret 0
         }

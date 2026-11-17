@@ -93,17 +93,17 @@ fn FileBlock.fail(  x *Parser, e int, pos int) {
 fn FileBlock.dispatchSimpleKeyword(  x *Parser, kw string) bool {
     var structBlock: StructBlock
     var importBlock: ImportBlock
-    if strings.eq(kw, "import") { ret importBlock.parseImportFromKeyword( x) }
-    if strings.eq(kw, "build") {
+    if (kw) == ("import") { ret importBlock.parseImportFromKeyword( x) }
+    if (kw) == ("build") {
         var b: BuildBlock
         ret b.parse( x)
     }
-    if strings.eq(kw, "fn") {
+    if (kw) == ("fn") {
         var f: FuncBlock
         ret f.parse( x)
     }
-    if strings.eq(kw, "struct") { ret structBlock.parseStructDeclFromKeyword( x) }
-    if strings.eq(kw, "enum") {
+    if (kw) == ("struct") { ret structBlock.parseStructDeclFromKeyword( x) }
+    if (kw) == ("enum") {
         var e: EnumBlock
         ret e.parse( x)
     }
@@ -123,7 +123,7 @@ fn FileBlock.parseTypeDeclKeyword(  x *Parser, t *lex.Token) bool {
 
 // isVarConstLetKindVarConstLet case for var/const/let。
 fn FileBlock.isDeclKindVarConstLet(  kw string) bool {
-    ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
+    ret (kw) == ("var") || (kw) == ("const") || (kw) == ("let")
 }
 
 // parseDeclKeyword 按关键字分派顶层声明。
@@ -134,7 +134,7 @@ fn FileBlock.parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
     if FileBlock.dispatchSimpleKeyword( x, kw) {
         ret true
     }
-    if strings.eq(kw, "type") {
+    if (kw) == ("type") {
         ret FileBlock.parseTypeDeclKeyword( x, t)
     }
     if FileBlock.isDeclKindVarConstLet( kw) {
@@ -149,15 +149,15 @@ fn FileBlock.isDeclKeyword(kw string) bool {
     ret FileBlock.isDeclKeywordHelper( kw)
 }
 fn FileBlock.isDeclKeywordHelper(  kw string) bool {
-    if strings.eq(kw, "import") { ret true }
-    if strings.eq(kw, "build") { ret true }
-    if strings.eq(kw, "fn") { ret true }
-    if strings.eq(kw, "type") { ret true }
-    if strings.eq(kw, "struct") { ret true }
-    if strings.eq(kw, "enum") { ret true }
-    if strings.eq(kw, "var") { ret true }
-    if strings.eq(kw, "const") { ret true }
-    if strings.eq(kw, "let") { ret true }
+    if (kw) == ("import") { ret true }
+    if (kw) == ("build") { ret true }
+    if (kw) == ("fn") { ret true }
+    if (kw) == ("type") { ret true }
+    if (kw) == ("struct") { ret true }
+    if (kw) == ("enum") { ret true }
+    if (kw) == ("var") { ret true }
+    if (kw) == ("const") { ret true }
+    if (kw) == ("let") { ret true }
     ret false
 }
 
@@ -176,7 +176,7 @@ fn FileBlock.fileImplicitVarStmt(x *Parser, t *lex.Token) bool {
     var typeBlock: TypeBlock
     var nameT: *lex.Token = x.l.next()
     var p2: *lex.Token = x.l.peek()
-    if p2 != nil && p2.Type == lex.DELIMITER && strings.eq(p2.Value, ":") {
+    if p2 != nil && p2.Type == lex.DELIMITER && (p2.Value) == (":") {
         if !FileBlock.expect( x, lex.DELIMITER, ":", EDECL) {
             ret false
         }

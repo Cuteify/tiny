@@ -36,7 +36,7 @@ fn main() int {
     // Test 2: readAll from reader
     var r2: *io.Reader = io.newReader("abc")
     var all: string = io.readAll(r2)
-    if !strings.eq(all, "abc") {
+    if (all) != ("abc") {
         failures = failures + 1
     }
 
@@ -45,7 +45,7 @@ fn main() int {
     var src: ptr = strings.toCstring("test")
     io.write(w, src, 4)
     var result: string = io.string(w)
-    if !strings.eq(result, "test") {
+    if (result) != ("test") {
         failures = failures + 1
     }
 
@@ -53,7 +53,7 @@ fn main() int {
     var w2: *io.Writer = io.newWriter()
     io.writeString(w2, "hello")
     var result2: string = io.string(w2)
-    if !strings.eq(result2, "hello") {
+    if (result2) != ("hello") {
         failures = failures + 1
     }
 
@@ -65,7 +65,7 @@ fn main() int {
         failures = failures + 1
     }
     var result3: string = io.string(w3)
-    if !strings.eq(result3, "copy me") {
+    if (result3) != ("copy me") {
         failures = failures + 1
     }
 

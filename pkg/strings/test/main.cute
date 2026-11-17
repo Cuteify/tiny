@@ -25,20 +25,20 @@ fn main() int {
 
     // eq tests
     var abc: string = "abc"
-    var e1: bool = strings.eq(abc, abc)
+    var e1: bool = (abc) == (abc)
     if !e1 {
         err = 3
     }
 
     var abd: string = "abd"
-    var e2: bool = strings.eq(abc, abd)
+    var e2: bool = (abc) == (abd)
     if e2 {
         err = 4
     }
 
     // eq with same content, different variables
     var abc2: string = "abc"
-    var e3: bool = strings.eq(abc, abc2)
+    var e3: bool = (abc) == (abc2)
     if !e3 {
         err = 40
     }
@@ -47,10 +47,10 @@ fn main() int {
     var eqBld: ptr = strings.builderNew(2)
     strings.builderWriteString(eqBld, "abc")
     var made: string = strings.builderString(eqBld)
-    if !strings.eq(made, "abc") {
+    if (made) != ("abc") {
         err = 41
     }
-    if strings.ne(made, "abc") {
+    if (made) != ("abc") {
         err = 42
     }
     strings.builderFree(eqBld)
@@ -58,7 +58,7 @@ fn main() int {
     // ne tests
     var a: string = "a"
     var b: string = "b"
-    var n1: bool = strings.ne(a, b)
+    var n1: bool = (a) != (b)
     if !n1 {
         err = 5
     }

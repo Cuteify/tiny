@@ -165,8 +165,8 @@ fn caseCheck() int {
     var p: *parse.Parser = parsed(isrc)
     if r.err( p) != parse.OK { ret 3 }
     if r.ifaceDefCount( p) != 2 { ret 4 }
-    if !strings.eq(r.ifaceDefAt( p, 0), "Stringer:stringify,") { ret 5 }
-    if !strings.eq(r.ifaceDefAt( p, 1), "R:read,size,reset,") { ret 6 }
+    if (r.ifaceDefAt( p, 0)) != ("Stringer:stringify,") { ret 5 }
+    if (r.ifaceDefAt( p, 1)) != ("R:read,size,reset,") { ret 6 }
 
     // 4) unusedFnCount：未引用的 fn 计为未 Useful，main 与被引用的计入。
     var us: string = "fn usedFn() int {\n    ret 1\n}\nfn unusedFn() int {\n    ret 2\n}\nfn main() int {\n    ret usedFn()\n}\n"

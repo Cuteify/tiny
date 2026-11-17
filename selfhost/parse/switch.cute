@@ -5,7 +5,7 @@ import lex "../lexer"
 
 // isCaseClauseKeyword case 或 default。
 fn SwitchBlock.isCaseClauseKeyword(  kw string) bool {
-    ret strings.eq(kw, "case") || strings.eq(kw, "default")
+    ret (kw) == ("case") || (kw) == ("default")
 }
 
 // atClauseBoundary 是否到了 case 端尾部（case/default/}/EOF/NONE）。

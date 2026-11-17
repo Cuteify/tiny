@@ -242,7 +242,7 @@ fn Lexer.handleComment(&self, delimiter string) {
     var text: string = self.Text
     var plen: uint = len(text)
     var start: uint = unsafe.cast[uint](self.pfPos)
-    if strings.eq(delimiter, "//") {
+    if (delimiter) == ("//") {
         // 行注释：保留其后的换行
         var j: uint = start + 2
         for ; j < plen; {
@@ -358,7 +358,7 @@ fn Lexer.prefetch(&self) *Token {
         // 处理注释：若注释直接附着在词素尾部（如 int//x），
         // 必须先把已扫描的词素返回，避免 handleComment 吞掉前缀（Go 参考先返回前缀 token）。
         var delimiter: string = self.Text[i:i + unsafe.cast[uint](delimLen)]
-        if strings.eq(delimiter, "//") || strings.eq(delimiter, "/*") {
+        if (delimiter) == ("//") || (delimiter) == ("/*") {
             if unsafe.cast[int](i) > self.pfPos {
                 var head: string = self.Text[unsafe.cast[uint](self.pfPos):i]
                 var headTyp: TokenType = NAME

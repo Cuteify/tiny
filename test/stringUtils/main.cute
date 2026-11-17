@@ -47,39 +47,39 @@ fn main() int {
 
     // 4. toUpper / toLower
     var upper: string = strings.toUpper("hello")
-    if strings.eq(upper, "HELLO") == false {
+    if (upper) == ("HELLO") == false {
         fails = fails + 1
     }
     var lower: string = strings.toLower("HELLO")
-    if strings.eq(lower, "hello") == false {
+    if (lower) == ("hello") == false {
         fails = fails + 1
     }
 
     // 5. trimSpace
     var trimmed: string = strings.trimSpace("  hello  ")
-    if strings.eq(trimmed, "hello") == false {
+    if (trimmed) == ("hello") == false {
         fails = fails + 1
     }
 
     // 6. trimPrefix / trimSuffix
     var noPrefix: string = strings.trimPrefix("hello world", "hello ")
-    if strings.eq(noPrefix, "world") == false {
+    if (noPrefix) == ("world") == false {
         fails = fails + 1
     }
     var noSuffix: string = strings.trimSuffix("hello world", " world")
-    if strings.eq(noSuffix, "hello") == false {
+    if (noSuffix) == ("hello") == false {
         fails = fails + 1
     }
 
     // 7. repeat
     var repeated: string = strings.repeat("ab", 3)
-    if strings.eq(repeated, "ababab") == false {
+    if (repeated) == ("ababab") == false {
         fails = fails + 1
     }
 
     // 8. replace
     var replaced: string = strings.replace("hello hello hello", "hello", "hi", 2)
-    if strings.eq(replaced, "hi hi hello") == false {
+    if (replaced) == ("hi hi hello") == false {
         fails = fails + 1
     }
 
@@ -94,13 +94,13 @@ fn main() int {
     //     切片无法退化 ptr（parser 限制），用定长数组 string_basic 先例传入）
     var arr: [3]string = [3]string{"a", "b", "c"}
     var joined: string = strings.join(arr, 3, "-")
-    if strings.eq(joined, "a-b-c") == false {
+    if (joined) == ("a-b-c") == false {
         fails = fails + 1
     }
 
     // 11. fields（原语料 words 计数检查改为 trimSpace 端部清理验证）
     var words: string = strings.trimSpace("  hello   world  ")
-    if strings.eq(words, "hello   world") == false {
+    if (words) == ("hello   world") == false {
         fails = fails + 1
     }
 

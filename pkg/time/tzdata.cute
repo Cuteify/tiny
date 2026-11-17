@@ -27,61 +27,61 @@ var tzAustralia_Sydney: string = "Australia/Sydney|-2364113092,36000,AEST|-16725
 
 // 名称 → 数据常量 分发（由生成工具输出，勿手改）
 fn findZoneData(name string) string {
-    if strings.eq(name, "UTC") {
+    if (name) == ("UTC") {
         ret tzUTC
     }
-    if strings.eq(name, "Asia/Shanghai") {
+    if (name) == ("Asia/Shanghai") {
         ret tzAsia_Shanghai
     }
-    if strings.eq(name, "Asia/Hong_Kong") {
+    if (name) == ("Asia/Hong_Kong") {
         ret tzAsia_Hong_Kong
     }
-    if strings.eq(name, "Asia/Taipei") {
+    if (name) == ("Asia/Taipei") {
         ret tzAsia_Taipei
     }
-    if strings.eq(name, "Asia/Tokyo") {
+    if (name) == ("Asia/Tokyo") {
         ret tzAsia_Tokyo
     }
-    if strings.eq(name, "Asia/Seoul") {
+    if (name) == ("Asia/Seoul") {
         ret tzAsia_Seoul
     }
-    if strings.eq(name, "Asia/Singapore") {
+    if (name) == ("Asia/Singapore") {
         ret tzAsia_Singapore
     }
-    if strings.eq(name, "Asia/Kolkata") {
+    if (name) == ("Asia/Kolkata") {
         ret tzAsia_Kolkata
     }
-    if strings.eq(name, "Asia/Dubai") {
+    if (name) == ("Asia/Dubai") {
         ret tzAsia_Dubai
     }
-    if strings.eq(name, "Europe/London") {
+    if (name) == ("Europe/London") {
         ret tzEurope_London
     }
-    if strings.eq(name, "Europe/Paris") {
+    if (name) == ("Europe/Paris") {
         ret tzEurope_Paris
     }
-    if strings.eq(name, "Europe/Moscow") {
+    if (name) == ("Europe/Moscow") {
         ret tzEurope_Moscow
     }
-    if strings.eq(name, "Europe/Berlin") {
+    if (name) == ("Europe/Berlin") {
         ret tzEurope_Berlin
     }
-    if strings.eq(name, "America/New_York") {
+    if (name) == ("America/New_York") {
         ret tzAmerica_New_York
     }
-    if strings.eq(name, "America/Chicago") {
+    if (name) == ("America/Chicago") {
         ret tzAmerica_Chicago
     }
-    if strings.eq(name, "America/Denver") {
+    if (name) == ("America/Denver") {
         ret tzAmerica_Denver
     }
-    if strings.eq(name, "America/Los_Angeles") {
+    if (name) == ("America/Los_Angeles") {
         ret tzAmerica_Los_Angeles
     }
-    if strings.eq(name, "America/Sao_Paulo") {
+    if (name) == ("America/Sao_Paulo") {
         ret tzAmerica_Sao_Paulo
     }
-    if strings.eq(name, "Australia/Sydney") {
+    if (name) == ("Australia/Sydney") {
         ret tzAustralia_Sydney
     }
     ret tzUTC

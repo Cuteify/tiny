@@ -101,7 +101,7 @@ fn TypeBlock.skipNamedType(&self, x *Parser, t *lex.Token) bool {
         ret false
     }
     var tpeek: *lex.Token = x.l.peek()
-    if strings.eq(t.Value, "map") && tpeek.is(lex.DELIMITER, "[") {
+    if (t.Value) == ("map") && tpeek.is(lex.DELIMITER, "[") {
         x.l.next()
         if !self.skipType( x) {
             ret false
@@ -122,17 +122,17 @@ fn TypeBlock.skipType(&self, x *Parser) bool {
         ret false
     }
     if t.Type == lex.DELIMITER {
-        if strings.eq(t.Value, "*") {
+        if (t.Value) == ("*") {
             ret self.skipType( x)
         }
-        if strings.eq(t.Value, "[") {
+        if (t.Value) == ("[") {
             ret self.skipListTypeAfterBracket( x)
         }
         fileBlock.fail( x, ETYPE, t.Pos)
         ret false
     }
     if t.Type == lex.KEYWORD {
-        if strings.eq(t.Value, "fn") {
+        if (t.Value) == ("fn") {
             ret self.skipFnType( x)
         }
         fileBlock.fail( x, ETYPE, t.Pos)
@@ -210,7 +210,7 @@ fn TypeBlock.parseGroupedBody(&self, x *Parser, kind string) bool {
 
 // isDeclKindType group kind 判断。
 fn TypeBlock.isDeclKindType(  kind string) bool {
-    ret strings.eq(kind, "type")
+    ret (kind) == ("type")
 }
 
 // parseGroupedDecl 解析分组声明 var/const/let/type ( ... )。

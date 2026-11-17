@@ -90,7 +90,7 @@ fn Token.isSemiOrNewline(&self) bool {
     if self.Type != DELIMITER {
         ret false
     }
-    if strings.eq(self.Value, ";") {
+    if (self.Value) == (";") {
         ret true
     }
     ret self.isLineEnd()
@@ -104,7 +104,7 @@ fn Token.is(&self, kind: TokenType, value string) bool {
     if self.Type != kind {
         ret false
     }
-    ret strings.eq(self.Value, value)
+    ret (self.Value) == (value)
 }
 
 // renderVisible 把 LF/CR/TAB 渲染为可见两字符转义（\n \r \t），其余原样返回。

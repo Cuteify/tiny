@@ -15,13 +15,13 @@ fn main() i32 {
     }
 
     // 2. eq/ne：指针比较（字符串常量 intern，同值同地址）
-    if (!strings.eq(s, "hello")) {
+    if ((s) != ("hello")) {
         ret 4
     }
-    if (strings.ne(s, "hello")) {
+    if ((s) != ("hello")) {
         ret 5
     }
-    if (!strings.ne(s, "world")) {
+    if ((s) == ("world")) {
         ret 6
     }
 

@@ -74,7 +74,7 @@ fn BuildBlock.parseBuildCountedToken(&self, x *Parser, kind int) bool {
 
 // isBuildLinkKind 判断 kind 是否属于 link 类（string/name 参数）。
 fn BuildBlock.isBuildLinkKind(  k string) bool {
-    ret strings.eq(k, "link") || strings.eq(k, "ext") || strings.eq(k, "extret") || strings.eq(k, "export")
+    ret (k) == ("link") || (k) == ("ext") || (k) == ("extret") || (k) == ("export")
 }
 
 // finishParseCountedBuilds 统一计数：成功的 build 都把 builds/decls +1。
@@ -141,22 +141,22 @@ fn BuildBlock.parseBuildNoAlign(&self, x *Parser) bool {
 // dispatchBuildKind 按 kind 分派到对应裸 build 的 handler。
 // 成功返回 true（并已计数）；未知 kind 返回 false（不计数，由调用方报错）。
 fn BuildBlock.dispatchBuildKind(&self, x *Parser, kind string) bool {
-    if strings.eq(kind, "os") || strings.eq(kind, "arch") {
+    if (kind) == ("os") || (kind) == ("arch") {
         ret self.parseBuildOsArch( x)
     }
-    if strings.eq(kind, "bits") {
+    if (kind) == ("bits") {
         ret self.parseBuildBits( x)
     }
-    if strings.eq(kind, "asm") {
+    if (kind) == ("asm") {
         ret self.parseBuildAsm( x)
     }
     if BuildBlock.isBuildLinkKind( kind) {
         ret self.parseBuildLink( x)
     }
-    if strings.eq(kind, "align") {
+    if (kind) == ("align") {
         ret self.parseBuildAlign( x)
     }
-    if strings.eq(kind, "noalign") {
+    if (kind) == ("noalign") {
         ret self.parseBuildNoAlign( x)
     }
     ret false

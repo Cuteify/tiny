@@ -144,7 +144,7 @@ fn lookup(name: string) string {
     var f: *Flag = defaultSet.head
     var k: uint = 0
     for ; k < defaultSet.count; {
-        if strings.eq(f.name, name) {
+        if (f.name) == (name) {
             ret f.value
         }
         f = f.next
@@ -170,7 +170,7 @@ fn getInt(name: string) int {
 // getBool 获取布尔标志的值
 fn getBool(name: string) bool {
     var valueStr: string = lookup(name)
-    if strings.eq(valueStr, "true") {
+    if (valueStr) == ("true") {
         ret true
     }
     ret false

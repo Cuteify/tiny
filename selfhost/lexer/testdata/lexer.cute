@@ -184,7 +184,7 @@ fn Lexer.handleComment(&self, delimiter string) {
     var text: string = self.Text
     var plen: uint = len(text)
     var start: uint = unsafe.cast[uint](self.pfPos)
-    if strings.eq(delimiter, "//") {
+    if (delimiter) == ("//") {
         // 行注释：保留其后的换行
         var j: uint = start + 2
         for ; j < plen; {
@@ -297,7 +297,7 @@ fn Lexer.prefetch(&self) *Token {
 
         // 处理注释
         var delimiter: string = self.Text[i:i + unsafe.cast[uint](delimLen)]
-        if strings.eq(delimiter, "//") || strings.eq(delimiter, "/*") {
+        if (delimiter) == ("//") || (delimiter) == ("/*") {
             self.handleComment(delimiter)
             ret self.prefetch()
         }

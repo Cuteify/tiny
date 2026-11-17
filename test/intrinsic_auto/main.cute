@@ -19,10 +19,10 @@ fn main() int {
         passed = passed + 1
     }
 
-    if strings.eq("abc", "abc") {
+    if ("abc") == ("abc") {
         passed = passed + 1
     }
-    if strings.ne("abc", "abd") {
+    if ("abc") != ("abd") {
         passed = passed + 1
     }
     if "abc" == "abc" {

@@ -11,7 +11,7 @@ fn StmtBlock.isAssignOp(t *lex.Token) bool {
 
 // isAssignOpValue 复合赋值运算符表：=, :=, +=, -=, *=, /=, %=, ^=, &=, |=, <<=, >>=。
 fn StmtBlock.isAssignOpValue(  v string) bool {
-    ret strings.eq(v, "=") || strings.eq(v, ":=") || strings.eq(v, "+=") || strings.eq(v, "-=") || strings.eq(v, "*=") || strings.eq(v, "/=") || strings.eq(v, "%=") || strings.eq(v, "^=") || strings.eq(v, "&=") || strings.eq(v, "|=") || strings.eq(v, "<<=") || strings.eq(v, ">>=")
+    ret (v) == ("=") || (v) == (":=") || (v) == ("+=") || (v) == ("-=") || (v) == ("*=") || (v) == ("/=") || (v) == ("%=") || (v) == ("^=") || (v) == ("&=") || (v) == ("|=") || (v) == ("<<=") || (v) == (">>=")
 }
 
 // scanForKind 有界向前感知 for 头的种类：1=range，2=classic（含 :=），3=其它。
@@ -66,7 +66,7 @@ fn StmtBlock.isStatementPostfixEnd(  t *lex.Token) bool {
         ret true
     }
     if t.Type == lex.DELIMITER {
-        ret strings.eq(t.Value, "}") || strings.eq(t.Value, ";") || unsafe.cast[int](t.Value[0]) == 10 || unsafe.cast[int](t.Value[0]) == 13
+        ret (t.Value) == ("}") || (t.Value) == (";") || unsafe.cast[int](t.Value[0]) == 10 || unsafe.cast[int](t.Value[0]) == 13
     }
     ret false
 }
@@ -162,17 +162,17 @@ fn StmtBlock.parseBreakContinue(  x *Parser) bool {
 
 // isStmtKeywordLocalDecl 局部声明类关键字（带 kw 形式）。
 fn StmtBlock.isStmtKeywordLocalDecl(  kw string) bool {
-    ret strings.eq(kw, "var") || strings.eq(kw, "const") || strings.eq(kw, "let")
+    ret (kw) == ("var") || (kw) == ("const") || (kw) == ("let")
 }
 
 // isStmtKeywordReturn 返回类关键字（值可带 ret/return 两种拼写）。
 fn StmtBlock.isStmtKeywordReturn(  kw string) bool {
-    ret strings.eq(kw, "ret") || strings.eq(kw, "return")
+    ret (kw) == ("ret") || (kw) == ("return")
 }
 
 // isStmtKeywordFinisher break/continue/fallthrough 等终止符关键字。
 fn StmtBlock.isStmtKeywordFinisher(  kw string) bool {
-    ret strings.eq(kw, "break") || strings.eq(kw, "continue") || strings.eq(kw, "fallthrough")
+    ret (kw) == ("break") || (kw) == ("continue") || (kw) == ("fallthrough")
 }
 
 // parseImplicitVarStmt 处理 name: T = v（无 var/const/let 关键字的隐式声明）。
@@ -205,21 +205,21 @@ fn StmtBlock.dispatchControlClause(  x *Parser, kw string) bool {
     var forBlock: ForBlock
     var ifBlock: IfBlock
     var switchBlock: SwitchBlock
-    if strings.eq(kw, "if") {
+    if (kw) == ("if") {
         if !ifBlock.parseIfStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    if strings.eq(kw, "for") || strings.eq(kw, "while") {
+    if (kw) == ("for") || (kw) == ("while") {
         if !forBlock.parseForStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    if strings.eq(kw, "switch") {
+    if (kw) == ("switch") {
         if !switchBlock.parseSwitchStmt( x) {
             ret false
         }
@@ -236,21 +236,21 @@ fn StmtBlock.dispatchTerminalClause(x *Parser, kw string) bool {
         x.stmts = x.stmts + 1
         ret true
     }
-    if strings.eq(kw, "defer") {
+    if (kw) == ("defer") {
         if !StmtBlock.parseDeferStmt( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    if strings.eq(kw, "break") || strings.eq(kw, "continue") {
+    if (kw) == ("break") || (kw) == ("continue") {
         if !StmtBlock.parseBreakContinue( x) {
             ret false
         }
         x.stmts = x.stmts + 1
         ret true
     }
-    if strings.eq(kw, "fallthrough") {
+    if (kw) == ("fallthrough") {
         x.l.next()
         x.stmts = x.stmts + 1
         ret true
@@ -273,7 +273,7 @@ fn StmtBlock.dispatchStmtBody(x *Parser, kw string) bool {
     if StmtBlock.dispatchTerminalClause( x, kw) {
         ret true
     }
-    if strings.eq(kw, "build") {
+    if (kw) == ("build") {
         ret StmtBlock.dispatchBuildClause( x)
     }
     ret false
@@ -295,7 +295,7 @@ fn StmtBlock.dispatchStmtKeyword(x *Parser, kw string) bool {
 
 // isStmtCandidateKeywordValue NAME 开头是语句、KEYWORD 开头也是语句：两条路。
 fn StmtBlock.isStmtCandidateFinisher(  v string) bool {
-    ret strings.eq(v, "break") || strings.eq(v, "continue") || strings.eq(v, "fallthrough") || strings.eq(v, "defer") || strings.eq(v, "build")
+    ret (v) == ("break") || (v) == ("continue") || (v) == ("fallthrough") || (v) == ("defer") || (v) == ("build")
 }
 fn StmtBlock.parseStmt(x *Parser) bool {
     x.l.skipTerminators()
