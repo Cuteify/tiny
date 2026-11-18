@@ -386,6 +386,11 @@ func collectVarOffsets(node *parser.Node, offset *int) {
 			// 跳过嵌套函数（如果有的话）
 			collectVarOffsets(child, offset)
 			continue
+		case *parser.SwitchBlock, *parser.CaseBlock:
+			// switch / case 块内的局部变量也要分配栈偏移；
+			// 否则 case 体里的 f/x 会落到 rbp+0，覆盖调用者帧 / 返回地址
+			collectVarOffsets(child, offset)
+			continue
 		}
 	}
 }

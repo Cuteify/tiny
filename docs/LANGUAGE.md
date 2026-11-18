@@ -1800,7 +1800,28 @@ echo "EXIT=$?"
 - 文中标注 ✅ 的项至少通过一次上述流程；标注 ⚠️/❌ 的项记录了实际报错或错误结果。
 - 测试套件基线见 §15.3。
 
-### 17.4 维护约定
+### 17.4 编译器选项
+
+```bash
+cuteify2 [-S|--asm] [-c|--obj] [-o FILE] [--ast] [--gcreport] [--nilcheck] <pkg-dir>
+```
+
+| 选项 | 作用 | 默认 |
+|---|---|---|
+| `-S` / `--asm` | 仅生成汇编 | 关 |
+| `-c` / `--obj` | 编译并汇编生成目标文件，不链接 | 关 |
+| `-o FILE` | 指定输出文件路径 | `<target>.base` |
+| `--ast` | 打印文本 AST 表示 | 关 |
+| `--gcreport` | 打印 GC 分析报告（函数摘要 + LLR） | 关 |
+| `--nilcheck` | 产物中加入 nil 指针检查：每个指针装载 / 指针字段跳转后比对是否为 0，是则写 "nil pointer dereference\n" 到 stderr 并以退出码 1 退出（默认发射 `_panic_nil_deref` 辅助代码） | 关 |
+
+> `--nilcheck` 用于调试 SIGSEGV 时启用；默认产物零检查开销。开启后若程序
+> 发生 nil 解引用，进程以 `exit(1)` + stderr 消息退出，而不是 SIGSEGV。
+>
+> 默认关闭的原因是热路径每次指针字段解引用多一条 test + je 判断；自举
+> 语料 + test 套件均在默认关闭下回归验证无变化。
+
+### 17.5 维护约定
 
 - 修改 `parser/intrinsic.go` 的映射表时，必须同步 `docs/stdplan/TYPE_INTRINSIC.md` 与本文 §11.4。
 - 修改 `lexer/keywords.go` 的关键字表时，必须同步本文 §1.4。

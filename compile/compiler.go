@@ -16,6 +16,9 @@ import (
 
 var GoArch = "x86"
 
+// NilCheck 控制是否在代码生成中插入 nil 指针检查（默认关闭）。
+var NilCheck = false
+
 func init() {
 	GoArch = typeSys.TargetArch()
 	if os.Getenv("CUTE_ARCH") != "" {
@@ -205,6 +208,7 @@ func (c *Compiler) initializeContext() {
 	if c.Ctx == nil {
 		c.Ctx = context.NewContext()
 	}
+	c.Ctx.NilCheck = NilCheck
 	if c.Ctx.Arch == nil {
 		c.Ctx.Arch = NewArch(GoArch, c.Ctx)
 	}
@@ -1276,6 +1280,10 @@ func (c *Compiler) compileRootTail(node *parser.Node) string {
 		}
 		// 运行时辅助：边界检查 panic
 		code += c.generatePanicOOB()
+		// 运行时辅助：nil 指针 panic（仅 nilcheck 模式输出）
+		if c.Ctx.NilCheck {
+			code += c.generatePanicNilDeref()
+		}
 		// 运行时辅助：memmove(dst, src, n)
 		code += c.generateMemmove()
 		code += c.generateDataSection()
@@ -1298,6 +1306,10 @@ func (c *Compiler) generateDataSection() string {
 	// 边界检查错误信息
 	code += "    _oob_msg db \"index out of range\", 10\n"
 	code += "    _oob_msg_len equ $ - _oob_msg\n"
+	if NilCheck {
+		code += "    _nil_msg db \"nil pointer dereference\", 10\n"
+		code += "    _nil_msg_len equ $ - _nil_msg\n"
+	}
 	code += "section .data\n"
 	for val, label := range c.Ctx.StringConsts {
 		escaped := strings.ReplaceAll(val, `\`, `\\`)
@@ -1422,6 +1434,50 @@ func (c *Compiler) generatePanicOOB() string {
 		code += utils.Format("mov ebx, 2")        // stderr
 		code += utils.Format("mov ecx, _oob_msg") // msg
 		code += utils.Format("mov edx, 21")       // len("index out of range\n")
+		code += utils.Format("int 0x80")
+		code += utils.Format("mov eax, 1") // sys_exit
+		code += utils.Format("mov ebx, 1") // exit code 1
+		code += utils.Format("int 0x80")
+		code += utils.Format("pop ebx")
+		code += utils.Format("pop ebp")
+		code += utils.Format("ret")
+	}
+	return code
+}
+
+// generatePanicNilDeref 生成 nil 指针 panic 运行时辅助函数
+// 签名：void _panic_nil_deref(void)
+// 行为：打印 "nil pointer dereference" 到 stderr，然后 exit(1)
+func (c *Compiler) generatePanicNilDeref() string {
+	var code string
+	code += utils.Format("section .text._panic_nil_deref progbits alloc exec nowrite align=1")
+	code += utils.Format("; ==============================")
+	code += utils.Format("; Runtime helper: nil pointer dereference panic")
+	code += utils.Format("_panic_nil_deref:")
+
+	if c.Ctx.Is64Bit {
+		code += utils.Format("push rbp")
+		code += utils.Format("mov rbp, rsp")
+		code += utils.Format("push rbx")
+		code += utils.Format("mov rax, 1")              // sys_write
+		code += utils.Format("mov rdi, 2")              // stderr
+		code += utils.Format("lea rsi, [rel _nil_msg]") // msg
+		code += utils.Format("mov rdx, 23")             // len("nil pointer dereference\n")
+		code += utils.Format("syscall")
+		code += utils.Format("mov rax, 60") // sys_exit
+		code += utils.Format("mov rdi, 1")  // exit code 1
+		code += utils.Format("syscall")
+		code += utils.Format("pop rbx")
+		code += utils.Format("pop rbp")
+		code += utils.Format("ret")
+	} else {
+		code += utils.Format("push ebp")
+		code += utils.Format("mov ebp, esp")
+		code += utils.Format("push ebx")
+		code += utils.Format("mov eax, 4")        // sys_write
+		code += utils.Format("mov ebx, 2")        // stderr
+		code += utils.Format("mov ecx, _nil_msg") // msg
+		code += utils.Format("mov edx, 23")       // len("nil pointer dereference\n")
 		code += utils.Format("int 0x80")
 		code += utils.Format("mov eax, 1") // sys_exit
 		code += utils.Format("mov ebx, 1") // exit code 1

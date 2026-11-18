@@ -8,10 +8,12 @@ type FnBlock struct {
 
 fn FnBlock.parse(&self, p:*Parser) {
     // 消费fn关键字
+    
     p.Lexer.skipToken("fn")
 
     // 获取函数名称
     t := p.Lexer.next()
+    console.println("h"+t.string())
     if t.Type != lexer.NAME {
         panic("function need name")
     }

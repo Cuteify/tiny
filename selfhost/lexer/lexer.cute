@@ -123,6 +123,13 @@ fn Lexer.setPos(&self, c *Coord) {
     self.pfCache.clear()
 }
 
+fn Lexer.setPosAsPfPos(&self) {
+    self.pfCache.clear()
+    self.Pos = self.pfPos
+    self.Line = self.pfLine
+    self.Col = self.pfCol
+}
+
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
 fn Lexer.consume(&self, t *Token) {
     var text: string = self.Text
@@ -448,7 +455,7 @@ fn Lexer.peek(&self) *Token {
 fn Lexer.skipToken(&self, t:string) {
     var nt:*Token = self.next()
     if (nt.Type != KEYWORD && nt.Type != DELIMITER) || nt.Value != t {
-        panic("need token \"" + t + "\"")
+        panic("need token \"" + t + "\", but miss \""+nt.string()+"\"")
     }
 }
 

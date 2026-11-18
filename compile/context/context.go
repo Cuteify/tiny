@@ -103,6 +103,12 @@ type Context struct {
 	// 访问器按旧约定兜底，保证未知路径与修复前行为一致）。
 	ThisHomeRbp int
 
+	// NilCheck 控制是否在代码生成中插入 nil 指针检查（默认关闭）。
+	// 开启后：ptrMem 路径里每个指针解引前都会插入 test/je stub，调用
+	// _panic_nil_deref（写 "nil pointer dereference\n" 到 stderr 后 exit(1)）。
+	// 用于调试时引入返回/基址 nil 崩溃原因不明的场景。
+	NilCheck bool
+
 	// Vtable registry for interface dispatch
 	VtableEntries []VtableEntry // registered vtables
 	VtableSeen    map[string]bool

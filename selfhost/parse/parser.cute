@@ -21,8 +21,7 @@ fn Parser.next(&self) bool {
 				f := FnBlock{}
 				f.parse(self)
 		}
-		console.println(t.string())
 	}
-	//console.println(t.string())
+	self.Lexer.setPosAsPfPos()
 	ret t.Type == lexer.NONE
 }

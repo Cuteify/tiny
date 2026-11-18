@@ -318,6 +318,10 @@ func (c *ECompiler) ptrMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
 	var currentType typeSys.Type
 	if baseType != nil && baseType.IsPointer() {
 		pre = utils.Format("mov " + reg.Name + ", " + ln + " " + base)
+		if c.ctx.NilCheck {
+			pre += utils.Format("test " + reg.Name + ", " + reg.Name)
+			pre += utils.Format("je _panic_nil_deref")
+		}
 		currentType = baseType.Elem()
 	} else {
 		pre = utils.Format("lea " + reg.Name + ", " + base)
@@ -354,6 +358,10 @@ func (c *ECompiler) ptrMem(v *parser.VarBlock) (string, string, *regmgr.Reg) {
 				pre += utils.Format("mov " + reg.Name + ", " + ln + " [" + reg.Name + "+" + strconv.Itoa(off) + "]")
 			} else {
 				pre += utils.Format("mov " + reg.Name + ", " + ln + " [" + reg.Name + "]")
+			}
+			if c.ctx.NilCheck {
+				pre += utils.Format("test " + reg.Name + ", " + reg.Name)
+				pre += utils.Format("je _panic_nil_deref")
 			}
 			off = 0
 			currentType = currentType.Elem()

@@ -65,7 +65,7 @@ fi
 cd "$pkg"
 CUTE_ROOT="$ROOT" CUTE_ARCH="$arch" "$BIN" "$PWD"
 nasm -f "$fmt" -w-label-redef-late -o "_main.o" _main.asm
-gcc "${gccargs[@]}" -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$out" "_main.o" -nostdlib
+gcc "${gccargs[@]}" -nostartfiles -no-pie -e _start -o "$out" "_main.o" -nostdlib
 echo "BUILD_OK|$out"
 
 if [ "$wantRun" -eq 1 ]; then
