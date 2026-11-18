@@ -25,6 +25,12 @@ type FuncBlock struct {
 	Env             *VarBlock               // 帧的 env 变量指针（提升后由 hoist 赋值；codegen 用）
 	Node            *Node                   // 该 FuncBlock 绑定的节点（提升后为包根节点）
 	typeParamTypes  map[string]typeSys.Type // TypeParams → TypeParam 类型实例（解析期用）
+	// DeferClass 方法所属类本地未找到（跨文件/环依赖）：保留类名，留待合并后重绑
+	DeferClass     bool
+	DeferClassName string
+	// ReceiverDefer 接收者（self / &self）在 DeferClass 下延迟合成 ArgBlock
+	ReceiverDefer  bool
+	ReceiverPtr    bool
 }
 
 // overloadSet 同名函数（重载集合）。
@@ -394,6 +400,10 @@ func (f *FuncBlock) Parse(p *Parser) {
 					f.Class = typeBlock
 					typeSys.ToRType(typeBlock).AddMethod(f)
 				}
+			} else if ParsePhase {
+				// 方法的所属类在本包后续/别的文件声明：本地读不到时延迟绑定
+				f.DeferClass = true
+				f.DeferClassName = f.Name[0].Name
 			}
 		}
 	} else if code.Value == "(" { // 方法接收者简写 fn (self T) name(...) —— 已废弃
@@ -499,11 +509,29 @@ func (f *FuncBlock) ParseArgs(p *Parser) {
 		f.Args = append(f.Args, &ArgBlock{Name: NewName("self"), Type: typeSys.MakePointer(f.Class)})
 		receiverSeen = true
 	} else if token.Value == "self" && f.Class == nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'self' is reserved for method receivers")
-		return
+		if f.DeferClass {
+			f.ReceiverDefer = true
+			f.ReceiverPtr = false
+			receiverSeen = true
+		} else {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'self' is reserved for method receivers")
+			return
+		}
 	} else if token.Value == "&" && f.Class == nil {
-		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'&self' is reserved for method receivers")
-		return
+		if f.DeferClass {
+			nextTok := p.Lexer.Next()
+			if nextTok.Value != "self" || nextTok.Type != lexer.NAME {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+					"expected 'self' after '&' in receiver position, got '"+nextTok.Value+"'")
+				return
+			}
+			f.ReceiverDefer = true
+			f.ReceiverPtr = true
+			receiverSeen = true
+		} else {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "'&self' is reserved for method receivers")
+			return
+		}
 	}
 	if receiverSeen {
 		token = p.Lexer.Next()
@@ -951,6 +979,72 @@ func funcCheckMark(n *Node) func() {
 }
 
 func (f *FuncBlock) Check(p *Parser) bool {
+	// 回填 deferred 实参类型（跨文件前向引用）。
+	for _, a := range f.Args {
+		if a == nil {
+			continue
+		}
+		if _, ok := a.Type.(*typeSys.DeferredType); !ok {
+			continue
+		}
+		if rt := reResolveDeferredType(p, a.Type); rt != nil {
+			a.Type = rt
+			continue
+		}
+		if !ParsePhase && p.MergeRound >= 49 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"type not found '"+a.Type.String()+"' (forward reference after full package merge)")
+		}
+		// 本轮仍无法解析：返回 false 等待下一轮 Check 重试。
+		return false
+	}
+	// 回填 deferred 返回类型。
+	for i, r := range f.Return {
+		if _, ok := r.(*typeSys.DeferredType); !ok {
+			continue
+		}
+		if rt := reResolveDeferredType(p, r); rt != nil {
+			f.Return[i] = rt
+			continue
+		}
+		if !ParsePhase && p.MergeRound >= 49 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"type not found '"+r.String()+"' (forward reference after full package merge)")
+		}
+		return false
+	}
+	// DeferClass 方法：合并后所有类可见，重新绑定并合成接收者。
+	if f.DeferClass {
+		if ParsePhase {
+			return false
+		}
+		nm := NewName(f.DeferClassName)
+		results := p.Find(nm, FindTypeType)
+		bound := false
+		if len(results) > 0 {
+			if typeBlock, ok := results[0].Value.(typeSys.Type); ok {
+				f.Class = typeBlock
+				typeSys.ToRType(typeBlock).AddMethod(f)
+				bound = true
+			}
+		}
+		if !bound {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"method class '"+f.DeferClassName+"' not found (forward reference after full package merge)")
+		}
+		if f.ReceiverDefer && f.Class != nil {
+			var recv *ArgBlock
+			if f.ReceiverPtr {
+				recv = &ArgBlock{Name: NewName("self"), Type: typeSys.MakePointer(f.Class)}
+			} else {
+				recv = &ArgBlock{Name: NewName("self"), Type: f.Class}
+			}
+			f.Args = append([]*ArgBlock{recv}, f.Args...)
+			f.ReceiverDefer = false
+		}
+		f.DeferClass = false
+	}
+
 	// 计算参数起始偏移量
 	argCount := 8
 	if typeSys.TargetArch() == "x86_64" {

@@ -77,7 +77,7 @@ func (r *ReturnBlock) Check(p *Parser) bool {
 		if v == nil {
 			continue
 		}
-		// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望值返回类型为 P 时）
+		// 结构体字面量：值语义 —— 目标是值结构体时包成 *lit
 		if returns != nil && i < len(returns) && returns[i] != nil {
 			if nv := derefIfStructLiteralTo(v, returns[i]); nv != v {
 				r.Value[i] = nv

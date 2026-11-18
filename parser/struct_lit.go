@@ -102,7 +102,7 @@ func structLiteralFromType(p *Parser, st *typeSys.StructType) *Expression {
 done:
 
 	// 按字段声明顺序组装 new 调用实参
-	callBlock := &CallBlock{Name: NewName("new"), NewType: st}
+	callBlock := &CallBlock{Name: NewName("new"), NewType: st, Lit: st}
 	for i := range st.StructFields {
 		f := st.StructFields[i]
 		if f.IsAnon {
@@ -132,7 +132,7 @@ done:
 
 	_ = callBlock
 	_ = pairs
-	exp := &Expression{Call: callBlock, Type: typeSys.MakePointer(st)}
+	exp := &Expression{Call: callBlock, Type: st}
 	return exp
 }
 
@@ -199,11 +199,9 @@ func findValueStop(p *Parser) int {
 		}
 	}
 }
-
-// derefIfStructLiteralTo 若 v 是结构体字面量调用（*CallBlock.NewType 非空）返回的 *S，
-// 且目标期望类型正好是值语义的结构体 S，则把表达式包装成 Deref（*v），
-// 值上下文即可直接使用堆对象中的结构体槽（与 var q: P = *p 同语义）。
-// 期待 *S（指针上下文）或目标非结构体时原样返回 v。
+// derefIfStructLiteralTo 结构体字面量 P{...} 期望的目标是值语义 P 时：
+// 把 v 包成 deref（*v），copy 堆临时槽的值。期待 *P 或非结构体时原样返回 v ——
+// 绝不帮用户提升 *P → P（语言语义禁止隐式指针→值提升/隐式分配）。
 func derefIfStructLiteralTo(v *Expression, target typeSys.Type) *Expression {
 	if v == nil || target == nil || v.Type == nil {
 		return v
@@ -212,14 +210,14 @@ func derefIfStructLiteralTo(v *Expression, target typeSys.Type) *Expression {
 	if !ok || st == nil {
 		return v
 	}
-	if v.Call == nil || v.Call.NewType == nil {
+	if v.Call == nil || v.Call.Lit == nil {
 		return v
 	}
-	litSt, ok := v.Call.NewType.(*typeSys.StructType)
-	if !ok || litSt != st {
+	litSt, ok := v.Call.Lit.(*typeSys.StructType)
+	if !ok || litSt == nil {
 		return v
 	}
-	if !v.Type.IsPointer() || v.Type.Elem() != st {
+	if litSt != st {
 		return v
 	}
 	// 包装为 deref：*v，读取堆中结构体槽
@@ -229,7 +227,6 @@ func derefIfStructLiteralTo(v *Expression, target typeSys.Type) *Expression {
 		Type:      st,
 	}
 }
-
 // findEnclosingFuncRet 向上遍历作用域找 enclosing FuncBlock 的返回类型列表（找不到返回 nil）。
 func findEnclosingFuncRet(p *Parser) []typeSys.Type {
 	for block := p.ThisBlock; block != nil; block = block.Father {

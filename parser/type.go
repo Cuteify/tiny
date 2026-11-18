@@ -121,6 +121,64 @@ func (t *TypeBlock) Parse(p *Parser) {
 
 func (t *TypeBlock) Check(p *Parser) bool {
 	if t.Kind == TypeStruct {
+		// 回填 deferred 字段类型（跨文件前向引用/环依赖）。
+		for _, f := range t.Struct.Type.StructFields {
+			if f == nil || typeSys.IsDeferred(f.Type) == false {
+				continue
+			}
+			if rt := reResolveDeferredType(p, f.Type); rt != nil {
+				f.Type = rt
+				continue
+			}
+			if !ParsePhase && p.MergeRound >= 49 {
+				p.Error.MissError("Type Error", p.Lexer.Cursor,
+					"type not found '"+f.Type.String()+"' (forward reference after full package merge)")
+			}
+			return false
+		}
+	}
+	if t.Kind == TypeAlias && t.Alias != nil && typeSys.IsDeferred(t.Alias) {
+		if rt := reResolveDeferredType(p, t.Alias); rt != nil {
+			t.Alias = rt
+		} else if !ParsePhase && p.MergeRound >= 49 {
+			p.Error.MissError("Type Error", p.Lexer.Cursor,
+				"type not found '"+t.Alias.String()+"' (forward reference after full package merge)")
+		} else {
+			return false
+		}
+	}
+	if t.Kind == TypeInterface && t.Interface != nil {
+		for mi := range t.Interface.Methods {
+			m := &t.Interface.Methods[mi]
+			for ai := range m.Args {
+				if a := m.Args[ai]; a != nil && typeSys.IsDeferred(a.Type) {
+					if rt := reResolveDeferredType(p, a.Type); rt != nil {
+						a.Type = rt
+						continue
+					}
+					if !ParsePhase && p.MergeRound >= 49 {
+						p.Error.MissError("Type Error", p.Lexer.Cursor,
+							"type not found '"+a.Type.String()+"' (forward reference after full package merge)")
+					}
+					return false
+				}
+			}
+			for ri := range m.Returns {
+				if r := m.Returns[ri]; typeSys.IsDeferred(r) {
+					if rt := reResolveDeferredType(p, r); rt != nil {
+						m.Returns[ri] = rt
+						continue
+					}
+					if !ParsePhase && p.MergeRound >= 49 {
+						p.Error.MissError("Type Error", p.Lexer.Cursor,
+							"type not found '"+r.String()+"' (forward reference after full package merge)")
+					}
+					return false
+				}
+			}
+		}
+	}
+	if t.Kind == TypeStruct {
 		t.Struct.Type.Inherit(func(name string) *typeSys.StructType {
 			n := NewName(name)
 			results := p.Find(n, FindTypeType)

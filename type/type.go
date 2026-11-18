@@ -547,6 +547,13 @@ func AutoType(before, after Type, IsConst bool) (ok bool) {
 		}
 	}
 	if before != nil && after != nil {
+		// DeferredType (forward reference restored at final check) accepts any type
+		if _, isDT := before.(*DeferredType); isDT {
+			return true
+		}
+		if _, isDT := after.(*DeferredType); isDT {
+			return true
+		}
 		// TypeParam (generic type parameter) accepts any type
 		if _, isTP := before.(*TypeParam); isTP {
 			return true

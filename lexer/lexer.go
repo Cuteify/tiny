@@ -67,6 +67,30 @@ func NewLexer(filename string) *Lexer {
 	return l
 }
 
+// NewLexerFromString 直接从内存字符串构造 Lexer（用于延迟解析的类型注解原文）。
+func NewLexerFromString(text string, filename string) *Lexer {
+	l := &Lexer{
+		Filename: filename,
+	}
+	l.Text = text
+	if l.Text == "" {
+		panic("NewLexerFromString: text is empty")
+	}
+	if strings.Count(l.Text, "\r\n") != 0 {
+		l.LineFeed = "\r\n"
+	} else if strings.Count(l.Text, "\n\r") != 0 {
+		l.LineFeed = "\n\r"
+	} else if strings.Count(l.Text, "\r") != 0 {
+		l.LineFeed = "\r"
+	} else {
+		l.LineFeed = "\n"
+	}
+	l.Error = errorUtil.NewError(l.Filename, l.Text, l.LineFeed)
+	l.TextLength = len(l.Text)
+	l.Cursor = 0
+	return l
+}
+
 func (l *Lexer) GetString() string {
 	startCursor := l.Cursor
 	for {

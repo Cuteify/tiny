@@ -60,6 +60,7 @@ fn Token.string(&self) string {
     var sb: string = "[" + tt.string() + "]" + renderVisible(self.Value)
     ret sb
 }
+
 fn Token.len(&self) int {
     ret unsafe.cast[int](strings.len(self.Value))
 }
@@ -97,7 +98,7 @@ fn Token.isSemiOrNewline(&self) bool {
 }
 
 // Is 按种类+值判断 token（类型安全的 kind/value 匹配，调用方不必各自 nil/Type/eq）。
-fn Token.is(&self, kind: TokenType, value string) bool {
+fn Token.is(&self, kind: TokenType, value:string) bool {
     if unsafe.cast[uint](self) == 0 {
         ret false
     }
@@ -111,7 +112,7 @@ fn Token.is(&self, kind: TokenType, value string) bool {
 // 与 Go 参考 token.go 的 renderVisible 逐字节一致（一行一 token 输出不被破坏）。
 // 单缓冲 O(n)：最坏情况下每个输入字节产出 2 个输出字节，按 2n+1 预分配；
 // 原实现每字符 malloc(2)+字符串拼接 O(n²) 行为已废弃。
-fn renderVisible(s string) string {
+fn renderVisible(s:string) string {
     var n: uint = strings.len(s)
     if n == 0 {
         ret s
@@ -176,7 +177,7 @@ fn RingBuffer.isEmpty(&self) bool {
 }
 
 // write 写入元素，成功返回true，满了返回false
-fn RingBuffer.write(&self, c *Token) bool {
+fn RingBuffer.write(&self, c:*Token) bool {
     if self.isFull() {
         ret false
     }

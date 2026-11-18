@@ -62,7 +62,7 @@ fn newLexer(text string) *Lexer {
 
 // tokenCoord 构造 consume 用的 token 形态（仅 Pos/EndPos 生效）。
 fn tokenCoord(pos int, endPos int) *Token {
-    ret Token{Pos: pos, EndPos: endPos}
+    ret &Token{Pos: pos, EndPos: endPos}
 }
 
 // consume 消费 [start, end) 的字节，推进 pfPos/pfLine/pfCol。
@@ -134,13 +134,13 @@ fn Lexer.handleNumber(&self) *Token {
             if vok {
                 var xnum: uint = vu
                 var xstr: string = text[i:e]
-                ret self.makeToken(Token{Type: NUMBER, Value: xstr, Number: f64(xnum),
+                ret self.makeToken(&Token{Type: NUMBER, Value: xstr, Number: f64(xnum),
                     Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
             }
         }
         // 前缀后无有效数字：退回 NAME（如 0x），与 Go 参考一致（只取前缀两个字节）
         var nm: string = text[i:i+2]
-        ret self.makeToken(Token{Type: NAME, Value: nm,
+        ret self.makeToken(&Token{Type: NAME, Value: nm,
             Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](i + 2)})
     }
 
@@ -175,7 +175,7 @@ fn Lexer.handleNumber(&self) *Token {
         num = vf
     }
     var numStr: string = text[i:e]
-    ret self.makeToken(Token{Type: NUMBER, Value: numStr, Number: num,
+    ret self.makeToken(&Token{Type: NUMBER, Value: numStr, Number: num,
         Pos: unsafe.cast[int](i), EndPos: unsafe.cast[int](e)})
 }
 
@@ -229,14 +229,14 @@ fn Lexer.handleString(&self, delimiter string) *Token {
             if unsafe.cast[int](q) == 39 && len(str) != 1 && !(len(str) >= 1 && unsafe.cast[int](str[0]) == 92) {
                 panic("")
             }
-            ret self.makeToken(Token{Type: STRING, Value: str,
+            ret self.makeToken(&Token{Type: STRING, Value: str,
                 Pos: unsafe.cast[int](start), EndPos: unsafe.cast[int](i + dl)})
         }
         i = i + 1
     }
     // 未闭合：消费到文件尾
     self.consume(tokenCoord(unsafe.cast[int](start), unsafe.cast[int](plen)))
-    var te: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
+    var te: *Token = &Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
     ret te
 }
 
@@ -257,7 +257,7 @@ fn Lexer.prefetch(&self) *Token {
     self.consume(tokenCoord(self.pfPos, unsafe.cast[int](i)))
     if unsafe.cast[uint](self.pfPos) >= plen {
         // EOF
-        var t: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
+        var t: *Token = &Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
         ret t
     }
 
@@ -314,12 +314,12 @@ fn Lexer.prefetch(&self) *Token {
             if isKeyword(val) {
                 tokenTyp = KEYWORD
             }
-            ret self.makeToken(Token{Type: tokenTyp, Value: val,
+            ret self.makeToken(&Token{Type: tokenTyp, Value: val,
                 Pos: self.pfPos, EndPos: unsafe.cast[int](i)})
         }
 
         // delimiter token
-        ret self.makeToken(Token{Type: DELIMITER, Value: delimiter,
+        ret self.makeToken(&Token{Type: DELIMITER, Value: delimiter,
             Pos: self.pfPos, EndPos: unsafe.cast[int](i + unsafe.cast[uint](delimLen))})
     }
     // 主循环因 EOF 退出：结尾的词法 token 需要单独处理
@@ -329,10 +329,10 @@ fn Lexer.prefetch(&self) *Token {
         if isKeyword(val) {
             tokenTyp2 = KEYWORD
         }
-        ret self.makeToken(Token{Type: tokenTyp2, Value: val,
+        ret self.makeToken(&Token{Type: tokenTyp2, Value: val,
             Pos: self.pfPos, EndPos: unsafe.cast[int](i)})
     }
-    var te: *Token = Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
+    var te: *Token = &Token{Type: NONE, Value: "", Line: self.pfLine, Col: self.pfCol}
     ret te
 }
 

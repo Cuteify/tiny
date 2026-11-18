@@ -1,0 +1,53 @@
+// 结构体字面量值语义：T{} 是值类型（全结构支持），&T{} 得到 *T。
+
+type Point struct {
+    x: int
+    y: int
+}
+
+type Trio struct {
+    a: int
+    b: int
+    c: int
+}
+
+type Header struct {
+    arr: []int
+    name: string
+    tag: int
+}
+
+fn main() int {
+    // 1. 值 P{}
+    var p1: Point = Point{x: 3, y: 4}
+    var s1: int = p1.x + p1.y
+
+    // 2. 大结构体（24B）值语义
+    var p2: Trio = Trio{a: 10, b: 20, c: 30}
+    var s2: int = p2.a + p2.b + p2.c
+
+    // 3. &T{} → *T
+    var p3: *Trio = &Trio{a: 1, b: 2, c: 3}
+    var s3: int = p3.a + p3.b + p3.c
+
+    // 4. 值 ret P{}
+    var p4: Trio = mkTrio()
+    var s4: int = p4.a + p4.b + p4.c
+
+    // 5. 结构体按值传参
+    var s5: int = sumTrio(p2)
+
+    // 6. 含容器字段异构大小（>8B）结构体字面量拷贝
+    var h: Header = Header{name: "hi", tag: 5, arr: []int{1, 2, 3}}
+    var s6: int = h.tag + len(h.arr) + len(h.name)
+
+    ret s1 + s2 + s3 + s4 + s5 + s6
+}
+
+fn mkTrio() Trio {
+    ret Trio{a: 1, b: 2, c: 3}
+}
+
+fn sumTrio(t: Trio) int {
+    ret t.a + t.b + t.c
+}

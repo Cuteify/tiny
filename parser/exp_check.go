@@ -178,6 +178,13 @@ func (exp *Expression) checkCall(p *Parser) bool {
 		return false
 	}
 
+	if exp.Call != nil && exp.Call.Lit != nil {
+		// 结构体字面量：值语义；内部 Call 的 new(P,...) 返回 *P 只是下层载体。
+		if st, ok := exp.Call.Lit.(*typeSys.StructType); ok {
+			exp.Type = st
+			return true
+		}
+	}
 	if exp.Call.Func != nil {
 		if nret := len(exp.Call.Func.Return); nret == 1 || (nret > 1 && exp.stmt) {
 			exp.Type = exp.Call.Func.Return[0]
@@ -845,6 +852,13 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 		}
 
 	case "*":
+		if rc := exp.Right.Call; rc != nil && rc.Lit != nil {
+			// 结构体字面量 P{...}：下层就是 new(P, ...)，*lit 是对这个堆临时槽的读
+			if st, ok := rc.Lit.(*typeSys.StructType); ok {
+				exp.Type = st
+				return true
+			}
+		}
 		if !exp.Right.Type.IsPointer() {
 			p.Error.MissError("Type Error", p.Lexer.Cursor,
 				"operator '*' requires pointer operand, got "+exp.Right.Type.Type())
@@ -857,13 +871,30 @@ func (exp *Expression) checkUnary(p *Parser) bool {
 			return false
 		}
 		if elem.Size() > 8 {
-			p.Error.MissError("Type Error", p.Lexer.Cursor,
-				"cannot dereference type "+elem.Type()+" (size > 8, use field access instead)")
-			return false
+			// 结构体按值解引用：后端按槽复制多个寄存器宽度，支持任意大小结构体
+			if _, isStruct := elem.(*typeSys.StructType); !isStruct {
+				p.Error.MissError("Type Error", p.Lexer.Cursor,
+					"cannot dereference type "+elem.Type()+" (size > 8, use field access instead)")
+				return false
+			}
 		}
 		exp.Type = elem
 
 	case "&":
+		// &P{...} 语义：直接得到 *P——字面量下层已经就是 new(P, ...) 堆分配，
+		// 地址就是其结果；不必也不能再取栈槽地址（与 Go 的 &T{} 一致）。
+		if exp.Right.Call != nil && exp.Right.Call.NewType != nil {
+			if st, ok := exp.Right.Call.NewType.(*typeSys.StructType); ok {
+				exp.Type = typeSys.MakePointer(st)
+				return true
+			}
+			if t := exp.Right.Call.NewType; t != nil {
+				exp.Type = typeSys.MakePointer(t)
+				return true
+			}
+			exp.Type = exp.Right.Type
+			return true
+		}
 		if exp.Right.Var == nil {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "operator '&' requires a variable operand")
 			return false

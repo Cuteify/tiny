@@ -23,6 +23,7 @@ func main() {
 	objOnly := flag.Bool("c", false, "编译并汇编生成目标文件，不进行链接")
 	objOnlyLong := flag.Bool("obj", false, "编译并汇编生成目标文件（同 -c）")
 	output := flag.String("o", "", "指定输出文件路径")
+	gcReport := flag.Bool("gcreport", false, "打印 GC 分析报告（函数摘要 + LLR）")
 	flag.Parse()
 
 	// 获取路径参数
@@ -39,12 +40,14 @@ func main() {
 	// GC 摘要分析：包合并 + Check 重试完成后、代码生成之前执行。
 	// 随后的 Compile 会命中 gc.Analyze 的幂等缓存。
 	gc.Analyze(tmp.AST.(*parser.Node))
-	fmt.Println("\n=== GC 函数摘要 ===")
-	if err := gc.DumpAll(os.Stdout); err != nil {
-		panic(err)
+	if *gcReport {
+		fmt.Println("\n=== GC 函数摘要 ===")
+		if err := gc.DumpAll(os.Stdout); err != nil {
+			panic(err)
+		}
+		fmt.Println("\n=== GC LLR 分析 ===")
+		fmt.Print(gc.DumpLLRs())
 	}
-	fmt.Println("\n=== GC LLR 分析 ===")
-	fmt.Print(gc.DumpLLRs())
 
 	// 写入 GC 摘要文件到测试目录
 	gcDir := path

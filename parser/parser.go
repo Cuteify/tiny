@@ -23,6 +23,7 @@ type Parser struct {
 	CurTypeParams     map[string]typeSys.Type // 当前泛型函数的类型参数（fn f[T]{} 体内 T 解析为 TypeParam）
 	FileImports       []ImportItem            // 文件级 import 声明（Wave L，仅记录，别名注册在 package 层）
 	FinalCheck        bool                    // 包合并后的最终 Check：此时“查不到/无匹配”才是真错误
+	MergeRound        int                     // 合并后的 Check 轮数（0 起；与 pkg 层 50 轮上限一致）
 	PendingBuilds     []*Build                // 顶层 build os/arch/bits，等待下一个声明消费
 	exprStop          int                     // 表达式解析的临时停止点（0 表示未设置），用于 for post 等场景
 }
@@ -167,16 +168,34 @@ func (p *Parser) Next() (finish bool) {
 }
 
 // parseTypeRef 解析类型引用，支持 []Type 和 *Type 语法
+// deferCurrentType 记录一处「局部查不到的类型引用」，留待合并后的全局 Check
+// 回填；解析期直接 fail 不了，因为别的文件可能晚点才声明。文本原文从 token
+// 起始到游标截取，重解析时复用整个 TypeParser 流水线。
+func (p *Parser) deferCurrentType(startCursor int) typeSys.Type {
+	if !ParsePhase {
+		return nil
+	}
+	text := p.Error.Text[startCursor:p.Lexer.Cursor]
+	return typeSys.NewDeferredType(text, startCursor, p.Error.Path)
+}
+
 func (p *Parser) parseTypeRef() typeSys.Type {
+	entryCursor := p.Lexer.Cursor
 	token := p.Lexer.Next()
 
 	// 检查是否是 *Type 语法（指针类型）
 	if token.Type == lexer.SEPARATOR && token.Value == "*" {
 		elemType := p.parseTypeRef()
 		if elemType != nil {
+			auto := elemType
+			if typeSys.IsDeferred(auto) {
+				// 指向未解析类型的指针同样延后：整体作为 DeferredType 留待合并后回填，
+				// 不能包成 RType，否则全局 Check 认不出来、永远卡住。
+				return p.deferCurrentType(entryCursor)
+			}
 			return typeSys.MakePointer(elemType)
 		}
-		return nil
+		return p.deferCurrentType(entryCursor)
 	}
 
 	// 检查是否是 fn(...) R 函数类型
@@ -191,7 +210,10 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 			// 解析元素类型
 			elemType := p.parseTypeRef()
 			if elemType == nil {
-				return nil
+				return p.deferCurrentType(entryCursor)
+			}
+			if typeSys.IsDeferred(elemType) {
+				return p.deferCurrentType(entryCursor)
 			}
 			return typeSys.NewList(elemType)
 		}
@@ -205,9 +227,12 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 			}
 			elemType := p.parseTypeRef()
 			if elemType != nil {
+				if typeSys.IsDeferred(elemType) {
+					return p.deferCurrentType(entryCursor)
+				}
 				return typeSys.NewArray(elemType, n)
 			}
-			return nil
+			return p.deferCurrentType(entryCursor)
 		}
 		// 不是 []，退格
 		p.Lexer.SetCursor(token.Cursor)
@@ -258,7 +283,7 @@ func (p *Parser) parseTypeRef() typeSys.Type {
 		}
 	}
 
-	return nil
+	return p.deferCurrentType(entryCursor)
 }
 
 // parseMapTypeRef 解析 map[K]V 的 [K]V 部分（游标位于 '[' 处）。

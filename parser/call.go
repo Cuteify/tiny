@@ -6,6 +6,7 @@ import (
 	typeSys "cuteify/type"
 	"cuteify/utils"
 	"strconv"
+	"strings"
 )
 
 // CallBlock 函数调用结构体
@@ -17,6 +18,7 @@ type CallBlock struct {
 	ThisVar      *VarBlock
 	NewType      typeSys.Type   // new(T) 的目标类型（内建堆对象创建）
 	NewTypes     []typeSys.Type // 泛型调用的显式类型实参 f[T, U](…)；单类型退化为 NewType 同表
+	Lit          typeSys.Type   // 结构体字面量 P{...} 的标记（值语义）；codegen 仍走 new(P, ...) 堆分配
 	ConvertType  typeSys.Type   // int(x)/f64(x) 等显式数值转换的目标类型
 	IsRC         bool           // 是否为 RC（引用计数）调用
 	IsVariadic   bool           // 调用是否包含变参参数
@@ -28,6 +30,14 @@ type CallBlock struct {
 func safeTypeName(t typeSys.Type) string {
 	if t == nil {
 		return "<unresolved>"
+	}
+	if t.IsPointer() {
+		name := t.Type()
+		if strings.HasPrefix(name, "*") {
+			return name
+		}
+		name = strings.TrimPrefix(name, "*")
+		return "*" + name
 	}
 	return t.Type()
 }
@@ -579,14 +589,26 @@ func (c *CallBlock) Check(p *Parser) bool {
 			// 解析期静默返回，由合并后的 rootNode.Check() 重试解析。
 			// 最终 Check 仍解析不到，说明包没有显式 import（或函数不存在）：
 			// 必须报错，不能静默生成空调用。
-			if p.FinalCheck && !pathBuiltinCalls[c.Name.String()] {
+			// 前几轮只留未检查状态，最后一轮才是真错误。
+			if pathBuiltinCalls[c.Name.String()] {
+				// codegen 直接分派：没有 FuncBlock，永远无法绑定；放行且不要重绑
+				return true
+			}
+			if p.FinalCheck && p.MergeRound >= 49 {
 				p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
 				return false
 			}
-			return true
+			// 合并前几轮无法解析，返回 false 保持未检查状态等下一轮重试；
+			// 否则 Node 会把本节点标 Checked=true，绑定永远无法发生（静默漏绑）。
+			return false
 		}
 		if p.Block == p.ThisBlock {
-			p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
+			if p.FinalCheck && p.MergeRound >= 49 {
+				p.Error.MissError("Call Error", p.Lexer.Cursor, "not found function '"+c.Name.String()+"'")
+				return false
+			}
+			// 合并 Check 前几轮：标记未检查，等下一轮再处理
+			return false
 		}
 		return false
 	}
@@ -810,6 +832,24 @@ func (c *CallBlock) checkConvertBuiltin(p *Parser, name string) bool {
 
 func (c *CallBlock) checkBuiltin(p *Parser) bool {
 	name := c.Name.String()
+	// 结构体字面量的 lowering：标记 Lit（codegen 还走 new(P,...) 堆分配，
+	// 把 *T 落到结果寄存器），但语义类型是值 P（checkCall 会读回 st）。
+	if c.Lit != nil {
+		st, ok := c.Lit.(*typeSys.StructType)
+		if !ok {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "struct literal marker must be a struct type")
+			return false
+		}
+		c.Func = &FuncBlock{
+			Return: []typeSys.Type{typeSys.MakePointer(st)},
+		}
+		for _, arg := range c.Args {
+			if arg != nil && arg.Value != nil {
+				arg.Value.Check(p)
+			}
+		}
+		return true
+	}
 	if name == "unsafe.cast" {
 		// 类型重解释（位模式，非数值转换）。unsafe.cast[T](v)：
 		// 返回 T 类型的 v，参数表达式必须 Check，否则嵌套子表达式

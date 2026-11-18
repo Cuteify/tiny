@@ -5,92 +5,18 @@
 //
 // canonical AST 输出（PARSEDUMP_AST）随 M3 AST 对拍阶段恢复；当前为计数模式。
 // 语法错误输出 PARSE_ERROR 并返回 1；输入上限 1 MiB。
-import "std:console"
-import "std:memory"
-import "std:strings"
-import "std:syscall"
 import parse "../../parse"
-
-// readAll 从 stdin 读入全部源码，返回字符串视图；上限 1 MiB。
-fn readAll() string {
-    var cap: uint = 1048576
-    var buf: ptr = memory.malloc(cap)
-    var total: uint = 0
-    for ; total < cap; {
-        var n: i32 = syscall.read(0, buf + total, cap - total)
-        if n <= 0 {
+import "../../lexer"
+import "std:console"
+import util "../../testutil"
+fn main() int {
+    var sf: *util.SourceFile = util.loadSourceFile("/home/gx/Desktop/代码/tiny/pkg/console/console.cute")
+    lex := lexer.newLexer(sf.Src)
+    p := parse.newParser(lex)
+    for true {
+        if p.next() {
             break
         }
-        total = total + unsafe.cast[uint](n)
     }
-    ret strings.view(buf, total, total)
-}
-
-// advance 从 from 扫描到 to，更新 1-based 行列号（行号按 LF 递增）。
-fn advance(s string, from uint, to uint, line *int, col *int) {
-    if from >= to {
-        ret
-    }
-    var p: ptr = strings.toCstring(s)
-    var i: uint = from
-    for ; i < to; {
-        var q: *u8 = p + i
-        var b: u8 = *q
-        if b == 10 {
-            *line = *line + 1
-            *col = 1
-        } else {
-            *col = *col + 1
-        }
-        i = i + 1
-    }
-}
-
-fn printInt(n int) {
-    console.print(strings.itoa(n))
-}
-
-fn printCounter(name string, n int) {
-    console.print("|")
-    console.print(name)
-    console.print("=")
-    printInt(n)
-}
-
-fn main() int {
-    var r: parse.FileBlock
-    var src: string = readAll()
-    var p: *parse.Parser = r.mk( src)
-    r.file( p)
-
-    if r.err( p) != parse.OK {
-        var line: int = 1
-        var col: int = 1
-        var pos: uint = r.errPos( p)
-        advance(src, 0, pos, &line, &col)
-        console.print("PARSE_ERROR|code=")
-        printInt(r.err( p))
-        console.print("|at=")
-        printInt(line)
-        console.print(":")
-        printInt(col)
-        console.print("|byte=")
-        printInt(unsafe.cast[int](pos))
-        console.print("\n")
-        ret 1
-    }
-
-    console.print("PARSE_OK")
-    printCounter("decls", r.declCount( p))
-    printCounter("imports", r.importCount( p))
-    printCounter("builds", r.buildCount( p))
-    printCounter("enums", r.enumCount( p))
-    printCounter("structs", r.structCount( p))
-    printCounter("consts", r.constCount( p))
-    printCounter("vars", r.varCount( p))
-    printCounter("fns", r.fnCount( p))
-    printCounter("stmts", r.stmtCount( p))
-    printCounter("exprs", r.exprCount( p))
-    console.print("\n")
     ret 0
 }

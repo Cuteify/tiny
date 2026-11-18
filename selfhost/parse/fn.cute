@@ -1,93 +1,21 @@
-// fn.cute —— 函数声明：fn f[T]() 与 fn P.m()（方法声明），FuncBlock 定义。
-// 加载顺序：依赖 call.cute、stmt.cute、helpers.cute；Block/Node 来自 blocks.cute。
-import "std:strings"
-import lex "../lexer"
-
-
-
-
-
-// parseGenericParams 解析泛型参数列表 [T[, U....]]。
-fn FuncBlock.parseGenericParams(  x *Parser) bool {
-    var fileBlock: FileBlock
-    x.l.skipTerminators()
-    var tpeek: *lex.Token = x.l.peek()
-    if !tpeek.is(lex.DELIMITER, "[") {
-        ret true
-    }
-    x.l.next()
-    for ; ; {
-        x.l.skipTerminators()
-        var t: *lex.Token = x.l.peek()
-        if t.is( lex.DELIMITER, "]") {
-            x.l.next()
-            ret true
-        }
-        var tp: *lex.Token = fileBlock.expectName( x, EDECL)
-        if tp == nil {
-            ret false
-        }
-        var p3: *lex.Token = x.l.peek()
-        if p3.is( lex.DELIMITER, "]") {
-            x.l.next()
-            ret true
-        }
-        if p3.is( lex.DELIMITER, ",") {
-            x.l.next()
-            continue
-        }
-        ret false
-    }
+import (
+    "std:console"
+    "../lexer"
+)
+type FnBlock struct {
+    name:string   
 }
 
-// parse 解析 `fn f[T]()` 或方法 `fn T.m()`。
-fn FuncBlock.parse(&self, x *Parser) bool {
-    var fileBlock: FileBlock
-    var stmtBlock: StmtBlock
-    var nameT: *lex.Token = fileBlock.expectName( x, EDECL)
-    if nameT == nil {
-        ret false
+fn FnBlock.parse(&self, p:*Parser) {
+    // 消费fn关键字
+    p.Lexer.skipToken("fn")
+
+    // 获取函数名称
+    t := p.Lexer.next()
+    if t.Type != lexer.NAME {
+        panic("function need name")
     }
-    self.Name = nameT.Value
-    x.l.skipTerminators()
-    // 可选的 `.name` 后缀（方法声明中的接收者名）；合成限定注册名 P.m。
-    var methodSuffixT: *lex.Token = nil
-    var tpeek: *lex.Token = x.l.peek()
-    if tpeek.is(lex.DELIMITER, ".") {
-        x.l.next()
-        methodSuffixT = fileBlock.expectName( x, EDECL)
-        if methodSuffixT == nil {
-            ret false
-        }
-    }
-    // S4 Check：fn 登记（方法用限定名 "Type.method"）。
-    var fnName: string = self.Name
-    if methodSuffixT != nil {
-        var nv: string = methodSuffixT.Value
-        var fnPrefix: string = self.Name
-        fnName = fnPrefix + "." + nv
-    }
-    if !fileBlock.registerDecl( x, fnName, REG_FN, nameT.Pos) {
-        ret false
-    }
-    if !FuncBlock.parseGenericParams( x) {
-        ret false
-    }
-    x.l.skipTerminators()
-    if !fileBlock.expect( x, lex.DELIMITER, "(", EDECL) {
-        ret false
-    }
-    var cb: CallBlock
-    if !cb.parseFuncParams( x) {
-        ret false
-    }
-    if !cb.parseRetTypes( x) {
-        ret false
-    }
-    if !stmtBlock.parseBlock( x) {
-        ret false
-    }
-    x.fns = x.fns + 1
-    x.decls = x.decls + 1
-    ret true
+    self.name = t.Value
+
+    console.println(self.name)
 }

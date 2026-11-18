@@ -6,6 +6,7 @@ import (
 	packageFmt "cuteify/package/fmt"
 	typeSys "cuteify/type"
 	"cuteify/utils"
+	"fmt"
 	"strconv"
 )
 
@@ -29,9 +30,14 @@ type VarBlock struct {
 	MultiTypes    []typeSys.Type // 多返回值类型列表
 	MultiIndex    int            // 多返回值索引
 	Unresolved    bool           // 解析期未找到定义（跨文件前向引用），留待合并后重查
+	// DeferType     类型注解未能在本地文件解析（跨文件前向/环依赖）
+	DeferType     bool
+	DeferTypeText string
+	DeferTypePos  int
 }
 
 func (p *Parser) parseTypeAnnotation() typeSys.Type {
+	entryCursor := p.Lexer.Cursor
 	code := p.Lexer.Next()
 	if code.Type == lexer.FUNC {
 		// fn(T1, T2) R 函数类型注解
@@ -42,9 +48,12 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 		if next.Type == lexer.SEPARATOR && next.Value == "]" {
 			elemType := p.parseTypeAnnotation()
 			if elemType != nil {
+				if typeSys.IsDeferred(elemType) {
+					return p.deferCurrentType(entryCursor)
+				}
 				return typeSys.NewList(elemType)
 			}
-			return nil
+			return p.deferCurrentType(entryCursor)
 		}
 		// [N]Type 定长数组：`[` 后是长度常量
 		if next.Type == lexer.NUMBER {
@@ -56,9 +65,12 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 			}
 			elemType := p.parseTypeAnnotation()
 			if elemType != nil {
+				if typeSys.IsDeferred(elemType) {
+					return p.deferCurrentType(entryCursor)
+				}
 				return typeSys.NewArray(elemType, n)
 			}
-			return nil
+			return p.deferCurrentType(entryCursor)
 		}
 		p.Lexer.SetCursor(code.Cursor)
 		return nil
@@ -66,9 +78,14 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 	if code.Type == lexer.SEPARATOR && code.Value == "*" {
 		elemType := p.parseTypeAnnotation()
 		if elemType != nil {
+			if typeSys.IsDeferred(elemType) {
+				// 指向未解析类型的指针同样延后：整体作为 DeferredType 留待合并后回填，
+				// 不能包成 RType，否则全局 Check 认不出来、永远卡住。
+				return p.deferCurrentType(entryCursor)
+			}
 			return typeSys.MakePointer(elemType)
 		}
-		return nil
+		return p.deferCurrentType(entryCursor)
 	}
 	if code.Type == lexer.NAME {
 		nameStr := code.Value
@@ -106,7 +123,7 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 					return t
 				}
 			}
-			return nil
+			return p.deferCurrentType(entryCursor)
 		}
 		// next 不是 "."，回退到 next 之前的位置
 		p.Lexer.SetCursor(next.Cursor)
@@ -152,7 +169,7 @@ func (p *Parser) parseTypeAnnotation() typeSys.Type {
 				return t
 			}
 		}
-		return nil
+		return p.deferCurrentType(entryCursor)
 	}
 	p.Lexer.SetCursor(code.Cursor)
 	return nil
@@ -328,9 +345,19 @@ func (v *VarBlock) ParseKeywordVar(p *Parser, code lexer.Token, stopCursor int) 
 	if next.Type == lexer.SEPARATOR && next.Value == ":" {
 		p.Lexer.SetCursor(next.Cursor)
 		p.Lexer.Skip(':')
+		deferStart := p.Lexer.Cursor
 		v.Type = p.parseTypeRef()
 		if v.Type == nil {
-			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+			if ParsePhase {
+				// 本地文件读不到类型：标记延迟绑定，全局 Check 重试
+				v.DeferType = true
+				v.DeferTypeText = p.Error.Text[deferStart:p.Lexer.Cursor]
+				v.DeferTypePos = deferStart
+				v.Unresolved = true
+				v.Type = nil
+			} else {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need type")
+			}
 		}
 		hasType = true
 	} else if next.Type == lexer.SEPARATOR && next.Value == "=" {
@@ -669,6 +696,40 @@ end:
 // Check 类型检查和验证函数
 // 确保变量定义和使用时的类型一致性
 func (v *VarBlock) Check(p *Parser) bool {
+	// 延迟绑定只在“类型注解被 defer”的路径上处理；没有注解
+	// （Type=nil）时回落到原路径——会再调一遍 ParseDefine，
+	// 让包合并后重新查找 owner/MultiTypes。
+	if v.Unresolved {
+		if _, ok := v.Type.(*typeSys.DeferredType); !ok {
+			// 没有 deferred marker：走原路径（仍 use-branch 的 else）
+		} else if rt := reResolveDeferredType(p, v.Type); rt != nil {
+			v.Type = rt
+			v.Unresolved = false
+		} else if !ParsePhase && p.MergeRound >= 49 {
+			// 延迟绑定实在没解析到：此时位置已丢失（跨文件回填），
+			// 用 deferred 原文报错——用户能定位到是哪片文本。
+			dtype := ""
+			if v.Type != nil {
+				dtype = v.Type.String()
+			}
+			if dtype == "" {
+				dtype = "?"
+			}
+			var names string
+			for _, mn := range v.MultiNames {
+				if names != "" {
+					names += ","
+				}
+				names += mn.String()
+			}
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor,
+				"need type '"+dtype+"' (forward reference after full package merge; var "+v.Name.String()+" multiNames="+names+" value-nil="+fmt.Sprintf("%v", v.Value == nil)+")")
+		} else {
+			// 还没合并过、或仍查不到：保持未检查，等下一轮重试
+			_ = rt
+			return true
+		}
+	}
 	if v.IsDefine {
 		// 定义分支：var x int = 5
 		if v.Value != nil {
@@ -700,13 +761,13 @@ func (v *VarBlock) Check(p *Parser) bool {
 			if v.Type == nil {
 				v.Type = v.Value.Type
 			}
-			// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望类型为值 P 时）
-			if v.Value != nil && v.Type != nil {
-				v.Value = derefIfStructLiteralTo(v.Value, v.Type)
+			// 结构体字面量：值语义 —— 目标是值结构体时把 P{...} 包成 *lit 逐槽拷贝
+			if nvv := derefIfStructLiteralTo(v.Value, v.Type); nvv != v.Value {
+				v.Value = nvv
 			}
 		// 检查类型兼容性
 			if !typeSys.AutoType(v.Value.Type, v.Type, true) {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+safeTypeName(v.Type)+", not "+safeTypeName(v.Value.Type))
 			}
 		}
 	} else {
@@ -736,14 +797,14 @@ func (v *VarBlock) Check(p *Parser) bool {
 		if v.Type == nil && len(v.Name) > 1 {
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "field type not resolved for "+v.Name.String())
 		}
-		// 结构体字面量值语义：*P 堆对象 → *deref 拷贝（期望类型为值 P 时）
-		if v.Value != nil && v.Type != nil {
-			v.Value = derefIfStructLiteralTo(v.Value, v.Type)
+		// 结构体字面量：值语义 —— 目标是值结构体时把 P{...} 包成 *lit 逐槽拷贝
+		if nvv := derefIfStructLiteralTo(v.Value, v.Type); nvv != v.Value {
+			v.Value = nvv
 		}
 		// 检查赋值类型兼容性
 		if v.Type != nil && v.Value.Type != nil {
 			if !typeSys.AutoType(v.Value.Type, v.Type, v.Value.IsConst()) {
-				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+v.Type.Type()+", not "+v.Value.Type.Type())
+				p.Error.MissError("Type Error", p.Lexer.Cursor, "need type "+safeTypeName(v.Type)+", not "+safeTypeName(v.Value.Type))
 			}
 		}
 	}

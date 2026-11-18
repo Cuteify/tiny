@@ -262,6 +262,36 @@ func (a *SysV) Call(call *parser.CallBlock) (code string) {
 	if call == nil || call.Func == nil {
 		return ""
 	}
+	// callee 签名是权威参数表：实参静态类型解析为 nil（跨文件/环依赖
+	// 延迟绑定，全局重试也留 nil 的场景）时按被调方参数记槽位，
+	// 避免字符串/容器参数被降级成 1 槽——buffer 少留槽位、只装载首寄存器，
+	// 且要越界写 [rsp+slots*8] 之外的区域（S1 实锤 fileBlock.markUse 场景）。
+	calleeParamTypes := make([]typeSys.Type, len(call.Func.Args))
+	for i, ca := range call.Func.Args {
+		if ca != nil {
+			calleeParamTypes[i] = ca.Type
+		}
+	}
+	slotsOf := func(i int, arg *parser.ArgBlock) int {
+		if t := sysvArgSlotType(arg); t != nil {
+			return arch.ArgSlots(t)
+		}
+		if i < len(calleeParamTypes) && calleeParamTypes[i] != nil {
+			return arch.ArgSlots(calleeParamTypes[i])
+		}
+		return arch.ArgSlots(arg.Type)
+	}
+	// listLikeOf 判定实参是字符串/切片（三槽容器 ABI）——实参静态类型解析为 nil 时
+	// 退回 callee 参数类型（见 sysvArgSlotType 注释）。
+	listLikeOf := func(i int, arg *parser.ArgBlock) bool {
+		if arg.Type != nil && arch.IsListLikeType(arg.Type) {
+			return true
+		}
+		if i < len(calleeParamTypes) && calleeParamTypes[i] != nil {
+			return arch.IsListLikeType(calleeParamTypes[i])
+		}
+		return false
+	}
 
 	// 处理 list 方法调用（len/cap/ptr）
 	if call.ThisVar != nil && call.ThisVar.Type != nil &&
@@ -324,7 +354,7 @@ normalCall:
 			continue
 		}
 		argRegStart[i] = cursor
-		cursor += arch.ArgSlots(sysvArgSlotType(arg))
+		cursor += slotsOf(i, arg)
 	}
 
 	// 栈参数对齐（rsp 16 字节对齐）
@@ -334,7 +364,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		need := arch.ArgSlots(sysvArgSlotType(arg))
+		need := slotsOf(i, arg)
 		if argRegStart[i]+need > len(sysvArgRegs) {
 			stackArgs += need
 		}
@@ -351,7 +381,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		need := arch.ArgSlots(sysvArgSlotType(arg))
+		need := slotsOf(i, arg)
 		if argRegStart[i]+need > len(sysvArgRegs) {
 			// 统一走表达式编译器：容器实参可能是字符串拼接、切片、调用等
 			// 任意三槽表达式，pushContainer 只覆盖常量/变量/调用三种形状。
@@ -370,7 +400,7 @@ normalCall:
 		if arg == nil {
 			continue
 		}
-		slots := arch.ArgSlots(sysvArgSlotType(arg))
+		slots := slotsOf(i, arg)
 		if cursor+slots <= len(sysvArgRegs) {
 			numRegArgs += slots
 		}
@@ -390,10 +420,10 @@ normalCall:
 			if arg == nil {
 				continue
 			}
-			slots := arch.ArgSlots(sysvArgSlotType(arg))
+			slots := slotsOf(i, arg)
 			if cursor+slots <= len(sysvArgRegs) {
 				bufOff := bufIdx * 8
-				if arch.IsListLikeType(arg.Type) {
+				if listLikeOf(i, arg) {
 					// 容器直接写 buffer：ptr→[bufOff], len→[bufOff+8], cap→[bufOff+16]。
 					// 统一走表达式编译器，支持字符串拼接/切片/调用等任意
 					// 三槽表达式；result 用不带宽度前缀的 [rsp+off]，
@@ -422,7 +452,7 @@ normalCall:
 			if arg == nil {
 				continue
 			}
-			slots := arch.ArgSlots(sysvArgSlotType(arg))
+			slots := slotsOf(i, arg)
 			if cursor+slots <= len(sysvArgRegs) {
 				for k := 0; k < slots; k++ {
 					bufOff := (bufIdx + k) * 8

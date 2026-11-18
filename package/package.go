@@ -445,6 +445,7 @@ func GetPackage(packagePath string, isRoot bool) (*packageFmt.Info, error) {
 		for round := 0; round < 50; round++ {
 			// Check 返回 false 表示仍有未解析节点；合并树上再跑一轮即可。
 			// 全部通过（达到不动点）就提前结束。
+			rootNode.Parser.MergeRound = round
 			if rootNode.Check() {
 				break
 			}

@@ -1,231 +1,28 @@
 // parser.cute —— Parser 类型、入口 file()、顶层关键字分派、FileBlock。
 import "std:strings"
-import lex "../lexer"
-fn FileBlock.mk(  src string) *Parser {
-    var x: *Parser = new(Parser)
-    x.l = lex.newLexer(src)
-    x.e = OK
-    x.ep = 0
-    x.decls = 0
-    x.imports = 0
-    x.builds = 0
-    x.structs = 0
-    x.enums = 0
-    x.consts = 0
-    x.vars = 0
-    x.fns = 0
-    x.stmts = 0
-    x.exprs = 0
-    x.root = new(Node)
-    ret x
+import "../lexer"
+import "std:console"
+
+type Parser struct {
+	Block      :*Node
+	ThisBlock         :*Node
+	Lexer             :*lexer.Lexer
 }
 
-// err 返回首个错误码（OK 表示无错误）。
-fn FileBlock.err(  x *Parser) int {
-    ret x.e
+fn newParser(lex *lexer.Lexer) *Parser {
+    ret &Parser{Lexer: lex} 
 }
 
-// errPos 返回首个错误的字节位置。
-fn FileBlock.errPos(  x *Parser) uint {
-    ret x.ep
-}
-
-// declCount 返回顶层声明数（import/build/fn/type/enum/var/const 均计入）。
-fn FileBlock.declCount(  x *Parser) int {
-    ret x.decls
-}
-
-// importCount 返回 import 数（分组每个成员算一条）。
-fn FileBlock.importCount(  x *Parser) int {
-    ret x.imports
-}
-
-// buildCount 返回 build 数。
-fn FileBlock.buildCount(  x *Parser) int {
-    ret x.builds
-}
-
-// structCount 返回 struct 数（含 type X struct 与旧式 struct X）。
-fn FileBlock.structCount(  x *Parser) int {
-    ret x.structs
-}
-
-// enumCount 返回 enum 数。
-fn FileBlock.enumCount(  x *Parser) int {
-    ret x.enums
-}
-
-// fnCount 返回函数声明数。
-fn FileBlock.fnCount(  x *Parser) int {
-    ret x.fns
-}
-
-// varCount 返回 var 声明数。
-fn FileBlock.varCount(  x *Parser) int {
-    ret x.vars
-}
-
-// constCount 返回 const 声明数。
-fn FileBlock.constCount(  x *Parser) int {
-    ret x.consts
-}
-
-// stmtCount 返回语句数（块内语句）；M2 前恒为 0。
-fn FileBlock.stmtCount(  x *Parser) int {
-    ret x.stmts
-}
-
-// exprCount 返回表达式数；M2 前恒为 0。
-fn FileBlock.exprCount(  x *Parser) int {
-    ret x.exprs
-}
-
-// fail 记录首个错误（不覆盖已记录的错误）。
-fn FileBlock.fail(  x *Parser, e int, pos int) {
-    if x.e != OK {
-        ret
-    }
-    x.e = e
-    x.ep = unsafe.cast[uint](pos)
-}
-
-// dispatchSimpleKeyword 处理具名关键字（import/build/fn/struct/enum）。
-fn FileBlock.dispatchSimpleKeyword(  x *Parser, kw string) bool {
-    var structBlock: StructBlock
-    var importBlock: ImportBlock
-    if (kw) == ("import") { ret importBlock.parseImportFromKeyword( x) }
-    if (kw) == ("build") {
-        var b: BuildBlock
-        ret b.parse( x)
-    }
-    if (kw) == ("fn") {
-        var f: FuncBlock
-        ret f.parse( x)
-    }
-    if (kw) == ("struct") { ret structBlock.parseStructDeclFromKeyword( x) }
-    if (kw) == ("enum") {
-        var e: EnumBlock
-        ret e.parse( x)
-    }
-    ret false
-}
-
-// parseTypeDeclKeyword 处理 `type` 关键字（可分组或单条）。
-fn FileBlock.parseTypeDeclKeyword(  x *Parser, t *lex.Token) bool {
-    var typeBlock: TypeBlock
-    x.l.skipTerminators()
-    var tpeek: *lex.Token = x.l.peek()
-    if tpeek.is(lex.DELIMITER, "(") {
-        ret typeBlock.parseGroupedDecl( x, "type")
-    }
-    ret typeBlock.parseTypeFromKeyword( x, t)
-}
-
-// isVarConstLetKindVarConstLet case for var/const/let。
-fn FileBlock.isDeclKindVarConstLet(  kw string) bool {
-    ret (kw) == ("var") || (kw) == ("const") || (kw) == ("let")
-}
-
-// parseDeclKeyword 按关键字分派顶层声明。
-// 前瞻走 x.l.peek()（lexer 预取环首视图，幂等、不消费）；
-// 消费走 x.l.next()（按 FIFO 弹出同一个环）；多 token 前瞻扫描用 x.l.prefetch()（入环不弹）。
-fn FileBlock.parseDeclKeyword(x *Parser, kw string, t *lex.Token) bool {
-    var varBlock: VarBlock
-    if FileBlock.dispatchSimpleKeyword( x, kw) {
-        ret true
-    }
-    if (kw) == ("type") {
-        ret FileBlock.parseTypeDeclKeyword( x, t)
-    }
-    if FileBlock.isDeclKindVarConstLet( kw) {
-        ret varBlock.parseVarConstDispatch( x, kw, 1)
-    }
-    FileBlock.fail( x, EDECL, t.Pos)
-    ret false
-}
-
-// isDeclKeyword 顶层声明关键字（含裸 var/const/let）。
-fn FileBlock.isDeclKeyword(kw string) bool {
-    ret FileBlock.isDeclKeywordHelper( kw)
-}
-fn FileBlock.isDeclKeywordHelper(  kw string) bool {
-    if (kw) == ("import") { ret true }
-    if (kw) == ("build") { ret true }
-    if (kw) == ("fn") { ret true }
-    if (kw) == ("type") { ret true }
-    if (kw) == ("struct") { ret true }
-    if (kw) == ("enum") { ret true }
-    if (kw) == ("var") { ret true }
-    if (kw) == ("const") { ret true }
-    if (kw) == ("let") { ret true }
-    ret false
-}
-
-// fileKeywordToken 处理 t.Type == KEYWORD 的情形：分派到 isDeclKeyword 或报错。
-fn FileBlock.fileKeywordToken(x *Parser, t *lex.Token) bool {
-    if !FileBlock.isDeclKeyword( t.Value) {
-        FileBlock.fail( x, EDECL, t.Pos)
-        ret false
-    }
-    x.l.next()
-    ret FileBlock.parseDeclKeyword( x, t.Value, t)
-}
-
-// fileImplicitVarStmt 处理 t.Type == NAME 的顶层隐式 var：name: T = v。
-fn FileBlock.fileImplicitVarStmt(x *Parser, t *lex.Token) bool {
-    var typeBlock: TypeBlock
-    var nameT: *lex.Token = x.l.next()
-    var p2: *lex.Token = x.l.peek()
-    if p2 != nil && p2.Type == lex.DELIMITER && (p2.Value) == (":") {
-        if !FileBlock.expect( x, lex.DELIMITER, ":", EDECL) {
-            ret false
-        }
-        if !typeBlock.skipType( x) {
-            ret false
-        }
-        if !FileBlock.expect( x, lex.DELIMITER, "=", EDECL) {
-            ret false
-        }
-        FileBlock.restOfLineAtDepth0( x)
-        x.decls = x.decls + 1
-        x.vars = x.vars + 1
-        ret true
-    }
-    FileBlock.fail( x, EDECL, nameT.Pos)
-    ret false
-}
-
-// fileLoop 主循环（关键字登记/隐式 var/报错）。循环本体与 file() 分离，
-// 便于 file() 在任意结果下统一收敛 S4 Check。
-fn FileBlock.fileLoop(x *Parser) {
-    for ; ; {
-        x.l.skipTerminators()
-        var t: *lex.Token = x.l.peek()
-        if t == nil {
-            ret
-        }
-        if t.Type == lex.NONE {
-            ret
-        }
-        if t.Type == lex.KEYWORD {
-            if !FileBlock.fileKeywordToken( x, t) {
-                ret
-            }
-            continue
-        }
-        if t.Type == lex.NAME {
-            if !FileBlock.fileImplicitVarStmt( x, t) {
-                ret
-            }
-            continue
-        }
-        FileBlock.fail( x, EDECL, t.Pos)
-        ret
-    }
-}
-
-// file 解析整个文件；无论成功或失败，退出时收敛 S4 Check（unusedFns/ifaceBuf）。
-fn FileBlock.file(x *Parser) {
-    FileBlock.fileLoop( x)
-    FileBlock.finalizeCheck( x)
+fn Parser.next(&self) bool {
+	t := self.Lexer.prefetch()
+	if t.Type == lexer.KEYWORD {
+		switch t.Value {
+			case "fn":
+				f := FnBlock{}
+				f.parse(self)
+		}
+		console.println(t.string())
+	}
+	//console.println(t.string())
+	ret t.Type == lexer.NONE
 }

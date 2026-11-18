@@ -217,8 +217,9 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		}
 		// 解析期跨文件/跨包类型查找（全局注册表）
 		if len(res) == 0 {
-			if t := lookupGlobalType(p, name); t != nil {
-				res = append(res, FindResult{Value: t, Path: []any{t}, Type: FindTypeType})
+			glres := lookupGlobalType(p, name)
+			if glres != nil {
+				res = append(res, FindResult{Value: glres, Path: []any{glres}, Type: FindTypeType})
 			}
 		}
 	}
@@ -521,8 +522,12 @@ func findSelf(p *Parser, name Name, typ FindType) FindResult {
 
 	fn := nowBlock.Value.(*FuncBlock)
 
-	// 检查是否有所属类型
+	// 检查是否有所属类型；解析期类延迟绑定则返回零结果，等待合并后重试
 	if fn.Class == nil {
+		// 解析期 / 合并后前几轮：接收者类尚未注册，延迟绑定
+		if ParsePhase || fn.DeferClass || (p.FinalCheck && p.MergeRound < 49) {
+			return FindResult{Node: nowBlock, Type: FindTypeSelf}
+		}
 		p.Error.MissError("Call Error", p.Lexer.Cursor, "self must be in class")
 		return FindResult{}
 	}
@@ -585,7 +590,17 @@ func lookupGlobalType(p *Parser, name Name) any {
 		}
 		return packageFmt.LookupType(pkgPath, rest)
 	}
-	return packageFmt.LookupType(p.Package.Path, name.String())
+	if t := packageFmt.LookupType(p.Package.Path, name.String()); t != nil {
+		return t
+	}
+	// 跨包裸类型名兜底：按 "/"+name 后缀扫描后缀表。
+	// 根包的 merged Check 下 p.Package 是根包，查不到依赖包登记的类型
+	// （与 staticTypeMethodCandidates 的兜底一致——按 key 排序保证确定性）。
+	ts := packageFmt.LookupTypeSuffix(name.String())
+	if len(ts) > 0 {
+		return ts[0]
+	}
+	return nil
 }
 
 // findGlobalVar 跨文件/跨包全局变量查找（全局注册表 + AST 合并树）。

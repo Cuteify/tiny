@@ -824,6 +824,11 @@ func (c *ECompiler) val(exp *parser.Expression) string {
 func (c *ECompiler) unary(exp *parser.Expression, result string, ei *ExpInfo) string {
 	// 取地址：直接 lea 变量地址，无需生成右子代码
 	if exp.Separator == "&" {
+		// &P{...}：P{...} 下层就是 new(P, ...)（堆分配，直接得到 *P），
+		// 它的返回值就是地址，无需再取栈槽地址。
+		if exp.Right != nil && exp.Right.Call != nil && exp.Right.Call.NewType != nil {
+			return c.generate(exp.Right, result)
+		}
 		return c.emitAddrOf(exp, result)
 	}
 
@@ -855,6 +860,31 @@ func (c *ECompiler) emitUnary(exp *parser.Expression, result string, rReg *regmg
 		// 但变量块已解析：回退 Var.Type，否则 derefPrefix 返回空串、装载整条丢失。
 		if pt == nil && exp.Right.Var != nil {
 			pt = exp.Right.Var.Type
+		}
+		// 多槽结构体按值解引用：按槽宽逐槽复制（与大返回值 ABI 同形）
+		if _, isStruct := exp.Type.(*typeSys.StructType); isStruct {
+			ps := c.arch.PointerSize()
+			ln := c.arch.LengthName(ps)
+			slots := arch.ArgSlots(exp.Type)
+			if slots > 1 {
+				if result == "push" {
+					code = ""
+					for i := slots - 1; i >= 0; i-- {
+						off := i * ps
+						if off == 0 {
+							code += utils.Format("push " + ln + " [" + rVal + "]")
+						} else {
+							code += utils.Format("push " + ln + " [" + rVal + "+" + strconv.Itoa(off) + "]")
+						}
+					}
+					return code
+				}
+				if strings.Contains(result, "[") {
+					return c.copySlots(stripOuterBrackets(result), rVal, slots*ps)
+				}
+				code = utils.Format("mov " + result + ", " + ln + " [" + rVal + "]")
+				return code
+			}
 		}
 		prefix := c.derefPrefix(pt)
 		if result == "push" {
@@ -5239,8 +5269,16 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
 			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
 			areg := c.allocTmpReg()
+			dst := "[" + areg.Name + "+" + strconv.Itoa(offs[i]) + "]"
 			code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
-			code += c.loadMultiSlot(arg.Value, "["+areg.Name+"+"+strconv.Itoa(offs[i])+"]")
+			if arg.Value.Var != nil {
+				code += c.loadMultiSlot(arg.Value, dst)
+			} else {
+				// non-Var list/struct expression (e.g. `arr: []int{...}` inline):
+				// emit directly into the target slot — loadContainer returns "" for these
+				// shapes and would leave the field zeroed.
+				code += c.generate(arg.Value, dst)
+			}
 			c.freeTmpReg(areg)
 			continue
 		}
@@ -5333,8 +5371,16 @@ func (c *ECompiler) builtinNewRC(exp *parser.Expression, call *parser.CallBlock,
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
 			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
 			areg := c.allocTmpReg()
+			dst := "[" + areg.Name + "+" + strconv.Itoa(offs[i]) + "]"
 			code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
-			code += c.loadMultiSlot(arg.Value, "["+areg.Name+"+"+strconv.Itoa(offs[i])+"]")
+			if arg.Value.Var != nil {
+				code += c.loadMultiSlot(arg.Value, dst)
+			} else {
+				// non-Var list/struct expression (e.g. `arr: []int{...}` inline):
+				// emit directly into the target slot — loadContainer returns "" for these
+				// shapes and would leave the field zeroed.
+				code += c.generate(arg.Value, dst)
+			}
 			c.freeTmpReg(areg)
 			continue
 		}
