@@ -669,7 +669,12 @@ func (c *CallBlock) finishCallCheck(p *Parser) bool {
 		// 获取对应的函数定义参数
 		defArg := c.Func.Args[i]
 
-		arg.Value.Check(p)
+		// 返回 false = 参数还查不到（跨文件前向引用等）：必须原样传递，
+		// 否则 Call 会被标 Checked=true，重试循环提前结束，未解析的参数
+		// 进入编译期取空 Type（如 GenVarAddr nil type panic）。
+		if !arg.Value.Check(p) {
+			return false
+		}
 
 		// 类型检查。首趟解析时跨包调用尚未解析，arg.Value.Type 可能为 nil，
 		// 此时跳过检查（合并后 rootNode.Check 重试会补齐）；错误消息里的
