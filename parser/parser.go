@@ -535,6 +535,17 @@ func (p *Parser) processNameToken(code lexer.Token, beforeCursor int) {
 	}
 }
 
+// commaValues 按逗号连接的结构逐个收集 RHS 的值（`a, b = nil, nil` → [nil, nil]）。
+func commaValues(e *Expression) []*Expression {
+	if e == nil {
+		return nil
+	}
+	if e.Separator == "," {
+		return append(commaValues(e.Left), commaValues(e.Right)...)
+	}
+	return []*Expression{e}
+}
+
 // parseMultiDeclare 解析多返回值声明/赋值。
 // := 模式：新建 owner VarBlock（MultiNames 为源码名）。
 // = 模式（a, b = f()）：语义等价于先 tmp1, tmp2 := f()，再逐个 a = tmp1; b = tmp2。
@@ -567,6 +578,23 @@ func (p *Parser) parseMultiDeclare(beforeCursor int) {
 	// 右侧是多返回值调用：按语句位置检查，绕开 "must return one value"，
 	// 每个槽位的具体类型由 VarBlock.Check 在 Func 解析出来后填充。
 	exp.SetStmt()
+
+	// 逗号 RHS（`a, b = e1, e2` / `a, b := e1, e2`）：RHS 是逗号连接的值列表，
+	// 值个数与名字个数一致时逐个名字赋对应值；不匹配时回落到下方 tmpVar 路径。
+	if exp != nil && exp.Separator == "," {
+		if vals := commaValues(exp); len(vals) == len(names) {
+			for i, name := range names {
+				as := &VarBlock{Name: name, Value: vals[i]}
+				if op == ":=" {
+					as.IsDefine = true
+					as.IsInitialized = true
+				}
+				as.Check(p)
+				p.addDeclNode(&Node{Value: as})
+			}
+			return
+		}
+	}
 
 	if op == ":=" {
 		vb := &VarBlock{
