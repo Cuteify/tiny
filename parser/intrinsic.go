@@ -163,7 +163,7 @@ func (exp *Expression) lowerIntrinsicCall(p *Parser, entry *IntrinsicEntry, resu
 	if fb == nil || len(fb.Args) != len(args) {
 		return false
 	}
-	fb.Useful = true
+	fb.Useful++
 	callArgs := make([]*ArgBlock, 0, len(args))
 	for _, arg := range args {
 		callArgs = append(callArgs, &ArgBlock{Value: arg, Type: arg.Type})

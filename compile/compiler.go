@@ -76,6 +76,8 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.markRCFuncs(node)
 	// Pre-pass: collect build export aliases for global declarations
 	c.collectExports(node)
+	// 引用计数 DCE：死函数计数归零后沿调用边传播减一
+	c.runDCE(node)
 	code = c.compileRoot(node, code)
 	code += c.compileChildren(node, "")
 	code += c.compileRootTail(node)
@@ -145,7 +147,7 @@ func (c *Compiler) markIfaceMethods(node *parser.Node) {
 				// Mark all methods on the concrete type as useful
 				for _, m := range vb.Value.Type.Methods() {
 					if fb, ok := m.(*parser.FuncBlock); ok {
-						fb.Useful = true
+						fb.Useful++
 					}
 				}
 			}
@@ -170,7 +172,7 @@ func (c *Compiler) markLinkProviders(node *parser.Node) {
 			if bf.Type == "link" && bf.Link != "" && !bf.Ignore {
 				// Only mark if actually needed by len/cap/strings calls
 				if c.stringSyms != nil && c.stringSyms[bf.Link] {
-					fb.Useful = true
+					fb.Useful++
 				}
 			}
 		}
@@ -194,7 +196,7 @@ func (c *Compiler) markRCFuncs(node *parser.Node) {
 		}
 		if fb, ok := n.Value.(*parser.FuncBlock); ok && fb.Name != nil {
 			if rcNames[fb.Name.Last()] && len(fb.Name) >= 2 && fb.Name[0].IsPkgPath {
-				fb.Useful = true
+				fb.Useful++
 			}
 		}
 		for _, ch := range n.Children {
@@ -333,7 +335,7 @@ func (c *Compiler) compileChild(n *parser.Node) string {
 		if len(v.TypeParams) > 0 {
 			return ""
 		}
-		if !v.Useful && v.Name.String() != "main" {
+		if v.Useful <= 0 && v.Name.String() != "main" {
 			return ""
 		}
 		return c.compileFuncBlock(n)
@@ -387,7 +389,7 @@ func (c *Compiler) compileFuncBlock(n *parser.Node) string {
 	if len(funcBlock.TypeParams) > 0 {
 		return ""
 	}
-	if !funcBlock.Useful && funcBlock.Name.String() != "main" {
+	if funcBlock.Useful <= 0 && funcBlock.Name.String() != "main" {
 		return ""
 	}
 	// Record FuncBlock → Node mapping for cross-package monomorphization lookup

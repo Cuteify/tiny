@@ -629,7 +629,7 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 				v.Define = chosen
 				// 函数被作为值引用：标记 Useful，否则死代码消除会不发这个
 				// 函数的标签，取地址处 lea rax, [name] 链接期符号未定义
-				fb.Useful = true
+				fb.Useful++
 				p.ThisBlock = oldThisBlock
 				return true
 			}
@@ -743,7 +743,7 @@ func (v *VarBlock) Check(p *Parser) bool {
 						fb := fr.Value.(*FuncBlock)
 						v.Value.Var.Type = funcTypeOf(fb)
 						v.Value.Var.Define = fr
-						fb.Useful = true
+						fb.Useful++
 					}
 				}
 			}

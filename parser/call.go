@@ -613,7 +613,7 @@ func (c *CallBlock) Check(p *Parser) bool {
 		return false
 	}
 
-	c.Func.Useful = true
+	c.Func.Useful++
 	return c.finishCallCheck(p)
 }
 
@@ -692,7 +692,7 @@ func (c *CallBlock) finishCallCheck(p *Parser) bool {
 		arg.Offset = defArg.Offset
 	}
 
-	c.Func.Useful = true
+	c.Func.Useful++
 
 	return true
 }
@@ -912,7 +912,7 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 		// 调用"被死代码消除，链接期符号未定义（同 len/cap 的处理）。
 		if c.NewType != nil {
 			if fb, ok := LinkProviders["__memory_sizeof"]; ok {
-				fb.Useful = true
+				fb.Useful++
 			}
 			c.Func = &FuncBlock{
 				Return: []typeSys.Type{typeSys.GetSystemType("int")},
@@ -948,7 +948,7 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 				// 否则提供者可能因无人显式调用被死代码消除（链接期符号未定义）
 				if argType.Kind() == "string" {
 					if fb, ok := LinkProviders["__string_len"]; ok {
-						fb.Useful = true
+						fb.Useful++
 					}
 				}
 				c.Func = &FuncBlock{
@@ -964,7 +964,7 @@ func (c *CallBlock) checkBuiltin(p *Parser) bool {
 			if argType != nil && (argType.Kind() == "string" || argType.Kind() == "list") {
 				if argType.Kind() == "string" {
 					if fb, ok := LinkProviders["__string_cap"]; ok {
-						fb.Useful = true
+						fb.Useful++
 					}
 				}
 				c.Func = &FuncBlock{

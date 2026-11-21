@@ -98,7 +98,7 @@ func (c *Compiler) MonomorphizeIfNeeded(call *parser.CallBlock) string {
 	c.typeSubsts[label] = substMap
 
 	// Suppress the original generic function from being compiled (it's replaced by the specialized version)
-	fn.Useful = false
+	fn.Useful = 0
 
 	inst := &GenericInstantiation{
 		Original:    fn,
@@ -255,7 +255,7 @@ func (c *Compiler) MonomorphizeFunction(fn *parser.FuncBlock, typeSubst map[stri
 		Return:          specializedReturn,
 		Name:            specializedName,
 		BuildFlags:      fn.BuildFlags,
-		Useful:          true,
+		Useful:          1,
 		TypeParams:      nil,     // 特化后不再是泛型
 		MangledOverride: newName, // 确保 MangledName() 返回正确的单态化标签
 	}

@@ -650,7 +650,7 @@ func liftUnit(p *Parser, u envUnit, cloneName string, envSt *typeSys.StructType,
 	wasNamed := !fb.Anon && origName != ""
 
 	fb.Name = NewName(cloneName)
-	fb.Useful = true
+	fb.Useful++
 	fb.Lifted = true
 	// 具名嵌套函数提升后 behave 方式与匿名闭包一致：调用点走 fn 变量间接调用，
 	// 编译器合成的 binding 指向升格后的匿名 fb。

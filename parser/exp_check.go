@@ -110,7 +110,7 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 		applyReceiverConversion(call, sel, receiver)
 	}
 	call.Func = sel
-	sel.Useful = true
+	sel.Useful++
 	if !call.Check(p) {
 		return false
 	}

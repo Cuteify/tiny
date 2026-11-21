@@ -14,7 +14,7 @@ type FuncBlock struct {
 	Return          []typeSys.Type          // 返回值类型列表（支持多返回值）
 	Name            Name                    // 函数名
 	BuildFlags      []*Build                // 编译标志
-	Useful          bool                    // 是否有用（用于优化）
+	Useful          int                     // 引用计数（>0 表示被活跃引用，用于 DCE）
 	TypeParams      []TypeParamInfo         // 泛型类型参数（名字 + 占位类型）
 	MangledOverride string                  // 覆盖的 mangled 名称
 	// Anon 标记匿名函数（闭包）。EnvParam 标记隐藏的 __env 首参
@@ -1074,7 +1074,7 @@ type TypeParamInfo struct {
 func (p *Parser) parseAnonFunc() *Expression {
 	fb := &FuncBlock{}
 	fb.Anon = true
-	fb.Useful = true
+	fb.Useful++
 
 	node := &Node{Value: fb}
 	fb.Node = node

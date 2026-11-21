@@ -58,7 +58,7 @@ var danglingBuiltinNames = map[string]bool{
 //   - 候选匹配优先全名 Eq；否则唯一 Last() 相等（corpus 无同名重载；
 //     多候选/零候选保守不绑，宁可漏发不乱绑）
 //   - BuildFlags.Ignore 的候选跳过（build 别名壳）
-//   - fb.Useful = true；绑定后若 fb.Class == nil 清除伪 ThisVar
+//   - fb.Useful++；绑定后若 fb.Class == nil 清除伪 ThisVar
 //     （"包名被方法分支误判为接收者时，清除伪 ThisVar"）
 //   - Class != nil（方法）不在此路径绑定：方法分派有自己的接收者链路
 //
@@ -138,7 +138,7 @@ func BindDanglingCall(ctx *context.Context, call *parser.CallBlock) bool {
 		return false
 	}
 	fb := ctx.FuncBlockCache[chosen]
-	fb.Useful = true
+	fb.Useful++
 	call.Func = fb
 	// 包名被方法分支误判为接收者时，清除伪 ThisVar（与 parser 绑定成功路径一致）
 	if fb.Class == nil {
@@ -6038,7 +6038,7 @@ func (c *ECompiler) BoxInterface(varBlock *parser.VarBlock) string {
 			}
 			// Mark the concrete method as useful so it gets compiled
 			if concreteFunc != nil {
-				concreteFunc.Useful = true
+				concreteFunc.Useful++
 			}
 		}
 		vtableLabel = c.ctx.RegisterVtable(concreteType, ifaceType, methodLabels)
