@@ -386,6 +386,9 @@ func (exp *Expression) lowerOperator(p *Parser, receiver *Expression, method str
 		p.Error.MissError("Type Error", p.Lexer.Cursor, "operator "+opName+" has no operand type")
 		return false
 	}
+	if typeSys.IsDeferred(receiver.Type) {
+		return false
+	}
 	if len(methodCandidates(receiver.Type, method)) == 0 {
 		p.Error.MissError("Type Error", p.Lexer.Cursor,
 			"operator "+opName+" not defined for type "+receiver.Type.Type())
@@ -660,6 +663,9 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 
 	default:
 		// 自定义类型：lowering 成 get/slice 方法调用。
+		if typeSys.IsDeferred(indexedType) {
+			return false
+		}
 		if exp.IndexSlice {
 			start := exp.Index[0]
 			if start == nil {

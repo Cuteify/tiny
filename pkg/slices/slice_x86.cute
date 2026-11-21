@@ -50,13 +50,25 @@ fn _elemPtr[T](s ptr, index int) ptr {
 
 fn push[T](s *[]T, val T) {
     var sAddr: ptr = unsafe.cast[ptr](s)
+    if sAddr == 0 {
+        ret
+    }
     var hdr: *sliceHdr = unsafe.cast[*sliceHdr](sAddr)
     var curLen: int = hdr.n
     var curCap: int = hdr.c
 
+    if curCap == 0 {
+        // 未初始化/零值 slice 头：先初始化容量，避免写入空缓冲。
+        grow[T](s, 1)
+        curLen = hdr.n
+        curCap = hdr.c
+    }
+
     if curLen >= curCap {
         // Wave S 收敛：扩容原语统一走 grow（P2 曲线 <512→2× / ≥512→1.25×）
         grow[T](s, 1)
+        curLen = hdr.n
+        curCap = hdr.c
     }
 
     // 写入元素

@@ -294,11 +294,15 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 			a.applyCallee(key, fs, v, fb, body)
 		case *parser.Expression:
 			// 独立表达式语句（调用、赋值）里的分配与调用逃逸。
-			// 元素/解引用写入 s[i] = v、*p = v 同样把拥有值存进堆容器，
-			// 右值中引用的参数按 EscHeapObj 逃逸。
-			if v.Var == nil && (v.Separator == "[]=" || v.Separator == "=") && v.Right != nil {
-				if v.Right.Type == nil || owningType(v.Right.Type) {
-					for _, pi := range refsTrackedParams(v.Right, fb) {
+			// 元素/解引用/字段写入 s[i]=v、*p=v、p.f=v 把拥有值存进堆容器，
+			// 被存储值中引用的参数按 EscHeapObj 逃逸。deref= 的值在 Left，指针在 Right。
+			if v.Var == nil && (v.Separator == "[]=" || v.Separator == "=" || v.Separator == "deref=") {
+				stored := v.Right
+				if v.Separator == "deref=" {
+					stored = v.Left
+				}
+				if stored != nil && (stored.Type == nil || owningType(stored.Type)) {
+					for _, pi := range refsTrackedParams(stored, fb) {
 						a.bumpParam(fs, pi, EscHeapObj, ModeOtherRef)
 					}
 				}

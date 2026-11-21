@@ -76,22 +76,23 @@ func (c *CaseBlock) Parse(p *Parser) {
 		// default 分支没有 case 值，只读到 ':' 即可；否则会把冒号
 		// 前面的空区间交给 ParseExp，产生 nil 表达式。
 		if c.IsDefault {
-			if t.Value == ":" {
+			if t.Type == lexer.SEPARATOR && t.Value == ":" {
 				break
 			}
 			continue
 		}
 
-		switch t.Value {
-		case ":", ",":
-			p.Lexer.SetCursor(lastSep)
-			c.Values = append(c.Values, p.ParseExp(t.Cursor))
-			p.Lexer.SetCursor(t.EndCursor)
-			lastSep = t.EndCursor
-		}
-
-		if t.Value == ":" {
-			break
+		if t.Type == lexer.SEPARATOR {
+			switch t.Value {
+			case ":", ",":
+				p.Lexer.SetCursor(lastSep)
+				c.Values = append(c.Values, p.ParseExp(t.Cursor))
+				p.Lexer.SetCursor(t.EndCursor)
+				lastSep = t.EndCursor
+			}
+			if t.Value == ":" {
+				break
+			}
 		}
 	}
 	if sw, ok := p.ThisBlock.Value.(*SwitchBlock); ok {

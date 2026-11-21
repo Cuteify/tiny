@@ -3,8 +3,9 @@
 # 可在任意目录下调用：脚本位置按 BASH_SOURCE 定位项目根目录。
 #
 # 用法：
-#   bash scripts/cutebuild.sh [-r|--run] <pkg-dir> [output-bin] [arch]
+#   bash scripts/cutebuild.sh [-r|--run] [-c|--coredump] <pkg-dir> [output-bin] [arch]
 #   BIN=/path/to/cuteify2 bash scripts/cutebuild.sh -r selfhost/cmd/parsedump
+#   COREDUMP=1 bash scripts/cutebuild.sh -r selfhost/cmd/parsedump
 #
 # 行为：
 #   - 直接在包目录里执行 cuteify2 —— 源码、_main.asm、垃圾回收摘要等
@@ -12,6 +13,8 @@
 #   - output-bin 缺省 = <pkg 目录>/<pkg 目录名>；传第 2 个参数可指定输出位置；
 #   - arch 缺省 x86_64，支持 x86_64|x86；
 #   - -r|--run：构建成功后直接运行该 bin（rc 为 bin 的退出码）；
+#   - -c|--coredump 或 COREDUMP=1：运行时允许 core dump，异常退出后尽量
+#     收集 core 到 <pkg-dir>/<name>.core；
 #   - 错误直接打印到终端；编译/汇编/链接任一步失败即非零退出（不运行）。
 set -euo pipefail
 
@@ -19,12 +22,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${BIN:-$ROOT/cuteify2}"
 
 wantRun=0
+wantCore="${COREDUMP:-0}"
 positional=()
 for arg in "$@"; do
     case "$arg" in
         -r|--run) wantRun=1 ;;
+        -c|--coredump) wantCore=1 ;;
         -h|--help)
-            sed -n '2,14p' "$0"
+            sed -n '2,16p' "$0"
             exit 0
             ;;
         --) shift; break ;;
@@ -70,7 +75,24 @@ echo "BUILD_OK|$out"
 
 if [ "$wantRun" -eq 1 ]; then
     rc=0
-    (ulimit -Sc 0; "$out") || rc=$?
+    coreFile="$pkg/$name.core"
+    if [ "$wantCore" = "1" ] || [ "$wantCore" = "true" ]; then
+        rm -f "$coreFile"
+        (ulimit -Sc unlimited; "$out") || rc=$?
+        if [ "$rc" -gt 128 ]; then
+            if [ -f "core" ]; then
+                mv -f "core" "$coreFile"
+            fi
+            if [ ! -f "$coreFile" ] && command -v coredumpctl >/dev/null 2>&1; then
+                coredumpctl dump -q -1 -o "$coreFile" -- "$out" >/dev/null 2>&1 || true
+            fi
+            if [ -f "$coreFile" ]; then
+                echo "COREDUMP|$coreFile"
+            fi
+        fi
+    else
+        (ulimit -Sc 0; "$out") || rc=$?
+    fi
     echo "RUN_DONE|$out|rc=$rc"
     exit $rc
 fi

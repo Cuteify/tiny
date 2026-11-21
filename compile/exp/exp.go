@@ -981,8 +981,50 @@ func (c *ECompiler) emitAddrOf(exp *parser.Expression, result string) string {
 	if exp.Right == nil || exp.Right.Var == nil {
 		return ""
 	}
+	v := exp.Right.Var
+
+	// 指针基字段访问（self.field 指针接收者 / p.field p为*Struct）：
+	// 不能用 rbp 相对 lea，需先装载基址指针再加字段偏移。
+	if isThisField(v) {
+		ptrRecv := c.ctx.CurrentFunc != nil && len(c.ctx.CurrentFunc.Args) > 0 &&
+			c.ctx.CurrentFunc.Args[0].Name.String() == "self" &&
+			c.ctx.CurrentFunc.Args[0].Type != nil && c.ctx.CurrentFunc.Args[0].Type.IsPointer()
+		if ptrRecv {
+			pre, addr, reg := c.thisMem(v)
+			code := pre
+			if result == "push" || strings.Contains(result, "[") {
+				code += utils.Format("lea " + reg.Name + ", [" + addr + "]")
+				if result == "push" {
+					code += utils.Format("push " + reg.Name)
+				} else {
+					code += utils.Format("mov " + result + ", " + reg.Name)
+				}
+			} else {
+				code += utils.Format("lea " + result + ", [" + addr + "]")
+			}
+			c.freeTmpReg(reg)
+			return code
+		}
+	}
+	if needPtrMem(v) {
+		pre, addr, reg := c.ptrMem(v)
+		code := pre
+		if result == "push" || strings.Contains(result, "[") {
+			code += utils.Format("lea " + reg.Name + ", [" + addr + "]")
+			if result == "push" {
+				code += utils.Format("push " + reg.Name)
+			} else {
+				code += utils.Format("mov " + result + ", " + reg.Name)
+			}
+		} else {
+			code += utils.Format("lea " + result + ", [" + addr + "]")
+		}
+		c.freeTmpReg(reg)
+		return code
+	}
+
 	// lea 需要裸地址：剥离 VarAddr 的宽度前缀（BYTE/WORD/DWORD/QWORD）
-	addr := stripMemPrefix(c.arch.VarAddr(exp.Right.Var))
+	addr := stripMemPrefix(c.arch.VarAddr(v))
 
 	// push：经临时寄存器中转
 	if result == "push" || strings.Contains(result, "[") {
@@ -1040,6 +1082,9 @@ func (c *ECompiler) derefSet(exp *parser.Expression) string {
 
 	// 3. 写入：[p] = v
 	prefix := c.derefPrefix(exp.Right.Type)
+	if prefix == "" {
+		prefix = c.arch.LengthName(c.arch.PointerSize())
+	}
 	code += c.derefStore(prefix, pReg.Name, vVal)
 
 	c.ctx.Reg.Free(exp.Left)
@@ -1772,6 +1817,13 @@ func (c *ECompiler) loadContainerPair(exp *parser.Expression, r0, r1 string) str
 			code := p2 + utils.Format("mov "+r0+", "+ln+" ["+addr2+"]") +
 				utils.Format("mov "+r1+", "+ln+" ["+addr2+"+"+strconv.Itoa(ps)+"]")
 			c.freeTmpReg(reg2)
+			return code
+		}
+		if needPtrMem(exp.Var) {
+			p3, addr3, reg3 := c.ptrMem(exp.Var)
+			code := p3 + utils.Format("mov "+r0+", "+ln+" ["+addr3+"]") +
+				utils.Format("mov "+r1+", "+ln+" ["+addr3+"+"+strconv.Itoa(ps)+"]")
+			c.freeTmpReg(reg3)
 			return code
 		}
 		src := stripOuterBrackets(c.arch.VarAddr(exp.Var))
@@ -4151,9 +4203,17 @@ func (c *ECompiler) indexAccessGeneric(exp *parser.Expression, result string, el
 
 	// 列表元素结构体按指针存储（字面量/变量写入均写指针，见 listLiteral）：
 	// 读取后先按存储指针解引得到结构体地址，再应用后缀字段偏移。
-	if exp.Type != nil && exp.Type.Kind() == "struct" && exp.Type.Size() > 0 &&
-		exp.Right != nil && exp.Right.Type != nil && exp.Right.Type.Kind() == "list" {
-		code += utils.Format("mov " + ptrReg.Name + ", QWORD [" + ptrReg.Name + "]")
+	// []*S 元素本身是指针：字段访问时需先从槽中装载指针值。
+	if exp.Right != nil && exp.Right.Type != nil && exp.Right.Type.Kind() == "list" {
+		needElemDeref := exp.Type != nil && exp.Type.Kind() == "struct" && exp.Type.Size() > 0
+		if !needElemDeref && exp.FieldType != nil && exp.Type != nil && exp.Type.IsPointer() {
+			if elem := exp.Type.Elem(); elem != nil && elem.Kind() == "struct" {
+				needElemDeref = true
+			}
+		}
+		if needElemDeref {
+			code += utils.Format("mov " + ptrReg.Name + ", QWORD [" + ptrReg.Name + "]")
+		}
 	}
 
 	// 后缀字段访问：元素地址已在 ptrReg。

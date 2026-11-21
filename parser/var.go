@@ -528,10 +528,10 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 
 	v.Used = true
 
-	// 已有定义但类型还是空：解析期跨包/跨文件时只绑定了 owner，
+	// 已有定义但类型还是空/未决：解析期跨包/跨文件时只绑定了 owner，
 	// 包合并后重试时 p.ThisBlock 往往已回到根块，按名字再查找不到
 	// 局部变量。直接沿已绑定的 Define 刷新类型与多返回值槽位。
-	if !v.IsDefine && v.Type == nil && v.Define.Node != nil {
+	if !v.IsDefine && (v.Type == nil || typeSys.IsDeferred(v.Type)) && v.Define.Node != nil {
 		if v.refreshTypeFromDefine() {
 			p.ThisBlock = oldThisBlock
 			return true
@@ -539,9 +539,9 @@ func (v *VarBlock) ParseDefine(p *Parser) bool {
 	}
 
 	// 使用 Find 查找变量定义。
-	// Type 仍为空说明上一轮只找到了 owner、还没拿到具体槽位类型
+	// Type 仍为空/未决说明上一轮只找到了 owner、还没拿到具体槽位类型
 	// （跨包多返回值声明在包合并前就是这种状态），必须重查一次。
-	if !v.IsDefine && (v.Define.Node == nil || v.Type == nil) {
+	if !v.IsDefine && (v.Define.Node == nil || v.Type == nil || typeSys.IsDeferred(v.Type)) {
 		results := p.Find(v.Name, FindTypeVar|FindTypeItem|FindTypeSelf|FindTypeField|FindTypeArg)
 		// 兜底：跨文件/跨包全局变量（根包合并树中查找）
 		if len(results) == 0 && v.Define.Node == nil {

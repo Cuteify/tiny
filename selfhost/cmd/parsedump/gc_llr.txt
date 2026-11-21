@@ -298,7 +298,7 @@
 == /home/gx/Desktop/______/tiny/pkg/syscall.write
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.consume
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.handleComment
-  obj[0] text site=param:self ESCAPED
+  obj[0] self site=param:self ESCAPED
   obj[1] delimiter site=param:delimiter ESCAPED
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.handleNumber
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.handleString
@@ -398,11 +398,19 @@
   obj[2]  site=null_init ESCAPED
   obj[3]  site=null_init ESCAPED
   obj[4] tok site=null_init ESCAPED
+  obj[5] a site=null_init ESCAPED
 == /home/gx/Desktop/______/tiny/selfhost/parse.FnBlock.parseArgs
   obj[0] self site=param:self ESCAPED
   obj[1] p site=param:p ESCAPED
   obj[2]  site=null_init ESCAPED
-  obj[3] tok site=null_init ESCAPED
+  obj[3]  site=null_init ESCAPED
+  obj[4]  site=expr ESCAPED
+  obj[5]  site=null_init ESCAPED
+  obj[6]  site=null_init ESCAPED
+  obj[7] newArg site=expr ESCAPED
+  obj[8] tok site=null_init ESCAPED
+  obj[9]  site=null_init ESCAPED
+  obj[10] a site=null_init ESCAPED
 == /home/gx/Desktop/______/tiny/selfhost/parse.Parser.next
   obj[0] self site=param:self ESCAPED
   obj[1] t site=null_init ESCAPED

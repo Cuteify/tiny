@@ -639,12 +639,15 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			// processAssign，保证覆盖释放计划与代码生成节点一致。
 			if v.Var != nil && v.Var.Value != nil {
 				processAssign(n, v.Var, st, fb, paramNames, res.AssignFrees)
-			} else if v.Separator == "[]=" || v.Separator == "=" {
-				// 元素/字段写入会把右值对象保存到容器中，形成非 canonical 别名。
-				// 这里只标记裸变量引用，阻止其后续被覆盖释放误杀。
-				markStoredRefs(v.Right, st)
-				// 容器可能活过本块/本帧（列表/堆对象），右值按逃逸处理。
-				markStoredEscapes(v.Right, st)
+			} else if v.Separator == "[]=" || v.Separator == "=" || v.Separator == "deref=" {
+				// 元素/字段/解引用写入会把值保存到容器或堆位置，形成非 canonical 别名。
+				// deref= 的被存储值在 Left，指针在 Right；[]= / = 的被存储值在 Right。
+				stored := v.Right
+				if v.Separator == "deref=" {
+					stored = v.Left
+				}
+				markStoredRefs(stored, st)
+				markStoredEscapes(stored, st)
 			}
 			markExprCallArgs(v.Right, st)
 		case *parser.ReturnBlock:

@@ -4,9 +4,7 @@ import "std:memory"
 
 // count 计算 substr 在 s 中出现的次数
 fn count(s string, substr string) int {
-    var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
-    var tPtr: ptr = strings.toCstring(substr)
     var tLen: uint = strings.len(substr)
     var nf: uint = strings.notFound()
     var cnt: int = 0
@@ -17,7 +15,7 @@ fn count(s string, substr string) int {
     }
 
     for ; true; {
-        var idx: uint = strings.indexFrom(sPtr, sLen, tPtr, tLen, scanPos)
+        var idx: uint = strings.indexFrom(s, substr, scanPos)
         if idx >= nf {
             break
         }
@@ -38,9 +36,9 @@ fn isSpace(ch uint) bool {
 
 // trimLeft 从 s 左侧去除 cutset 中包含的字符
 fn trimLeft(s string, cutset string) string {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
-    var cPtr: ptr = strings.toCstring(cutset)
+    var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](cutset))
     var cLen: uint = strings.len(cutset)
     var i: uint = 0
 
@@ -82,9 +80,9 @@ fn trimLeft(s string, cutset string) string {
 
 // trimRight 从 s 右侧去除 cutset 中包含的字符
 fn trimRight(s string, cutset string) string {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
-    var cPtr: ptr = strings.toCstring(cutset)
+    var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](cutset))
     var cLen: uint = strings.len(cutset)
     var end: uint = sLen
 
@@ -130,9 +128,9 @@ fn trim(s string, cutset string) string {
 
 // lastIndex 返回 substr 在 s 中最后一次出现的位置，未找到返回 -1
 fn lastIndex(s string, substr string) int {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
-    var tPtr: ptr = strings.toCstring(substr)
+    var tPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](substr))
     var tLen: uint = strings.len(substr)
 
     if tLen < 1 {
@@ -172,7 +170,7 @@ fn lastIndex(s string, substr string) int {
 
 // indexByte 返回字节 c 在 s 中首次出现的位置，未找到返回 -1
 fn indexByte(s string, c int) int {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
     var i: uint = 0
@@ -189,9 +187,9 @@ fn indexByte(s string, c int) int {
 
 // containsAny 判断 s 是否包含 chars 中的任意字符
 fn containsAny(s string, chars string) bool {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
-    var cPtr: ptr = strings.toCstring(chars)
+    var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](chars))
     var cLen: uint = strings.len(chars)
     var i: uint = 0
     for ; i < sLen; {
@@ -224,9 +222,9 @@ fn containsRune(s string, r int) bool {
 
 // compare 比较两个字符串：相等返回 0，a<b 返回负数，a>b 返回正数
 fn compare(a string, b string) int {
-    var aPtr: ptr = strings.toCstring(a)
+    var aPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](a))
     var aLen: uint = strings.len(a)
-    var bPtr: ptr = strings.toCstring(b)
+    var bPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](b))
     var bLen: uint = strings.len(b)
     var minLen: uint = aLen
     if bLen < aLen {
@@ -272,7 +270,7 @@ fn itoa(n int) string {
 // parseBool 解析布尔字符串
 fn parseBool(s string) bool {
     var sLen: uint = strings.len(s)
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
 
     if sLen < 1 {
         ret false
@@ -434,8 +432,8 @@ fn equalFold(s string, t string) bool {
     if sLen != tLen {
         ret false
     }
-    var sPtr: ptr = strings.toCstring(s)
-    var tPtr: ptr = strings.toCstring(t)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
+    var tPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](t))
     var i: uint = 0
     for ; i < sLen; {
         var _p45: *u8 = sPtr + i
@@ -459,9 +457,9 @@ fn equalFold(s string, t string) bool {
 
 // indexAny 返回 chars 中任意字符在 s 中首次出现的位置，未找到返回 -1
 fn indexAny(s string, chars string) int {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
-    var cPtr: ptr = strings.toCstring(chars)
+    var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](chars))
     var cLen: uint = strings.len(chars)
     var i: uint = 0
     for ; i < sLen; {
@@ -483,7 +481,7 @@ fn indexAny(s string, chars string) int {
 
 // lastIndexByte 返回字节 c 在 s 中最后一次出现的位置，未找到返回 -1
 fn lastIndexByte(s string, c int) int {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
     var i: uint = sLen
@@ -500,7 +498,7 @@ fn lastIndexByte(s string, c int) int {
 
 // countByte 返回字节 c 在 s 中出现的次数
 fn countByte(s string, c int) int {
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
     var cnt: int = 0
@@ -521,7 +519,7 @@ fn clone(s string) string {
     if sLen == 0 {
         ret s
     }
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var bufN: uint = sLen + 1
     var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
@@ -543,7 +541,7 @@ fn reverse(s string) string {
     if sLen == 0 {
         ret s
     }
-    var sPtr: ptr = strings.toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var bufN: uint = sLen + 1
     var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
@@ -570,7 +568,7 @@ fn repeatN(s string, count int) string {
 // hasSuffixAny 判断 s 是否以 suffixes 中的任意一个结尾（suffixes 用 '|' 分隔）
 fn hasSuffixAny(s string, suffixes string) bool {
     var sLen: uint = strings.len(s)
-    var sfPtr: ptr = strings.toCstring(suffixes)
+    var sfPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](suffixes))
     var sfLen: uint = strings.len(suffixes)
     var i: uint = 0
     for ; i < sfLen; {
@@ -588,7 +586,7 @@ fn hasSuffixAny(s string, suffixes string) bool {
             var match: bool = true
             var j: uint = 0
             for ; j < sufLen; {
-                var _p58: *u8 = strings.toCstring(s) + sLen - sufLen + j
+                var _p58: *u8 = unsafe.cast[ptr](unsafe.cast[*u8](s)) + sLen - sufLen + j
                 var _p59: *u8 = sfPtr + i + j
                 if *_p58 != *_p59 {
                     match = false
@@ -612,24 +610,21 @@ fn hasSuffixAny(s string, suffixes string) bool {
 // replaceAll 把 s 中所有不重叠的 old 子串替换为 new，返回新串。
 // old 为空时原样返回（与 Go strings.ReplaceAll 一致）。
 fn replaceAll(s string, old string, new string) string {
-    if len(old) == 0 {
+    var oLen: uint = strings.len(old)
+    if oLen == 0 {
         ret s
     }
-    var sPtr: ptr = strings.toCstring(s)
-    var sU8: *u8 = sPtr
     var sLen: uint = strings.len(s)
-    var oPtr: ptr = strings.toCstring(old)
-    var oLen: uint = strings.len(old)
-    var nPtr: ptr = strings.toCstring(new)
-    var nU8: *u8 = nPtr
     var nLen: uint = strings.len(new)
+    var sU8: *u8 = unsafe.cast[*u8](s)
+    var nU8: *u8 = unsafe.cast[*u8](new)
 
     // 先统计替换次数，再分配结果缓冲区
     var cnt: uint = 0
     var scan: uint = 0
     var nf: uint = strings.notFound()
     for ; true; {
-        var idx: uint = strings.indexFrom(sPtr, sLen, oPtr, oLen, scan)
+        var idx: uint = strings.indexFrom(s, old, scan)
         if idx >= nf {
             break
         }
@@ -637,39 +632,34 @@ fn replaceAll(s string, old string, new string) string {
         scan = idx + oLen
     }
     var outLen: uint = sLen + cnt * (nLen - oLen)
-    var out: ptr = memory.malloc(outLen + 1)
-    var i: uint = 0
+    var out: *u8 = unsafe.cast[*u8](memory.malloc(outLen + 1))
     var o: uint = 0
     scan = 0
-    var _oU8: *u8 = out
     for ; true; {
-        var idx: uint = strings.indexFrom(sPtr, sLen, oPtr, oLen, scan)
+        var idx: uint = strings.indexFrom(s, old, scan)
         if idx >= nf {
-            // 拷贝剩余部分
             for ; scan < sLen; {
-                *(_oU8 + o) = *(sU8 + scan)
+                *(out + o) = *(sU8 + scan)
                 o = o + 1
                 scan = scan + 1
             }
             break
         }
-        // 拷贝 idx 之前的部分
         for ; scan < idx; {
-            *(_oU8 + o) = *(sU8 + scan)
+            *(out + o) = *(sU8 + scan)
             o = o + 1
             scan = scan + 1
         }
-        // 写入 new
         var j: uint = 0
         for ; j < nLen; {
-            *(_oU8 + o) = *(nU8 + j)
+            *(out + o) = *(nU8 + j)
             o = o + 1
             j = j + 1
         }
         scan = idx + oLen
     }
-    *(_oU8 + o) = 0
-    ret strings.view(out, o, o)
+    *(out + o) = unsafe.cast[u8](0)
+    ret strings.view(unsafe.cast[ptr](out), o, o)
 }
 
 // parseUint 按 base（2-36）解析无符号整数；等价于 strconv.ParseUint 的成功路径。
@@ -680,7 +670,7 @@ fn parseUint(s string, base uint) (uint, bool) {
     if sLen == 0 {
         ret 0, false
     }
-    var p: ptr = strings.toCstring(s)
+    var p: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var pU8: *u8 = p
     var v: uint = 0
     var i: uint = 0
@@ -712,7 +702,7 @@ fn parseFloat(s string) (f64, bool) {
     if sLen == 0 {
         ret 0.0, false
     }
-    var p: ptr = strings.toCstring(s)
+    var p: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var pU8: *u8 = p
     var i: uint = 0
     var sign: f64 = 1.0

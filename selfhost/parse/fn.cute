@@ -1,5 +1,6 @@
 import (
     "std:console"
+    "std:slices"
     "../lexer"
 )
 type FnBlock struct {
@@ -11,7 +12,7 @@ type FnBlock struct {
 type Arg struct {
 	name       :string         // 参数名
 	typ       :string // 参数类型
-	default    :*Expression  // 默认值表达式
+	defaultVal    :*Expression  // 默认值表达式
 }
 
 
@@ -40,21 +41,42 @@ fn FnBlock.parse(&self, p:*Parser) {
         self.parseArgs(p)
     }
 
-    console.println("Parse Function：" + self.name)
+    console.print("Parse Function：" + self.name + ", Args:")
+    for i:=0; i < slices.len(&self.args); i++ {
+        a := self.args[i]
+        console.print(a.name + "[" + a.typ + "] ")
+    }
+    console.println("")
 }
 
 fn FnBlock.parseArgs(&self, p:*Parser) {
+    // 初始哈
+    self.args = []*Arg{}
+
     // 跳过开始的(
     p.Lexer.skipToken("(")
 	bracketCount := 1
 
     var tok: *lexer.Token
+
+    // 处理第一个参数
+    tok = p.Lexer.next()
+    if tok.Type != lexer.NAME {
+        if tok.is(lexer.DELIMITER, ")") {
+            ret
+        } else {
+            panic("故障")
+        }
+    }
+    newArg := &Arg{name: tok.Value}
+    slices.push(&self.args, newArg)
+
+    // 处理剩余部分
     for bracketCount != 0 {
         tok = p.Lexer.next()
         if tok.isSemiOrNewline() {
             panic("故障！")
         }
-        console.println(tok.string())
         switch tok.Value {
             case "(":
                 bracketCount++
@@ -65,24 +87,40 @@ fn FnBlock.parseArgs(&self, p:*Parser) {
                 if tok.Type != lexer.NAME {
                     panic("故障")
                 }
-                newArg := &Arg{
-                    name: tok.Value,
-                    typ: "",
-                    default: nil,
-                }
-                slices.push(self.args, newArg)
+                newArg := &Arg{name: tok.Value}
+                slices.push(&self.args, newArg)
             case ":":
                 tok = p.Lexer.next()
+                if tok.Value == "*" {
+                    // TODO:
+                    continue
+                }
                 if tok.Type != lexer.NAME {
                     panic("故障")
                 }
 
                 // 反向遍历args，找到最后一个 typ == "" 的参数
-                var targetArg: *Arg = nil
-                for i := slices.len(self.args) - 1; i >= 0; i-- {
+                for i := slices.len(&self.args) - 1; i >= 0; i-- {
                     a := self.args[i]
+                    if a.typ != "" {
+                        break
+                    }
                     a.typ = tok.Value
                 }
         }
+    }
+
+    // 检查不完善的部分
+    var err:bool
+    for i := slices.len(&self.args) - 1; i >= 0; i-- {
+        a := self.args[i]
+        if a.typ != "" {
+            break
+        }
+        err = true
+        console.println("Function:" + self.name + "Arg:"+ a.name +" need type")
+    }
+    if err == true {
+        panic("")
     }
 }

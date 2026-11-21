@@ -45,9 +45,26 @@ fn ne(s string, t string) bool {
 
 fn toCstring(s string) uint {
     build link("__string_toCstring")
-    var p: ptr = &s
-    var _p11: *ptr = p
-    ret *_p11
+    // C interop 边界：始终返回 NUL 终止副本，兼容切片/子串（p+n 不保证 \x00）。
+    // 调用方持有返回缓冲区所有权（memory.free）。
+    var n: uint = len(s)
+    var bufN: uint = n + 1
+    var buf: ptr = memory.malloc(bufN)
+    var src: *u8 = unsafe.cast[*u8](s)
+    var i: uint = 0
+    for ; i < n; {
+        var _dst: *u8 = buf + i
+        var _src: *u8 = src + i
+        var _ch: uint = *_src
+        *_dst = unsafe.cast[u8](_ch)
+        i = i + 1
+    }
+    var _tail: *u8 = buf + n
+    *_tail = unsafe.cast[u8](0)
+    var r: uint = 0
+    var rp: *ptr = &r
+    *rp = buf
+    ret r
 }
 
 // toU64 int→u64 位模式桥（语言层无 int↔uint 转换，地址/位模式拷贝实现）
@@ -198,14 +215,18 @@ fn view(ptr: ptr, length: uint, capVal: uint) string {
     ret result
 }
 
-// indexFrom 从 startPos 开始搜索 substr，未找到返回 notFound
-fn indexFrom(sPtr: ptr, sLen: uint, tPtr: ptr, tLen: uint, startPos: uint) uint {
+// indexFrom 从 startPos 开始搜索 t，未找到返回 notFound（字符串标准：不暴露裸 ptr/len）
+fn indexFrom(s string, t string, startPos uint) uint {
+    var sLen: uint = len(s)
+    var tLen: uint = len(t)
     if tLen == 0 {
         ret 0
     }
     if tLen > sLen {
         ret notFound()
     }
+    var sPtr: *u8 = unsafe.cast[*u8](s)
+    var tPtr: *u8 = unsafe.cast[*u8](t)
     var i: uint = startPos
     var limit: uint = sLen - tLen
     for i <= limit {
@@ -230,12 +251,8 @@ fn indexFrom(sPtr: ptr, sLen: uint, tPtr: ptr, tLen: uint, startPos: uint) uint 
 
 // index 返回 substr 在 s 中首次出现的位置，未找到返回 -1
 fn index(s string, substr string) int {
-    var sPtr: ptr = toCstring(s)
-    var sLen: uint = len(s)
-    var tPtr: ptr = toCstring(substr)
-    var tLen: uint = len(substr)
     var nf: uint = notFound()
-    var r: uint = indexFrom(sPtr, sLen, tPtr, tLen, 0)
+    var r: uint = indexFrom(s, substr, 0)
     if r == nf {
         ret 0 - 1
     }
@@ -260,8 +277,8 @@ fn hasPrefix(s string, prefix string) bool {
     if tLen == 0 {
         ret true
     }
-    var sPtr: ptr = toCstring(s)
-    var tPtr: ptr = toCstring(prefix)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
+    var tPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](prefix))
     var i: uint = 0
     for i < tLen {
         var _p31: *u8 = sPtr + i
@@ -284,8 +301,8 @@ fn hasSuffix(s string, suffix string) bool {
     if tLen == 0 {
         ret true
     }
-    var sPtr: ptr = toCstring(s)
-    var tPtr: ptr = toCstring(suffix)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
+    var tPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](suffix))
     var offset: uint = sLen - tLen
     var i: uint = 0
     for i < tLen {
@@ -301,7 +318,7 @@ fn hasSuffix(s string, suffix string) bool {
 
 // toUpper 返回 s 的大写副本
 fn toUpper(s string) string {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var bufN: uint = sLen + 1
     var buf: ptr = memory.malloc(bufN)
@@ -323,7 +340,7 @@ fn toUpper(s string) string {
 
 // toLower 返回 s 的小写副本
 fn toLower(s string) string {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var bufN: uint = sLen + 1
     var buf: ptr = memory.malloc(bufN)
@@ -345,7 +362,7 @@ fn toLower(s string) string {
 
 // trimSpace 返回去除两端空白字符的 s
 fn trimSpace(s string) string {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var start: uint = 0
     for start < sLen {
@@ -384,7 +401,7 @@ fn trimSpace(s string) string {
 // trimPrefix 返回去除 s 前缀 prefix 的字符串
 fn trimPrefix(s string, prefix string) string {
     if hasPrefix(s, prefix) {
-        var sPtr: ptr = toCstring(s)
+        var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
         var sLen: uint = len(s)
         var tLen: uint = len(prefix)
         var newLen: uint = sLen - tLen
@@ -408,7 +425,7 @@ fn trimPrefix(s string, prefix string) string {
 // trimSuffix 返回去除 s 后缀 suffix 的字符串
 fn trimSuffix(s string, suffix string) string {
     if hasSuffix(s, suffix) {
-        var sPtr: ptr = toCstring(s)
+        var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
         var sLen: uint = len(s)
         var tLen: uint = len(suffix)
         var newLen: uint = sLen - tLen
@@ -431,7 +448,7 @@ fn trimSuffix(s string, suffix string) string {
 
 // repeat 返回 s 重复 count 次的新字符串
 fn repeat(s string, count uint) string {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var total: uint = sLen * count
     var bufN: uint = total + 1
@@ -455,11 +472,11 @@ fn repeat(s string, count uint) string {
 
 // replace 返回将 s 中前 n 个 old 替换为 new 的字符串（n=0 替换全部）
 fn replace(s string, old string, new string, n uint) string {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
-    var oPtr: ptr = toCstring(old)
+    var oPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](old))
     var oLen: uint = len(old)
-    var nPtr: ptr = toCstring(new)
+    var nPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](new))
     var nLen: uint = len(new)
     var nf: uint = notFound()
     if oLen == 0 {
@@ -469,7 +486,7 @@ fn replace(s string, old string, new string, n uint) string {
     var scanPos: uint = 0
     var scanning: bool = true
     for ; scanning; {
-        var idx: uint = indexFrom(sPtr, sLen, oPtr, oLen, scanPos)
+        var idx: uint = indexFrom(s, old, scanPos)
         if idx == nf {
             break
         }
@@ -491,7 +508,7 @@ fn replace(s string, old string, new string, n uint) string {
     var dstPos: uint = 0
     var replaced: uint = 0
     for replaced < count {
-        var idx: uint = indexFrom(sPtr, sLen, oPtr, oLen, srcPos)
+        var idx: uint = indexFrom(s, old, srcPos)
         var segLen: uint = idx - srcPos
         var k: uint = 0
         for k < segLen {
@@ -535,7 +552,7 @@ fn join(strs ptr, count int, sep string) string {
     if count <= 0 {
         ret view(nil, 0, 0)
     }
-    var sepPtr: ptr = toCstring(sep)
+    var sepPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](sep))
     var sepLen: uint = len(sep)
 
     var totalLen: uint = 0
@@ -641,9 +658,9 @@ fn _putPiece(data ptr, idx uint, src ptr, segLen uint) {
 //   所有权：splitFree(r) 释放外头 + data 块 + 各元素 buffer；splitGet 返回借用段。
 // （stw01 pSplitN 终态形态 + D2：sepLen==0 走 byte-walk 分支）
 fn splitN(s string, sep string, n int) ptr {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
-    var sepPtr: ptr = toCstring(sep)
+    var sepPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](sep))
     var sepLen: uint = len(sep)
 
     var nNeg: bool = n < 0
@@ -699,7 +716,7 @@ fn splitN(s string, sep string, n int) ptr {
         if sepLen > 0 {
             var limitM1: uint = pieces - 1
             for ; pieceI < limitM1; {
-                var sIdx: uint = indexFrom(sPtr, sLen, sepPtr, sepLen, scanPos)
+                var sIdx: uint = indexFrom(s, sep, scanPos)
                 if sIdx == nf {
                     break
                 }
@@ -798,7 +815,7 @@ fn splitFree(r ptr) {
 // 返回手工 Go 序容器头 ptr（与 split 同形），所有权同 split（splitFree 释放全家）。
 // （stw03 pFields 终态形态：两遍扫描 + _byteAt/_putPiece helper，块内零 typed staging）
 fn fields(s string) ptr {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
 
     // pass1：数字段数
@@ -934,7 +951,7 @@ fn builderWrite(b ptr, ch int) {
 
 // builderWriteString 追加字符串 s 的全部字节（s 为只读借用，R10）
 fn builderWriteString(b ptr, s string) {
-    var sPtr: ptr = toCstring(s)
+    var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     _bGrow(b, sLen)
     var box: *strView = unsafe.cast[*strView](b)

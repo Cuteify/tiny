@@ -949,7 +949,13 @@
 == /home/gx/Desktop/______/tiny/pkg/maps.delete
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/maps.delete",
-  "params": null,
+  "params": [
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
@@ -967,7 +973,13 @@
 == /home/gx/Desktop/______/tiny/pkg/maps.get
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/maps.get",
-  "params": null,
+  "params": [
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
@@ -976,7 +988,13 @@
 == /home/gx/Desktop/______/tiny/pkg/maps.has
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/maps.has",
-  "params": null,
+  "params": [
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
@@ -1003,7 +1021,13 @@
 == /home/gx/Desktop/______/tiny/pkg/maps.new
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/maps.new",
-  "params": null,
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
@@ -1012,7 +1036,13 @@
 == /home/gx/Desktop/______/tiny/pkg/maps.set
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/maps.set",
-  "params": null,
+  "params": [
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
@@ -1676,6 +1706,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": false,
@@ -1766,6 +1801,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": false,
@@ -1826,6 +1866,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": false,
@@ -1841,6 +1886,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 2,
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": false,
@@ -1925,9 +1975,9 @@
       "escape": 0
     }
   ],
-  "retOwned": false,
-  "retEscape": 0,
-  "retKind": 0,
+  "retOwned": true,
+  "retEscape": 1,
+  "retKind": 4,
   "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.push
@@ -1938,6 +1988,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": false,
@@ -1955,9 +2010,9 @@
       "escape": 0
     }
   ],
-  "retOwned": false,
-  "retEscape": 0,
-  "retKind": 0,
+  "retOwned": true,
+  "retEscape": 1,
+  "retKind": 4,
   "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.reverse
@@ -1983,6 +2038,11 @@
       "index": 0,
       "mode": 0,
       "escape": 0
+    },
+    {
+      "index": 2,
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": false,
@@ -2523,7 +2583,18 @@
 == /home/gx/Desktop/______/tiny/pkg/strings.indexFrom
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/strings.indexFrom",
-  "params": null,
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    },
+    {
+      "index": 1,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,

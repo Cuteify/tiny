@@ -11,9 +11,13 @@ import (
 )
 
 // owningType nil 安全的 IsOwning 包装：解析期前向引用 / 跨包未解析时 Type 是 nil。
+// TypeParam 保守视为 owning：实例化后可能是 *T/string/[]T。
 func owningType(t typeSys.Type) bool {
 	if t == nil {
 		return false
+	}
+	if _, ok := t.(*typeSys.TypeParam); ok {
+		return true
 	}
 	return t.IsOwning()
 }
