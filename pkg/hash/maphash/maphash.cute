@@ -6,7 +6,7 @@ import "std:strings"
 
 // hash 使用种子对 data 计算 64 位哈希值
 // seed 用于防止哈希碰撞攻击，不同种子产生不同的哈希分布
-fn hash(seed u64, data string) u64 {
+fn hash(seed: u64, data: string) u64 {
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
     var h: u64 = seed ^ 0x5BD1E995

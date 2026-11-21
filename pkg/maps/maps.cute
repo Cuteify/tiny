@@ -36,13 +36,13 @@ type strView struct {
 // ==== 内部非泛型 helpers ====
 
 // _roundUp 将 x 上取整为 a 的倍数(a = PTR_SIZE;纯 uint 数学,免 cast[int])
-fn _roundUpU(x uint, a uint) uint {
+fn _roundUpU(x: uint, a: uint) uint {
     var q: uint = (x + a) - 1
     ret (q / a) * a
 }
 
 // _fnv1a 手写 FNV-1a(32bit)
-fn _fnv1a(p ptr, n uint) u32 {
+fn _fnv1a(p: ptr, n: uint) u32 {
     var h: u32 = 2166136261
     var i: uint = 0
     for ; i < n; {
@@ -56,7 +56,7 @@ fn _fnv1a(p ptr, n uint) u32 {
 }
 
 // _bytesEq 逐字节相等(先比长)
-fn _bytesEq(pa ptr, na uint, pb ptr, nb uint) bool {
+fn _bytesEq(pa: ptr, na: uint, pb: ptr, nb: uint) bool {
     if na != nb {
         ret false
     }
@@ -76,7 +76,7 @@ fn _bytesEq(pa ptr, na uint, pb ptr, nb uint) bool {
 
 // new 新建 map(含 16 槽表)。sampleK 为键类型见证值(参与 [K] 推断,不入表);
 // vsize = 值类型字节数(调用方 sizeof[int]() 等给出;V 全运行期)。
-fn new[K](sampleK K, vsize int) ptr {
+fn new[K](sampleK: K, vsize: int) ptr {
     var psU: uint = unsafe.cast[uint](sizeof[ptr]())
     var kszU: uint = unsafe.cast[uint](sizeof[K]())
     var vszU: uint = unsafe.cast[uint](vsize)
@@ -101,7 +101,7 @@ fn new[K](sampleK K, vsize int) ptr {
 }
 
 // set 插入/覆盖。先探查(续航用首墓),未命中落位写字节;载荷 0.75→2× rehash(体内独立实现)
-fn set[K](m ptr, key K, valAddr ptr) {
+fn set[K](m: ptr, key: K, valAddr: ptr) {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -245,7 +245,7 @@ fn set[K](m ptr, key K, valAddr ptr) {
 }
 
 // get 查询:命中拷值进 out 并 true;未中 out 清零(零值语义)并 false
-fn get[K](m ptr, key K, out ptr) bool {
+fn get[K](m: ptr, key: K, out: ptr) bool {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -318,7 +318,7 @@ fn get[K](m ptr, key K, out ptr) bool {
 }
 
 // has 键存在性
-fn has[K](m ptr, key K) bool {
+fn has[K](m: ptr, key: K) bool {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -386,7 +386,7 @@ fn has[K](m ptr, key K) bool {
 }
 
 // delete 删除(落墓碑复用);存在 true / 不存在 false
-fn delete[K](m ptr, key K) bool {
+fn delete[K](m: ptr, key: K) bool {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -459,13 +459,13 @@ fn delete[K](m ptr, key K) bool {
 // ==== 非泛型面(布局读头运行期字段;泛型外) ====
 
 // len 元素数量
-fn len(m ptr) uint {
+fn len(m: ptr) uint {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     ret mp.count
 }
 
 // clear 清空(容量保留;槽字节全 0 )
-fn clear(m ptr) {
+fn clear(m: ptr) {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var capU: uint = mp.cap
     var rowU: uint = mp.row
@@ -475,7 +475,7 @@ fn clear(m ptr) {
 }
 
 // keys 键数组(按 i 升序收满槽;count×ksz 字节;空表返回 0)
-fn keys(m ptr) ptr {
+fn keys(m: ptr) ptr {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -505,7 +505,7 @@ fn keys(m ptr) ptr {
 }
 
 // values 值数组(同 keys,按 i 升序;count×vsz 字节;空表返回 0)
-fn values(m ptr) ptr {
+fn values(m: ptr) ptr {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -538,7 +538,7 @@ fn values(m ptr) ptr {
 }
 
 // clone 深拷布:同布局头+表字节复制(容量/布局不变;字符串值仍为视图)
-fn clone(m ptr) ptr {
+fn clone(m: ptr) ptr {
     var mp: *mapHdr = unsafe.cast[*mapHdr](m)
     var ps: int = sizeof[ptr]()
     var psU: uint = unsafe.cast[uint](ps)
@@ -560,7 +560,7 @@ fn clone(m ptr) ptr {
 }
 
 // equal 两 map 逐键等值(键 eq 按 ksz 判据,值 eq 按 vsz 判据;string 路径均逐字节内容)
-fn equal(a ptr, b ptr) bool {
+fn equal(a: ptr, b: ptr) bool {
     if a == b {
         ret true
     }

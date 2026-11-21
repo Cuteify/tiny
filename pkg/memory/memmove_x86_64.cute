@@ -3,7 +3,7 @@ build os("linux")
 build arch("x86_64")
 import "std:syscall"
 
-fn memmove(dst ptr, src ptr, n uint) {
+fn memmove(dst: ptr, src: ptr, n: uint) {
     build asm {
         mov rdi, [$dst]
         mov rsi, [$src]

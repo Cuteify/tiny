@@ -19,7 +19,7 @@ type Writer struct {
 }
 
 // newReader 从字符串创建一个 Reader
-fn newReader(data string) *Reader {
+fn newReader(data: string) *Reader {
     var r: *Reader = memory.malloc(24)
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
@@ -30,7 +30,7 @@ fn newReader(data string) *Reader {
 }
 
 // read 从 Reader 读取 count 字节到 buf，返回实际读取的字节数
-fn read(r *Reader, buf *u64, count int) int {
+fn read(r: *Reader, buf: *u64, count: int) int {
     var available: uint = r.len - r.pos
     var toRead: uint = count
     if toRead > available {
@@ -58,7 +58,7 @@ fn newWriter() *Writer {
 }
 
 // writerGrow 扩容 Writer 缓冲区
-fn writerGrow(w *Writer, need uint) {
+fn writerGrow(w: *Writer, need: uint) {
     var newCap: uint = w.cap * 2
     if newCap < need {
         newCap = need
@@ -76,7 +76,7 @@ fn writerGrow(w *Writer, need uint) {
 }
 
 // write 向 Writer 写入 count 字节数据，返回实际写入的字节数
-fn write(w *Writer, data ptr, count int) int {
+fn write(w: *Writer, data: ptr, count: int) int {
     var toWrite: uint = count
     if w.len + toWrite > w.cap {
         writerGrow(w, w.len + toWrite)
@@ -93,14 +93,14 @@ fn write(w *Writer, data ptr, count int) int {
 }
 
 // WriteString 向 Writer 写入字符串，返回写入的字节数
-fn writeString(w *Writer, s string) int {
+fn writeString(w: *Writer, s: string) int {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     ret write(w, sPtr, sLen)
 }
 
 // string 将 Writer 中的内容转换为字符串
-fn string(w *Writer) string {
+fn string(w: *Writer) string {
     var buf: ptr = memory.malloc(w.len + 1)
     var i: uint = 0
     for ; i < w.len; {
@@ -115,7 +115,7 @@ fn string(w *Writer) string {
 }
 
 // copy 从 src Reader 复制数据到 dst Writer，返回复制的字节数
-fn copy(dst *Writer, src *Reader) int {
+fn copy(dst: *Writer, src: *Reader) int {
     var total: int = 0
     var buf: ptr = memory.malloc(64)
     for ; src.pos < src.len; {
@@ -139,7 +139,7 @@ fn copy(dst *Writer, src *Reader) int {
 }
 
 // readAll 从 Reader 读取所有剩余数据并返回字符串
-fn readAll(r *Reader) string {
+fn readAll(r: *Reader) string {
     var remaining: uint = r.len - r.pos
     var buf: ptr = memory.malloc(remaining + 1)
     var i: uint = 0
@@ -156,7 +156,7 @@ fn readAll(r *Reader) string {
 }
 
 // limitReader 返回一个限制最多读取 n 字节的 Reader
-fn limitReader(r *Reader, n int) *Reader {
+fn limitReader(r: *Reader, n: int) *Reader {
     var lr: *Reader = memory.malloc(24)
     lr.data = r.data + r.pos
     var maxLen: uint = r.len - r.pos

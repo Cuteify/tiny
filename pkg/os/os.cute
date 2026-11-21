@@ -44,16 +44,16 @@ fn errnoOf(code: int) int {
 }
 
 // isExist 判断错误码是否表示文件已存在 (EEXIST)
-fn isExist(err int) bool {
+fn isExist(err: int) bool {
     ret err == EEXIST
 }
 
 // isNotExist 判断错误码是否表示文件不存在 (ENOENT)
-fn isNotExist(err int) bool {
+fn isNotExist(err: int) bool {
     ret err == ENOENT
 }
 
 // isPermission 判断错误码是否表示权限不足 (EACCES)
-fn isPermission(err int) bool {
+fn isPermission(err: int) bool {
     ret err == EACCES
 }

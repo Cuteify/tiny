@@ -14,7 +14,7 @@ import "std:slices"
 import "std:strings"
 
 // _timMinRunStrn 行族同款 minrun（与 tim_x86_64.cute / tim_x86.cute 同名不同参）
-fn _timMinRunStrn(n int) int {
+fn _timMinRunStrn(n: int) int {
     var minrun: int = n
     var shift: int = 0
     for ; minrun >= 64; {

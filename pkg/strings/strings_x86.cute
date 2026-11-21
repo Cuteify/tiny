@@ -14,21 +14,21 @@ type strView struct {
 // len/cap/toCstring 返回 uint（平台原生字宽，x86 为 4 字节）。
 // uint 与 i32/u32/u64 同为数值类型可隐式转换：作 u64 形参实参时由实参扩展（高 32 补 0）处理。
 
-fn len(s string) uint {
+fn len(s: string) uint {
     build link("__string_len")
     var p: ptr = &s
     var _p1: *uint = p + 4
     ret *_p1
 }
 
-fn cap(s string) uint {
+fn cap(s: string) uint {
     build link("__string_cap")
     var p: ptr = &s
     var _p2: *uint = p + 8
     ret *_p2
 }
 
-fn eq(s string, t string) bool {
+fn eq(s: string, t: string) bool {
     build link("__string_eq")
     // 内容比较：ptr/len 槽位相同不代表字符串相等（构造串与字面量可异址同值）
     if strings.compare(s, t) == 0 {
@@ -37,7 +37,7 @@ fn eq(s string, t string) bool {
     ret false
 }
 
-fn ne(s string, t string) bool {
+fn ne(s: string, t: string) bool {
     build link("__string_ne")
     if strings.compare(s, t) != 0 {
         ret true
@@ -45,7 +45,7 @@ fn ne(s string, t string) bool {
     ret false
 }
 
-fn toCstring(s string) uint {
+fn toCstring(s: string) uint {
     build link("__string_toCstring")
     // C interop 边界：始终返回 NUL 终止副本，兼容切片/子串（p+n 不保证 \x00）。
     // 调用方持有返回缓冲区所有权（memory.free）。
@@ -75,7 +75,7 @@ fn toCstring(s string) uint {
 // hi 半字踩上邻槽（toString.neg / builderWrite.n0 全踩实，gdb eax=0x20 现场）。
 // 绕行 = x86 文件全链去 u64：域内消费点值域恒 <2^32（char/段数/digit），uint 语义等价。
 // x86_64 版保持原生 u64 不动（rc=42 已验证）。build link 只别名挂接，签名可变。
-fn toU64(n int) uint {
+fn toU64(n: int) uint {
     build link("__string_toU64")
     var p: ptr = &n
     var _p12: *uint = p
@@ -85,7 +85,7 @@ fn toU64(n int) uint {
 
 // fromI64 u64→int 位模式桥（x86 特化版：形参 uint 化绕缺陷⑯——x86 下 u64 形参/返回
 // 装配不安全；x86 域内不存在真 64 位源值，位模式直传等价。x86_64 版 u64 原生不动）
-fn fromI64(n uint) int {
+fn fromI64(n: uint) int {
     build link("__string_fromI64")
     var x: int = 0
     var p: ptr = &x
@@ -95,7 +95,7 @@ fn fromI64(n uint) int {
 }
 
 // toString 整数转字符串（2-62 进制，负数带负号）
-fn toString(n int, base uint) string {
+fn toString(n: int, base: uint) string {
     build link("__string_toString")
     var neg: bool = false
     var num: uint = 0
@@ -158,7 +158,7 @@ fn toString(n int, base uint) string {
 }
 
 // parse 字符串转整数（2-62 进制，支持负号；非法字符停止解析）
-fn parse(s string, base uint) int {
+fn parse(s: string, base: uint) int {
     build link("__string_parse")
     var p: ptr = &s
     var _p21: *uint = p
@@ -225,7 +225,7 @@ fn view(ptr: ptr, length: uint, capVal: uint) string {
 }
 
 // indexFrom 从 startPos 开始搜索 t，未找到返回 notFound（字符串标准：不暴露裸 ptr/len）
-fn indexFrom(s string, t string, startPos uint) uint {
+fn indexFrom(s: string, t: string, startPos: uint) uint {
     var sLen: uint = len(s)
     var tLen: uint = len(t)
     if tLen == 0 {
@@ -259,7 +259,7 @@ fn indexFrom(s string, t string, startPos uint) uint {
 }
 
 // index 返回 substr 在 s 中首次出现的位置，未找到返回 -1
-fn index(s string, substr string) int {
+fn index(s: string, substr: string) int {
     var nf: uint = notFound()
     var r: uint = indexFrom(s, substr, 0)
     if r == nf {
@@ -269,7 +269,7 @@ fn index(s string, substr string) int {
 }
 
 // contains 判断 s 是否包含 substr
-fn contains(s string, substr string) bool {
+fn contains(s: string, substr: string) bool {
     if index(s, substr) >= 0 {
         ret true
     }
@@ -277,7 +277,7 @@ fn contains(s string, substr string) bool {
 }
 
 // hasPrefix 判断 s 是否以 prefix 开头
-fn hasPrefix(s string, prefix string) bool {
+fn hasPrefix(s: string, prefix: string) bool {
     var sLen: uint = len(s)
     var tLen: uint = len(prefix)
     if tLen > sLen {
@@ -301,7 +301,7 @@ fn hasPrefix(s string, prefix string) bool {
 }
 
 // hasSuffix 判断 s 是否以 suffix 结尾
-fn hasSuffix(s string, suffix string) bool {
+fn hasSuffix(s: string, suffix: string) bool {
     var sLen: uint = len(s)
     var tLen: uint = len(suffix)
     if tLen > sLen {
@@ -326,7 +326,7 @@ fn hasSuffix(s string, suffix string) bool {
 }
 
 // toUpper 返回 s 的大写副本
-fn toUpper(s string) string {
+fn toUpper(s: string) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var bufN: uint = sLen + 1
@@ -348,7 +348,7 @@ fn toUpper(s string) string {
 }
 
 // toLower 返回 s 的小写副本
-fn toLower(s string) string {
+fn toLower(s: string) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var bufN: uint = sLen + 1
@@ -370,7 +370,7 @@ fn toLower(s string) string {
 }
 
 // trimSpace 返回去除两端空白字符的 s
-fn trimSpace(s string) string {
+fn trimSpace(s: string) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var start: uint = 0
@@ -408,7 +408,7 @@ fn trimSpace(s string) string {
 }
 
 // trimPrefix 返回去除 s 前缀 prefix 的字符串
-fn trimPrefix(s string, prefix string) string {
+fn trimPrefix(s: string, prefix: string) string {
     if hasPrefix(s, prefix) {
         var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
         var sLen: uint = len(s)
@@ -432,7 +432,7 @@ fn trimPrefix(s string, prefix string) string {
 }
 
 // trimSuffix 返回去除 s 后缀 suffix 的字符串
-fn trimSuffix(s string, suffix string) string {
+fn trimSuffix(s: string, suffix: string) string {
     if hasSuffix(s, suffix) {
         var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
         var sLen: uint = len(s)
@@ -456,7 +456,7 @@ fn trimSuffix(s string, suffix string) string {
 }
 
 // repeat 返回 s 重复 count 次的新字符串
-fn repeat(s string, count uint) string {
+fn repeat(s: string, count: uint) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var total: uint = sLen * count
@@ -480,7 +480,7 @@ fn repeat(s string, count uint) string {
 }
 
 // replace 返回将 s 中前 n 个 old 替换为 new 的字符串（n=0 替换全部）
-fn replace(s string, old string, new string, n uint) string {
+fn replace(s: string, old: string, new: string, n: uint) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var oPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](old))
@@ -557,7 +557,7 @@ fn replace(s string, old string, new string, n uint) string {
 // ===== 字符串连接 =====
 
 // join 用 sep 连接多个字符串，返回结果
-fn join(strs ptr, count int, sep string) string {
+fn join(strs: ptr, count: int, sep: string) string {
     if count <= 0 {
         ret view(nil, 0, 0)
     }
@@ -615,7 +615,7 @@ fn join(strs ptr, count int, sep string) string {
 // ===== Wave St：块内 staging helper（D4 v3 防则：typed cast 只在 fn 顶层）=====
 
 // _putByte 逐字节拷贝 helper：dst[i] = src[i]（stw01 pPutByte 终态形态）
-fn _putByte(dst ptr, src ptr, i uint) {
+fn _putByte(dst: ptr, src: ptr, i: uint) {
     var dAddr: ptr = dst + i
     var dP: *u8 = unsafe.cast[*u8](dAddr)
     var sAddr: ptr = src + i
@@ -626,7 +626,7 @@ fn _putByte(dst ptr, src ptr, i uint) {
 }
 
 // _byteAt 读 src+i 字节 helper（stw03 pByteAt 终态形态）
-fn _byteAt(src ptr, i uint) uint {
+fn _byteAt(src: ptr, i: uint) uint {
     var bAddr: ptr = src + i
     var bP: *u8 = unsafe.cast[*u8](bAddr)
     var bV: uint = *bP
@@ -637,7 +637,7 @@ fn _byteAt(src ptr, i uint) uint {
 
 // _putPiece 在 data 第 idx 个元素槽写入一段：独立 malloc 段 buffer（segLen+1、NUL 尾）
 // + 逐字节拷贝（经 _putByte）+ 三槽写入（stw01 pPutPiece 终态形态；无返回值 fn 省略返回类型、显式 ret）
-fn _putPiece(data ptr, idx uint, src ptr, segLen uint) {
+fn _putPiece(data: ptr, idx: uint, src: ptr, segLen: uint) {
     var bufN: uint = segLen + 1
     var buf: ptr = memory.malloc(bufN)
     var i: uint = 0
@@ -666,7 +666,7 @@ fn _putPiece(data ptr, idx uint, src ptr, segLen uint) {
 //   sep="" 为 byte 级分段（Go 为 rune 段——差异项备案）。
 //   所有权：splitFree(r) 释放外头 + data 块 + 各元素 buffer；splitGet 返回借用段。
 // （stw01 pSplitN 终态形态 + D2：sepLen==0 走 byte-walk 分支）
-fn splitN(s string, sep string, n int) ptr {
+fn splitN(s: string, sep: string, n: int) ptr {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     var sepPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](sep))
@@ -765,19 +765,19 @@ fn splitN(s string, sep string, n int) ptr {
 }
 
 // split 委托 splitN(-1)（Go strings.Split 与内部 genSplit 同构）
-fn split(s string, sep string) ptr {
+fn split(s: string, sep: string) ptr {
     ret splitN(s, sep, 0 - 1)
 }
 
 // splitLen 读容器段数（外头 n 槽）
-fn splitLen(r ptr) uint {
+fn splitLen(r: ptr) uint {
     var rAddr: ptr = unsafe.cast[ptr](r)
     var hdr: *strView = unsafe.cast[*strView](rAddr)
     ret hdr.n
 }
 
 // splitGet 读第 i 段 string 值（不复制、借用段 buffer：splitFree 之前有效；勿 free 其 p 槽）
-fn splitGet(r ptr, i uint) string {
+fn splitGet(r: ptr, i: uint) string {
     var rAddr: ptr = unsafe.cast[ptr](r)
     var hdr: *strView = unsafe.cast[*strView](rAddr)
     var data: ptr = hdr.p
@@ -789,7 +789,7 @@ fn splitGet(r ptr, i uint) string {
 }
 
 // _cellP 读容器第 i 个 cell 的 p 字段 helper：typed staging 全顶层（D3/D4 v3：块内禁 cast）
-fn _cellP(r ptr, i uint) ptr {
+fn _cellP(r: ptr, i: uint) ptr {
     var rAddrH: ptr = unsafe.cast[ptr](r)
     var hdrH: *strView = unsafe.cast[*strView](rAddrH)
     var dataH: ptr = hdrH.p
@@ -802,7 +802,7 @@ fn _cellP(r ptr, i uint) ptr {
 }
 
 // splitFree 释放 r 全家：外头 + data 块 + 各元素 buffer；重复调用/借用后调用为 UB（不测）
-fn splitFree(r ptr) {
+fn splitFree(r: ptr) {
     var rAddr2: ptr = unsafe.cast[ptr](r)
     var hdr2: *strView = unsafe.cast[*strView](rAddr2)
     var count0: uint = hdr2.n
@@ -828,7 +828,7 @@ fn splitFree(r ptr) {
 // fields 按空白字符（isSpace：32/9/10/13）切分 s，跳过空段；
 // 返回手工 Go 序容器头 ptr（与 split 同形），所有权同 split（splitFree 释放全家）。
 // （stw03 pFields 终态形态：两遍扫描 + _byteAt/_putPiece helper，块内零 typed staging）
-fn fields(s string) ptr {
+fn fields(s: string) ptr {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
 
@@ -903,7 +903,7 @@ fn fields(s string) ptr {
 // string() 不调 bufToString（其 view-then-free 为悬空陷阱 R11）；自 malloc 新 buffer 收编。
 
 // builderNew 建一个容量 capacity 的字节 Builder；capacity<1 按 1 处理
-fn builderNew(capacity uint) ptr {
+fn builderNew(capacity: uint) ptr {
     var b: ptr = memory.malloc(12)
     var box: *strView = unsafe.cast[*strView](b)
     var cap0: uint = capacity
@@ -920,7 +920,7 @@ fn builderNew(capacity uint) ptr {
 }
 
 // _bGrow 私有扩容曲线：n+need 超 cap 时按 P2 曲线扩容并迁移旧数据（slice grow 同款）
-fn _bGrow(b ptr, need uint) {
+fn _bGrow(b: ptr, need: uint) {
     var box: *strView = unsafe.cast[*strView](b)
     var n0: uint = box.n
     var c0: uint = box.c
@@ -948,7 +948,7 @@ fn _bGrow(b ptr, need uint) {
 }
 
 // builderWrite 追加单字节（ch 取 0–255；typed staging 全顶层 D4 v3）
-fn builderWrite(b ptr, ch int) {
+fn builderWrite(b: ptr, ch: int) {
     _bGrow(b, 1)
     var box: *strView = unsafe.cast[*strView](b)
     var data: ptr = box.p
@@ -964,7 +964,7 @@ fn builderWrite(b ptr, ch int) {
 }
 
 // builderWriteString 追加字符串 s 的全部字节（s 为只读借用，R10）
-fn builderWriteString(b ptr, s string) {
+fn builderWriteString(b: ptr, s: string) {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = len(s)
     _bGrow(b, sLen)
@@ -983,13 +983,13 @@ fn builderWriteString(b ptr, s string) {
 }
 
 // builderLen 读当前长度
-fn builderLen(b ptr) uint {
+fn builderLen(b: ptr) uint {
     var box: *strView = unsafe.cast[*strView](b)
     ret box.n
 }
 
 // builderString 收编为新 string（malloc 新 buffer + 拷贝 + NUL；不消耗 builder、可重复调用）
-fn builderString(b ptr) string {
+fn builderString(b: ptr) string {
     var box: *strView = unsafe.cast[*strView](b)
     var n0: uint = box.n
     var data: ptr = box.p
@@ -1009,7 +1009,7 @@ fn builderString(b ptr) string {
 }
 
 // builderFree 释放 builder 全家（数据 buf + 控制块）；其后使用为 UB
-fn builderFree(b ptr) {
+fn builderFree(b: ptr) {
     var box: *strView = unsafe.cast[*strView](b)
     var data: ptr = box.p
     if data != 0 {

@@ -4,7 +4,7 @@ import "std:strings"
 // 平台无关实现，纯逻辑判断
 
 // isLetter 判断字符是否为 ASCII 字母（a-z, A-Z）
-fn isLetter(r int) bool {
+fn isLetter(r: int) bool {
     if r >= 65 && r <= 90 {
         ret true
     }
@@ -15,7 +15,7 @@ fn isLetter(r int) bool {
 }
 
 // isDigit 判断字符是否为 ASCII 数字（0-9）
-fn isDigit(r int) bool {
+fn isDigit(r: int) bool {
     if r >= 48 && r <= 57 {
         ret true
     }
@@ -23,7 +23,7 @@ fn isDigit(r int) bool {
 }
 
 // isSpace 判断字符是否为空白字符（空格、制表符、换行符、回车符等）
-fn isSpace(r int) bool {
+fn isSpace(r: int) bool {
     // 空格 (32), 制表符 (9), 换行符 (10), 回车符 (13), 垂直制表符 (11), 换页符 (12)
     if r == 32 || r == 9 || r == 10 || r == 13 || r == 11 || r == 12 {
         ret true
@@ -32,7 +32,7 @@ fn isSpace(r int) bool {
 }
 
 // isUpper 判断字符是否为大写字母（A-Z）
-fn isUpper(r int) bool {
+fn isUpper(r: int) bool {
     if r >= 65 && r <= 90 {
         ret true
     }
@@ -40,7 +40,7 @@ fn isUpper(r int) bool {
 }
 
 // isLower 判断字符是否为小写字母（a-z）
-fn isLower(r int) bool {
+fn isLower(r: int) bool {
     if r >= 97 && r <= 122 {
         ret true
     }
@@ -48,7 +48,7 @@ fn isLower(r int) bool {
 }
 
 // toUpper 将小写字母转换为大写，其他字符不变
-fn toUpper(r int) int {
+fn toUpper(r: int) int {
     if r >= 97 && r <= 122 {
         ret r - 32
     }
@@ -56,7 +56,7 @@ fn toUpper(r int) int {
 }
 
 // toLower 将大写字母转换为小写，其他字符不变
-fn toLower(r int) int {
+fn toLower(r: int) int {
     if r >= 65 && r <= 90 {
         ret r + 32
     }

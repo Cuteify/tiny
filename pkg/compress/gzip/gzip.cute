@@ -23,7 +23,7 @@ type Reader struct {
 }
 
 // newReader 创建 gzip 读取器，跳过 10 字节头部
-fn newReader(data string) *Reader {
+fn newReader(data: string) *Reader {
     var buf: ptr = memory.malloc(32)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -46,7 +46,7 @@ fn newReader(data string) *Reader {
 }
 
 // read 从 gzip 读取器中读取解压数据
-fn read(r ptr, buf ptr, n int) int {
+fn read(r: ptr, buf: ptr, n: int) int {
     var _p4: *ptr = r
     var fr: *flate.Reader = *_p4
     ret flate.read(fr, buf, n)
@@ -76,7 +76,7 @@ fn newWriter() *Writer {
 }
 
 // updateCRC 更新 CRC32 校验和（逐字节计算）
-fn updateCRC(crc u32, data ptr, n uint) u32 {
+fn updateCRC(crc: u32, data: ptr, n: uint) u32 {
     var c: u32 = crc
     var i: uint = 0
     for ; i < n; {
@@ -98,7 +98,7 @@ fn updateCRC(crc u32, data ptr, n uint) u32 {
 }
 
 // write 向 gzip 写入器写入数据
-fn write(w ptr, data ptr, n int) int {
+fn write(w: ptr, data: ptr, n: int) int {
     // 更新 CRC32
     var _p9: *uint = w + 8
     var oldCrc: u32 = *_p9
@@ -117,7 +117,7 @@ fn write(w ptr, data ptr, n int) int {
 }
 
 // close 关闭 gzip 写入器，返回完整的 gzip 数据（头 + 压缩数据 + 尾）
-fn close(w ptr) string {
+fn close(w: ptr) string {
     var _p14: *ptr = w
     var fw: *flate.Writer = *_p14
     var flateData: string = flate.close(fw)

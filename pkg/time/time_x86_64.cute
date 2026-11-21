@@ -24,7 +24,7 @@ fn now() Time {
 }
 
 // sleep 休眠 d 纳秒（nanosleep）
-fn sleep(d u64) {
+fn sleep(d: u64) {
     var req: u64 = 0
     var p: ptr = &req
     var sec: u64 = d / SECOND

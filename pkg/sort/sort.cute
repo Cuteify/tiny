@@ -10,7 +10,7 @@ import "std:memory"
 // ============================================================================
 
 // insertionSortInts 对 *[]int 进行插入排序
-fn insertionSortInts(s *[]int) {
+fn insertionSortInts(s: *[]int) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     // 读取 len
     var lenP: *ptr = sAddr + 8
@@ -104,7 +104,7 @@ fn _setIntVal(data: ptr, idx: int, val: int, esz: int) {
 }
 
 // qsortInts 对 *[]int 进行快速排序
-fn qsortInts(s *[]int) {
+fn qsortInts(s: *[]int) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     var lenP: *ptr = sAddr + 8
     var n: int = *lenP
@@ -268,7 +268,7 @@ fn _strLess(data: ptr, i: int, j: int) bool {
 }
 
 // _strCompareStrs 比较两个字符串（独立实现，不使用 strings.compare 以避免泛型问题）
-fn _strCompareStrs(a string, b string) int {
+fn _strCompareStrs(a: string, b: string) int {
     var aPtr: ptr = strings.toCstring(a)
     var aLen: int = strings.len(a)
     var bPtr: ptr = strings.toCstring(b)
@@ -314,7 +314,7 @@ fn _storeStringToBuf(data: ptr, idx: int, buf: ptr) {
 }
 
 // insertionSortStrs 对 *[]string 进行插入排序
-fn insertionSortStrs(s *[]string) {
+fn insertionSortStrs(s: *[]string) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     // 读取 len
     var lenP: *ptr = sAddr + 8
@@ -352,7 +352,7 @@ fn insertionSortStrs(s *[]string) {
 // ============================================================================
 
 // qsortStrs 对 *[]string 进行快速排序
-fn qsortStrs(s *[]string) {
+fn qsortStrs(s: *[]string) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     var lenP: *ptr = sAddr + 8
     var n: int = *lenP

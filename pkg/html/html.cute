@@ -5,7 +5,7 @@ import "std:strings"
 
 // escape 转义 HTML 特殊字符
 // < → &lt;  > → &gt;  & → &amp;  " → &quot;  ' → &#39;
-fn escape(s string) string {
+fn escape(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     // 最坏情况：每个字符都被转义为最多 6 字节
@@ -103,7 +103,7 @@ fn putByteHtml(buf: ptr, pos: uint, value: u8) {
     *q = value
 }
 
-fn unescape(s string) string {
+fn unescape(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var buf: ptr = memory.malloc(sLen + 1)
@@ -156,7 +156,7 @@ fn unescape(s string) string {
 }
 
 // escapeAll 转义所有非 ASCII 字符（值 > 127 的字节）为 &#xHH; 格式
-fn escapeAll(s string) string {
+fn escapeAll(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     // 最坏情况：每个字节 8 字节 (&#xHH;)

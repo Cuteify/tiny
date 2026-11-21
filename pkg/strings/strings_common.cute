@@ -3,7 +3,7 @@ import "std:memory"
 // 补充 strings_x86/strings_x86_64 中缺失的函数
 
 // count 计算 substr 在 s 中出现的次数
-fn count(s string, substr string) int {
+fn count(s: string, substr: string) int {
     var sLen: uint = strings.len(s)
     var tLen: uint = strings.len(substr)
     var nf: uint = strings.notFound()
@@ -26,7 +26,7 @@ fn count(s string, substr string) int {
 }
 
 // isSpace 判断字节是否为空白字符（空格、制表符、换行符、回车符）
-fn isSpace(ch uint) bool {
+fn isSpace(ch: uint) bool {
     if ch == 32 { ret true }   // space
     if ch == 9 { ret true }    // tab
     if ch == 10 { ret true }   // newline
@@ -35,7 +35,7 @@ fn isSpace(ch uint) bool {
 }
 
 // trimLeft 从 s 左侧去除 cutset 中包含的字符
-fn trimLeft(s string, cutset string) string {
+fn trimLeft(s: string, cutset: string) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](cutset))
@@ -79,7 +79,7 @@ fn trimLeft(s string, cutset string) string {
 }
 
 // trimRight 从 s 右侧去除 cutset 中包含的字符
-fn trimRight(s string, cutset string) string {
+fn trimRight(s: string, cutset: string) string {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](cutset))
@@ -122,12 +122,12 @@ fn trimRight(s string, cutset string) string {
 }
 
 // trim 从 s 两端去除 cutset 中包含的字符
-fn trim(s string, cutset string) string {
+fn trim(s: string, cutset: string) string {
     ret trimRight(trimLeft(s, cutset), cutset)
 }
 
 // lastIndex 返回 substr 在 s 中最后一次出现的位置，未找到返回 -1
-fn lastIndex(s string, substr string) int {
+fn lastIndex(s: string, substr: string) int {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var tPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](substr))
@@ -169,7 +169,7 @@ fn lastIndex(s string, substr string) int {
 }
 
 // indexByte 返回字节 c 在 s 中首次出现的位置，未找到返回 -1
-fn indexByte(s string, c int) int {
+fn indexByte(s: string, c: int) int {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
@@ -186,7 +186,7 @@ fn indexByte(s string, c int) int {
 }
 
 // containsAny 判断 s 是否包含 chars 中的任意字符
-fn containsAny(s string, chars string) bool {
+fn containsAny(s: string, chars: string) bool {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](chars))
@@ -210,7 +210,7 @@ fn containsAny(s string, chars string) bool {
 }
 
 // containsRune 判断 s 是否包含 Unicode 码点 r
-fn containsRune(s string, r int) bool {
+fn containsRune(s: string, r: int) bool {
     if r < 128 {
         if indexByte(s, r) >= 0 {
             ret true
@@ -221,7 +221,7 @@ fn containsRune(s string, r int) bool {
 }
 
 // compare 比较两个字符串：相等返回 0，a<b 返回负数，a>b 返回正数
-fn compare(a string, b string) int {
+fn compare(a: string, b: string) int {
     var aPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](a))
     var aLen: uint = strings.len(a)
     var bPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](b))
@@ -258,17 +258,17 @@ fn compare(a string, b string) int {
 // ============================================================================
 
 // atoi 将十进制字符串解析为 int
-fn atoi(s string) int {
+fn atoi(s: string) int {
     ret strings.parse(s, 10)
 }
 
 // itoa 将 int 转换为十进制字符串
-fn itoa(n int) string {
+fn itoa(n: int) string {
     ret strings.toString(n, 10)
 }
 
 // parseBool 解析布尔字符串
-fn parseBool(s string) bool {
+fn parseBool(s: string) bool {
     var sLen: uint = strings.len(s)
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
 
@@ -322,18 +322,18 @@ fn parseBool(s string) bool {
 // 高层包（如 console）应使用这些函数而非直接调用 memory.store8/malloc/free
 
 // bufNew 分配一个字节缓冲区（返回 ptr）
-fn bufNew(capacity int) ptr {
+fn bufNew(capacity: int) ptr {
     ret memory.malloc(capacity)
 }
 
 // bufSetByte 在指定偏移写入一个字节
-fn bufSetByte(buf ptr, offset int, val int) {
+fn bufSetByte(buf: ptr, offset: int, val: int) {
     var _p28: *u8 = buf + offset
     *_p28 = unsafe.cast[u8](val)
 }
 
 // bufSetInt 在指定偏移写入整数的十进制 ASCII，返回写入字节数
-fn bufSetInt(buf ptr, offset int, n int) int {
+fn bufSetInt(buf: ptr, offset: int, n: int) int {
     if n == 0 {
         var _p29: *u8 = buf + offset
         *_p29 = unsafe.cast[u8](48)
@@ -373,14 +373,14 @@ fn bufSetInt(buf ptr, offset int, n int) int {
 }
 
 // bufToString 将缓冲区包装为 string 并释放缓冲区
-fn bufToString(buf ptr, length int) string {
+fn bufToString(buf: ptr, length: int) string {
     var s: string = strings.view(buf, length, length)
     memory.free(buf)
     ret s
 }
 
 // bufCopyFrom 从 src 指针复制 count 个字节到 dst+offset
-fn bufCopyFrom(dst ptr, dstOffset int, src ptr, count int) {
+fn bufCopyFrom(dst: ptr, dstOffset: int, src: ptr, count: int) {
     var i: int = 0
     for ; i < count; {
         var _p32: *u8 = dst + dstOffset + i
@@ -392,7 +392,7 @@ fn bufCopyFrom(dst ptr, dstOffset int, src ptr, count int) {
 }
 
 // formatBool 将布尔值格式化为字符串
-fn formatBool(b bool) string {
+fn formatBool(b: bool) string {
     if b {
         var tbuf: ptr = memory.malloc(5)
         var _p34: *u8 = tbuf
@@ -426,7 +426,7 @@ fn formatBool(b bool) string {
 // ===== 新增函数 =====
 
 // equalFold 忽略大小写比较两个字符串
-fn equalFold(s string, t string) bool {
+fn equalFold(s: string, t: string) bool {
     var sLen: uint = strings.len(s)
     var tLen: uint = strings.len(t)
     if sLen != tLen {
@@ -456,7 +456,7 @@ fn equalFold(s string, t string) bool {
 }
 
 // indexAny 返回 chars 中任意字符在 s 中首次出现的位置，未找到返回 -1
-fn indexAny(s string, chars string) int {
+fn indexAny(s: string, chars: string) int {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var cPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](chars))
@@ -480,7 +480,7 @@ fn indexAny(s string, chars string) int {
 }
 
 // lastIndexByte 返回字节 c 在 s 中最后一次出现的位置，未找到返回 -1
-fn lastIndexByte(s string, c int) int {
+fn lastIndexByte(s: string, c: int) int {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
@@ -497,7 +497,7 @@ fn lastIndexByte(s string, c int) int {
 }
 
 // countByte 返回字节 c 在 s 中出现的次数
-fn countByte(s string, c int) int {
+fn countByte(s: string, c: int) int {
     var sPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](s))
     var sLen: uint = strings.len(s)
     var byteVal: uint = c
@@ -514,7 +514,7 @@ fn countByte(s string, c int) int {
 }
 
 // clone 返回 s 的一个副本
-fn clone(s string) string {
+fn clone(s: string) string {
     var sLen: uint = strings.len(s)
     if sLen == 0 {
         ret s
@@ -536,7 +536,7 @@ fn clone(s string) string {
 }
 
 // reverse 返回 s 的反转字符串
-fn reverse(s string) string {
+fn reverse(s: string) string {
     var sLen: uint = strings.len(s)
     if sLen == 0 {
         ret s
@@ -558,7 +558,7 @@ fn reverse(s string) string {
 }
 
 // repeatN 返回 s 重复 count 次的新字符串（repeat 的 int 参数版本）
-fn repeatN(s string, count int) string {
+fn repeatN(s: string, count: int) string {
     if count <= 0 {
         ret ""
     }
@@ -566,7 +566,7 @@ fn repeatN(s string, count int) string {
 }
 
 // hasSuffixAny 判断 s 是否以 suffixes 中的任意一个结尾（suffixes 用 '|' 分隔）
-fn hasSuffixAny(s string, suffixes string) bool {
+fn hasSuffixAny(s: string, suffixes: string) bool {
     var sLen: uint = strings.len(s)
     var sfPtr: ptr = unsafe.cast[ptr](unsafe.cast[*u8](suffixes))
     var sfLen: uint = strings.len(suffixes)
@@ -609,7 +609,7 @@ fn hasSuffixAny(s string, suffixes string) bool {
 
 // replaceAll 把 s 中所有不重叠的 old 子串替换为 new，返回新串。
 // old 为空时原样返回（与 Go strings.ReplaceAll 一致）。
-fn replaceAll(s string, old string, new string) string {
+fn replaceAll(s: string, old: string, new: string) string {
     var oLen: uint = strings.len(old)
     if oLen == 0 {
         ret s
@@ -665,7 +665,7 @@ fn replaceAll(s string, old string, new string) string {
 // parseUint 按 base（2-36）解析无符号整数；等价于 strconv.ParseUint 的成功路径。
 // 空串或含非 base 数字返回 (0, false)；溢出不做检测（截断 wrap，
 // 与 std:strings.parse 的既有行为一致，主要消费者为 Lexer 源码字面量解析）。
-fn parseUint(s string, base uint) (uint, bool) {
+fn parseUint(s: string, base: uint) (uint, bool) {
     var sLen: uint = strings.len(s)
     if sLen == 0 {
         ret 0, false
@@ -697,7 +697,7 @@ fn parseUint(s string, base uint) (uint, bool) {
 
 // parseFloat 按十进制解析 f64；等价于 strconv.ParseFloat 的成功路径。
 // 格式：[+-]digits[.digits][eE[+-]digits]（调用方已验证输入形状）。
-fn parseFloat(s string) (f64, bool) {
+fn parseFloat(s: string) (f64, bool) {
     var sLen: uint = strings.len(s)
     if sLen == 0 {
         ret 0.0, false
@@ -765,24 +765,24 @@ fn parseFloat(s string) (f64, bool) {
 }
 
 // isDigitByte 是否十进制数字字节。
-fn isDigitByte(b u8) bool {
+fn isDigitByte(b: u8) bool {
     ret b >= 48 && b <= 57
 }
 
 // isDigit 是否 ASCII 数字字节 '0'-'9'（byte 版；string[i] 索引直接可用）。
-fn isDigit(b byte) bool {
+fn isDigit(b: byte) bool {
     var bi: int = unsafe.cast[int](b)
     ret bi >= 48 && bi <= 57
 }
 
 // isSpaceByte 是否空白字节（空格、Tab、LF、CR）。与 isDigit 一样按 byte 给出。
-fn isSpaceByte(b byte) bool {
+fn isSpaceByte(b: byte) bool {
     var bi: int = unsafe.cast[int](b)
     ret bi == 32 || bi == 9 || bi == 10 || bi == 13
 }
 
 // isIntDigit 是否 base 进制数字（base 2-16，大小写 a-f/A-F）；base 仅支持 2/8/10/16 语义调用方使用。
-fn isIntDigit(b byte, base uint) bool {
+fn isIntDigit(b: byte, base: uint) bool {
     var d: uint = 0
     var bi: int = unsafe.cast[int](b)
     if bi >= 48 && bi <= 57 {
@@ -798,7 +798,7 @@ fn isIntDigit(b byte, base uint) bool {
 }
 
 // fromByte 返回只含一个 u8 字节的字符串（用于将字节字面量/字符转字符串）。
-fn fromByte(b u8) string {
+fn fromByte(b: u8) string {
     var buf: ptr = memory.malloc(2)
     var bufu8: *u8 = buf
     *bufu8 = b
@@ -807,7 +807,7 @@ fn fromByte(b u8) string {
 }
 
 // formatUint 把无符号整数按 base（2-36）转为字符串；逆向调用 n%base 求各位。
-fn formatUint(n uint, base uint) string {
+fn formatUint(n: uint, base: uint) string {
     var digits: uint = 1
     var tmp: uint = n
     for ; tmp >= base; {

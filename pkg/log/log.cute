@@ -7,13 +7,13 @@ const STDOUT: i32 = 1
 const STDERR: i32 = 2
 
 // log 打印消息到标准输出并换行
-fn log(msg string) {
+fn log(msg: string) {
     syscall.write(STDOUT, strings.toCstring(msg), strings.len(msg))
     syscall.write(STDOUT, strings.toCstring("\n"), 1)
 }
 
 // logError 打印消息到标准错误并换行
-fn logError(msg string) {
+fn logError(msg: string) {
     syscall.write(STDERR, strings.toCstring(msg), strings.len(msg))
     syscall.write(STDERR, strings.toCstring("\n"), 1)
 }

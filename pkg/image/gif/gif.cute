@@ -4,11 +4,11 @@ import "std:image"
 // 平台无关实现
 
 // encode 将图像编码为 GIF 格式（存根，返回空字符串）
-fn encode(img *image.Image) string {
+fn encode(img: *image.Image) string {
     ret ""
 }
 
 // decode 从 GIF 数据解码图像（存根，返回空图像）
-fn decode(data string) *image.Image {
+fn decode(data: string) *image.Image {
     ret image.newRGBA(0, 0)
 }

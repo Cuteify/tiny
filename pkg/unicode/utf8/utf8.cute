@@ -9,7 +9,7 @@ import "std:strings"
 // 双字节：110xxxxx 10xxxxxx (U+0080 到 U+07FF)
 // 三字节：1110xxxx 10xxxxxx 10xxxxxx (U+0800 到 U+FFFF)
 // 四字节：11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (U+10000 到 U+10FFFF)
-fn encodeRune(r int, buf ptr) uint {
+fn encodeRune(r: int, buf: ptr) uint {
     if r < 128 {
         var _p1: *u8 = buf
         *_p1 = unsafe.cast[u8](r)
@@ -44,7 +44,7 @@ fn encodeRune(r int, buf ptr) uint {
 
 // decodeRune 从 UTF-8 字节序列解码一个码点，返回码点和字节数
 // 具名返回值尚未稳定支持，这里用匿名多返回值，调用处按位置解构。
-fn decodeRune(p ptr) (int, uint) {
+fn decodeRune(p: ptr) (int, uint) {
     var _p11: *u8 = p
     var b0: uint = *_p11
     // 单字节
@@ -76,7 +76,7 @@ fn decodeRune(p ptr) (int, uint) {
 }
 
 // runeCount 计算字符串中的 UTF-8 码点数量
-fn runeCount(s string) int {
+fn runeCount(s: string) int {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var count: int = 0
@@ -90,7 +90,7 @@ fn runeCount(s string) int {
 }
 
 // valid 检查字符串是否为有效的 UTF-8 编码
-fn valid(s string) bool {
+fn valid(s: string) bool {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var i: uint = 0

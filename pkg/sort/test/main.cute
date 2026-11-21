@@ -6,7 +6,7 @@ import "std:strings"
 // 覆盖当前公开 API：quickSortInts / timsortInts / insertionSortStrings / quickSortStrings
 // （旧版引用的 isSortedInts/searchInts/sortInts 已删除）
 
-fn checkIntSorted(s *[]int) bool {
+fn checkIntSorted(s: *[]int) bool {
     var n: int = slices.len[int](s)
     var i: int = 0
     for ; i < n - 1; {
@@ -22,7 +22,7 @@ fn checkIntSorted(s *[]int) bool {
     ret true
 }
 
-fn makeStrRow(a ptr, i int, s string) {
+fn makeStrRow(a: ptr, i: int, s: string) {
     // 先把调用结果落到 VarDecl，再写入裸行：绕开 deref-store 右值调用丢弃缺陷
     var sp: ptr = strings.toCstring(s)
     var sl: uint = strings.len(s)
@@ -34,7 +34,7 @@ fn makeStrRow(a ptr, i int, s string) {
     *c = unsafe.cast[ptr](sl)
 }
 
-fn rowString(a ptr, i int) string {
+fn rowString(a: ptr, i: int) string {
     var p: *ptr = a + i * 24
     var l: *ptr = a + i * 24 + 8
     var n: uint = unsafe.cast[uint](*l)

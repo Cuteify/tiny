@@ -11,7 +11,7 @@ type RGBA struct {
 }
 
 // rGBAModel 创建 RGBA 颜色值
-fn rGBAModel(r u8, g u8, b u8, a u8) RGBA {
+fn rGBAModel(r: u8, g: u8, b: u8, a: u8) RGBA {
     var c: RGBA
     c.R = r
     c.G = g

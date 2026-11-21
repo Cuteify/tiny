@@ -35,7 +35,7 @@ type Reader struct {
 }
 
 // octalToInt 将 8 进制 ASCII 字符串解析为整数
-fn octalToInt(ptr ptr, len uint) uint {
+fn octalToInt(ptr: ptr, len: uint) uint {
     var result: uint = 0
     var i: uint = 0
     for ; i < len; {
@@ -51,7 +51,7 @@ fn octalToInt(ptr ptr, len uint) uint {
 }
 
 // parseTarName 从 NUL 结尾的固定长度字段中提取字符串
-fn parseTarName(ptr ptr, maxLen uint) string {
+fn parseTarName(ptr: ptr, maxLen: uint) string {
     var i: uint = 0
     for ; i < maxLen; {
         var _p2: *u8 = ptr + i
@@ -74,7 +74,7 @@ fn parseTarName(ptr ptr, maxLen uint) string {
 }
 
 // newReader 创建 tar 读取器
-fn newReader(data string) *Reader {
+fn newReader(data: string) *Reader {
     var buf: ptr = memory.malloc(40)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -95,7 +95,7 @@ fn newReader(data string) *Reader {
 }
 
 // next 读取下一个 tar 头部，返回 *Header 或 nil（EOF）
-fn next(r *Reader) *Header {
+fn next(r: *Reader) *Header {
     var _p11: *ptr = r
     var dataPtr: ptr = *_p11
     var _p12: *ptr = r + 8
@@ -167,7 +167,7 @@ fn next(r *Reader) *Header {
 }
 
 // read 从当前文件内容中读取数据
-fn read(r *Reader, buf ptr, n int) int {
+fn read(r: *Reader, buf: ptr, n: int) int {
     var _p22: *ptr = r
     var dataPtr: ptr = *_p22
     var _p23: *ptr = r + 8

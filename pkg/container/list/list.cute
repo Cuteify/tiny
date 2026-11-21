@@ -29,12 +29,12 @@ fn new() *List {
 }
 
 // len 返回链表元素数量
-fn len(l *List) uint {
+fn len(l: *List) uint {
     ret l.len
 }
 
 // front 返回链表第一个元素，空链表返回 nil(0)
-fn front(l *List) *Element {
+fn front(l: *List) *Element {
     if l.len == 0 {
         ret 0
     }
@@ -42,7 +42,7 @@ fn front(l *List) *Element {
 }
 
 // back 返回链表最后一个元素，空链表返回 nil(0)
-fn back(l *List) *Element {
+fn back(l: *List) *Element {
     if l.len == 0 {
         ret 0
     }
@@ -50,7 +50,7 @@ fn back(l *List) *Element {
 }
 
 // pushFront 在链表头部插入一个新元素
-fn pushFront(l *List, value ptr) {
+fn pushFront(l: *List, value: ptr) {
     var e: *Element = memory.malloc(32)
     e.value = value
     // 插入到 root 和 root.next 之间
@@ -63,7 +63,7 @@ fn pushFront(l *List, value ptr) {
 }
 
 // pushBack 在链表尾部插入一个新元素
-fn pushBack(l *List, value ptr) {
+fn pushBack(l: *List, value: ptr) {
     var e: *Element = memory.malloc(32)
     e.value = value
     // 插入到 root.prev 和 root 之间
@@ -76,7 +76,7 @@ fn pushBack(l *List, value ptr) {
 }
 
 // Remove 从链表中移除元素 e，返回其值
-fn removeFn(l *List, e *Element) ptr {
+fn removeFn(l: *List, e: *Element) ptr {
     var val: ptr = e.value
     e.prev.next = e.next
     e.next.prev = e.prev

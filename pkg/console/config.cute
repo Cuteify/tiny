@@ -80,7 +80,7 @@ var gMouseMode: int = 0
 var gSixelMode: int = 0
 
 // 设置高级模式开关
-fn setAdvancedMode(enabled int) {
+fn setAdvancedMode(enabled: int) {
     gAdvancedEnabled = enabled
 }
 
@@ -90,7 +90,7 @@ fn getAdvancedMode() int {
 }
 
 // 设置颜色模式
-fn setColorMode(mode int) {
+fn setColorMode(mode: int) {
     gColorMode = mode
 }
 
@@ -100,7 +100,7 @@ fn getColorMode() int {
 }
 
 // 设置鼠标模式
-fn setMouseMode(mode int) {
+fn setMouseMode(mode: int) {
     gMouseMode = mode
 }
 
@@ -110,7 +110,7 @@ fn getMouseMode() int {
 }
 
 // 设置Sixel模式
-fn setSixelMode(mode int) {
+fn setSixelMode(mode: int) {
     gSixelMode = mode
 }
 

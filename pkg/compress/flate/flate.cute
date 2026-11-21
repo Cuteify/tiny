@@ -15,7 +15,7 @@ type Reader struct {
 }
 
 // newReader 创建新的 DEFLATE 读取器
-fn newReader(data string) *Reader {
+fn newReader(data: string) *Reader {
     var buf: ptr = memory.malloc(24)
     var rPtr: ptr = strings.toCstring(data)
     var rLen: uint = strings.len(data)
@@ -33,7 +33,7 @@ fn newReader(data string) *Reader {
 
 // read 从 Reader 中读取解压数据到 buf，最多读 n 字节
 // 返回实际读取的字节数，0 表示 EOF
-fn read(r ptr, buf ptr, n int) int {
+fn read(r: ptr, buf: ptr, n: int) int {
     var _p4: *ptr = r
     var dataPtr: ptr = *_p4
     var _p5: *ptr = r + 8
@@ -135,7 +135,7 @@ fn newWriter() *Writer {
 }
 
 // growBuffer 扩展缓冲区
-fn growBuffer(w ptr, needed: uint) {
+fn growBuffer(w: ptr, needed: uint) {
     var _p21: *ptr = w + 16
     var curCap: uint = *_p21
     var newCap: uint = curCap * 2
@@ -161,7 +161,7 @@ fn growBuffer(w ptr, needed: uint) {
 }
 
 // write 向 Writer 写入数据
-fn write(w ptr, data ptr, n int) int {
+fn write(w: ptr, data: ptr, n: int) int {
     var _p28: *ptr = w + 8
     var curLen: uint = *_p28
     var _p29: *ptr = w + 16
@@ -202,7 +202,7 @@ fn write(w ptr, data ptr, n int) int {
 }
 
 // close 关闭写入器，追加结束块（BFINAL=1）并返回所有压缩数据
-fn close(w ptr) string {
+fn close(w: ptr) string {
     var _p39: *ptr = w + 8
     var curLen: uint = *_p39
     var _p40: *ptr = w + 16

@@ -86,7 +86,7 @@ fn readCrc64High(idx: u32) u32 {
 
 // checksum 计算 data 的 CRC-64 ECMA-182 校验和
 // 返回结果的低 64 位（高 32 位截断为 u64 的高部分）
-fn checksum(data string) u64 {
+fn checksum(data: string) u64 {
     buildCrc64Table()
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)

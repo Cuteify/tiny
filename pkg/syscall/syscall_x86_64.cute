@@ -113,7 +113,7 @@ fn getcwd(buf: ptr, size: u64) i64 {
 }
 
 // getenvName 辅助函数: 比较字符串
-fn getenvName_eq(a ptr, b ptr, len u64) u64 {
+fn getenvName_eq(a: ptr, b: ptr, len: u64) u64 {
     var i: u64 = 0
     for ; i < len; {
         var _p1: *u8 = a + i
@@ -128,7 +128,7 @@ fn getenvName_eq(a ptr, b ptr, len u64) u64 {
 
 // getenv 通过读取 /proc/self/environ 获取环境变量
 // 返回值: 找到返回指向值的指针, 未找到返回 0
-fn getenv(name ptr, namelen u64) ptr {
+fn getenv(name: ptr, namelen: u64) ptr {
     var path: string = "/proc/self/environ"
     // Wave M 正名：旧实现 `memory.ptrToStringHeader(path) + 16` 是悬空调用
     // （编译器对未解析函数静默折叠——S0-3 实锤机制）+ A6 旧序 data@16 残迹，

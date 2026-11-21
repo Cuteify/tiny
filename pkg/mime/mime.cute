@@ -130,7 +130,7 @@ fn setEntry(idx: int, ext: string, mime: string) {
 // typeByExtension 根据文件扩展名返回 MIME 类型
 // ext: 扩展名（如 ".html", "html", "html"）
 // 返回 MIME 类型字符串，未找到返回空字符串
-fn typeByExtension(ext string) string {
+fn typeByExtension(ext: string) string {
     initTable()
     var extLen: uint = strings.len(ext)
     // 确保扩展名以 '.' 开头

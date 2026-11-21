@@ -39,7 +39,7 @@ var HOUR: u64 = 3600000000000
 var DAY: u64 = 86400000000000
 
 // durationString 将 Duration 格式化为可读字符串（如 "1h30m", "500ms"）
-fn durationString(d u64) string {
+fn durationString(d: u64) string {
     if d == 0 {
         ret "0s"
     }
@@ -112,19 +112,19 @@ fn durationString(d u64) string {
 
 // since 返回从 t 到现在经过的时间
 // 注意：需要 clock 系统调用支持，暂返回 0
-fn since(t Time) u64 {
+fn since(t: Time) u64 {
     // TODO: 需要 clock_gettime 系统调用
     ret 0
 }
 
 // until 返回从现在到 t 剩余的时间
-fn until(t Time) u64 {
+fn until(t: Time) u64 {
     // TODO: 需要 clock_gettime 系统调用
     ret 0
 }
 
 // truncate 将 t 截断到 d 的倍数
-fn truncate(t Time, d u64) Time {
+fn truncate(t: Time, d: u64) Time {
     if d == 0 {
         ret t
     }
@@ -135,7 +135,7 @@ fn truncate(t Time, d u64) Time {
 }
 
 // round 将 t 四舍五入到 d 的倍数
-fn round(t Time, d u64) Time {
+fn round(t: Time, d: u64) Time {
     if d == 0 {
         ret t
     }
@@ -151,7 +151,7 @@ fn round(t Time, d u64) Time {
 }
 
 // daysIn 返回指定月份的天数
-fn daysIn(month int, year int) int {
+fn daysIn(month: int, year: int) int {
     if month == 2 {
         // 闰年判断
         if year%4 == 0 && (year%100 != 0 || year%400 == 0) {
@@ -168,7 +168,7 @@ fn daysIn(month int, year int) int {
 // ---------------------------------------------------------------------------
 // 日历换算（Hinnant 算法，int 域，floor 语义）
 
-fn daysFromCivil(yy int, mm int, dd int) int {
+fn daysFromCivil(yy: int, mm: int, dd: int) int {
     var y: int = yy
     if mm <= 2 {
         y = y - 1
@@ -189,7 +189,7 @@ fn daysFromCivil(yy int, mm int, dd int) int {
     ret era*146097 + doe - 719468
 }
 
-fn civilFromDays(z int) YMD {
+fn civilFromDays(z: int) YMD {
     var zz: int = z + 719468
     var era: int = zz / 146097
     if zz < 0 {
@@ -214,7 +214,7 @@ fn civilFromDays(z int) YMD {
 }
 
 // floorDiv：向负无穷取整除法（cuteify 的 / 向零取整，这里补正）
-fn floorDiv(a int, b int) int {
+fn floorDiv(a: int, b: int) int {
     var q: int = a / b
     var r: int = a % b
     if r < 0 {
@@ -227,7 +227,7 @@ fn floorDiv(a int, b int) int {
 // 构造与组件
 
 // unix 由 epoch 秒/纳秒构造 UTC 时间
-fn unix(sec u64, nsec u64) Time {
+fn unix(sec: u64, nsec: u64) Time {
     var t: Time
     t.sec = sec
     t.nsec = nsec
@@ -236,7 +236,7 @@ fn unix(sec u64, nsec u64) Time {
 }
 
 // date 由年月日时分秒构造 UTC 时间（Go time.Date 的 UTC 版）
-fn date(y int, m int, d int, h int, min int, s int, nsec u64) Time {
+fn date(y: int, m: int, d: int, h: int, min: int, s: int, nsec: u64) Time {
     var days: int = daysFromCivil(y, m, d)
     var sec: int = days*86400 + h*3600 + min*60 + s
     var t: Time
@@ -247,17 +247,17 @@ fn date(y int, m int, d int, h int, min int, s int, nsec u64) Time {
 }
 
 // seconds 返回 UTC epoch 秒（int 域，1970 前为负）
-fn seconds(t Time) int {
+fn seconds(t: Time) int {
     ret strings.fromI64(t.sec)
 }
 
 // localSec 返回本地（t.offset 调整后）的 epoch 秒
-fn localSec(t Time) int {
+fn localSec(t: Time) int {
     ret strings.fromI64(t.sec) + t.offset
 }
 
 // splitLocal 把本地秒拆成 天/日内秒（tod 0..86399）
-fn splitLocal(t Time) Split {
+fn splitLocal(t: Time) Split {
     var sp: Split
     var ls: int = localSec(t)
     sp.days = floorDiv(ls, 86400)
@@ -266,47 +266,47 @@ fn splitLocal(t Time) Split {
 }
 
 // ymd 返回本地日期（年/月/日）
-fn ymd(t Time) YMD {
+fn ymd(t: Time) YMD {
     var sp: Split = splitLocal(t)
     ret civilFromDays(sp.days)
 }
 
-fn year(t Time) int {
+fn year(t: Time) int {
     var r: YMD = ymd(t)
     ret r.y
 }
 
-fn month(t Time) int {
+fn month(t: Time) int {
     var r: YMD = ymd(t)
     ret r.m
 }
 
-fn day(t Time) int {
+fn day(t: Time) int {
     var r: YMD = ymd(t)
     ret r.d
 }
 
-fn hour(t Time) int {
+fn hour(t: Time) int {
     var sp: Split = splitLocal(t)
     ret sp.tod / 3600
 }
 
-fn minute(t Time) int {
+fn minute(t: Time) int {
     var sp: Split = splitLocal(t)
     ret (sp.tod % 3600) / 60
 }
 
-fn second(t Time) int {
+fn second(t: Time) int {
     var sp: Split = splitLocal(t)
     ret sp.tod % 60
 }
 
-fn nanosecond(t Time) u64 {
+fn nanosecond(t: Time) u64 {
     ret t.nsec
 }
 
 // weekday 返回星期（0=周日 ... 6=周六，Go time.Weekday 语义）
-fn weekday(t Time) int {
+fn weekday(t: Time) int {
     var sp: Split = splitLocal(t)
     var w: int = sp.days + 4
     var r: int = w % 7
@@ -317,7 +317,7 @@ fn weekday(t Time) int {
 }
 
 // yearday 返回年序日（1=1 月 1 日，Go YearDay 语义）
-fn yearday(t Time) int {
+fn yearday(t: Time) int {
     var r: YMD = ymd(t)
     var d0: int = daysFromCivil(r.y, 1, 1)
     var sp: Split = splitLocal(t)
@@ -328,7 +328,7 @@ fn yearday(t Time) int {
 // 算术
 
 // add 返回 t + d 纳秒
-fn add(t Time, d u64) Time {
+fn add(t: Time, d: u64) Time {
     var sec: u64 = t.sec + d / SECOND
     var nsec: u64 = t.nsec + d % SECOND
     if nsec >= SECOND {
@@ -341,11 +341,11 @@ fn add(t Time, d u64) Time {
 }
 
 // sub 返回 t1 - t2 纳秒（要求 t1 >= t2，u64 域）
-fn sub(t1 Time, t2 Time) u64 {
+fn sub(t1: Time, t2: Time) u64 {
     ret (t1.sec - t2.sec)*SECOND + t1.nsec - t2.nsec
 }
 
-fn before(t1 Time, t2 Time) bool {
+fn before(t1: Time, t2: Time) bool {
     if t1.sec < t2.sec {
         ret true
     }
@@ -355,7 +355,7 @@ fn before(t1 Time, t2 Time) bool {
     ret t1.nsec < t2.nsec
 }
 
-fn after(t1 Time, t2 Time) bool {
+fn after(t1: Time, t2: Time) bool {
     if t1.sec > t2.sec {
         ret true
     }
@@ -372,7 +372,7 @@ var monAbbr: string = "JanFebMarAprMayJunJulAugSepOctNovDec"
 var weekAbbr: string = "SunMonTueWedThuFriSat"
 
 // layoutAt 判断 layout[i:] 是否以 tok 开头
-fn layoutAt(layout string, i uint, tok string) bool {
+fn layoutAt(layout: string, i: uint, tok: string) bool {
     var tn: uint = strings.len(tok)
     var ln: uint = strings.len(layout)
     if i + tn > ln {
@@ -393,7 +393,7 @@ fn layoutAt(layout string, i uint, tok string) bool {
 }
 
 // writeDigits 把 v（非负）按 width 位补零写入 buf+w，返回新游标
-fn writeDigits(buf: ptr, w uint, v int, width uint) uint {
+fn writeDigits(buf: ptr, w: uint, v: int, width: uint) uint {
     var tmp: u64 = strings.toU64(v)
     var pos: uint = w + width - 1
     var k: uint = 0
@@ -408,7 +408,7 @@ fn writeDigits(buf: ptr, w uint, v int, width uint) uint {
 }
 
 // writeText 拷贝 tok 字节到 buf+w，返回新游标
-fn writeText(buf: ptr, w uint, tok string) uint {
+fn writeText(buf: ptr, w: uint, tok: string) uint {
     var tn: uint = strings.len(tok)
     var tp: ptr = strings.toCstring(tok)
     var k: uint = 0
@@ -422,7 +422,7 @@ fn writeText(buf: ptr, w uint, tok string) uint {
 }
 
 // format 按 Go 布局格式化（支持 2006/01/02/15/03/04/05/Jan/Mon/PM/pm/-07:00/-07）
-fn format(t Time, layout string) string {
+fn format(t: Time, layout: string) string {
     var buf: ptr = memory.malloc(128)
     var w: uint = 0
     var i: uint = 0
@@ -533,7 +533,7 @@ fn format(t Time, layout string) string {
 // 解析（Go 布局；返回 UTC，offset=0）
 
 // readNumVal 从 value+pos 读 width 位十进制数字写入 out（int），返回新游标
-fn readNumVal(value string, pos uint, width uint, out: ptr) uint {
+fn readNumVal(value: string, pos: uint, width: uint, out: ptr) uint {
     var v: int = 0
     var p: ptr = strings.toCstring(value)
     var k: uint = 0
@@ -548,7 +548,7 @@ fn readNumVal(value string, pos uint, width uint, out: ptr) uint {
 }
 
 // parse 按 Go 布局解析字符串（支持 2006-01-02 15:04:05 等数字布局）
-fn parse(layout string, value string) Time {
+fn parse(layout: string, value: string) Time {
     var y: int = 0
     var mo: int = 1
     var d: int = 1
@@ -597,7 +597,7 @@ fn parse(layout string, value string) Time {
 // 实际查找在 zoneOffset/zoneAbbr 内联完成（线性扫描，records 升序）
 
 // zoneOffset 返回 name 时区在 epoch 秒 sec 处的偏移（秒）
-fn zoneOffset(name string, sec int) int {
+fn zoneOffset(name: string, sec: int) int {
     var data: string = findZoneData(name)
     var n: uint = strings.len(data)
     var p: ptr = strings.toCstring(data)
@@ -639,7 +639,7 @@ fn zoneOffset(name string, sec int) int {
 }
 
 // zoneAbbr 返回 name 时区在 epoch 秒 sec 处的缩写（如 CST/EDT）
-fn zoneAbbr(name string, sec int) string {
+fn zoneAbbr(name: string, sec: int) string {
     var data: string = findZoneData(name)
     var n: uint = strings.len(data)
     var p: ptr = strings.toCstring(data)
@@ -680,13 +680,13 @@ fn zoneAbbr(name string, sec int) string {
 }
 
 // inZone 返回 t 在 name 时区下的副本（仅调整 offset）
-fn inZone(t Time, name string) Time {
+fn inZone(t: Time, name: string) Time {
     t.offset = zoneOffset(name, seconds(t))
     ret t
 }
 
 // loadZone 校验时区名存在
-fn loadZone(name string) bool {
+fn loadZone(name: string) bool {
     var data: string = findZoneData(name)
     var n: uint = strings.len(data)
     var p: ptr = strings.toCstring(data)

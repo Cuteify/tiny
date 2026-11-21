@@ -6,7 +6,7 @@ import "std:strings"
 // marshalInt 将整数编码为 ASN.1 DER INTEGER 格式
 // 格式: tag(02) + length + value bytes
 // 支持正整数和负整数（二进制补码）
-fn marshalInt(v int) string {
+fn marshalInt(v: int) string {
     var buf: ptr = memory.malloc(64)
     // tag = 0x02 (INTEGER)
     var _p1: *u8 = buf
@@ -124,7 +124,7 @@ fn marshalInt(v int) string {
 
 // marshalString 将字符串编码为 ASN.1 DER UTF8String 格式
 // 格式: tag(0C) + length + value bytes
-fn marshalString(s string) string {
+fn marshalString(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var buf: ptr = memory.malloc(sLen + 16)

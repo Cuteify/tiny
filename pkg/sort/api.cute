@@ -11,31 +11,31 @@ import "std:strings"
 //     语义镜像 _strCompareStrs：u8 无符号序 + 长度决胜，无符号尾等长）。
 
 // quickSortInts 快排 int 切片（Go sort.Sort 对照）
-fn quickSortInts(s *[]int) {
+fn quickSortInts(s: *[]int) {
     qsortInts(s)
 }
 
 // compareStrings 字典序比较（Go strings.Compare 对照）：a<b 负值 =0 相等 a>b 正值
-fn compareStrings(a string, b string) int {
+fn compareStrings(a: string, b: string) int {
     ret _strCompareStrs(a, b)
 }
 
 // ——————— 裸阵列族（ptr + n，24 字节 string 行）———————
 
 // _rowStrPtr 返回裸阵列第 i 行 string 的 data 指针字段
-fn _rowStrPtr(a ptr, i int) ptr {
+fn _rowStrPtr(a: ptr, i: int) ptr {
     var _p1: *ptr = a + i * 24
     ret *_p1
 }
 
 // _rowStrLen 返回裸阵列第 i 行 string 的 len 字段
-fn _rowStrLen(a ptr, i int) int {
+fn _rowStrLen(a: ptr, i: int) int {
     var _p2: *ptr = a + i * 24 + 8
     ret *_p2
 }
 
 // _rowLess 行级字典序小于（u8 无符号字节序 + 长度决胜——镜像 _strCompareStrs）
-fn _rowLess(a ptr, i int, j int) bool {
+fn _rowLess(a: ptr, i: int, j: int) bool {
     var sa: ptr = _rowStrPtr(a, i)
     var na: int = _rowStrLen(a, i)
     var sb: ptr = _rowStrPtr(a, j)
@@ -62,7 +62,7 @@ fn _rowLess(a ptr, i int, j int) bool {
 }
 
 // _rowSwap 交换两行的全部 24 字节（ptr/len/cap 三字段整体交换）
-fn _rowSwap(a ptr, i int, j int) {
+fn _rowSwap(a: ptr, i: int, j: int) {
     var k: int = 0
     for ; k < 3; {
         var _pa: *ptr = a + i * 24 + k * 8
@@ -76,12 +76,12 @@ fn _rowSwap(a ptr, i int, j int) {
 
 // quickSortStrings 快排裸 string 阵列（test8 形状：ptr + n）
 // Lomuto 后置分区 + 首元素主元；n 步进 24 由 _rowSwap 统一负责
-fn quickSortStrings(a ptr, n int) {
+fn quickSortStrings(a: ptr, n: int) {
     quickSortStringsRange(a, 0, n - 1)
 }
 
 // quickSortStringsRange 对 [lo,hi] 行区间快排
-fn quickSortStringsRange(a ptr, lo int, hi int) {
+fn quickSortStringsRange(a: ptr, lo: int, hi: int) {
     if lo >= hi {
         ret
     }
@@ -107,7 +107,7 @@ fn quickSortStringsRange(a ptr, lo int, hi int) {
 
 // insertionSortStrings 插入排序裸 string 阵列（test10 形状：ptr + n）
 // 前缀排序用例（"a","ab","abc"…）：前缀即按长度决胜，_rowLess 已覆盖
-fn insertionSortStrings(a ptr, n int) {
+fn insertionSortStrings(a: ptr, n: int) {
     var i: int = 1
     for ; i < n; {
         var j: int = i
@@ -125,18 +125,18 @@ fn insertionSortStrings(a ptr, n int) {
 
 // timsortInts 稳定排序 int 切片——Wave T 真实现（minrun + 自然 run + run
 // 二分插入补长 + 归并栈 + gallop 双倍跳，实现在 tim.cute）
-fn timsortInts(s *[]int) {
+fn timsortInts(s: *[]int) {
     timSortIntsImpl(s)
 }
 
 // timsortUInts 稳定排序 uint 切片（Wave T 特化家族，tim.cute）
-fn timsortUInts(s *[]uint) {
+fn timsortUInts(s: *[]uint) {
     timSortUIntsImpl(s)
 }
 
 // timsortStrings 稳定排序裸 string 阵列——Wave T 真实现（行 24B 步进，比较
 // 按字节无符号序 + 长度决胜，排序稳定；实现在 tim.cute）
-fn timsortStrings(a ptr, n int) {
+fn timsortStrings(a: ptr, n: int) {
     timSortStringsImpl(a, n)
 }
 

@@ -3,7 +3,7 @@ build os("linux")
 build arch("x86")
 import "std:syscall"
 
-fn memmove(dst ptr, src ptr, n uint) {
+fn memmove(dst: ptr, src: ptr, n: uint) {
     build asm {
         push dword [$n]
         push dword [$src]

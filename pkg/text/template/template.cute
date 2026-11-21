@@ -18,7 +18,7 @@ type strView struct {
 }
 
 // newTemplate 创建新模板
-fn newTemplate(pattern string) *Template {
+fn newTemplate(pattern: string) *Template {
     var t: *Template = memory.malloc(24)
     t.pattern = pattern
     ret t
@@ -26,7 +26,7 @@ fn newTemplate(pattern string) *Template {
 
 // execute 执行模板，将 {{.key}} 替换为 data 中对应的值
 // data = maps.new[string](…, sizeof[ptr]()) 句柄(值域存 string 头指针)
-fn execute(t *Template, data ptr) string {
+fn execute(t: *Template, data: ptr) string {
     var pat: string = t.pattern
     var patPtr: ptr = strings.toCstring(pat)
     var patLen: uint = strings.len(pat)

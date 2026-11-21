@@ -10,7 +10,7 @@ import "std:strings"
 // encode 将字节数据编码为 Ascii85 字符串
 // 每 4 字节输入转换为 5 字符输出
 // 格式: <~encoded data~>
-fn encode(data string) string {
+fn encode(data: string) string {
     var dataPtr: ptr = strings.toCstring(data)
     var dataLen: uint = strings.len(data)
     // 每 4 字节 -> 5 字符，加 <~ ~> 包装
@@ -99,7 +99,7 @@ fn encode(data string) string {
 
 // decode 将 Ascii85 字符串解码为字节数据
 // 接受 <~ ~> 包装或裸编码数据
-fn decode(s string) string {
+fn decode(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     // 跳过 <~ 前缀

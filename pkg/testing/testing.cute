@@ -22,7 +22,7 @@ type T struct {
 var assertFailCnt: int = 0
 
 // NewT 创建一个空 T 上下文（failed=false、errors=空），返回 *T
-fn newT(name string) *T {
+fn newT(name: string) *T {
     var t: ptr = memory.malloc(24)
     var _p1: *ptr = t
     *_p1 = strings.toCstring(name)
@@ -36,35 +36,35 @@ fn newT(name string) *T {
 }
 
 // Fail 标记测试为失败
-fn fail(t *T) {
+fn fail(t: *T) {
     var tp: ptr = unsafe.cast[ptr](t)
     var _p4: *u8 = tp + 16
     *_p4 = unsafe.cast[u8](1)
 }
 
 // _tgFailed 读 T 的 failed 标记
-fn _tgFailed(t *T) bool {
+fn _tgFailed(t: *T) bool {
     var tp: ptr = unsafe.cast[ptr](t)
     var _p5: *u8 = tp + 16
     ret *_p5 != 0
 }
 
 // _tgErr 读 T 的 errors 文本指针槽（@17）
-fn _tgErr(t *T) ptr {
+fn _tgErr(t: *T) ptr {
     var tp: ptr = unsafe.cast[ptr](t)
     var _p6: *ptr = tp + 17
     ret *_p6
 }
 
 // _tgSetErr 写 T 的 errors 文本指针槽（@17）
-fn _tgSetErr(t *T, msg: string) {
+fn _tgSetErr(t: *T, msg: string) {
     var tp: ptr = unsafe.cast[ptr](t)
     var _p7: *ptr = tp + 17
     *_p7 = unsafe.cast[ptr](msg)
 }
 
 // error 记录一条错误消息（failed 置位 + errors 文本拼接累加，\n 空格分隔）
-fn error(t *T, msg string) {
+fn error(t: *T, msg: string) {
     var tp: ptr = unsafe.cast[ptr](t)
     var _p8: *u8 = tp + 16
     *_p8 = unsafe.cast[u8](1)
@@ -117,7 +117,7 @@ fn error(t *T, msg string) {
 }
 
 // equal 断言两个整数相等，不等则标记失败（T 轨 int 家族）
-fn equal(t *T, a int, b int) {
+fn equal(t: *T, a: int, b: int) {
     if a != b {
         var msg: string = _mkNeq("expected ", a, b)
         error(t, msg)
@@ -125,7 +125,7 @@ fn equal(t *T, a int, b int) {
 }
 
 // _mkNeq 拼接 "expected <a> got <b>" 消息（int 十进制）
-fn _mkNeq(head string, a int, b int) string {
+fn _mkNeq(head: string, a: int, b: int) string {
     var msgBuf: ptr = memory.malloc(128)
     var pos: uint = 0
     var hp: ptr = strings.toCstring(head)
@@ -179,7 +179,7 @@ fn _mkNeq(head string, a int, b int) string {
 }
 
 // equalStr 断言两个字符串相等，不等则标记失败（T 轨 string 家族）
-fn equalStr(t *T, a string, b string) {
+fn equalStr(t: *T, a: string, b: string) {
     var eq: int = _strEqWalk(a, b)
     if eq != 0 {
         var msgBuf: ptr = memory.malloc(280)
@@ -233,7 +233,7 @@ fn equalStr(t *T, a string, b string) {
 }
 
 // _strEqWalk 逐字节比较两字符串：相等 0，不等 1
-fn _strEqWalk(a string, b string) int {
+fn _strEqWalk(a: string, b: string) int {
     var aLen: uint = strings.len(a)
     var bLen: uint = strings.len(b)
     if aLen != bLen {
@@ -290,7 +290,7 @@ fn assertFailNum() int {
 // ————————— T 轨 assertEq 家族（不等走 Fail/error 计分） —————————
 
 // assertEqT T 轨 int 家族：不等复用 equal（expected X got Y 计分到 T）
-fn assertEqT(t *T, a: int, b: int) bool {
+fn assertEqT(t: *T, a: int, b: int) bool {
     if a != b {
         var msg: string = _mkNeq("expected ", a, b)
         error(t, msg)
@@ -300,7 +300,7 @@ fn assertEqT(t *T, a: int, b: int) bool {
 }
 
 // assertEqUT T 轨 uint 家族
-fn assertEqUT(t *T, a: uint, b: uint) bool {
+fn assertEqUT(t: *T, a: uint, b: uint) bool {
     if a != b {
         var msg: string = _mkNeq("expected ", unsafe.cast[int](a), unsafe.cast[int](b))
         error(t, msg)
@@ -310,7 +310,7 @@ fn assertEqUT(t *T, a: uint, b: uint) bool {
 }
 
 // assertEqST T 轨 string 家族：不等复用 equalStr 计分
-fn assertEqST(t *T, a: string, b: string) bool {
+fn assertEqST(t: *T, a: string, b: string) bool {
     if _strEqWalk(a, b) != 0 {
         var msgBuf: ptr = memory.malloc(64)
         var pos: uint = 0
@@ -333,6 +333,6 @@ fn assertEqST(t *T, a: string, b: string) bool {
 }
 
 // Passed 返回测试是否通过（未标记失败）
-fn passed(t *T) bool {
+fn passed(t: *T) bool {
     return !_tgFailed(t)
 }

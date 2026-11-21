@@ -12,7 +12,7 @@ type Ring struct {
 }
 
 // New 创建并返回一个指定容量的环形缓冲区
-fn new(n int) *Ring {
+fn new(n: int) *Ring {
     var r: *Ring = memory.malloc(32)
     var cap: uint = n
     r.data = memory.malloc(cap * 8)
@@ -24,12 +24,12 @@ fn new(n int) *Ring {
 }
 
 // len 返回环形缓冲区中当前元素数量
-fn len(r *Ring) uint {
+fn len(r: *Ring) uint {
     ret r.count
 }
 
 // push 向环形缓冲区写入一个值，缓冲区满时覆盖最旧数据
-fn push(r *Ring, value int) {
+fn push(r: *Ring, value: int) {
     var _p1: *ptr = r.data + r.tail * 8
     *_p1 = unsafe.cast[ptr](value)
     r.tail = r.tail + 1
@@ -48,7 +48,7 @@ fn push(r *Ring, value int) {
 }
 
 // pop 从环形缓冲区读取并移除一个值，空缓冲区返回 0
-fn pop(r *Ring) int {
+fn pop(r: *Ring) int {
     if r.count == 0 {
         ret 0
     }

@@ -42,7 +42,7 @@ fn fromHex(ch: u8) u8 {
 // - 空格和制表符在行尾保持原样，其他位置转为 =XX
 // - 换行符保持原样
 // - 其他字节转为 =XX
-fn encode(s string) string {
+fn encode(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     // 最坏情况：每个字节 =XX (3 字节)
@@ -85,7 +85,7 @@ fn encode(s string) string {
 
 // decode 将 Quoted-Printable 编码的字符串解码
 // =XX 转换为对应字节，软换行 =\r\n 或 =\n 被移除
-fn decode(s string) string {
+fn decode(s: string) string {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var buf: ptr = memory.malloc(sLen + 1)

@@ -6,7 +6,7 @@ import "std:image"
 
 // encode 将图像编码为简化格式的原始像素数据字符串
 // 返回格式: "RGBA:w:h:<raw bytes>"
-fn encode(img **image.Image) string {
+fn encode(img: **image.Image) string {
     var w: int = img.width
     var h: int = img.height
     var _p1: *ptr = img + 16
@@ -82,7 +82,7 @@ fn encode(img **image.Image) string {
 }
 
 // newReader 从数据字符串解码图像（简化版：解析 "RGBA:w:h:<raw>" 格式）
-fn newReader(data string) *image.Image {
+fn newReader(data: string) *image.Image {
     var p: ptr = strings.toCstring(data)
     var n: uint = strings.len(data)
     var pos: uint = 0

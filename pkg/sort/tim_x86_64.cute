@@ -12,7 +12,7 @@ import "std:strings"
 // 稳定性保证：归并同值取左（≤ 左批量 / < 右批量）；二分插入 upper bound 同值停于右侧。
 
 // _timMinRun Java MIN_MERGE=64：n<64 → n；否则折半累积奇偶位（x + (x&1) 平移和）
-fn _timMinRun(n int) int {
+fn _timMinRun(n: int) int {
     var minrun: int = n
     var shift: int = 0
     for ; minrun >= 64; {
@@ -413,7 +413,7 @@ fn _timCollapseU(data: ptr, sb: ptr, sl: ptr, depth: int, temp: ptr, esz: int) i
 }
 
 // timSortIntsImpl 真 timsort（int 切片；切片头 x64 8B：p@0 / n@8 / c@16）
-fn timSortIntsImpl(s *[]int) {
+fn timSortIntsImpl(s: *[]int) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     var dataP: *ptr = sAddr
     var data: ptr = *dataP
@@ -497,7 +497,7 @@ fn timSortIntsImpl(s *[]int) {
 
 // timSortUIntsImpl 真 timsort（uint 切片；算法 int 镜像；len 槽经 *int 直读，
 // x64 8B（uint 与 int 同宽同位）——timsort 下标全程 int 走索引）
-fn timSortUIntsImpl(s *[]uint) {
+fn timSortUIntsImpl(s: *[]uint) {
     var sAddr: ptr = unsafe.cast[ptr](s)
     var dataP: *ptr = sAddr
     var data: ptr = *dataP

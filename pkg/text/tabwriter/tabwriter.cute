@@ -47,7 +47,7 @@ fn newWriter(minWidth: int, tabWidth: int, padding: int) *Writer {
 }
 
 // write 向写入器追加文本
-fn write(w ptr, data string) {
+fn write(w: ptr, data: string) {
     var dataPtr: ptr = strings.toCstring(data)
     var dataLen: uint = strings.len(data)
     var _p10: *ptr = w + 16
@@ -90,7 +90,7 @@ fn write(w ptr, data string) {
 }
 
 // flush 处理缓冲区中的制表符并返回对齐后的文本
-fn flush(w ptr) string {
+fn flush(w: ptr) string {
     var _p20: *ptr = w + 16
     var bufPtr: ptr = *_p20
     var _p21: *uint = w + 24

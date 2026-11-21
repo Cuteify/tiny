@@ -18,7 +18,7 @@ const FNV1_64_PRIME: u64 = 1099511628211
 
 // fnv1 计算 32 位 FNV-1 哈希值
 // 先乘后异或的顺序
-fn fnv1(data string) u32 {
+fn fnv1(data: string) u32 {
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
     var hash: u32 = FNV1_32_OFFSET
@@ -37,7 +37,7 @@ fn fnv1(data string) u32 {
 
 // fnv1a 计算 32 位 FNV-1a 哈希值
 // 先异或后乘的顺序（更好的雪崩特性）
-fn fnv1a(data string) u32 {
+fn fnv1a(data: string) u32 {
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
     var hash: u32 = FNV1_32_OFFSET
@@ -55,7 +55,7 @@ fn fnv1a(data string) u32 {
 }
 
 // fnv1_64 计算 64 位 FNV-1 哈希值
-fn fnv1_64(data string) u64 {
+fn fnv1_64(data: string) u64 {
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
     var hash: u64 = FNV1_64_OFFSET
@@ -71,7 +71,7 @@ fn fnv1_64(data string) u64 {
 }
 
 // fnv1a_64 计算 64 位 FNV-1a 哈希值
-fn fnv1a_64(data string) u64 {
+fn fnv1a_64(data: string) u64 {
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
     var hash: u64 = FNV1_64_OFFSET

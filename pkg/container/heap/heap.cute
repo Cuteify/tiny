@@ -19,7 +19,7 @@ fn new() *Heap {
 }
 
 // siftUp 上浮操作，维护最小堆性质
-fn siftUp(h *Heap, idx uint) {
+fn siftUp(h: *Heap, idx: uint) {
     var i: uint = idx
     for ; i > 0; {
         var parent: uint = (i - 1) / 2
@@ -41,7 +41,7 @@ fn siftUp(h *Heap, idx uint) {
 }
 
 // siftDown 下沉操作，维护最小堆性质
-fn siftDown(h *Heap, idx uint) {
+fn siftDown(h: *Heap, idx: uint) {
     var i: uint = idx
     var len: uint = h.len
     for ; true; {
@@ -83,7 +83,7 @@ fn siftDown(h *Heap, idx uint) {
 }
 
 // heapGrow 扩容堆数组
-fn heapGrow(h *Heap) {
+fn heapGrow(h: *Heap) {
     var newCap: uint = h.cap * 2
     var newBuf: ptr = memory.malloc(newCap * 8)
     var i: uint = 0
@@ -98,7 +98,7 @@ fn heapGrow(h *Heap) {
 }
 
 // push 向堆中插入一个整数值
-fn push(h *Heap, value int) {
+fn push(h: *Heap, value: int) {
     if h.len >= h.cap {
         heapGrow(h)
     }
@@ -109,7 +109,7 @@ fn push(h *Heap, value int) {
 }
 
 // pop 从堆中弹出最小值，空堆返回 0
-fn pop(h *Heap) int {
+fn pop(h: *Heap) int {
     if h.len == 0 {
         ret 0
     }
@@ -127,6 +127,6 @@ fn pop(h *Heap) int {
 }
 
 // len 返回堆中元素数量
-fn len(h *Heap) uint {
+fn len(h: *Heap) uint {
     ret h.len
 }

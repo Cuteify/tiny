@@ -10,7 +10,7 @@ fn isSlash(ch: uint) bool {
 }
 
 // lastSlash 返回 s 中最后一个 '/' 的位置，没有则返回 -1
-fn lastSlash(s string) int {
+fn lastSlash(s: string) int {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var i: uint = sLen
@@ -25,7 +25,7 @@ fn lastSlash(s string) int {
 }
 
 // firstSlash 返回 s 中第一个 '/' 的位置，没有则返回 -1
-fn firstSlash(s string) int {
+fn firstSlash(s: string) int {
     var sPtr: ptr = strings.toCstring(s)
     var sLen: uint = strings.len(s)
     var i: uint = 0
@@ -40,7 +40,7 @@ fn firstSlash(s string) int {
 }
 
 // isAbs 判断路径是否为绝对路径（以 '/' 开头）
-fn isAbs(path string) bool {
+fn isAbs(path: string) bool {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret false
@@ -51,7 +51,7 @@ fn isAbs(path string) bool {
 }
 
 // base 返回路径最后一个元素
-fn base(path string) string {
+fn base(path: string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret "."
@@ -99,7 +99,7 @@ fn base(path string) string {
 }
 
 // dir 返回路径的目录部分（最后一个斜杠之前的部分）
-fn dir(path string) string {
+fn dir(path: string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret "."
@@ -163,7 +163,7 @@ fn dir(path string) string {
 }
 
 // ext 返回文件扩展名（包含 '.'），没有扩展名返回空字符串
-fn ext(path string) string {
+fn ext(path: string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret ""
@@ -205,7 +205,7 @@ fn ext(path string) string {
 }
 
 // split 将路径拆分为目录和文件两部分
-fn split(path string) (string, string) {
+fn split(path: string) (string, string) {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         return ".", "."
@@ -328,7 +328,7 @@ fn _cleanTopDotDot(buf: ptr, dst: uint) bool {
 }
 
 // clean 规范化路径：去掉连续斜杠、"." 与 ".." 段、末尾斜杠（根目录除外）
-fn clean(path string) string {
+fn clean(path: string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret "."
@@ -412,7 +412,7 @@ fn clean(path string) string {
 }
 
 // join 连接两个路径元素
-fn join(elem1 string, elem2 string) string {
+fn join(elem1: string, elem2: string) string {
     var len1: uint = strings.len(elem1)
     var len2: uint = strings.len(elem2)
 
@@ -497,17 +497,17 @@ fn listSeparator() u8 {
 }
 
 // volumeName 返回路径中的卷名（Linux 上始终为空）
-fn volumeName(path string) string {
+fn volumeName(path: string) string {
     ret ""
 }
 
 // volumeNameLen 返回卷名长度（Linux 上为 0）
-fn volumeNameLen(path string) int {
+fn volumeNameLen(path: string) int {
     ret 0
 }
 
 // isLocal 判断路径是否为本地路径（不以 '/' 开头且不包含 ".."）
-fn isLocal(path string) bool {
+fn isLocal(path: string) bool {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret true
@@ -541,7 +541,7 @@ fn isLocal(path string) bool {
 }
 
 // localize 将路径转换为本地路径（去除开头的 "/"）
-fn localize(path string) string {
+fn localize(path: string) string {
     var sLen: uint = strings.len(path)
     if sLen == 0 {
         ret path
@@ -567,7 +567,7 @@ fn localize(path string) string {
 }
 
 // abs 获取绝对路径（通过 getcwd 获取当前目录并拼接）
-fn abs(path string) string {
+fn abs(path: string) string {
     // 如果已经是绝对路径，直接清理后返回
     if isAbs(path) {
         ret clean(path)
@@ -609,7 +609,7 @@ fn abs(path string) string {
 }
 
 // rel 计算从 basePath 到 targetPath 的相对路径
-fn rel(basePath string, targetPath string) string {
+fn rel(basePath: string, targetPath: string) string {
     var baseClean: string = clean(basePath)
     var targetClean: string = clean(targetPath)
 
@@ -793,7 +793,7 @@ fn rel(basePath string, targetPath string) string {
 
 // match 简单的 glob 模式匹配（支持 * 和 ?）
 // * 匹配任意字符序列，? 匹配单个字符
-fn match(pattern string, name string) bool {
+fn match(pattern: string, name: string) bool {
     var pPtr: ptr = strings.toCstring(pattern)
     var pLen: uint = strings.len(pattern)
     var nPtr: ptr = strings.toCstring(name)
@@ -843,23 +843,23 @@ fn match(pattern string, name string) bool {
 }
 
 // glob 检查路径是否匹配 glob 模式（简化版本）
-fn glob(pattern string, path string) bool {
+fn glob(pattern: string, path: string) bool {
     ret match(pattern, path)
 }
 
 // evalSymlinks 解析符号链接（简化版本，直接返回原路径）
-fn evalSymlinks(path string) string {
+fn evalSymlinks(path: string) string {
     ret path
 }
 
 // joinMulti 连接三个路径元素
-fn joinMulti(elem1 string, elem2 string, elem3 string) string {
+fn joinMulti(elem1: string, elem2: string, elem3: string) string {
     ret join(join(elem1, elem2), elem3)
 }
 
 // walk 遍历路径下的所有文件，对每个文件调用回调函数
 // 简化实现：使用 getdents 系统调用读取目录
-fn walk(path string, callback fn(string)) {
+fn walk(path: string, callback: fn(string)) {
     var pathPtr: ptr = strings.toCstring(path)
     var fd: i32 = syscall.open(pathPtr, 0, 0)
     if fd < 0 {

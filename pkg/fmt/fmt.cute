@@ -5,22 +5,22 @@ import "std:strings"
 // 平台无关实现，底层复用 std:memory 和 std:strings
 
 // itoa 将整数转换为十进制字符串
-fn itoa(n int) string {
+fn itoa(n: int) string {
     ret strings.toString(n, 10)
 }
 
 // itoaHex 将整数转换为十六进制字符串（小写）
-fn itoaHex(n int) string {
+fn itoaHex(n: int) string {
     ret strings.toString(n, 16)
 }
 
 // itoaOct 将整数转换为八进制字符串
-fn itoaOct(n int) string {
+fn itoaOct(n: int) string {
     ret strings.toString(n, 8)
 }
 
 // appendInt 将整数追加到现有字符串末尾
-fn appendInt(s string, n int) string {
+fn appendInt(s: string, n: int) string {
     var numStr: string = itoa(n)
     var sLen: uint = strings.len(s)
     var nLen: uint = strings.len(numStr)
@@ -50,7 +50,7 @@ fn appendInt(s string, n int) string {
 }
 
 // appendStr 将字符串追加到现有字符串末尾
-fn appendStr(s string, suffix string) string {
+fn appendStr(s: string, suffix: string) string {
     var sLen: uint = strings.len(s)
     var nLen: uint = strings.len(suffix)
     var totalLen: uint = sLen + nLen
@@ -79,7 +79,7 @@ fn appendStr(s string, suffix string) string {
 }
 
 // appendChar 将单个字符追加到字符串末尾
-fn appendChar(s string, c int) string {
+fn appendChar(s: string, c: int) string {
     var sLen: uint = strings.len(s)
     var buf: ptr = memory.malloc(sLen + 2)
     var sPtr: ptr = strings.toCstring(s)

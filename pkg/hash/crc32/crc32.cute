@@ -57,7 +57,7 @@ fn readTableEntry(idx: u32) u32 {
 
 // checksum 计算 data 的 CRC-32 校验和
 // 返回 32 位 CRC-32 IEEE 值
-fn checksum(data string) u32 {
+fn checksum(data: string) u32 {
     buildTable()
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)
@@ -74,7 +74,7 @@ fn checksum(data string) u32 {
 }
 
 // checksumWithInit 使用初始值计算 CRC-32（支持分块计算）
-fn checksumWithInit(data string, prev u32) u32 {
+fn checksumWithInit(data: string, prev: u32) u32 {
     buildTable()
     var sPtr: ptr = strings.toCstring(data)
     var sLen: uint = strings.len(data)

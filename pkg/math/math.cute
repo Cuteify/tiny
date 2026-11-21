@@ -3,7 +3,7 @@
 // 浮点函数需要链接 -lm（gcc -lm 或 nasm+ld -lm）
 
 // abs 返回整数的绝对值
-fn abs(x int) int {
+fn abs(x: int) int {
     if x < 0 {
         ret 0 - x
     }
@@ -11,7 +11,7 @@ fn abs(x int) int {
 }
 
 // min 返回两个整数中较小的一个
-fn min(a int, b int) int {
+fn min(a: int, b: int) int {
     if a < b {
         ret a
     }
@@ -19,7 +19,7 @@ fn min(a int, b int) int {
 }
 
 // max 返回两个整数中较大的一个
-fn max(a int, b int) int {
+fn max(a: int, b: int) int {
     if a > b {
         ret a
     }
@@ -27,77 +27,77 @@ fn max(a int, b int) int {
 }
 
 // sqrt 返回 x 的平方根（需要链接 -lm）
-fn sqrt(x f64) f64 {
+fn sqrt(x: f64) f64 {
     build ext("sqrt")
 }
 
 // pow 返回 x 的 y 次方（需要链接 -lm）
-fn pow(x f64, y f64) f64 {
+fn pow(x: f64, y: f64) f64 {
     build ext("pow")
 }
 
 // ceil 返回大于等于 x 的最小整数（需要链接 -lm）
-fn ceil(x f64) f64 {
+fn ceil(x: f64) f64 {
     build ext("ceil")
 }
 
 // floor 返回小于等于 x 的最大整数（需要链接 -lm）
-fn floor(x f64) f64 {
+fn floor(x: f64) f64 {
     build ext("floor")
 }
 
 // log 返回 x 的自然对数（需要链接 -lm）
-fn log(x f64) f64 {
+fn log(x: f64) f64 {
     build ext("log")
 }
 
 // log2 返回 x 以 2 为底的对数（需要链接 -lm）
-fn log2(x f64) f64 {
+fn log2(x: f64) f64 {
     build ext("log2")
 }
 
 // log10 返回 x 以 10 为底的对数（需要链接 -lm）
-fn log10(x f64) f64 {
+fn log10(x: f64) f64 {
     build ext("log10")
 }
 
 // sin 返回 x 的正弦值（需要链接 -lm）
-fn sin(x f64) f64 {
+fn sin(x: f64) f64 {
     build ext("sin")
 }
 
 // cos 返回 x 的余弦值（需要链接 -lm）
-fn cos(x f64) f64 {
+fn cos(x: f64) f64 {
     build ext("cos")
 }
 
 // tan 返回 x 的正切值（需要链接 -lm）
-fn tan(x f64) f64 {
+fn tan(x: f64) f64 {
     build ext("tan")
 }
 
 // asin 返回 x 的反正弦值（需要链接 -lm）
-fn asin(x f64) f64 {
+fn asin(x: f64) f64 {
     build ext("asin")
 }
 
 // acos 返回 x 的反余弦值（需要链接 -lm）
-fn acos(x f64) f64 {
+fn acos(x: f64) f64 {
     build ext("acos")
 }
 
 // atan 返回 x 的反正切值（需要链接 -lm）
-fn atan(x f64) f64 {
+fn atan(x: f64) f64 {
     build ext("atan")
 }
 
 // atan2 返回 y/x 的反正切值（需要链接 -lm）
-fn atan2(y f64, x f64) f64 {
+fn atan2(y: f64, x: f64) f64 {
     build ext("atan2")
 }
 
 // exp 返回 e 的 x 次方（需要链接 -lm）
-fn exp(x f64) f64 {
+fn exp(x: f64) f64 {
     build ext("exp")
 }
 
@@ -122,7 +122,7 @@ fn minFloat64() f64 {
 }
 
 // inf 返回正无穷大
-fn inf(sign int) f64 {
+fn inf(sign: int) f64 {
     if sign < 0 {
         ret -1.0 / 0.0
     }
@@ -137,7 +137,7 @@ fn nan() f64 {
 // isNaN 判断 x 是否为 NaN。
 // f64 以 IEEE-754 位模式存放在通用寄存器中，整数比较无法表达
 // NaN != NaN；这里直接检查指数全一且尾数非零。
-fn isNaN(x f64) bool {
+fn isNaN(x: f64) bool {
     var bits: u64 = unsafe.cast[u64](x)
     var expMask: u64 = 0x7ff0000000000000
     var fracMask: u64 = 0x000fffffffffffff
@@ -148,7 +148,7 @@ fn isNaN(x f64) bool {
 }
 
 // isInf 判断 x 是否为无穷大
-fn isInf(sign int) f64 {
+fn isInf(sign: int) f64 {
     // 正无穷: x > 0 且 x * 2 == x
     // 负无穷: x < 0 且 x * 2 == x
     // 这里简化处理，实际需要更精确的判断
@@ -156,112 +156,112 @@ fn isInf(sign int) f64 {
 }
 
 // mod 返回 x 对 y 取模（浮点数版本，需要链接 -lm）
-fn mod(x f64, y f64) f64 {
+fn mod(x: f64, y: f64) f64 {
     build ext("fmod")
 }
 
 // trunc 返回 x 截断为整数部分（需要链接 -lm）
-fn trunc(x f64) f64 {
+fn trunc(x: f64) f64 {
     build ext("trunc")
 }
 
 // round 返回 x 四舍五入到整数（需要链接 -lm）
-fn round(x f64) f64 {
+fn round(x: f64) f64 {
     build ext("round")
 }
 
 // copysign 返回大小为 |x| 符号为 y 的值（需要链接 -lm）
-fn copysign(x f64, y f64) f64 {
+fn copysign(x: f64, y: f64) f64 {
     build ext("copysign")
 }
 
 // dim 返回 max(x-y, 0)（需要链接 -lm）
-fn dim(x f64, y f64) f64 {
+fn dim(x: f64, y: f64) f64 {
     build ext("fdim")
 }
 
 // maxFloat64 返回两个 f64 中较大的一个
-fn maxFloat64Val(x f64, y f64) f64 {
+fn maxFloat64Val(x: f64, y: f64) f64 {
     build ext("fmax")
 }
 
 // minFloat64 返回两个 f64 中较小的一个
-fn minFloat64Val(x f64, y f64) f64 {
+fn minFloat64Val(x: f64, y: f64) f64 {
     build ext("fmin")
 }
 
 // cbrt 返回 x 的立方根（需要链接 -lm）
-fn cbrt(x f64) f64 {
+fn cbrt(x: f64) f64 {
     build ext("cbrt")
 }
 
 // hypot 返回 sqrt(x*x + y*y)（需要链接 -lm）
-fn hypot(x f64, y f64) f64 {
+fn hypot(x: f64, y: f64) f64 {
     build ext("hypot")
 }
 
 // remainder 返回 IEEE 754 余数（需要链接 -lm）
-fn remainder(x f64, y f64) f64 {
+fn remainder(x: f64, y: f64) f64 {
     build ext("remainder")
 }
 
 // add 增加浮点精度（辅助函数）
-fn add(x f64, y f64) f64 {
+fn add(x: f64, y: f64) f64 {
     ret x + y
 }
 
 // sub 减少浮点精度（辅助函数）
-fn sub(x f64, y f64) f64 {
+fn sub(x: f64, y: f64) f64 {
     ret x - y
 }
 
 // mul 乘法（辅助函数）
-fn mul(x f64, y f64) f64 {
+fn mul(x: f64, y: f64) f64 {
     ret x * y
 }
 
 // div 除法（辅助函数）
-fn div(x f64, y f64) f64 {
+fn div(x: f64, y: f64) f64 {
     ret x / y
 }
 
 // eq 判断两个 f64 是否相等（辅助函数）
-fn eq(x f64, y f64) bool {
+fn eq(x: f64, y: f64) bool {
     ret x == y
 }
 
 // ne 判断两个 f64 是否不相等（辅助函数）
-fn ne(x f64, y f64) bool {
+fn ne(x: f64, y: f64) bool {
     ret x != y
 }
 
 // lt 判断 x < y（辅助函数）
-fn lt(x f64, y f64) bool {
+fn lt(x: f64, y: f64) bool {
     ret x < y
 }
 
 // le 判断 x <= y（辅助函数）
-fn le(x f64, y f64) bool {
+fn le(x: f64, y: f64) bool {
     ret x <= y
 }
 
 // gt 判断 x > y（辅助函数）
-fn gt(x f64, y f64) bool {
+fn gt(x: f64, y: f64) bool {
     ret x > y
 }
 
 // ge 判断 x >= y（辅助函数）
-fn ge(x f64, y f64) bool {
+fn ge(x: f64, y: f64) bool {
     ret x >= y
 }
 
 // neg 返回 -x（辅助函数）
-fn neg(x f64) f64 {
+fn neg(x: f64) f64 {
     ret 0.0 - x
 }
 
 // absF64 返回 f64 的绝对值（辅助函数）
-fn absF64(x f64) f64 {
+fn absF64(x: f64) f64 {
     if x < 0.0 {
         ret 0.0 - x
     }
@@ -269,7 +269,7 @@ fn absF64(x f64) f64 {
 }
 
 // sign 返回 x 的符号：-1, 0, 或 1（辅助函数）
-fn sign(x f64) f64 {
+fn sign(x: f64) f64 {
     if x < 0.0 {
         ret -1.0
     }
@@ -280,7 +280,7 @@ fn sign(x f64) f64 {
 }
 
 // clamp 将 x 限制在 [lo, hi] 范围内（辅助函数）
-fn clamp(x f64, lo f64, hi f64) f64 {
+fn clamp(x: f64, lo: f64, hi: f64) f64 {
     if x < lo {
         ret lo
     }
@@ -291,22 +291,22 @@ fn clamp(x f64, lo f64, hi f64) f64 {
 }
 
 // lerp 线性插值（辅助函数）
-fn lerp(a f64, b f64, t f64) f64 {
+fn lerp(a: f64, b: f64, t: f64) f64 {
     ret a + t*(b-a)
 }
 
 // deg2rad 将角度转换为弧度（辅助函数）
-fn deg2rad(deg f64) f64 {
+fn deg2rad(deg: f64) f64 {
     ret deg * pi() / 180.0
 }
 
 // rad2deg 将弧度转换为角度（辅助函数）
-fn rad2deg(rad f64) f64 {
+fn rad2deg(rad: f64) f64 {
     ret rad * 180.0 / pi()
 }
 
 // gcd 返回两个整数的最大公约数（辅助函数）
-fn gcd(a int, b int) int {
+fn gcd(a: int, b: int) int {
     var x: int = abs(a)
     var y: int = abs(b)
     for ; y != 0; {
@@ -318,7 +318,7 @@ fn gcd(a int, b int) int {
 }
 
 // lcm 返回两个整数的最小公倍数（辅助函数）
-fn lcm(a int, b int) int {
+fn lcm(a: int, b: int) int {
     if a == 0 || b == 0 {
         ret 0
     }
@@ -326,7 +326,7 @@ fn lcm(a int, b int) int {
 }
 
 // factorial 返回 n 的阶乘（辅助函数，n >= 0）
-fn factorial(n int) int {
+fn factorial(n: int) int {
     if n <= 1 {
         ret 1
     }
@@ -340,7 +340,7 @@ fn factorial(n int) int {
 }
 
 // isPrime 判断 n 是否为素数（辅助函数）
-fn isPrime(n int) bool {
+fn isPrime(n: int) bool {
     if n <= 1 {
         ret false
     }
