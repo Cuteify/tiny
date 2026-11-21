@@ -16,8 +16,8 @@ import (
 
 var GoArch = "x86"
 
-// NilCheck 控制是否在代码生成中插入 nil 指针检查（默认关闭）。
-var NilCheck = false
+// NilCheck 控制是否在代码生成中插入 nil 指针检查（默认开启）。
+var NilCheck = true
 
 func init() {
 	GoArch = typeSys.TargetArch()

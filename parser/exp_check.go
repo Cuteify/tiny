@@ -132,6 +132,9 @@ func (exp *Expression) lowerMethodCall(p *Parser, receiver *Expression, method s
 // Check 表达式语义检查入口：类型推导 + 常量折叠。
 // 按优先级分发：变量引用 → 函数调用 → 运算符检查 → 常量。
 func (exp *Expression) Check(p *Parser) bool {
+	if exp == nil {
+		return false
+	}
 	if exp.checked {
 		return true
 	}
@@ -242,6 +245,10 @@ func (exp *Expression) checkOp(p *Parser) bool {
 		if exp.Left == nil {
 			return exp.checkUnary(p)
 		}
+	case ".":
+		// 非名字链的字段访问（ps[i].x、m[k].x）：名字链 a.b.c 由 ParseName
+		// 合成单个 VarBlock，不会走到这里。
+		return exp.checkFieldAccess(p)
 	}
 
 	// 递归检查子节点。
@@ -676,6 +683,98 @@ func (exp *Expression) checkIndex(p *Parser) bool {
 		return exp.lowerOperator(p, indexed, "get",
 			[]*Expression{exp.Index[0]}, "[]")
 	}
+}
+
+// fieldBaseIndex 返回字段访问链最底层的索引节点（a[i].x.y → a[i]）；非索引基底返回 nil。
+func fieldBaseIndex(exp *Expression) *Expression {
+	for exp != nil && exp.Separator == "." {
+		exp = exp.Left
+	}
+	if exp != nil && exp.Separator == "[]" {
+		return exp
+	}
+	return nil
+}
+
+// checkFieldAccess 检查非名字链的字段访问 expr.Left.field（ps[i].x / m[k].x）。
+// 名字链 a.b.c 在 ParseName 阶段已合成单个 VarBlock，不走这里。
+// 字段偏移/最终类型记录到最内层索引节点，代码生成算完元素地址后据此读字段；
+// exp.Type 是最终字段类型（可能继续被外层 "." 使用）。
+func (exp *Expression) checkFieldAccess(p *Parser) bool {
+	if exp.Left == nil || exp.Right == nil || exp.Right.Var == nil {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "invalid field access")
+		return false
+	}
+	if !exp.Left.Check(p) {
+		return false
+	}
+	fieldName := exp.Right.Var.Name.Last()
+	if fieldName == "" {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "field access needs a field name")
+		return false
+	}
+	base := fieldBaseIndex(exp.Left)
+	if base == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"field access on unsupported base expression")
+		return false
+	}
+
+	baseType := exp.Left.Type
+	if baseType == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"field access base has no type")
+		return false
+	}
+	prevPtr := baseType.IsPointer()
+	if prevPtr {
+		baseType = baseType.Elem()
+		if baseType == nil {
+			p.Error.MissError("Type Error", p.Lexer.Cursor, "field access through invalid pointer")
+			return false
+		}
+	}
+	st, ok := baseType.(*typeSys.StructType)
+	if !ok {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"field access on non-struct type "+safeTypeName(exp.Left.Type))
+		return false
+	}
+	st.Layout()
+	f := st.Field(fieldName)
+	if f == nil || f.Type == nil {
+		p.Error.MissError("Type Error", p.Lexer.Cursor,
+			"unknown field '"+fieldName+"' on type "+safeTypeName(baseType))
+		return false
+	}
+
+	if exp.Left.Separator == "." {
+		// 链式字段：在已累计偏移上继续累加；只有第一次遇到指针字段时记录解引用点。
+		if prevPtr {
+			if base.FieldDeref && base.FieldDerefOffset != base.FieldOffset {
+				p.Error.MissError("Type Error", p.Lexer.Cursor,
+					"field access through multiple pointer levels is not supported")
+				return false
+			}
+			base.FieldDeref = true
+			base.FieldDerefOffset = base.FieldOffset
+			base.FieldOffset += f.Offset
+		} else {
+			base.FieldOffset += f.Offset
+		}
+	} else {
+		// 索引元素本身：元素是指针时先在元素地址处取指针。
+		base.FieldOffset = f.Offset
+		if prevPtr {
+			base.FieldDeref = true
+			base.FieldDerefOffset = 0
+		}
+	}
+
+	base.FieldType = f.Type
+	exp.Type = f.Type
+	exp.Right.Var.Type = f.Type
+	return true
 }
 
 // mapIntrinsicUnsupportedTarget 报告当前目标是否不支持手写的 SysV 寄存器 ABI

@@ -31,6 +31,13 @@ type Expression struct {
 	// 映射字面量键值对（Separator="map_lit" 时有效）。
 	MapElems  []MapEntry      // {key: value, ...}
 	Anon      *FuncBlock     // 匿名函数（闭包），非nil时表示 fn(...) R { ... } 字面量
+	// 索引表达式的后缀字段访问（a[i].x / m[k].x）：字段偏移与最终类型挂在
+	// 最内层 "[]" 节点上，代码生成算完元素地址后据此读字段；表达式本身
+	// 的 Type 仍是最终字段类型。
+	FieldOffset      int
+	FieldType        typeSys.Type
+	FieldDeref       bool // 元素本身是指针：先取 [元素地址] 的指针再按偏移读
+	FieldDerefOffset int  // 解引用指针所在的位置（相对元素地址）
 }
 
 // SetStmt 标记该表达式位于语句位置（如 `slices.set[T](...)` 这样的裸调用语句）。
@@ -136,6 +143,10 @@ var opTable = map[string]int{
 	"/":  11,
 	"%":  11,
 	"[]": 100,
+	// "."：字段访问树节点（ps[i].x、a[i].x + N 等）。优先级与 "[]"
+	// 同级——让插入链在高优先级下把跟节点推进 BeParent，不让 "+" 等
+	// 二元运算把 "." 节点 mangle 成带嵌挂子节点的新形状。
+	".":  100,
 	// 复合赋值运算符
 	"+=":  12,
 	"-=":  12,

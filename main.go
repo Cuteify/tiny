@@ -24,7 +24,7 @@ func main() {
 	objOnlyLong := flag.Bool("obj", false, "编译并汇编生成目标文件（同 -c）")
 	output := flag.String("o", "", "指定输出文件路径")
 	gcReport := flag.Bool("gcreport", false, "打印 GC 分析报告（函数摘要 + LLR）")
-	nilCheck := flag.Bool("nilcheck", false, "在编译产物中插入 nil 指针检查（默认关闭；调试 SIGSEGV 时启用）")
+	nilCheck := flag.Bool("nilcheck", true, "在编译产物中插入 nil 指针检查（默认开启；可用 -nilcheck=false 关闭）")
 	flag.Parse()
 
 	// 获取路径参数
@@ -70,9 +70,7 @@ func main() {
 	}
 
 	// 编译
-	if *nilCheck {
-		compile.NilCheck = true
-	}
+	compile.NilCheck = *nilCheck
 	co := &compile.Compiler{}
 	code := co.Compile(tmp.AST.(*parser.Node))
 

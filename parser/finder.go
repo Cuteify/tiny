@@ -211,17 +211,13 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 		return []FindResult{findSelf(p, name, typ)}
 	}
 
+	// 内建类型先只记下候选，等作用域内用户类型查完再补：Go 语义里
+	// 包级声明遮蔽预声明标识符（如用户 `type error struct` 必须覆盖内建
+	// error 接口），否则 &self 会绑定到内建接口、字段访问全部落空。
+	lookupName := name
+	var sysType typeSys.Type
 	if (typ & FindTypeType) != 0 {
-		if t := typeSys.GetSystemType(name.String()); t != nil {
-			res = append(res, FindResult{Value: t, Path: []any{t}, Type: FindTypeType})
-		}
-		// 解析期跨文件/跨包类型查找（全局注册表）
-		if len(res) == 0 {
-			glres := lookupGlobalType(p, name)
-			if glres != nil {
-				res = append(res, FindResult{Value: glres, Path: []any{glres}, Type: FindTypeType})
-			}
-		}
+		sysType = typeSys.GetSystemType(name.String())
 	}
 
 	// 裸名补包路径前缀后的候选（根包的全局声明带 /abs/path 前缀）；
@@ -363,6 +359,25 @@ func (p *Parser) Find(name Name, typ FindType) (res FindResults) {
 			}
 		}
 		nowBlock = nowBlock.Father
+	}
+
+	// 作用域内没有用户类型时才回退到内建类型/全局类型表。
+	// 仍然只补一个 FindTypeType 结果，保持既有调用方“取 results[0]”的语义。
+	if (typ & FindTypeType) != 0 {
+		hasType := false
+		for _, r := range res {
+			if r.Type&FindTypeType != 0 {
+				hasType = true
+				break
+			}
+		}
+		if !hasType {
+			if sysType != nil {
+				res = append(res, FindResult{Value: sysType, Path: []any{sysType}, Type: FindTypeType})
+			} else if glres := lookupGlobalType(p, lookupName); glres != nil {
+				res = append(res, FindResult{Value: glres, Path: []any{glres}, Type: FindTypeType})
+			}
+		}
 	}
 	return res
 }

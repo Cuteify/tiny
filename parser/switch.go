@@ -116,6 +116,10 @@ func (c *CaseBlock) Check(p *Parser) bool {
 	// 无目标 switch：case 值是条件表达式，不做目标类型相等检查
 	if c.Switch.Target == nil {
 		for i := 0; i < len(c.Values); i++ {
+			if c.Values[i] == nil {
+				p.Error.MissError("Syntax Error", p.Lexer.Cursor, "case value is nil")
+				return false
+			}
 			if !c.Values[i].Check(p) {
 				return false
 			}
@@ -124,6 +128,10 @@ func (c *CaseBlock) Check(p *Parser) bool {
 	}
 	// 检查表达式
 	for i := 0; i < len(c.Values); i++ {
+		if c.Values[i] == nil {
+			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "case value is nil")
+			return false
+		}
 		if !c.Values[i].Check(p) {
 			return false
 		}

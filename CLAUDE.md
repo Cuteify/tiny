@@ -17,16 +17,7 @@ go build -o cuteify2 .
 ```
 
 ## Syntax Reference
-**2026-11-10 起，`.cute` 语言的第一事实源是 [`docs/LANGUAGE.md`](docs/LANGUAGE.md)（当前实现逐条核对的权威文档）。所有新会话 / 子代理开工必须读 `docs/LANGUAGE.md`——** 涉及语法问题时 `docs/LANGUAGE.md` 优先于本文件「Syntax Reference」。
-
-- **No package declaration** in `.cute` files
-- 块注释 `/* ... */` ✅（非嵌套，允许跨行）；行注释 `// ...` ✅
-- 文件顶层 `import "std:xxx"` 可用（`package.json` 的 `imports` 不再生效；Wave I 后文件级 import 为唯一通道）
-- `fn` for functions, `ret` for return
-- `for i := 0; i < n; i = i + 1 {`（支持 i++ / i += 1 / i = i + 1 作为 post）
-- 变参 `fn f(xs ...int)` 可用（打包成 `[]int`）
-- `nil` keyword for null pointers
-- Number literals are `int`; `int * uint` NOT supported — reorder to `ptrSize * N`
+**Cuteify语言的第一事实源是 [`docs/LANGUAGE.md`](docs/LANGUAGE.md)（当前实现逐条核对的权威文档）。所有新会话 / 子代理开工必须读 `docs/LANGUAGE.md`——** 涉及语法问题时 `docs/LANGUAGE.md` 优先于本文件「Syntax Reference」。
 
 ## Key Architecture
 
@@ -83,8 +74,8 @@ go build -o cuteify2 .
 
 ## Agent Execution Rules
 **每次启动时必须执行：**
-0. 读取 `docs/LANGUAGE.md` —— **2026-11-10 用户钦定强制项**：`.cute` 语法的唯一第一事实源（当前实现逐条核对）。涉及任何语法问题，**先读它再改**，不得凭记忆 / 旧笔记 / 过期速记（含本文件 Syntax Reference 和 `PROJECT.md` §8）。任何差异以 LANGUAGE.md 与源码为准，发现不符先更新文档再继续。
-1. 读取 `PROJECT.md` —— **用户钦定强制项（2026-10-31）**：所有子代理/新会话开工第一件事。已浓缩全部命令/基线/缺陷台账/路径/纪律，**严禁自行重新探索项目结构与已知信息**（两轮两批 SubAgent 因侦察耗尽免费额度的实证教训）。快照与现实不符时：先更新 PROJECT.md 再继续任务。
+0. 读取 `docs/LANGUAGE.md` ——`.cute` 语法的唯一第一事实源（当前实现逐条核对）。涉及任何语法问题，**先读它再改**，不得凭记忆 / 旧笔记 / 过期速记（含本文件 Syntax Reference 和 `PROJECT.md` §8）。任何差异以 LANGUAGE.md 与源码为准，发现不符先更新文档再继续。
+1. 读取 `PROJECT.md`：所有子代理/新会话开工第一件事。已浓缩全部命令/基线/缺陷台账/路径/纪律，**严禁自行重新探索项目结构与已知信息**（两轮两批 SubAgent 因侦察耗尽免费额度的实证教训）。快照与现实不符时：先更新 PROJECT.md 再继续任务。
 2. 按 `PROJECT.md` §5 读 SSOT 文档（`docs/stdplan/PLAN.md` / `docs/stdplan/PROGRESS.md`）及当前活跃计划
 3. 按任务需要读取对应执行日志/笔记
 4. 完成一个可验证的步骤后更新对应进度文档，并记录阻塞原因（如有）

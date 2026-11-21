@@ -3,8 +3,17 @@ import (
     "../lexer"
 )
 type FnBlock struct {
-    name:string   
+    name:string
+    args:[]*Arg
 }
+
+// Arg 函数参数结构体
+type Arg struct {
+	name       :string         // 参数名
+	typ       :string // 参数类型
+	default    :*Expression  // 默认值表达式
+}
+
 
 fn FnBlock.parse(&self, p:*Parser) {
     // 消费fn关键字
@@ -12,12 +21,68 @@ fn FnBlock.parse(&self, p:*Parser) {
     p.Lexer.skipToken("fn")
 
     // 获取函数名称
-    t := p.Lexer.next()
-    console.println("h"+t.string())
-    if t.Type != lexer.NAME {
+    tok := p.Lexer.next()
+    if tok.Type != lexer.NAME {
         panic("function need name")
     }
-    self.name = t.Value
+    
+    self.name = tok.Value
 
-    console.println(self.name)
+    // 处理泛型
+    tok = p.Lexer.prefetch()
+    if tok.is(lexer.DELIMITER, "[") {
+        // TODO:
+        tok = p.Lexer.prefetch()
+    }
+
+    // 处理参数
+    if tok.is(lexer.DELIMITER, "(") {
+        self.parseArgs(p)
+    }
+
+    console.println("Parse Function：" + self.name)
+}
+
+fn FnBlock.parseArgs(&self, p:*Parser) {
+    // 跳过开始的(
+    p.Lexer.skipToken("(")
+	bracketCount := 1
+
+    var tok: *lexer.Token
+    for bracketCount != 0 {
+        tok = p.Lexer.next()
+        if tok.isSemiOrNewline() {
+            panic("故障！")
+        }
+        console.println(tok.string())
+        switch tok.Value {
+            case "(":
+                bracketCount++
+            case ")":
+                bracketCount--
+            case ",":
+                tok = p.Lexer.next()
+                if tok.Type != lexer.NAME {
+                    panic("故障")
+                }
+                newArg := &Arg{
+                    name: tok.Value,
+                    typ: "",
+                    default: nil,
+                }
+                slices.push(self.args, newArg)
+            case ":":
+                tok = p.Lexer.next()
+                if tok.Type != lexer.NAME {
+                    panic("故障")
+                }
+
+                // 反向遍历args，找到最后一个 typ == "" 的参数
+                var targetArg: *Arg = nil
+                for i := slices.len(self.args) - 1; i >= 0; i-- {
+                    a := self.args[i]
+                    a.typ = tok.Value
+                }
+        }
+    }
 }

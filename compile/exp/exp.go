@@ -512,6 +512,13 @@ func (c *ECompiler) generate(exp *parser.Expression, result string) string {
 		return c.indexSet(exp)
 	case "map_lit":
 		return c.mapLiteral(exp, result)
+	case ".":
+		// 索引表达式上的字段访问（a[i].x / m[k].x）：字段偏移由解析器记录在
+		// 最内层 "[]" 节点，直接生成左子即可（索引读取会应用该偏移）。
+		if fieldBaseIndex(exp) != nil {
+			return c.generate(exp.Left, result)
+		}
+		return ""
 	}
 
 	// 内建调用（len/cap/append/make/realloc）：非内建时继续走叶子
@@ -2810,7 +2817,17 @@ func (c *ECompiler) emitMapValueTempStoreScratch(value *parser.Expression, scrat
 	}
 	addr := "[" + scratch + "+" + strconv.Itoa(off) + "]"
 	if size > c.arch.PointerSize() {
-		return c.generate(value, addr)
+		// 多槽值（结构体等）：生成到寄存器（字面量会得到指向结构体的指针），
+		// 再把结构体字节整体拷入暂存区——maps.set 写的是值字节，不是指针。
+		rReg := c.allocRegAvoid(value, "")
+		if rReg == nil {
+			rReg = &regmgr.Reg{Name: c.arch.ReturnReg(), RegIndex: 0}
+		}
+		code := c.generate(value, rReg.Name)
+		// copySlots 的 dst 不能带外层中括号（与 mapLiteral 其他调用点一致）
+		code += c.copySlots(scratch+"+"+strconv.Itoa(off), rReg.Name, size)
+		c.ctx.Reg.Free(value)
+		return code
 	}
 	width := "QWORD"
 	if size > 0 {
@@ -3169,11 +3186,53 @@ func (c *ECompiler) mapIndexAccess(exp *parser.Expression, result string) string
 	code += utils.Format("jmp map_get_done_" + uid)
 	code += utils.Format("map_get_nil_" + uid + ":")
 	code += utils.Format("map_get_done_" + uid + ":")
+	// 后缀字段访问：staging 中 valOff 处是 map 值；字段是普通成员时直接
+	// 加偏移交付，值本身是指针时先把指针所指的字段拷回暂存区。
+	effOff, effSize := valOff, vsize
+	if exp.FieldType != nil {
+		effSize = exp.FieldType.Size()
+		if effSize <= 0 {
+			effSize = c.arch.PointerSize()
+		}
+		if exp.FieldDeref {
+			code += utils.Format("mov RAX, QWORD [" + staging + "+" + strconv.Itoa(valOff) + "]")
+			if exp.FieldDerefOffset != 0 {
+				code += utils.Format("add RAX, " + strconv.Itoa(exp.FieldDerefOffset))
+			}
+			delta := exp.FieldOffset - exp.FieldDerefOffset
+			if delta != 0 {
+				code += utils.Format("add RAX, " + strconv.Itoa(delta))
+			}
+			for i := 0; i < effSize; {
+				n := effSize - i
+				switch {
+				case n >= 8:
+					code += utils.Format("mov RDX, QWORD [RAX+" + strconv.Itoa(i) + "]")
+					code += utils.Format("mov QWORD [" + staging + "+" + strconv.Itoa(valOff+i) + "], RDX")
+					i += 8
+				case n >= 4:
+					code += utils.Format("mov EDX, DWORD [RAX+" + strconv.Itoa(i) + "]")
+					code += utils.Format("mov DWORD [" + staging + "+" + strconv.Itoa(valOff+i) + "], EDX")
+					i += 4
+				case n >= 2:
+					code += utils.Format("mov DX, WORD [RAX+" + strconv.Itoa(i) + "]")
+					code += utils.Format("mov WORD [" + staging + "+" + strconv.Itoa(valOff+i) + "], DX")
+					i += 2
+				default:
+					code += utils.Format("mov DL, BYTE [RAX+" + strconv.Itoa(i) + "]")
+					code += utils.Format("mov BYTE [" + staging + "+" + strconv.Itoa(valOff+i) + "], DL")
+					i++
+				}
+			}
+		} else {
+			effOff = valOff + exp.FieldOffset
+		}
+	}
 	isBareReg := result != "" && result != "push" && !strings.Contains(result, "[")
 	if isBareReg {
-		code += c.mapScratchBareRegResult(exp, result, staging, valOff, vsize)
+		code += c.mapScratchBareRegResult(exp, result, staging, effOff, effSize)
 	} else {
-		code += c.emitMapTempResultScratch(result, staging, valOff, vsize)
+		code += c.emitMapTempResultScratch(result, staging, effOff, effSize)
 		code += c.emitFree(staging)
 	}
 	return code
@@ -3467,6 +3526,15 @@ func (c *ECompiler) indexAccessNegative(exp *parser.Expression, result string, e
 		code += utils.Format("add " + ptrReg.Name + ", " + iReg.Name)
 		c.ctx.Reg.Free(idxExpr)
 	}
+
+	// 列表元素结构体按指针存储（见 indexAccessGeneric）：读取先按存储指针解引。
+	if exp.Type != nil && exp.Type.Kind() == "struct" && exp.Type.Size() > 0 &&
+		src.Type != nil && src.Type.Kind() == "list" {
+		code += utils.Format("mov " + ptrReg.Name + ", QWORD [" + ptrReg.Name + "]")
+	}
+
+	// 后缀字段访问：元素地址已在 ptrReg。
+	elemSize = c.applyIndexField(exp, &code, ptrReg.Name, elemSize)
 
 	// 读元素（与 indexAccessGeneric 相同的多槽/标量交付规则）
 	if elemSize > c.arch.PointerSize() {
@@ -3850,6 +3918,36 @@ func (c *ECompiler) sliceExpAdvanced(exp *parser.Expression, result string) stri
 }
 
 // indexAccess 列表/字符串/数组索引读 a[i]
+// fieldBaseIndex 返回字段访问链最底层的索引节点（a[i].x.y → a[i]）。
+func fieldBaseIndex(exp *parser.Expression) *parser.Expression {
+	for exp != nil && exp.Separator == "." {
+		exp = exp.Left
+	}
+	if exp != nil && exp.Separator == "[]" {
+		return exp
+	}
+	return nil
+}
+
+// applyIndexField 在元素地址已算到 reg 后应用后缀字段访问：
+// 元素是指针时先按 FieldDerefOffset 取指针，再定位到最终的字段地址。
+// 返回字段的读取宽度；无字段访问时原样返回 elemSize。
+func (c *ECompiler) applyIndexField(exp *parser.Expression, code *string, reg string, elemSize int) int {
+	if exp.FieldType == nil {
+		return elemSize
+	}
+	// 索引读出后 ptrReg 已是结构体地址（列表元素结构体按指针存储，读出先
+	// 按存储指针解引，见 indexAccessGeneric）——只加字段偏移。
+	if exp.FieldOffset != 0 {
+		*code += utils.Format("add " + reg + ", " + strconv.Itoa(exp.FieldOffset))
+	}
+	size := exp.FieldType.Size()
+	if size <= 0 {
+		size = c.arch.PointerSize()
+	}
+	return size
+}
+
 func (c *ECompiler) indexAccess(exp *parser.Expression, result string) string {
 	if exp.Right == nil || exp.Right.Type == nil || len(exp.Index) == 0 || exp.Index[0] == nil {
 		return ""
@@ -3996,6 +4094,8 @@ func (c *ECompiler) indexAccessGeneric(exp *parser.Expression, result string, el
 			code += utils.Format("add " + ptrReg.Name + ", " + iReg.Name)
 			c.ctx.Reg.Free(idxExpr)
 		}
+		// 后缀字段访问：元素地址已在 ptrReg。
+		elemSize = c.applyIndexField(exp, &code, ptrReg.Name, elemSize)
 		// Read element
 		if elemSize > c.arch.PointerSize() {
 			if result == "push" {
@@ -4048,6 +4148,16 @@ func (c *ECompiler) indexAccessGeneric(exp *parser.Expression, result string, el
 		code += utils.Format("add " + ptrReg.Name + ", " + iReg.Name)
 		c.ctx.Reg.Free(idxExpr)
 	}
+
+	// 列表元素结构体按指针存储（字面量/变量写入均写指针，见 listLiteral）：
+	// 读取后先按存储指针解引得到结构体地址，再应用后缀字段偏移。
+	if exp.Type != nil && exp.Type.Kind() == "struct" && exp.Type.Size() > 0 &&
+		exp.Right != nil && exp.Right.Type != nil && exp.Right.Type.Kind() == "list" {
+		code += utils.Format("mov " + ptrReg.Name + ", QWORD [" + ptrReg.Name + "]")
+	}
+
+	// 后缀字段访问：元素地址已在 ptrReg。
+	elemSize = c.applyIndexField(exp, &code, ptrReg.Name, elemSize)
 
 	// 读元素
 	if elemSize > c.arch.PointerSize() {

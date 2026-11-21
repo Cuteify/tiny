@@ -1,0 +1,172 @@
+import (
+    "std:console"
+	"std:slices"
+    "../lexer"
+)
+// Expression 表示表达式AST节点
+type Expression struct {
+
+	op: string         // 运算符
+    val: string        // parser 叶子文本（标识符/常量文本，与 op 互斥：运算符节点为空）
+    kind:ExpKind
+	//typ :     typeSys.Type   // 表达式的数据类型，由Check阶段推导
+	right:     *Expression    // 右操作数（二元运算的右子、一元运算的唯一子节点）
+    left:      *Expression    // 左操作数（二元运算的左子）
+	father:    *Expression    // 父表达式节点，用于向上遍历
+
+	//Var       *VarBlock      // 变量引用，非nil时表示变量表达式
+	//StringVal string         // 字符串常量值
+    //Call      *CallBlock     // 函数调用块，非nil时表示调用表达式
+	num :      f64        // 数值常量（整数和浮点数统一用float64存储）
+	boolen:      bool           // 布尔常量值
+
+	//checked   bool           // 是否已通过语义检查，防止重复检查
+	//stmt      bool           // 该表达式位于语句位置（非值位置），void 调用合法
+	//Index     [3]*Expression // 列表索引
+	//IndexSlice bool          // Index 是否来自切片 a[lo:hi:step]（含省略端点的情形）
+	//ListElems []*Expression  // 列表字面量元素，Separator="list_lit"时有效
+	// 映射字面量键值对（Separator="map_lit" 时有效）。
+	//MapElems  []MapEntry      // {key: value, ...}
+	//Anon      *FuncBlock     // 匿名函数（闭包），非nil时表示 fn(...) R { ... } 字面量
+}
+
+enum ExpKind {
+    ExprConst   // Const != nil 或 bool
+    ExprVar                            // Ident  != nil
+    ExprCall                           // CallFn != nil
+    ExprAnonCall                       // 同上 + Children[0] 为函数字面量 *Expression（闭包简化）
+    ExprBinOp                          // Children[0]=lhs, Children[1]=rhs, Op!=""
+    ExprUnaryOp                        // Children[0]=operand, Op!=""
+    ExprSlice              // Children = [target, index...]
+    ExprArrayLit         // Children = 元素
+    ExprMapLit                         // Children = [k,v,k,v,...]
+    ExprStatement                      // 顶层表达式
+}
+
+enum Kind {
+    Num
+    Ident
+    Op
+    LParen
+    RParen
+}
+
+type Token struct {
+    Kind: Kind
+    Text: string
+}
+
+type snap struct {
+    r: *Expression
+    t: *Expression
+}
+
+type opInfo struct {
+    prec: int
+    right: bool
+    unary: bool
+}
+
+var ops: map[string]opInfo = map[string]opInfo{
+    "+": opInfo{prec: 1},
+    "-": opInfo{prec: 1},
+    "*": opInfo{prec: 2},
+    "/": opInfo{prec: 2},
+    "u+": opInfo{prec: 3, unary: true},
+    "u-": opInfo{prec: 3, unary: true},
+    "!": opInfo{prec: 3, unary: true},
+    "^": opInfo{prec: 4, right: true},
+}
+
+fn isOp(n: *Expression) bool {
+    if n == nil {
+        ret false
+    }
+    ret n.op != ""
+}
+
+fn Expression.attach(&self, n: *Expression) {
+    if isOp(self) && self.right == nil {
+        self.right = n
+        if n != nil {
+            n.father = self
+        }
+    } else {
+        // 否则新子树成为当前根：由调用方把 root/top 指向 n
+    }
+}
+
+fn Parser.parseExp(&self, stopPos:int) *Expression {
+    var root: *Expression
+    var top: *Expression
+    type snap struct {
+        r: *Expression
+        t: *Expression
+    }
+    var stack: []snap
+    var tok: *lexer.Token
+
+    for !tok.isSemiOrNewline() {
+    	tok = self.Lexer.next()
+        switch tok.Kind {
+        case Num, Ident:
+            top.attach(&Expression{val: tok.Text})
+        case LParen:
+            var s: snap
+            s.r = root
+            s.t = top
+            slices.push(&stack, s)
+            root, top = nil, nil
+        case RParen:
+            sub := root
+            p := stack[len(stack)-1]
+            stack = stack[:len(stack)-1]
+            root, top = p.r, p.t
+            top.attach(sub)
+            continue
+        case Op:
+        case Op:
+            info := ops[tok.Text]
+
+            // 二元运算符：沿右脊向上弹掉“优先级更高 / 同级左结合”的节点
+            if !info.unary {
+                for isOp(top) {
+                    ti := ops[top.op]
+                    if ti.prec > info.prec || (ti.prec == info.prec && !info.right) {
+                        top = top.father
+                    } else {
+                        break
+                    }
+                }
+            }
+
+            // 插入新运算符节点
+            node := &Expression{op: tok.Text}
+            if isOp(top) && top.right == nil {
+                top.right = node
+                node.father = top
+            } else {
+                node.left = root
+                if root != nil {
+                    root.father = node
+                }
+                root = node
+            }
+            top = node
+        }
+    }
+    ret root
+}
+
+fn infix(n: *Expression) string {
+    if n == nil {
+        ret ""
+    }
+    if n.op == "" {
+        ret n.val
+    }
+    if ops[n.op].unary {
+        ret n.op + "(" + infix(n.right) + ")"
+    }
+    ret "(" + infix(n.left) + " " + n.op + " " + infix(n.right) + ")"
+}

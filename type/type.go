@@ -383,7 +383,10 @@ func GetSystemType(name string) Type {
 		return NewErrorInterface()
 	default:
 		if strings.HasPrefix(name, "[]") {
-			return NewList(GetSystemType(name[2:]))
+			if elem := GetSystemType(name[2:]); elem != nil {
+				return NewList(elem)
+			}
+			return nil
 		}
 		// [N]T 数组类型：name = "[N]T"
 		if len(name) > 2 && name[0] == '[' {
