@@ -57,7 +57,8 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.initializeContext()
 	// Only run top-level pre-passes (and GC analysis) at the top-level entry,
 	// not in recursive calls.
-	if !c.compiling {
+	isTop := !c.compiling
+	if isTop {
 		gc.Analyze(node)
 		resetGenericRegistry()
 		c.compiling = true
@@ -76,8 +77,10 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 	c.markRCFuncs(node)
 	// Pre-pass: collect build export aliases for global declarations
 	c.collectExports(node)
-	// 引用计数 DCE：死函数计数归零后沿调用边传播减一
-	c.runDCE(node)
+	// 引用计数 DCE：死函数计数归零后沿调用边传播减一（仅顶层执行）
+	if isTop {
+		c.runDCE(node)
+	}
 	code = c.compileRoot(node, code)
 	code += c.compileChildren(node, "")
 	code += c.compileRootTail(node)

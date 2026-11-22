@@ -126,6 +126,17 @@ func collectCallees(body *parser.Node) []*parser.FuncBlock {
 					}
 				}
 			}
+		case *parser.ElseBlock:
+			if v.IfCondition != nil {
+				walkExprCallees(v.IfCondition, seen, &out)
+			}
+		case *parser.ArgBlock:
+			if v.Default != nil {
+				walkExprCallees(v.Default, seen, &out)
+			}
+			if v.Value != nil {
+				walkExprCallees(v.Value, seen, &out)
+			}
 		}
 		for _, ch := range n.Children {
 			walk(ch)
@@ -188,6 +199,11 @@ func walkExprCallees(e *parser.Expression, seen map[*parser.FuncBlock]bool, out 
 			*out = append(*out, fb)
 		}
 	}
+	// 匿名函数（闭包）
+	if e.Anon != nil && !seen[e.Anon] {
+		seen[e.Anon] = true
+		*out = append(*out, e.Anon)
+	}
 }
 
 // propagateDead 按用户算法：函数计数为 0 时，沿其调用依次减 1；减到 0 继续传播。
@@ -222,10 +238,32 @@ func (c *Compiler) runDCE(root *parser.Node) {
 	}
 	funcNodes := map[*parser.FuncBlock]*parser.Node{}
 	collectFuncNodes(root, funcNodes)
-	dead := map[*parser.FuncBlock]bool{}
+	// 发现通过调用边引用但不在 AST 节点映射中的 FuncBlock
+	allFuncs := map[*parser.FuncBlock]bool{}
 	for fb := range funcNodes {
+		allFuncs[fb] = true
+	}
+	var queue []*parser.FuncBlock
+	for fb := range funcNodes {
+		queue = append(queue, fb)
+	}
+	for i := 0; i < len(queue); i++ {
+		body := funcNodes[queue[i]]
+		if body == nil {
+			body = queue[i].Node
+		}
+		for _, callee := range collectCallees(body) {
+			if callee != nil && !allFuncs[callee] {
+				allFuncs[callee] = true
+				queue = append(queue, callee)
+			}
+		}
+	}
+	dead := map[*parser.FuncBlock]bool{}
+	for fb := range allFuncs {
 		if fb.Useful <= 0 && !c.isDCERoot(fb) {
 			c.propagateDead(fb, funcNodes, dead)
 		}
 	}
 }
+
