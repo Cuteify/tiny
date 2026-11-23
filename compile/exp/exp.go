@@ -876,6 +876,9 @@ func (c *ECompiler) emitUnary(exp *parser.Expression, result string, rReg *regmg
 		if pt == nil && exp.Right.Var != nil {
 			pt = exp.Right.Var.Type
 		}
+		// new(T) 结构体字面量 lowering 产物：*new(T) 仅为拷贝值到栈槽的临时堆对象。
+		// 拷贝完成后释放该临时，避免 FRAME_OWN 价值临时在函数内泄漏。
+		isNewTemp := exp.Right != nil && exp.Right.Call != nil && exp.Right.Call.IsBuiltinNewAlloc() && !exp.Right.Call.IsRC
 		// 多槽结构体按值解引用：按槽宽逐槽复制（与大返回值 ABI 同形）
 		if _, isStruct := exp.Type.(*typeSys.StructType); isStruct {
 			ps := c.arch.PointerSize()
@@ -892,22 +895,80 @@ func (c *ECompiler) emitUnary(exp *parser.Expression, result string, rReg *regmg
 							code += utils.Format("push " + ln + " [" + rVal + "+" + strconv.Itoa(off) + "]")
 						}
 					}
+					if isNewTemp {
+						code += c.emitFree(rVal)
+					}
 					return code
 				}
 				if strings.Contains(result, "[") {
-					return c.copySlots(stripOuterBrackets(result), rVal, slots*ps)
+					if isNewTemp {
+						ptrSave := c.allocTmpReg()
+						code = utils.Format("mov " + ptrSave.Name + ", " + rVal)
+						code += c.copySlots(stripOuterBrackets(result), ptrSave.Name, slots*ps)
+						code += c.emitFree(ptrSave.Name)
+						c.freeTmpReg(ptrSave)
+						return code
+					}
+					code = c.copySlots(stripOuterBrackets(result), rVal, slots*ps)
+					return code
 				}
 				code = utils.Format("mov " + result + ", " + ln + " [" + rVal + "]")
+				if isNewTemp {
+					code += c.emitFree(rVal)
+				}
 				return code
 			}
 		}
 		prefix := c.derefPrefix(pt)
 		if result == "push" {
+			if isNewTemp {
+				// 需要保留 rVal（堆指针）用于释放，加载值到 ReturnReg
+				tmpVal := c.arch.ReturnReg()
+				code = c.derefLoad(prefix, tmpVal, rVal)
+				code += utils.Format("push " + tmpVal)
+				code += c.emitFree(rVal)
+				return code
+			}
 			code = c.derefLoad(prefix, rVal, rVal)
 			code += utils.Format("push " + rVal)
 			return code
 		}
-		return c.derefLoad(prefix, result, rVal)
+		if isNewTemp && result == rVal {
+			// result 与 rVal 同寄存器时先保存指针
+			ptrSave := c.allocTmpReg()
+			if ptrSave.Name != result {
+				code = utils.Format("mov " + ptrSave.Name + ", " + rVal)
+				code += c.derefLoad(prefix, result, rVal)
+				code += c.emitFree(ptrSave.Name)
+				c.freeTmpReg(ptrSave)
+				return code
+			}
+			c.freeTmpReg(ptrSave)
+			// 无可用临时寄存器：用栈暂存指针，释放时避免覆盖已加载的 result
+			code = utils.Format("push " + rVal)
+			code += c.derefLoad(prefix, result, rVal)
+			if c.arch.PointerSize() == 8 {
+				freeReg := "RDI"
+				if result == "RDI" {
+					freeReg = "RSI"
+				}
+				code += utils.Format("pop " + freeReg)
+				code += c.emitFree(freeReg)
+			} else {
+				freeReg := "EAX"
+				if result == "EAX" {
+					freeReg = "ECX"
+				}
+				code += utils.Format("pop " + freeReg)
+				code += c.emitFree(freeReg)
+			}
+			return code
+		}
+		code = c.derefLoad(prefix, result, rVal)
+		if isNewTemp {
+			code += c.emitFree(rVal)
+		}
+		return code
 	}
 
 	// 特殊处理 push：就地计算到操作数寄存器，再 push
@@ -2034,6 +2095,14 @@ func (c *ECompiler) stringConcatExp(exp *parser.Expression, result string, ei *E
 	// 清理暂存槽：x86 5 个（total、右len、右ptr、左len、左ptr）；x64 无
 	if ps != 8 {
 		code += utils.Format("add esp, 20")
+	}
+	// GC 临时对象捕获：字符串拼接结果是 owning 新分配，若被登记为 scratch 临时则保存 ptr。
+	if off, ok := c.ctx.RetScratchExprMap[exp]; ok && off != 0 {
+		if ps == 8 {
+			code += utils.Format("mov QWORD [rbp" + strconv.Itoa(off) + "], " + ret + "; gc scratch concat")
+		} else {
+			code += utils.Format("mov DWORD [ebp" + strconv.Itoa(off) + "], " + ret + "; gc scratch concat")
+		}
 	}
 	return code
 }
@@ -5420,19 +5489,24 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 	// 实参已声明字段名（"new" 调用由 struct 字面量 lowering 产生），
 	// 优先按名匹配的字段槽位写——new("C" 跳过 "A") 若按位置会串位：C 的值会被写到 A 槽。
 	offs := make([]int, len(call.Args))
+	fieldTypes := make([]typeSys.Type, len(call.Args))
 	if st, ok := call.NewType.(*typeSys.StructType); ok {
 		fields := st.Fields()
 		fieldsByName := make(map[string]int, len(fields))
+		fieldsTypeByName := make(map[string]typeSys.Type, len(fields))
 		for j := range fields {
 			fieldsByName[fields[j].Name] = fields[j].Offset
+			fieldsTypeByName[fields[j].Name] = fields[j].Type
 		}
 		for i := 0; i < len(offs); i++ {
 			if i < len(fields) {
 				offs[i] = fields[i].Offset
+				fieldTypes[i] = fields[i].Type
 			}
 			if i < len(call.Args) && call.Args[i] != nil && call.Args[i].Name != nil {
 				if off, ok := fieldsByName[call.Args[i].Name.String()]; ok {
 					offs[i] = off
+					fieldTypes[i] = fieldsTypeByName[call.Args[i].Name.String()]
 				}
 			}
 		}
@@ -5443,6 +5517,48 @@ func (c *ECompiler) builtinNew(exp *parser.Expression, call *parser.CallBlock, r
 		}
 		if i >= len(offs) {
 			break
+		}
+		// interface field: box concrete value
+		if i < len(fieldTypes) && fieldTypes[i] != nil {
+			if iface, ok := fieldTypes[i].(*typeSys.InterfaceType); ok {
+				if arg.Value.Type != nil {
+					if _, isIface2 := arg.Value.Type.(*typeSys.InterfaceType); !isIface2 {
+						concreteType := arg.Value.Type
+						concreteSize := concreteType.Size()
+						code += c.emitMalloc(concreteSize)
+						calleeSave := c.pickCalleeSave()
+						if calleeSave == "" { calleeSave = c.arch.CalleeSaveReg() }
+						code += utils.Format("mov " + calleeSave + ", " + c.arch.ReturnReg() + "; save data_ptr")
+						// copy concrete value to allocated memory
+						if arg.Value.Var != nil {
+							srcA := stripOuterBrackets(c.arch.VarAddr(arg.Value.Var))
+							code += c.copySlots(calleeSave, srcA, concreteSize)
+						} else {
+							code += c.generate(arg.Value, "["+calleeSave+"]")
+						}
+						// store data_ptr at field+ps, vtable_ptr at field
+						areg := c.allocTmpReg()
+						code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
+						code += utils.Format("mov " + ln + " [" + areg.Name + "+" + strconv.Itoa(offs[i]+ps) + "], " + calleeSave)
+						// vtable
+						methodLabels := make([]string, len(iface.InterfaceMethods))
+						for mi, m := range iface.InterfaceMethods {
+							var concreteFunc *parser.FuncBlock
+							for _, cm := range concreteType.Methods() {
+								if fb, ok := cm.(*parser.FuncBlock); ok && fb.Name.Last() == m.Name { concreteFunc = fb; break }
+							}
+							if concreteFunc != nil { methodLabels[mi] = concreteFunc.MangledName(); concreteFunc.Useful++ } else { methodLabels[mi] = concreteType.Type() + "_" + m.Name }
+						}
+						vtLabel := c.ctx.RegisterVtable(concreteType, iface, methodLabels)
+						vreg2 := c.allocTmpReg()
+						code += utils.Format("lea " + vreg2.Name + ", [" + vtLabel + "]")
+						code += utils.Format("mov " + ln + " [" + areg.Name + "+" + strconv.Itoa(offs[i]) + "], " + vreg2.Name)
+						c.freeTmpReg(vreg2)
+						c.freeTmpReg(areg)
+						continue
+					}
+				}
+			}
 		}
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
 			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
@@ -5522,19 +5638,24 @@ func (c *ECompiler) builtinNewRC(exp *parser.Expression, call *parser.CallBlock,
 	// 实参已声明字段名（"new" 调用由 struct 字面量 lowering 产生），
 	// 优先按名匹配的字段槽位写——new("C" 跳过 "A") 若按位置会串位：C 的值会被写到 A 槽。
 	offs := make([]int, len(call.Args))
+	fieldTypes := make([]typeSys.Type, len(call.Args))
 	if st, ok := call.NewType.(*typeSys.StructType); ok {
 		fields := st.Fields()
 		fieldsByName := make(map[string]int, len(fields))
+		fieldsTypeByName := make(map[string]typeSys.Type, len(fields))
 		for j := range fields {
 			fieldsByName[fields[j].Name] = fields[j].Offset
+			fieldsTypeByName[fields[j].Name] = fields[j].Type
 		}
 		for i := 0; i < len(offs); i++ {
 			if i < len(fields) {
 				offs[i] = fields[i].Offset
+				fieldTypes[i] = fields[i].Type
 			}
 			if i < len(call.Args) && call.Args[i] != nil && call.Args[i].Name != nil {
 				if off, ok := fieldsByName[call.Args[i].Name.String()]; ok {
 					offs[i] = off
+					fieldTypes[i] = fieldsTypeByName[call.Args[i].Name.String()]
 				}
 			}
 		}
@@ -5545,6 +5666,48 @@ func (c *ECompiler) builtinNewRC(exp *parser.Expression, call *parser.CallBlock,
 		}
 		if i >= len(offs) {
 			break
+		}
+		// interface field: box concrete value
+		if i < len(fieldTypes) && fieldTypes[i] != nil {
+			if iface, ok := fieldTypes[i].(*typeSys.InterfaceType); ok {
+				if arg.Value.Type != nil {
+					if _, isIface2 := arg.Value.Type.(*typeSys.InterfaceType); !isIface2 {
+						concreteType := arg.Value.Type
+						concreteSize := concreteType.Size()
+						code += c.emitMalloc(concreteSize)
+						calleeSave := c.pickCalleeSave()
+						if calleeSave == "" { calleeSave = c.arch.CalleeSaveReg() }
+						code += utils.Format("mov " + calleeSave + ", " + c.arch.ReturnReg() + "; save data_ptr")
+						// copy concrete value to allocated memory
+						if arg.Value.Var != nil {
+							srcA := stripOuterBrackets(c.arch.VarAddr(arg.Value.Var))
+							code += c.copySlots(calleeSave, srcA, concreteSize)
+						} else {
+							code += c.generate(arg.Value, "["+calleeSave+"]")
+						}
+						// store data_ptr at field+ps, vtable_ptr at field
+						areg := c.allocTmpReg()
+						code += utils.Format("mov " + areg.Name + ", " + ln + " [" + c.arch.StackPtr() + "]")
+						code += utils.Format("mov " + ln + " [" + areg.Name + "+" + strconv.Itoa(offs[i]+ps) + "], " + calleeSave)
+						// vtable
+						methodLabels := make([]string, len(iface.InterfaceMethods))
+						for mi, m := range iface.InterfaceMethods {
+							var concreteFunc *parser.FuncBlock
+							for _, cm := range concreteType.Methods() {
+								if fb, ok := cm.(*parser.FuncBlock); ok && fb.Name.Last() == m.Name { concreteFunc = fb; break }
+							}
+							if concreteFunc != nil { methodLabels[mi] = concreteFunc.MangledName(); concreteFunc.Useful++ } else { methodLabels[mi] = concreteType.Type() + "_" + m.Name }
+						}
+						vtLabel := c.ctx.RegisterVtable(concreteType, iface, methodLabels)
+						vreg2 := c.allocTmpReg()
+						code += utils.Format("lea " + vreg2.Name + ", [" + vtLabel + "]")
+						code += utils.Format("mov " + ln + " [" + areg.Name + "+" + strconv.Itoa(offs[i]) + "], " + vreg2.Name)
+						c.freeTmpReg(vreg2)
+						c.freeTmpReg(areg)
+						continue
+					}
+				}
+			}
 		}
 		if arg.Value.Type != nil && arg.Value.Type.Size() > ps {
 			// 容器/大结构体实参：按值拷贝（strings/lists = 3 槽；结构体按 Slot 拷贝）
@@ -5972,6 +6135,25 @@ func (c *ECompiler) BoxInterface(varBlock *parser.VarBlock) string {
 	dq := "QWORD"
 	if ps == 4 {
 		dq = "DWORD"
+	}
+
+	// interface -> interface: direct 2-slot copy
+	if _, srcIsIface := concreteType.(*typeSys.InterfaceType); srcIsIface {
+		ifaceAddr := stripOuterBrackets(c.arch.VarAddr(varBlock))
+		if varBlock.Value.Var != nil {
+			srcAddr := stripOuterBrackets(c.arch.VarAddr(varBlock.Value.Var))
+			var code string
+			r1 := c.allocTmpReg()
+			r2 := c.allocTmpReg()
+			code += utils.Format("mov "+r1.Name+", "+dq+" ["+srcAddr+"]")
+			code += utils.Format("mov "+r2.Name+", "+dq+" ["+srcAddr+"+"+strconv.Itoa(ps)+"]")
+			code += utils.Format("mov "+dq+" ["+ifaceAddr+"], "+r1.Name)
+			code += utils.Format("mov "+dq+" ["+ifaceAddr+"+"+strconv.Itoa(ps)+"], "+r2.Name)
+			c.freeTmpReg(r1)
+			c.freeTmpReg(r2)
+			return code
+		}
+		return c.generate(varBlock.Value, "["+ifaceAddr+"]")
 	}
 
 	var code string

@@ -13,6 +13,7 @@ type VtableEntry struct {
 	Concrete  typeSys.Type           // concrete struct type
 	Interface *typeSys.InterfaceType // interface type
 	Methods   []string               // function labels for each method in order
+	DropFunc  string                 // destructor label for concrete data pointer (slot 0)
 }
 
 // Context 编译器上下文，统一管理编译状态
@@ -49,6 +50,8 @@ type Context struct {
 	RetScratchUsed int
 	// RetScratchMap 当前 return 表达式里需要捕获的嵌套 call → 槽偏移。
 	RetScratchMap map[*parser.CallBlock]int
+	// RetScratchExprMap 当前表达式里需要捕获的非调用临时（如字符串拼接）→ 槽偏移。
+	RetScratchExprMap map[*parser.Expression]int
 
 	// 栈对齐
 	StackAlignment int // 栈对齐大小（字节），默认8
@@ -153,7 +156,8 @@ func NewContext() *Context {
 		Is64Bit:        false,
 		ThisHomeRbp:    0,
 		VtableSeen:     make(map[string]bool),
-		RetScratchMap:  make(map[*parser.CallBlock]int),
+		RetScratchMap:     make(map[*parser.CallBlock]int),
+		RetScratchExprMap: make(map[*parser.Expression]int),
 	}
 }
 
@@ -174,6 +178,9 @@ func (ctx *Context) Reset() {
 	if ctx.RetScratchMap != nil {
 		ctx.RetScratchMap = make(map[*parser.CallBlock]int)
 	}
+	if ctx.RetScratchExprMap != nil {
+		ctx.RetScratchExprMap = make(map[*parser.Expression]int)
+	}
 	// Note: Is64Bit and PointerSize are NOT reset - they are arch-level settings
 	// Note: ThisHomeRbp is NOT reset - it is an arch-level setting (set by arch constructor)
 	// Note: VtableEntries and VtableSeen are NOT reset here - they persist across functions
@@ -190,10 +197,11 @@ func (ctx *Context) Clone() *Context {
 		StackSize:      ctx.StackSize,
 		ArgsSize:       ctx.ArgsSize,
 		RetSlot:        ctx.RetSlot,
-		RetScratchBase: ctx.RetScratchBase,
-		RetScratchCap:  ctx.RetScratchCap,
-		RetScratchUsed: ctx.RetScratchUsed,
-		RetScratchMap:  ctx.RetScratchMap,
+		RetScratchBase:    ctx.RetScratchBase,
+		RetScratchCap:     ctx.RetScratchCap,
+		RetScratchUsed:    ctx.RetScratchUsed,
+		RetScratchMap:     ctx.RetScratchMap,
+		RetScratchExprMap: ctx.RetScratchExprMap,
 		StackAlignment: ctx.StackAlignment,
 		UseEBXDirect:   ctx.UseEBXDirect,
 		EbxOccupied:    ctx.EbxOccupied,

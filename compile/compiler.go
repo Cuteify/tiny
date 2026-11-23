@@ -19,6 +19,10 @@ var GoArch = "x86"
 // NilCheck 控制是否在代码生成中插入 nil 指针检查（默认开启）。
 var NilCheck = true
 
+// HangAfterExit 控制 _start 在 main 返回后进入阻塞循环而非退出。
+// 用于泄漏/内存检查时保持进程存活。
+var HangAfterExit = false
+
 func init() {
 	GoArch = typeSys.TargetArch()
 	if os.Getenv("CUTE_ARCH") != "" {
@@ -31,11 +35,14 @@ type Compiler struct {
 	Ctx            *context.Context                   // 编译器上下文
 	RootGenerated  bool                               // 标记是否已生成 section .text
 	stringSyms     map[string]bool                    // build link 声明的全局符号（如 __string_len）
-	currentFuncKey string                             // 当前编译函数的全路径名（用于 GC block frees 查询）
+	currentFuncKey   string                           // 当前编译函数的全路径名（用于 GC block frees 查询）
+	currentFuncBlock *parser.FuncBlock                 // 当前编译函数
 	typeSubsts     map[string]map[string]typeSys.Type // 单态化函数的类型替换表（label → substMap）
 	funcNodeMap    map[*parser.FuncBlock]*parser.Node // FuncBlock → AST Node 映射（跨包查找用）
 	compiling      bool                               // 标记是否在顶层编译中（防止递归调用重置泛型注册表）
 	condSeq        int                                // 条件表达式内部标签序号（&& mid / || andFail，保证唯一）
+	dropFuncs      map[string]bool                    // 已生成/已排队的 GC drop 函数
+	dropDefs       strings.Builder                    // 生成的 GC drop 函数 asm
 }
 
 // nextCondLabel 生成条件表达式内部唯一标签（前缀 + 单调序号）
@@ -49,6 +56,7 @@ func NewCompiler(parser *parser.Parser) *Compiler {
 	return &Compiler{
 		Ctx:        context.NewContext(),
 		stringSyms: map[string]bool{},
+		dropFuncs:  map[string]bool{},
 	}
 }
 
@@ -84,6 +92,9 @@ func (c *Compiler) Compile(node *parser.Node) (code string) {
 	code = c.compileRoot(node, code)
 	code += c.compileChildren(node, "")
 	code += c.compileRootTail(node)
+	if isTop && c.dropDefs.Len() > 0 {
+		code += c.dropDefs.String()
+	}
 	return code
 }
 
@@ -189,9 +200,8 @@ func (c *Compiler) markLinkProviders(node *parser.Node) {
 // These are called from GC emit codegen but never appear in user source,
 // so they aren't marked Useful during Check.
 func (c *Compiler) markRCFuncs(node *parser.Node) {
-	// malloc/free/realloc 由 emitMalloc/emitFree/emitRealloc 合成调用（字符串拼接、
-	// 列表分配等路径），同样不出现在用户源码里，必须预标记 Useful
-	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true, "malloc": true, "realloc": true, "free": true, "freeSlot": true, "freeRCSlot": true}
+	// 仅标记 codegen 直接合成调用的运行时函数，避免过度保守导致 DCE 失效。
+	rcNames := map[string]bool{"rcDec": true, "rcInc": true, "mallocRC": true, "malloc": true, "realloc": true, "free": true, "freeSlot": true}
 	var walk func(n *parser.Node)
 	walk = func(n *parser.Node) {
 		if n == nil {
@@ -935,13 +945,18 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 	if c.Ctx.RetScratchMap == nil {
 		c.Ctx.RetScratchMap = make(map[*parser.CallBlock]int)
 	}
-	// 为每个 ret 临时对象分配 scratch 槽；Arch.Call 在内层调用返回后
-	// 按此表把拥有型指针写入槽，外层调用返回后再统一释放。
+	if c.Ctx.RetScratchExprMap == nil {
+		c.Ctx.RetScratchExprMap = make(map[*parser.Expression]int)
+	}
+	// 为每个 ret 临时对象分配 scratch 槽；Arch.Call/表达式编译在产出
+	// 拥有型指针后按此表写入槽，外层调用返回后再统一释放。
 	for i, rf := range frees {
-		if rf.Call == nil {
-			continue
+		off := c.Ctx.RetScratchBase + i*slotSize
+		if rf.Call != nil {
+			c.Ctx.RetScratchMap[rf.Call] = off
+		} else if rf.Expr != nil {
+			c.Ctx.RetScratchExprMap[rf.Expr] = off
 		}
-		c.Ctx.RetScratchMap[rf.Call] = c.Ctx.RetScratchBase + i*slotSize
 	}
 
 	// 1. 生成返回值（大值写入返回槽/隐藏参数，标量写入 RAX/EAX）
@@ -964,7 +979,11 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 	}
 	for i, rf := range frees {
 		off := c.Ctx.RetScratchBase + i*slotSize
-		code += utils.Format("; gc: ret free " + rf.VarName + " after=call:" + rf.Callee)
+		src := "call:" + rf.Callee
+		if rf.Call == nil && rf.Expr != nil {
+			src = "expr:" + rf.Callee
+		}
+		code += utils.Format("; gc: ret free " + rf.VarName + " after=" + src)
 		if is64 {
 			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
 			code += utils.Format("call " + freeFunc.MangledName())
@@ -983,6 +1002,8 @@ func (c *Compiler) compileReturnBlock(n *parser.Node) string {
 	for _, rf := range frees {
 		if rf.Call != nil {
 			delete(c.Ctx.RetScratchMap, rf.Call)
+		} else if rf.Expr != nil {
+			delete(c.Ctx.RetScratchExprMap, rf.Expr)
 		}
 	}
 	return code
@@ -993,13 +1014,20 @@ func (c *Compiler) compileVarBlock(n *parser.Node) string {
 	if varBlock.IsGlobal && varBlock.IsDefine {
 		return ""
 	}
+	plan := c.prepareScratchFrees(gc.AssignTempFreesForNode(c.currentFuncKey, n), "assign temp free")
 	// 覆盖赋值：旧对象唯一/未共享时，先 freeSlot(&x) 再写入新值。
 	code := c.emitAssignFrees(n)
 	// Multi-return destructuring: a, b := foo()
 	if len(varBlock.MultiNames) > 0 {
-		return code + c.Ctx.Arch.MultiVarDecl(varBlock)
+		code += c.Ctx.Arch.MultiVarDecl(varBlock)
+		code += plan.code
+		c.releaseScratchFrees(plan)
+		return code
 	}
-	return code + c.Ctx.Arch.VarDecl(varBlock)
+	code += c.Ctx.Arch.VarDecl(varBlock)
+	code += plan.code
+	c.releaseScratchFrees(plan)
+	return code
 }
 
 // emitAssignFrees 生成覆盖赋值前的旧对象释放序列（freeSlot 成功后清槽）。
@@ -1026,20 +1054,36 @@ func (c *Compiler) compileCallBlock(n *parser.Node) string {
 		c.MonomorphizeIfNeeded(callBlock)
 	}
 
-	return c.Ctx.Arch.Call(callBlock)
+	plan := c.prepareScratchFrees(gc.ExprTempFreesForNode(c.currentFuncKey, n), "call temp free")
+	code := c.Ctx.Arch.Call(callBlock)
+	code += plan.code
+	c.releaseScratchFrees(plan)
+	return code
 }
 
 func (c *Compiler) compileExprBlock(n *parser.Node) string {
 	exp := n.Value.(*parser.Expression)
 	if exp.Separator == "[]=" {
-		return c.Ctx.Arch.Exp(exp, "", "list index assignment")
+		plan := c.prepareScratchFrees(gc.AssignTempFreesForNode(c.currentFuncKey, n), "expr temp free")
+		code := c.Ctx.Arch.Exp(exp, "", "list index assignment")
+		code += plan.code
+		c.releaseScratchFrees(plan)
+		return code
 	}
 	// 多段名赋值（p1.x = 3、self.x += dx 等）：表达式里携带完整 VarBlock，
 	// 转用变量声明路径生成正确的目标地址
 	if exp.Var != nil && exp.Var.Value != nil {
-		return c.emitAssignFrees(n) + c.Ctx.Arch.VarDecl(exp.Var)
+		plan := c.prepareScratchFrees(gc.AssignTempFreesForNode(c.currentFuncKey, n), "assign temp free")
+		code := c.emitAssignFrees(n) + c.Ctx.Arch.VarDecl(exp.Var)
+		code += plan.code
+		c.releaseScratchFrees(plan)
+		return code
 	}
-	return c.Ctx.Arch.Exp(exp, "", "expression statement")
+	plan := c.prepareScratchFrees(gc.ExprTempFreesForNode(c.currentFuncKey, n), "expr temp free")
+	code := c.Ctx.Arch.Exp(exp, "", "expression statement")
+	code += plan.code
+	c.releaseScratchFrees(plan)
+	return code
 }
 
 func (c *Compiler) compileForBlock(n *parser.Node) string {
@@ -1389,7 +1433,16 @@ func (c *Compiler) generateStartEntry() string {
 	code += utils.Format("_start:")
 	utils.Count++
 	code += utils.Format("call main")
-	if c.Ctx.Is64Bit {
+	if HangAfterExit {
+		code += utils.Format("._hang_after_exit:")
+		if c.Ctx.Is64Bit {
+			code += utils.Format("pause")
+			code += utils.Format("jmp ._hang_after_exit\n")
+		} else {
+			code += utils.Format("pause")
+			code += utils.Format("jmp ._hang_after_exit\n")
+		}
+	} else if c.Ctx.Is64Bit {
 		code += utils.Format("mov rdi, rax")
 		code += utils.Format("mov rax, 60")
 		code += utils.Format("syscall\n")
@@ -1570,7 +1623,9 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	savedCurrentFunc := c.Ctx.CurrentFunc
 	savedCurrentFuncKey := c.currentFuncKey
 	c.Ctx.CurrentFunc = funcBlock
+	savedCurrentFuncBlock := c.currentFuncBlock
 	c.currentFuncKey = funcBlock.Name.String()
+	c.currentFuncBlock = funcBlock
 
 	// 如果是单态化函数，设置 TypeSubst 供 codegen 使用（sizeof 等内建需要）
 	origTypeSubst := c.Ctx.TypeSubst
@@ -1583,6 +1638,7 @@ func (c *Compiler) funcHandle(funcBlock *parser.FuncBlock, node *parser.Node) (c
 	defer func() {
 		c.Ctx.CurrentFunc = savedCurrentFunc
 		c.currentFuncKey = savedCurrentFuncKey
+		c.currentFuncBlock = savedCurrentFuncBlock
 		c.Ctx.TypeSubst = origTypeSubst // 恢复 TypeSubst
 	}()
 
@@ -1717,7 +1773,7 @@ func (c *Compiler) resolveExitSlots(llr *gc.LLRResult, node *parser.Node) []exit
 // 出口释放若读到未初始化的栈垃圾就会 free 野指针。入口清零是廉价的
 // 全路径保险：freeSlot 见 0 直接跳过。
 func (c *Compiler) emitGCZeroExitSlots(funcBlock *parser.FuncBlock, node *parser.Node) string {
-	llr := gc.LLRResults[funcBlock.Name.String()]
+	llr := gc.LLRResults[c.currentFuncKey]
 	if llr == nil || len(llr.Frees) == 0 {
 		return ""
 	}
@@ -1740,12 +1796,478 @@ func (c *Compiler) emitGCZeroExitSlots(funcBlock *parser.FuncBlock, node *parser
 	return code
 }
 
+func (c *Compiler) findLocalVarType(funcBlock *parser.FuncBlock, node *parser.Node, varName string) typeSys.Type {
+	for _, ag := range funcBlock.Args {
+		if ag.Name != nil && ag.Name.First() == varName {
+			return ag.Type
+		}
+	}
+	var found typeSys.Type
+	var walk func(n *parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil || found != nil {
+			return
+		}
+		if vb, ok := n.Value.(*parser.VarBlock); ok && vb.IsDefine && vb.Type != nil && vb.Name != nil && vb.Name.First() == varName {
+			found = vb.Type
+			return
+		}
+		for _, ch := range n.Children { walk(ch) }
+	}
+	walk(node)
+	return found
+}
+
+func (c *Compiler) structTypeOf(t typeSys.Type) *typeSys.StructType {
+	if t == nil { return nil }
+	if st, ok := t.(*typeSys.StructType); ok { return st }
+	if t.IsPointer() {
+		if st, ok := t.Elem().(*typeSys.StructType); ok { return st }
+	}
+	return nil
+}
+
+func gcDropLabel(t typeSys.Type) string {
+	if t == nil { return "" }
+	name := t.Type()
+	// sanitize
+	var b strings.Builder
+	b.WriteString("__gc_drop__")
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+func owningPtrElemStruct(t typeSys.Type) *typeSys.StructType {
+	if t == nil || !t.IsPointer() { return nil }
+	el := t.Elem()
+	st, ok := el.(*typeSys.StructType)
+	if !ok { return nil }
+	return st
+}
+
+func owningSliceElemStruct(t typeSys.Type) *typeSys.StructType {
+	lt, ok := t.(*typeSys.ListType)
+	if !ok { return nil }
+	el := lt.Elem()
+	if el == nil || !el.IsPointer() { return nil }
+	st, ok := el.Elem().(*typeSys.StructType)
+	if !ok { return nil }
+	return st
+}
+
+func isStringType(t typeSys.Type) bool {
+	return t != nil && t.Kind() == "string"
+}
+func isSliceOfString(t typeSys.Type) bool {
+	lt, ok := t.(*typeSys.ListType)
+	return ok && lt != nil && isStringType(lt.Elem())
+}
+
+func structNeedsDeepDrop(st *typeSys.StructType) bool {
+	if st == nil { return false }
+	if gc.IsFieldAliasStruct(st.TypeName) { return false }
+	st.Layout()
+	for _, f := range st.Fields() {
+		if f.Type == nil { continue }
+		if isStringType(f.Type) { return true }
+		if isSliceOfString(f.Type) { return true }
+		if _, ok := f.Type.(*typeSys.InterfaceType); ok { return true }
+		if owningPtrElemStruct(f.Type) != nil { return true }
+		if owningSliceElemStruct(f.Type) != nil { return true }
+		// nested inline struct value with owning fields
+		if fst, ok := f.Type.(*typeSys.StructType); ok && structNeedsDeepDrop(fst) { return true }
+	}
+	return false
+}
+
+func (c *Compiler) dropLabelForVar(funcBlock *parser.FuncBlock, node *parser.Node, varName string) string {
+	t := c.findLocalVarType(funcBlock, node, varName)
+	st := owningPtrElemStruct(t)
+	if st == nil { return "" }
+	if !structNeedsDeepDrop(st) { return "" }
+	// 若有逃逸字段被标记 poisoned，不能整体 deep drop（会误释放逃逸字段）。
+	if llr := gc.LLRResults[c.currentFuncKey]; llr != nil && llr.PoisonedFields != nil {
+		st.Layout()
+		for _, f := range st.Fields() {
+			if llr.PoisonedFields[varName+"."+f.Name] {
+				return ""
+			}
+		}
+	}
+	return c.ensureDropFunc(st)
+}
+
+func (c *Compiler) dropLabelForField(funcBlock *parser.FuncBlock, node *parser.Node, varName, fieldName string) string {
+	t := c.findLocalVarType(funcBlock, node, varName)
+	st := c.structTypeOf(t)
+	if st == nil { return "" }
+	st.Layout()
+	f := st.Field(fieldName)
+	if f == nil || f.Type == nil { return "" }
+	fst := owningPtrElemStruct(f.Type)
+	if fst == nil { return "" }
+	if !structNeedsDeepDrop(fst) { return "" }
+	return c.ensureDropFunc(fst)
+}
+
+func (c *Compiler) ensureDropFunc(st *typeSys.StructType) string {
+	if st == nil { return "" }
+	label := gcDropLabel(st)
+	if label == "" { return "" }
+	if c.dropFuncs == nil { c.dropFuncs = map[string]bool{} }
+	if c.dropFuncs[label] { return label }
+	c.dropFuncs[label] = true // mark before emit to break recursion
+	c.emitDropFunc(st, label)
+	return label
+}
+
+func (c *Compiler) emitDropFunc(st *typeSys.StructType, label string) {
+	st.Layout()
+	if gc.IsFieldAliasStruct(st.TypeName) {
+		// alias-unsafe: shallow free only
+		is64 := c.Ctx.Arch.PointerSize() == 8
+		freeNameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "free"}}
+		freeFunc := &parser.FuncBlock{Name: parser.Name(freeNameParts), Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}}}
+		var s strings.Builder
+		s.WriteString("\nsection .text." + label + " progbits alloc exec nowrite align=16\n")
+		s.WriteString(label + ":\n")
+		if is64 {
+			s.WriteString("    test rdi, rdi\n    jz " + label + "_done\n    jmp " + freeFunc.MangledName() + "\n")
+		} else {
+			s.WriteString("    push ebp\n    mov ebp, esp\n    mov eax, [ebp+8]\n    test eax, eax\n    jz " + label + "_done\n    push eax\n    call " + freeFunc.MangledName() + "\n    add esp, 4\n")
+		}
+		s.WriteString(label + "_done:\n")
+		if !is64 { s.WriteString("    leave\n") }
+		s.WriteString("    ret\n")
+		c.dropDefs.WriteString(s.String())
+		return
+	}
+	is64 := c.Ctx.Arch.PointerSize() == 8
+	ptrSz := c.Ctx.Arch.PointerSize()
+	base := "rbp"
+	sp := "rsp"
+	acc := "rax"
+	arg0 := "rdi"
+	rObj := "rbx" // callee-saved
+	rTmp := "r12" // callee-saved
+	slot := "QWORD"
+	if !is64 { base="ebp"; sp="esp"; acc="eax"; arg0="edi"; rObj="ebx"; rTmp="esi"; slot="DWORD" }
+	// On x86, esi is callee-saved in cdecl? esi/edi/ebx are callee-saved. Yes.
+	// We need 2 callee-saved regs: rObj=p, rTmp=field value.
+	var s strings.Builder
+	s.WriteString("\nsection .text." + label + " progbits alloc exec nowrite align=16\n")
+	s.WriteString(label + ":\n")
+	s.WriteString("    push " + base + "\n")
+	s.WriteString("    mov " + base + ", " + sp + "\n")
+	s.WriteString("    push " + rObj + "\n")
+	s.WriteString("    push " + rTmp + "\n")
+	if is64 {
+		s.WriteString("    mov " + rObj + ", " + arg0 + "\n")
+	} else {
+		s.WriteString("    mov " + rObj + ", [" + base + "+8]\n")
+	}
+	s.WriteString("    test " + rObj + ", " + rObj + "\n")
+	s.WriteString("    jz " + label + "_done\n")
+	s.WriteString("    call std_memory_dropInc\n")
+
+	freeNameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "free"}}
+	freeFunc := &parser.FuncBlock{Name: parser.Name(freeNameParts), Args: []*parser.ArgBlock{{Type: typeSys.GetSystemType("ptr")}}}
+	freeMangled := freeFunc.MangledName()
+
+	for _, f := range st.Fields() {
+		if f.Type == nil { continue }
+		// string field: free backing buffer
+		if isStringType(f.Type) {
+			s.WriteString("    ; drop string field " + f.Name + "\n")
+			s.WriteString("    mov " + rTmp + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "]\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+2*ptrSz) + "], 0\n")
+			s.WriteString("    test " + rTmp + ", " + rTmp + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + rTmp + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + rTmp + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString(label + "_f_" + f.Name + "_end:\n")
+			continue
+		}
+		// []string: free each string buffer, then free slice buffer
+		if isSliceOfString(f.Type) {
+			s.WriteString("    ; drop []string field " + f.Name + "\n")
+			s.WriteString("    mov " + acc + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "]\n")
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			s.WriteString("    push " + acc + "\n") // data
+			s.WriteString("    mov " + acc + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "]\n") // len
+			s.WriteString("    push " + acc + "\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+2*ptrSz) + "], 0\n")
+			s.WriteString(label + "_f_" + f.Name + "_sloop:\n")
+			s.WriteString("    mov " + acc + ", [" + sp + "]\n")
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_sloop_end\n")
+			s.WriteString("    dec " + slot + " [" + sp + "]\n")
+			s.WriteString("    mov " + acc + ", [" + sp + "]\n")
+			s.WriteString("    imul " + acc + ", " + strconv.Itoa(ptrSz*3) + "\n") // string elem = 3*ptrSz
+			s.WriteString("    add " + acc + ", [" + sp + "+" + strconv.Itoa(ptrSz) + "]\n")
+			s.WriteString("    mov " + acc + ", " + slot + " [" + acc + "]\n") // str.data
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_sloop\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString("    jmp " + label + "_f_" + f.Name + "_sloop\n")
+			s.WriteString(label + "_f_" + f.Name + "_sloop_end:\n")
+			s.WriteString("    add " + sp + ", " + strconv.Itoa(ptrSz) + "\n")
+			s.WriteString("    pop " + acc + "\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString(label + "_f_" + f.Name + "_end:\n")
+			continue
+		}
+		// interface field: {vtable_ptr, data_ptr} - call vtable[0] drop_fn(data_ptr)
+		if _, ok := f.Type.(*typeSys.InterfaceType); ok {
+			s.WriteString("    ; drop interface field " + f.Name + "\n")
+			s.WriteString("    mov " + rTmp + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "]\n") // vtable or mis-stored data
+			s.WriteString("    mov " + acc + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "]\n") // data
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "], 0\n")
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jnz " + label + "_f_" + f.Name + "_has_data\n")
+			// data==0, vtable!=0: malformed box (struct-literal stored data in slot0)
+			s.WriteString("    test " + rTmp + ", " + rTmp + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + rTmp + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+				s.WriteString("    mov rdi, " + rTmp + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + rTmp + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+				s.WriteString("    push " + rTmp + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString("    jmp " + label + "_f_" + f.Name + "_end\n")
+			s.WriteString(label + "_f_" + f.Name + "_has_data:\n")
+			s.WriteString("    test " + rTmp + ", " + rTmp + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_free_only\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + rTmp + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jnz " + label + "_f_" + f.Name + "_free_only\n")
+			} else {
+				s.WriteString("    push " + rTmp + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jnz " + label + "_f_" + f.Name + "_free_only\n")
+			}
+			s.WriteString("    mov " + rTmp + ", " + slot + " [" + rTmp + "]\n") // drop_fn from vtable slot 0
+			s.WriteString("    test " + rTmp + ", " + rTmp + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_free_only\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + rTmp + "\n")
+				s.WriteString("    mov rdi, " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jz " + label + "_done\n")
+				s.WriteString("    jmp " + label + "_f_" + f.Name + "_end\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + rTmp + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    push " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jz " + label + "_done\n")
+				s.WriteString("    jmp " + label + "_f_" + f.Name + "_end\n")
+			}
+			s.WriteString(label + "_f_" + f.Name + "_free_only:\n")
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString(label + "_f_" + f.Name + "_end:\n")
+			continue
+		}
+		// owning *Struct field: recursive drop + free
+		if fst := owningPtrElemStruct(f.Type); fst != nil {
+			child := c.ensureDropFunc(fst)
+			if child == "" { continue }
+			s.WriteString("    ; drop field " + f.Name + "\n")
+			s.WriteString("    mov " + rTmp + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "]\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    test " + rTmp + ", " + rTmp + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			if is64 {
+				s.WriteString("    mov " + arg0 + ", " + rTmp + "\n")
+				s.WriteString("    call " + child + "\n")
+				s.WriteString("    mov rdi, " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jz " + label + "_done\n")
+			} else {
+				s.WriteString("    push " + rTmp + "\n")
+				s.WriteString("    call " + child + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    push " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jz " + label + "_done\n")
+			}
+			s.WriteString(label + "_f_" + f.Name + "_end:\n")
+			continue
+		}
+		// slice of *Struct: drop each element, then free buffer
+		if est := owningSliceElemStruct(f.Type); est != nil {
+			child := c.ensureDropFunc(est)
+			if child == "" { continue }
+			// slice layout: data@0,len@ptrSz,cap@2*ptrSz
+			s.WriteString("    ; drop slice field " + f.Name + "\n")
+			s.WriteString("    mov " + acc + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "]\n") // data
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			// save data ptr and len in stack slots
+			s.WriteString("    push " + acc + "\n") // data
+			s.WriteString("    mov " + acc + ", " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "]\n") // len
+			s.WriteString("    push " + acc + "\n") // len
+			// null struct slice fields before recursing to break cycles
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+2*ptrSz) + "], 0\n")
+			s.WriteString(label + "_f_" + f.Name + "_loop:\n")
+			s.WriteString("    mov " + acc + ", [" + sp + "]\n") // len
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_loop_end\n")
+			s.WriteString("    dec " + slot + " [" + sp + "]\n")
+			s.WriteString("    mov " + acc + ", [" + sp + "]\n") // new len = index
+			s.WriteString("    imul " + acc + ", " + strconv.Itoa(ptrSz) + "\n")
+			s.WriteString("    add " + acc + ", [" + sp + "+" + strconv.Itoa(ptrSz) + "]\n") // &data[i]
+			s.WriteString("    mov " + acc + ", " + slot + " [" + acc + "]\n") // elem
+			s.WriteString("    test " + acc + ", " + acc + "\n")
+			s.WriteString("    jz " + label + "_f_" + f.Name + "_loop\n")
+			if is64 {
+				s.WriteString("    push rdi\n")
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + child + "\n")
+				s.WriteString("    pop rdi\n")
+				s.WriteString("    mov rdi, " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_self_freed\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + child + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    push " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_self_freed\n")
+			}
+			s.WriteString("    jmp " + label + "_f_" + f.Name + "_loop\n")
+			s.WriteString(label + "_f_" + f.Name + "_self_freed:\n")
+			s.WriteString("    add " + sp + ", " + strconv.Itoa(ptrSz) + "\n") // pop len
+			s.WriteString("    pop " + acc + "\n") // data
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+			}
+			s.WriteString("    jmp " + label + "_done\n")
+			s.WriteString(label + "_f_" + f.Name + "_loop_end:\n")
+			s.WriteString("    add " + sp + ", " + strconv.Itoa(ptrSz) + "\n") // pop len
+			s.WriteString("    pop " + acc + "\n") // data
+			if is64 {
+				s.WriteString("    mov rdi, " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				// rbx may have been freed by cycle re-entry; skip writes if not tracked
+				s.WriteString("    mov rdi, " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    test rax, rax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			} else {
+				s.WriteString("    push " + acc + "\n")
+				s.WriteString("    call " + freeMangled + "\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    push " + rObj + "\n")
+				s.WriteString("    call std_memory_isTrackedAll\n")
+				s.WriteString("    add " + sp + ", 4\n")
+				s.WriteString("    test eax, eax\n")
+				s.WriteString("    jz " + label + "_f_" + f.Name + "_end\n")
+			}
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+ptrSz) + "], 0\n")
+			s.WriteString("    mov " + slot + " [" + rObj + "+" + strconv.Itoa(f.Offset+2*ptrSz) + "], 0\n")
+			s.WriteString(label + "_f_" + f.Name + "_end:\n")
+			continue
+		}
+	}
+
+	// free self
+	if is64 {
+		s.WriteString("    mov rdi, " + rObj + "\n")
+		s.WriteString("    call " + freeMangled + "\n")
+	} else {
+		s.WriteString("    push " + rObj + "\n")
+		s.WriteString("    call " + freeMangled + "\n")
+		s.WriteString("    add " + sp + ", 4\n")
+	}
+	s.WriteString(label + "_done:\n")
+	s.WriteString("    pop " + rTmp + "\n")
+	s.WriteString("    pop " + rObj + "\n")
+	s.WriteString("    leave\n")
+	s.WriteString("    ret\n")
+	c.dropDefs.WriteString(s.String())
+}
+
 // emitGCFrees 生成函数出口的 GC 释放序列（Phase 3 代码生成）。
 // 查询 gc.LLRResults 中该函数的 LLR 分析结果，把每个帧内拥有变量的栈槽
 // 指针交给 memory.free 释放。无结果时跳过。
 // 调用方必须把它放在 func_end_<name>: 之后、清栈之前（见 Arch.Epilogue）。
 func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) string {
-	llr := gc.LLRResults[funcBlock.Name.String()]
+	llr := gc.LLRResults[c.currentFuncKey]
 	if llr == nil || len(llr.Frees) == 0 && len(llr.FieldFrees) == 0 {
 		return ""
 	}
@@ -1779,51 +2301,76 @@ func (c *Compiler) emitGCFrees(funcBlock *parser.FuncBlock, node *parser.Node) s
 	}
 	var code string
 
-	// 字段级级联释放：在释放 struct 之前先释放其 owning 字段
-	// 确保先释放子对象再释放父容器（sub-before-parent）
+	// 字段级级联释放：父对象若将被 deep-drop，则跳过（drop 已递归处理）。
+	deepDropped := map[string]bool{}
+	for _, s := range c.resolveExitSlots(llr, node) {
+		if c.dropLabelForVar(funcBlock, node, s.name) != "" {
+			deepDropped[s.name] = true
+		}
+	}
 	for _, ff := range llr.FieldFrees {
+		if deepDropped[ff.VarName] { continue }
+		if llr.PoisonedFields != nil && llr.PoisonedFields[ff.VarName+"."+ff.FieldName] { continue }
 		off := findLocalVarOffset(node, ff.VarName)
-		if off == -1 {
-			continue
-		}
-		// 查找字段偏移
+		if off == -1 { continue }
 		fieldOff := c.findStructFieldOffset(funcBlock, node, ff.VarName, ff.FieldName)
-		if fieldOff == -1 {
-			continue
-		}
+		if fieldOff == -1 { continue }
 		code += utils.Format("; gc: free field " + ff.VarName + "." + ff.FieldName)
-		// 使用 RAX/EAX 作为临时寄存器（函数出口前无需保留）
 		tmpReg := c.Ctx.Arch.ReturnReg()
 		code += utils.Format("mov " + tmpReg + ", " + slot + " [" + base + strconv.Itoa(off) + "]")
-		// 父对象可能已在块尾释放并清槽；nil 时跳过，避免解引用空指针。
 		skipLabel := c.nextCondLabel("gc_field_skip")
 		code += utils.Format("test " + tmpReg + ", " + tmpReg)
 		code += utils.Format("jz " + skipLabel)
-		// 计算字段地址 = struct_ptr + field_offset
-		if fieldOff > 0 {
-			code += utils.Format("add " + tmpReg + ", " + strconv.Itoa(fieldOff))
-		}
-		// 加载字段值（指针）
+		if fieldOff > 0 { code += utils.Format("add " + tmpReg + ", " + strconv.Itoa(fieldOff)) }
 		code += utils.Format("mov " + tmpReg + ", " + c.Ctx.Arch.LengthName(c.Ctx.Arch.PointerSize()) + " [" + tmpReg + "]")
-		// 释放字段值（free）
-		if is64 {
+		// 若字段是需要 deep-drop 的 *Struct，用 drop；否则 shallow free
+		if fDrop := c.dropLabelForField(funcBlock, node, ff.VarName, ff.FieldName); fDrop != "" {
+			skip2 := c.nextCondLabel("gc_field_drop_skip")
+			code += utils.Format("test " + tmpReg + ", " + tmpReg)
+			code += utils.Format("jz " + skip2)
+			if is64 {
+				code += utils.Format("mov RDI, " + tmpReg)
+				code += utils.Format("call " + fDrop)
+			} else {
+				code += utils.Format("push " + tmpReg)
+				code += utils.Format("call " + fDrop)
+				code += utils.Format("add esp, 4")
+			}
+			code += utils.Format(skip2 + ":")
+		} else if is64 {
 			code += utils.Format("mov RDI, " + tmpReg)
 			code += utils.Format("call " + freeFunc.MangledName())
 		} else {
-			// Call 负责按 cdecl 清理它看到的这一个实参；这里手工压入的
-			// 正是该实参，不能再额外 add esp——否则会多弹 4 字节，
-			// 随后恢复返回值寄存器时读到错位栈槽。
 			code += utils.Format("push " + tmpReg)
 			code += c.Ctx.Arch.Call(freeCall)
 		}
 		code += utils.Format(skipLabel + ":")
 	}
 
-	// 顶层变量释放：统一用 freeSlot(&slot)，成功后清槽。块尾已释放的
-	// 变量在函数出口自然变成 nil，freeSlot 幂等跳过，不再需要静态跳过表。
+	// 顶层变量释放：优先使用 deep drop（自动析构），否则 freeSlot(&slot)。
 	for _, s := range c.resolveExitSlots(llr, node) {
 		code += utils.Format("; gc: free " + s.name)
-		if is64 {
+		if dropLabel := c.dropLabelForVar(funcBlock, node, s.name); dropLabel != "" {
+			if is64 {
+				code += utils.Format("mov RDI, " + slot + " [" + base + strconv.Itoa(s.off) + "]")
+				code += utils.Format("test RDI, RDI")
+				skip := c.nextCondLabel("gc_drop_skip")
+				code += utils.Format("jz " + skip)
+				code += utils.Format("call " + dropLabel)
+				code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(s.off) + "], 0")
+				code += utils.Format(skip + ":")
+			} else {
+				code += utils.Format("mov eax, " + slot + " [" + base + strconv.Itoa(s.off) + "]")
+				code += utils.Format("test eax, eax")
+				skip := c.nextCondLabel("gc_drop_skip")
+				code += utils.Format("jz " + skip)
+				code += utils.Format("push eax")
+				code += utils.Format("call " + dropLabel)
+				code += utils.Format("add esp, 4")
+				code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(s.off) + "], 0")
+				code += utils.Format(skip + ":")
+			}
+		} else if is64 {
 			code += utils.Format("lea RDI, [" + base + strconv.Itoa(s.off) + "]")
 			code += utils.Format("call " + slotFunc.MangledName())
 		} else {
@@ -1895,8 +2442,10 @@ func (c *Compiler) emitSlotFrees(blockNode *parser.Node, frees []gc.LLRFree, tag
 		return ""
 	}
 	is64 := c.Ctx.Arch.PointerSize() == 8
+	slot := "QWORD"
 	base := "rbp"
 	if !is64 {
+		slot = "DWORD"
 		base = "ebp"
 	}
 	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
@@ -1918,7 +2467,27 @@ func (c *Compiler) emitSlotFrees(blockNode *parser.Node, frees []gc.LLRFree, tag
 		}
 		seen[off] = true
 		code += utils.Format("; gc: " + tag + " " + fr.VarName)
-		if is64 {
+		if dropLabel := c.dropLabelForVar(c.currentFuncBlock, blockNode, fr.VarName); dropLabel != "" {
+			if is64 {
+				code += utils.Format("mov RDI, " + slot + " [" + base + strconv.Itoa(off) + "]")
+				code += utils.Format("test RDI, RDI")
+				skip := c.nextCondLabel("gc_drop_skip")
+				code += utils.Format("jz " + skip)
+				code += utils.Format("call " + dropLabel)
+				code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(off) + "], 0")
+				code += utils.Format(skip + ":")
+			} else {
+				code += utils.Format("mov eax, " + slot + " [" + base + strconv.Itoa(off) + "]")
+				code += utils.Format("test eax, eax")
+				skip := c.nextCondLabel("gc_drop_skip")
+				code += utils.Format("jz " + skip)
+				code += utils.Format("push eax")
+				code += utils.Format("call " + dropLabel)
+				code += utils.Format("add esp, 4")
+				code += utils.Format("mov " + slot + " [" + base + strconv.Itoa(off) + "], 0")
+				code += utils.Format(skip + ":")
+			}
+		} else if is64 {
 			code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
 			code += utils.Format("call " + freeFunc.MangledName())
 		} else {
@@ -1931,11 +2500,12 @@ func (c *Compiler) emitSlotFrees(blockNode *parser.Node, frees []gc.LLRFree, tag
 }
 
 // scratchFreePlan 条件/增量清理点的 scratch 槽布局与释放代码。
-// 槽位在 prepare 时登记到 RetScratchMap，表达式编译期间 Arch.Call 会把
-// 拥有型结果写入对应槽；清理代码由调用方插到条件/增量求值之后。
+// 槽位在 prepare 时登记到 RetScratchMap/RetScratchExprMap，表达式编译期间
+// 捕获拥有型结果；清理代码由调用方插到条件/增量求值之后。
 type scratchFreePlan struct {
-	code string
-	keys []*parser.CallBlock
+	code     string
+	keys     []*parser.CallBlock
+	exprKeys []*parser.Expression
 }
 
 // prepareScratchFrees 为条件/增量表达式中的临时对象分配 scratch 槽并
@@ -1955,6 +2525,9 @@ func (c *Compiler) prepareScratchFrees(frees []gc.LLRCondFree, tag string) scrat
 	if c.Ctx.RetScratchMap == nil {
 		c.Ctx.RetScratchMap = make(map[*parser.CallBlock]int)
 	}
+	if c.Ctx.RetScratchExprMap == nil {
+		c.Ctx.RetScratchExprMap = make(map[*parser.Expression]int)
+	}
 	nameParts := []parser.NamePart{{Name: "std_memory", IsPkgPath: true}, {Name: "freeSlot"}}
 	freeFunc := &parser.FuncBlock{
 		Name: parser.Name(nameParts),
@@ -1968,12 +2541,16 @@ func (c *Compiler) prepareScratchFrees(frees []gc.LLRCondFree, tag string) scrat
 
 	var plan scratchFreePlan
 	for i, f := range frees {
-		if f.Call == nil {
+		off := c.Ctx.RetScratchBase + i*slotSize
+		if f.Call != nil {
+			c.Ctx.RetScratchMap[f.Call] = off
+			plan.keys = append(plan.keys, f.Call)
+		} else if f.Expr != nil {
+			c.Ctx.RetScratchExprMap[f.Expr] = off
+			plan.exprKeys = append(plan.exprKeys, f.Expr)
+		} else {
 			continue
 		}
-		off := c.Ctx.RetScratchBase + i*slotSize
-		c.Ctx.RetScratchMap[f.Call] = off
-		plan.keys = append(plan.keys, f.Call)
 		plan.code += utils.Format("; gc: " + tag + " " + f.VarName)
 		if is64 {
 			plan.code += utils.Format("lea RDI, [" + base + strconv.Itoa(off) + "]")
@@ -1991,6 +2568,9 @@ func (c *Compiler) prepareScratchFrees(frees []gc.LLRCondFree, tag string) scrat
 func (c *Compiler) releaseScratchFrees(plan scratchFreePlan) {
 	for _, call := range plan.keys {
 		delete(c.Ctx.RetScratchMap, call)
+	}
+	for _, e := range plan.exprKeys {
+		delete(c.Ctx.RetScratchExprMap, e)
 	}
 }
 
