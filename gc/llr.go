@@ -435,8 +435,7 @@ func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, *p
 				if ag.Value.Call != nil {
 					inner := ag.Value.Call
 					innerFS := Table[callKey(inner)]
-					if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
-						innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+					if !condTempFreeable(innerFS) {
 						continue
 					}
 					report(inner, nil, callKey(inner))
@@ -458,8 +457,7 @@ func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, *p
 			if operand.Call != nil {
 				inner := operand.Call
 				innerFS := Table[callKey(inner)]
-				if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
-					innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+				if !condTempFreeable(innerFS) {
 					continue
 				}
 				report(inner, nil, callKey(inner))
@@ -967,17 +965,34 @@ func isRuntimeStringConcat(e *parser.Expression) bool {
 }
 
 // condTempFreeable 判断一次 owning call 的结果能否作为独立临时释放。
-// 必须同时满足：新分配、无参数别名/借用 mask、被调自身确有堆分配。
-// 最后一条排除 strings.view 这类只包装外部 ptr 的非分配函数：
-// 其 RetFresh 目前只是“返回局部容器”的近似，底层缓冲仍由调用方/容器持有。
+// 优先接受 RetFresh；对 RetUnknown 采用保守启发式：确有堆分配、无 alias/borrow mask、
+// 返回不逃逸到全局、且无参数被保存到堆/全局（避免释放参数别名）。这覆盖
+// strings.toString 等通过 raw ptr 手工构造字符串的 stdlib 模式。
 func condTempFreeable(fs *FnSummary) bool {
-	if fs == nil || !fs.RetOwned || fs.RetKind != RetFresh {
+	if fs == nil || !fs.RetOwned {
 		return false
 	}
 	if fs.RetAliasMask != 0 || fs.RetBorrowMask != 0 {
 		return false
 	}
-	return fs.HasHeapAllocs
+	if !fs.HasHeapAllocs {
+		return false
+	}
+	if fs.RetKind == RetFresh {
+		return true
+	}
+	if fs.RetKind != RetUnknown {
+		return false
+	}
+	if fs.RetEscape >= EscGlobal {
+		return false
+	}
+	for _, p := range fs.Params {
+		if p.Escape >= EscHeapObj {
+			return false
+		}
+	}
+	return true
 }
 
 // callArgSafe 判断外层调用第 idx 个实参是否只被读取：不保存、不返回、
@@ -1150,7 +1165,21 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 
 	// 覆盖前释放：旧对象唯一、未共享、未逃逸，且右值不引用目标变量本身
 	// （如 c = c.next / head = prepend(head, ...) 一律保留旧值）。
-	if refObj != targetObj && canFreeOverwrite(st, targetObj, name) && !exprReferencesVar(v.Value, name) {
+	// 循环内赋值：静态扫描只见一次，但运行期每轮覆盖；对 owning 局部发射
+	// freeSlot 是安全的（null/已释放槽为 no-op）。
+	canOverwrite := refObj != targetObj && canFreeOverwrite(st, targetObj, name) && !exprReferencesVar(v.Value, name)
+	if !canOverwrite && refObj != targetObj && st.loopDepth > 0 && !v.IsGlobal &&
+		len(v.Name) == 1 && !exprReferencesVar(v.Value, name) && exprAllocates(v.Value) &&
+		!isParamObj(st, targetObj) {
+		if !st.objReleased[targetObj] && !st.objShared[targetObj] && !st.objRCAlloc[targetObj] {
+			// null_init/unknown 绑定在循环首轮前可能为 0，freeSlot 安全。
+			site := st.objSite[targetObj]
+			if site == "null_init" || site == "unknown" || site == "expr" || canFreeOverwrite(st, targetObj, name) {
+				canOverwrite = true
+			}
+		}
+	}
+	if canOverwrite {
 		tk := "string"
 		if v.Type != nil {
 			tk = v.Type.Kind()
@@ -1479,6 +1508,32 @@ func DumpLLR(res *LLRResult) string {
 				src = "expr:" + cf.Callee
 			}
 			out += fmt.Sprintf("  INCR_FREE %s after=%s flag=%d\n", cf.VarName, src, cf.Flag)
+		}
+	}
+	for node, frees := range res.AssignTempFreesMap {
+		_ = node
+		for _, cf := range frees {
+			src := "call:" + cf.Callee
+			if cf.Call == nil && cf.Expr != nil {
+				src = "expr:" + cf.Callee
+			}
+			out += fmt.Sprintf("  ASSIGN_TEMP_FREE %s after=%s flag=%d\n", cf.VarName, src, cf.Flag)
+		}
+	}
+	for node, frees := range res.ExprTempFreesMap {
+		_ = node
+		for _, cf := range frees {
+			src := "call:" + cf.Callee
+			if cf.Call == nil && cf.Expr != nil {
+				src = "expr:" + cf.Callee
+			}
+			out += fmt.Sprintf("  EXPR_TEMP_FREE %s after=%s flag=%d\n", cf.VarName, src, cf.Flag)
+		}
+	}
+	for node, frees := range res.AssignFrees {
+		_ = node
+		for _, f := range frees {
+			out += fmt.Sprintf("  ASSIGN_FREE %s [%s] scope=%d\n", f.VarName, f.Type, f.ScopeDepth)
 		}
 	}
 	return out

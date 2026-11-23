@@ -1036,7 +1036,8 @@ func (c *Compiler) emitAssignFrees(n *parser.Node) string {
 	if llr == nil || llr.AssignFrees == nil {
 		return ""
 	}
-	return c.emitSlotFrees(n, llr.AssignFrees[n], "assign free")
+	frees := llr.AssignFrees[n]
+	return c.emitSlotFrees(n, frees, "assign free")
 }
 
 func (c *Compiler) compileCallBlock(n *parser.Node) string {
@@ -2600,7 +2601,31 @@ func findBlockVarOffset(blockNode *parser.Node, name string) int {
 			return vb.Offset
 		}
 	}
-	return findLocalVarOffset(blockNode, name)
+	// 回退：从函数根向下搜索定义（赋值节点自身可能未携带 Offset）。
+	root := blockNode
+	for root.Father != nil {
+		root = root.Father
+		if _, ok := root.Value.(*parser.FuncBlock); ok {
+			break
+		}
+	}
+	if off := findLocalVarOffset(root, name); off != -1 {
+		return off
+	}
+	// 最后回退：向上查找任意携带 Offset 的同名 VarBlock（含赋值节点）。
+	for p := blockNode.Father; p != nil; p = p.Father {
+		if vb, ok := p.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.Offset != 0 &&
+			vb.Name != nil && vb.Name.First() == name {
+			return vb.Offset
+		}
+		if exp, ok := p.Value.(*parser.Expression); ok && exp.Var != nil {
+			vb := exp.Var
+			if !vb.IsGlobal && vb.Offset != 0 && vb.Name != nil && vb.Name.First() == name {
+				return vb.Offset
+			}
+		}
+	}
+	return -1
 }
 
 func findLocalVarOffset(node *parser.Node, name string) int {

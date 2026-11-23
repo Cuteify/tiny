@@ -993,6 +993,10 @@ func (a *analyzer) applyCallee(key string, fs *FnSummary, cb *parser.CallBlock, 
 	}
 	calleeKey := callKey(cb)
 	callee := a.calleeSummary(calleeKey)
+	if isRawAllocatorCall(calleeKey) && !fs.HasHeapAllocs {
+		fs.HasHeapAllocs = true
+		a.changed = true
+	}
 
 	// 无摘要被调：实参退化 any（v1 仅记录）
 	if callee == nil {
@@ -1253,6 +1257,11 @@ func strSliceEq(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func isRawAllocatorCall(key string) bool {
+	return strings.HasSuffix(key, "/memory.malloc") || strings.HasSuffix(key, "/memory.calloc") || strings.HasSuffix(key, "/memory.realloc") ||
+		strings.HasSuffix(key, ".memory.malloc") || strings.HasSuffix(key, ".memory.calloc") || strings.HasSuffix(key, ".memory.realloc")
 }
 
 // exprAllocates 判断表达式是否产生新分配的拥有指针：
