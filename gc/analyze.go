@@ -1329,6 +1329,17 @@ func ParamEscapes(calleeKey string, idx int) Escape {
 		if pure, ok := pureBuiltinEscapes(calleeKey); ok {
 			return pure
 		}
+		// append(slice, elem): slice 原地变异不逃逸；elem 可能被存入堆缓冲。
+		if calleeKey == "append" {
+			if idx == 0 {
+				return EscNone
+			}
+			return EscHeapObj
+		}
+		// copy(dst, src): 两者只读/写入已有缓冲，不逃逸。
+		if calleeKey == "copy" {
+			return EscNone
+		}
 		return EscAny
 	}
 	for _, p := range fs.Params {

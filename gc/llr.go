@@ -964,6 +964,20 @@ func isRuntimeStringConcat(e *parser.Expression) bool {
 	return e != nil && e.Separator == "+" && e.Type != nil && typeSys.CheckKind(e.Type, "string")
 }
 
+func isBuiltinAppendSelf(e *parser.Expression, name string) bool {
+	if e == nil || e.Call == nil || e.Call.Name == nil {
+		return false
+	}
+	if e.Call.Name.String() != "append" {
+		return false
+	}
+	if len(e.Call.Args) < 1 || e.Call.Args[0] == nil || e.Call.Args[0].Value == nil {
+		return false
+	}
+	av := e.Call.Args[0].Value
+	return av.Var != nil && av.Var.Name != nil && av.Var.Name.First() == name && len(av.Var.Name) == 1
+}
+
 // condTempFreeable 判断一次 owning call 的结果能否作为独立临时释放。
 // 优先接受 RetFresh；对 RetUnknown 采用保守启发式：确有堆分配、无 alias/borrow mask、
 // 返回不逃逸到全局、且无参数被保存到堆/全局（避免释放参数别名）。这覆盖
@@ -1215,9 +1229,15 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 		if st.objBlockID[refObj] == st.currentBlockID && st.currentBlockID != 0 {
 			st.objEscaped[refObj] = true
 		}
+	} else if isBuiltinAppendSelf(v.Value, name) {
+		// append(xs, ...) 内建会原地更新 xs 的切片头；保持绑定不变，避免丢失跟踪。
+		st.bindings[name] = targetObj
 	} else {
 		// 右值不分配也不是裸变量（nil/字段/元素等）：目标不再持有旧对象，
 		// 绑定到逃逸的 null_init，避免后续把已释放对象当成仍被持有。
+		if !st.objReleased[targetObj] && !isParamObj(st, targetObj) && !st.objEscaped[targetObj] {
+			st.orphans = append(st.orphans, targetObj)
+		}
 		id := st.newObj("null_init")
 		st.bindings[name] = id
 		st.objEscaped[id] = true
@@ -1564,6 +1584,14 @@ func allocSiteDesc(e *parser.Expression) string {
 	}
 	if e.Separator == "+" {
 		return "string-concat"
+	}
+	switch e.Separator {
+	case "list_lit":
+		return "list_lit"
+	case "map_lit":
+		return "map_lit"
+	case "array_lit":
+		return "array_lit"
 	}
 	return "expr"
 }
