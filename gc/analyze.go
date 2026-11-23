@@ -98,7 +98,6 @@ func analyzeBackend(root *parser.Node) {
 		res := ComputeLLR(fnKey, fb, fs, body)
 		LLRResults[fnKey] = res
 	}
-
 	// 落盘
 	keys := make([]string, 0, len(Table))
 	for k := range Table {
@@ -241,6 +240,11 @@ func (a *analyzer) analyzeBody(key string, fb *parser.FuncBlock, body *parser.No
 						if o.alias != 0 || o.borrow != 0 {
 							a.bumpRet(key, EscCaller)
 						}
+						// Fresh 返回值中嵌入的参数（如 ret &S{f:p} / ret new(S,p)）
+						// 通过返回的堆对象逃逸，必须按 EscHeapObj 保守提升。
+						for _, pi := range refsStoredInFreshAlloc(rv, fb) {
+							a.bumpParam(fs, pi, EscHeapObj, ModeOtherRef)
+						}
 					}
 				}
 				// 传播 HasHeapAllocs：ret 调用了有堆分配的函数
@@ -381,9 +385,14 @@ func (a *analyzer) updateRetSummary(fs *FnSummary, fb *parser.FuncBlock, body *p
 					borrowMask |= o.borrow
 				}
 				if !o.fresh && o.alias == 0 && o.borrow == 0 {
-					// 拥有型返回但来源既非新分配也非已知别名：保守视为未知。
-					unknown = true
-					return
+					// 零值/nil 返回对调用方是安全的（free(0) no-op）。
+					if rv != nil && isNullishConst(rv) {
+						seenFresh = true
+					} else {
+						// 拥有型返回但来源既非新分配也非已知别名：保守视为未知。
+						unknown = true
+						return
+					}
 				}
 			}
 		}
@@ -399,6 +408,8 @@ func (a *analyzer) updateRetSummary(fs *FnSummary, fb *parser.FuncBlock, body *p
 	kind := RetUnknown
 	switch {
 	case unknown:
+		kind = RetUnknown
+	case seenFresh && (seenAlias || seenBorrow):
 		kind = RetUnknown
 	case seenFresh:
 		kind = RetFresh
@@ -461,20 +472,37 @@ func (a *analyzer) exprOwnership(e *parser.Expression, fb *parser.FuncBlock, bod
 				if len(cb.Func.Return) > 0 && owningType(cb.Func.Return[0]) {
 					out.unknown = true
 				}
+			} else if fb != nil && fb.Name != nil && key == fb.Name.String() {
+				// 自递归调用：乐观按 Fresh 处理，避免 RetKind=Unknown 的不动点死锁。
+				// 若函数存在其他非 fresh/alias/borrow 返回路径，外层 walk 会将其置 Unknown。
+				out.fresh = true
 			} else {
+				am := a.mapMaskThroughArgs(cs.RetAliasMask, cb, fb, body)
+				bm := a.mapMaskThroughArgs(cs.RetBorrowMask, cb, fb, body)
 				switch cs.RetKind {
 				case RetFresh:
 					out.fresh = true
 				case RetAliasParam:
-					out.alias = a.mapMaskThroughArgs(cs.RetAliasMask, cb, fb, body)
+					if am != 0 || bm != 0 {
+						out.alias |= am
+						out.borrow |= bm
+					} else {
+						// 别名目标映射后不指向调用方参数：通常是别名了调用方局部 fresh 对象。
+						out.fresh = true
+					}
 				case RetBorrowParam:
-					out.borrow = a.mapMaskThroughArgs(cs.RetBorrowMask, cb, fb, body)
+					if am != 0 || bm != 0 {
+						out.alias |= am
+						out.borrow |= bm
+					} else {
+						out.fresh = true
+					}
 				case RetUnknown:
 					out.unknown = true
 				}
 				// 混合路径（Fresh + alias/borrow）仍传播别名位。
-				out.alias |= a.mapMaskThroughArgs(cs.RetAliasMask, cb, fb, body)
-				out.borrow |= a.mapMaskThroughArgs(cs.RetBorrowMask, cb, fb, body)
+				out.alias |= am
+				out.borrow |= bm
 			}
 		}
 		// 嵌套实参里的分配不影响“返回值来源”；但实参中的未知调用可能
@@ -609,8 +637,306 @@ func (a *analyzer) localOwnership(name string, fb *parser.FuncBlock, body *parse
 		cache[name] = nil
 		return retOwnInfo{}, false
 	}
+	// 所有权转移启发式（窄 same-slot 证明）：局部变量仅来自单一参数字段借用，
+	// 且函数体将同一 param.field 清槽为 nil/0，所有返回为该局部变量或 nullish。
+	// 证明 read-clear-return 同槽位后，对调用方视为 fresh。
+	if out.borrow != 0 && !out.fresh && out.alias == 0 && !out.unknown {
+		if isOwnershipTransferLocal(name, fb, body, out.borrow) {
+			out.borrow = 0
+			out.fresh = true
+		}
+	}
 	cache[name] = &out
 	return out, true
+}
+
+func isOwnershipTransferLocal(name string, fb *parser.FuncBlock, body *parser.Node, borrowMask uint64) bool {
+	if fb == nil || body == nil || borrowMask == 0 || (borrowMask&(borrowMask-1)) != 0 {
+		return false // 只处理单参数借用
+	}
+	// 保守：存在控制流时不做路径顺序证明，避免误判导致双释放。
+	if bodyHasControlFlow(body) {
+		return false
+	}
+	paramIdx := bitsTrailingIndex(borrowMask)
+	if paramIdx < 0 || paramIdx >= len(fb.Args) || fb.Args[paramIdx].Name == nil {
+		return false
+	}
+	paramName := fb.Args[paramIdx].Name.First()
+	slotField := ""
+	sawRead := false
+	sawClear := false
+	ok := true
+
+	isSameParamFieldRead := func(e *parser.Expression) bool {
+		if e == nil || e.Var == nil || e.Var.Name == nil || len(e.Var.Name) != 2 {
+			return false
+		}
+		if e.Var.Name.First() != paramName {
+			return false
+		}
+		if e.Call != nil || e.Left != nil || e.Right != nil || e.Separator != "" {
+			return false
+		}
+		if e.Index[0] != nil || e.Index[1] != nil || e.Index[2] != nil {
+			return false
+		}
+		f := e.Var.Name.Last()
+		if slotField == "" {
+			slotField = f
+		}
+		return f == slotField
+	}
+	isSameParamFieldLHS := func(e *parser.Expression) bool {
+		if e == nil || e.Var == nil || e.Var.Name == nil || len(e.Var.Name) != 2 {
+			return false
+		}
+		if e.Var.Name.First() != paramName {
+			return false
+		}
+		if e.Index[0] != nil || e.Index[1] != nil || e.Index[2] != nil || e.Separator == "[]" {
+			return false
+		}
+		f := e.Var.Name.Last()
+		if slotField == "" {
+			slotField = f
+		}
+		return f == slotField
+	}
+
+	var walkExpr func(*parser.Expression)
+	walkExpr = func(e *parser.Expression) {
+		if e == nil || !ok {
+			return
+		}
+		isAssign := e.Separator == "=" || e.Separator == "[]="
+		if isAssign && e.Left != nil {
+			if isSameParamFieldLHS(e.Left) {
+				if !isNullishConst(e.Right) {
+					ok = false
+					return
+				}
+				sawClear = true
+			}
+		}
+		walkExpr(e.Left)
+		walkExpr(e.Right)
+		if e.Call != nil {
+			for _, a := range e.Call.Args {
+				if a != nil {
+					walkExpr(a.Value)
+				}
+			}
+		}
+		for _, idx := range e.Index {
+			walkExpr(idx)
+		}
+		for _, le := range e.ListElems {
+			walkExpr(le)
+		}
+		for _, me := range e.MapElems {
+			walkExpr(me.Key)
+			walkExpr(me.Value)
+		}
+	}
+
+	var walk func(*parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil || !ok {
+			return
+		}
+		if _, isFn := n.Value.(*parser.FuncBlock); isFn {
+			return
+		}
+		if vb, ok := n.Value.(*parser.VarBlock); ok && !vb.IsGlobal && vb.Name != nil {
+			if len(vb.Name) == 1 && vb.Name.First() == name {
+				owning := owningType(vb.Type) || (vb.Value != nil && owningType(vb.Value.Type))
+				if owning {
+					if vb.Value == nil {
+						if !vb.IsDefine {
+							ok = false
+							return
+						}
+					} else if isNullishConst(vb.Value) {
+						if sawRead {
+							ok = false
+							return
+						}
+					} else if isSameParamFieldRead(vb.Value) {
+						if sawRead {
+							ok = false
+							return
+						}
+						sawRead = true
+					} else {
+						ok = false
+						return
+					}
+				}
+			} else if len(vb.Name) > 1 && !vb.IsDefine && vb.Name.First() == paramName {
+				// 直接字段赋值：param.field = nil/0
+				if slotField == "" {
+					slotField = vb.Name.Last()
+				}
+				if len(vb.Name) == 2 && vb.Name.Last() == slotField {
+					if !isNullishConst(vb.Value) {
+						ok = false
+						return
+					}
+					sawClear = true
+				}
+			}
+		}
+		if rb, ok := n.Value.(*parser.ReturnBlock); ok {
+			for _, rv := range rb.Value {
+				if rv == nil || isNullishConst(rv) {
+					continue
+				}
+				if rv.Var != nil && rv.Var.Name != nil && len(rv.Var.Name) == 1 && rv.Var.Name.First() == name && rv.Call == nil && rv.Left == nil && rv.Right == nil && rv.Separator == "" && rv.Index[0] == nil && rv.Index[1] == nil && rv.Index[2] == nil {
+					continue
+				}
+				ok = false
+				return
+			}
+		}
+		if exp, ok := n.Value.(*parser.Expression); ok {
+			walkExpr(exp)
+		}
+		if vb, ok := n.Value.(*parser.VarBlock); ok && vb.Value != nil {
+			walkExpr(vb.Value)
+		}
+		for _, ch := range n.Children {
+			walk(ch)
+		}
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil {
+			walk(ib.ElseBlock)
+		}
+	}
+	if body != nil && body.Value != nil {
+		if _, isRootFn := body.Value.(*parser.FuncBlock); isRootFn {
+			for _, ch := range body.Children {
+				walk(ch)
+			}
+		} else {
+			walk(body)
+		}
+	} else {
+		walk(body)
+	}
+	return ok && sawRead && sawClear && slotField != ""
+}
+
+func bodyHasControlFlow(body *parser.Node) bool {
+	found := false
+	var walk func(*parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil || found {
+			return
+		}
+		switch n.Value.(type) {
+		case *parser.FuncBlock:
+			return
+		case *parser.IfBlock, *parser.ForBlock, *parser.SwitchBlock:
+			found = true
+			return
+		}
+		for _, ch := range n.Children {
+			walk(ch)
+		}
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil {
+			walk(ib.ElseBlock)
+		}
+	}
+	if body != nil && body.Value != nil {
+		if _, isRootFn := body.Value.(*parser.FuncBlock); isRootFn {
+			for _, ch := range body.Children {
+				walk(ch)
+			}
+		} else {
+			walk(body)
+		}
+	} else {
+		walk(body)
+	}
+	return found
+}
+
+func bitsTrailingIndex(mask uint64) int {
+	for i := 0; i < 64; i++ {
+		if mask&(1<<uint(i)) != 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+func isNullishConst(e *parser.Expression) bool {
+	if e == nil { return false }
+	if e.ConstNil { return true }
+	if e.Var != nil && e.Var.Name != nil && len(e.Var.Name) == 1 {
+		n := e.Var.Name.First()
+		if n == "nil" || n == "null" { return true }
+	}
+	if e.IsConst() && e.Num == 0 && e.StringVal == "" && !e.Bool && !e.ConstNil {
+		// 空字符串字面量在某些表示下与 0 歧义；字符串类型不当作 null。
+		if e.Type != nil && typeSys.CheckKind(e.Type, "string") { return false }
+		return true
+	}
+	return false
+}
+
+// hasParamFieldNullStore 检测函数体是否存在对字段/元素的置零或置 nil 存储。
+// 用于所有权转移启发式：读字段 + 清槽 = 调用方获得所有权。
+func hasParamFieldNullStore(body *parser.Node) bool {
+	found := false
+	var isNullish func(*parser.Expression) bool
+	isNullish = func(e *parser.Expression) bool {
+		if e == nil { return false }
+		if e.ConstNil { return true }
+		if e.Var != nil && e.Var.Name != nil && len(e.Var.Name) == 1 {
+			n := e.Var.Name.First()
+			if n == "nil" || n == "null" || n == "0" { return true }
+		}
+		if e.IsConst() && e.Num == 0 && e.StringVal == "" && !e.Bool && !e.ConstNil {
+			if e.Type != nil && typeSys.CheckKind(e.Type, "string") { return false }
+			return true
+		}
+		return false
+	}
+	var walkExpr func(*parser.Expression)
+	walkExpr = func(e *parser.Expression) {
+		if e == nil || found { return }
+		isAssign := e.Separator == "=" || e.Separator == "[]="
+		if isAssign && e.Left != nil && e.Right != nil && isNullish(e.Right) {
+			li := e.Left.Index[0] != nil || e.Left.Index[1] != nil || e.Left.Index[2] != nil || e.Left.Separator == "[]"
+			ln := 0
+			if e.Left.Var != nil && e.Left.Var.Name != nil { ln = len(e.Left.Var.Name) }
+			if li || e.Separator == "[]=" || ln > 1 { found = true; return }
+		}
+		walkExpr(e.Left)
+		walkExpr(e.Right)
+		if e.Call != nil {
+			for _, a := range e.Call.Args { if a != nil { walkExpr(a.Value) } }
+		}
+	}
+	var walk func(*parser.Node)
+	walk = func(n *parser.Node) {
+		if n == nil || found { return }
+		if _, isFn := n.Value.(*parser.FuncBlock); isFn { return }
+		if vb, ok := n.Value.(*parser.VarBlock); ok && !vb.IsDefine && !vb.IsGlobal {
+			if vb.Name != nil && len(vb.Name) > 1 && vb.Value != nil && isNullish(vb.Value) { found = true; return }
+		}
+		if exp, ok := n.Value.(*parser.Expression); ok { walkExpr(exp) }
+		if vb, ok := n.Value.(*parser.VarBlock); ok && vb.Value != nil { walkExpr(vb.Value) }
+		for _, ch := range n.Children { walk(ch) }
+		if ib, ok := n.Value.(*parser.IfBlock); ok && ib != nil && ib.ElseBlock != nil { walk(ib.ElseBlock) }
+	}
+	if body != nil && body.Value != nil {
+		if _, isRootFn := body.Value.(*parser.FuncBlock); isRootFn {
+			for _, ch := range body.Children { walk(ch) }
+		} else { walk(body) }
+	} else { walk(body) }
+	return found
 }
 
 // mapMaskThroughArgs 把被调返回值的参数位掩码映射到调用方实参的参数位。
@@ -703,8 +1029,16 @@ func (a *analyzer) applyCallee(key string, fs *FnSummary, cb *parser.CallBlock, 
 		}
 		// 只有“实参本身是参数别名/参数内部借用”才会把 callee 的逃逸
 		// 传播回调用方参数；新分配的临时对象不牵连任何参数。
-		for _, pi := range maskIndices(o.alias | o.borrow) {
-			a.bumpParam(fs, pi, ps.Escape, ps.Mode)
+		// 指针字段访问 p.f 只复制指针值，不使基对象 p 逃逸；字段值逃逸
+		// 由 LLR poisonedFields 防止 deep drop 误释放。
+		if o.borrow != 0 && isSimpleParamFieldAccess(arg.Value, fb) {
+			for _, pi := range maskIndices(o.alias) {
+				a.bumpParam(fs, pi, ps.Escape, ps.Mode)
+			}
+		} else {
+			for _, pi := range maskIndices(o.alias | o.borrow) {
+				a.bumpParam(fs, pi, ps.Escape, ps.Mode)
+			}
 		}
 	}
 	// 传播 HasHeapAllocs：被调函数有堆分配 → 调用者也有
@@ -780,6 +1114,75 @@ func refsTrackedParams(e *parser.Expression, fb *parser.FuncBlock) []int {
 		}
 		if x.Call != nil {
 			for _, ag := range x.Call.Args {
+				if ag != nil {
+					rec(ag.Value)
+				}
+			}
+		}
+	}
+	rec(e)
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(seen))
+	for i := range seen {
+		out = append(out, i)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// refsStoredInFreshAlloc 返回在 fresh 堆分配（new/make/struct literal）实参中
+// 被引用的参数索引。这些参数值被存入新堆对象；若该对象逃逸，参数也应逃逸。
+func isSimpleParamFieldAccess(e *parser.Expression, fb *parser.FuncBlock) bool {
+	if e == nil || e.Var == nil || e.Var.Name == nil || len(e.Var.Name) <= 1 || fb == nil { return false }
+	root := e.Var.Name.First()
+	if _, ok := paramIndexByName(fb, root); !ok { return false }
+	// 指针字段读取：基对象不逃逸，字段值逃逸由 poisonedFields 处理
+	if e.Type != nil && e.Type.IsPointer() { return true }
+	// string/list fat struct 是值拷贝，基对象不逃逸
+	if e.Type != nil && (e.Type.Kind() == "string" || e.Type.Kind() == "list") { return true }
+	return false
+}
+
+func refsStoredInFreshAlloc(e *parser.Expression, fb *parser.FuncBlock) []int {
+	if e == nil || fb == nil {
+		return nil
+	}
+	seen := map[int]bool{}
+	var rec func(x *parser.Expression)
+	rec = func(x *parser.Expression) {
+		if x == nil {
+			return
+		}
+		if x.Call != nil && x.Call.IsBuiltinNewAlloc() {
+			for _, ag := range x.Call.Args {
+				if ag == nil || ag.Value == nil {
+					continue
+				}
+				for _, pi := range refsTrackedParams(ag.Value, fb) {
+					seen[pi] = true
+				}
+			}
+		}
+		rec(x.Left)
+		rec(x.Right)
+		for _, ix := range x.Index {
+			if ix != nil {
+				rec(ix.Left)
+				rec(ix.Right)
+			}
+		}
+		for _, el := range x.ListElems {
+			rec(el)
+		}
+		if x.Call != nil {
+			for _, ag := range x.Call.Args {
+				if ag != nil {
+					rec(ag.Value)
+				}
+			}
+			for _, ag := range x.Call.VariadicArgs {
 				if ag != nil {
 					rec(ag.Value)
 				}
@@ -876,6 +1279,12 @@ func exprAllocates(e *parser.Expression) bool {
 		}
 	}
 	if e.Separator == "+" && e.Type != nil && typeSys.CheckKind(e.Type, "string") {
+		return true
+	}
+	if e.Separator == "list_lit" || e.Separator == "map_lit" {
+		return true
+	}
+	if e.Separator == "array_lit" && owningType(e.Type) {
 		return true
 	}
 	if exprAllocates(e.Left) || exprAllocates(e.Right) {

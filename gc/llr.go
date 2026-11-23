@@ -44,6 +44,12 @@ type llrState struct {
 	orphans []ObjID
 	// fieldOrphans 字段级孤儿：字段赋值时旧值需要在函数出口释放
 	fieldOrphans []fieldOrphan
+	// poisonedFields 逃逸字段，不可由 deep drop 释放（key: "varName.fieldName"）
+	poisonedFields map[string]bool
+	// fieldBindings 精确字段槽绑定：var.field -> ObjID（帧内 fresh alloc 存入字段时）
+	fieldBindings map[string]ObjID
+	// fieldBindingContainer 字段槽绑定时容器的 ObjID（容器重绑/逃逸时失效绑定）
+	fieldBindingContainer map[string]ObjID
 	// scopeDepth 当前作用域深度（0=函数体，1=for/if 第一层，2=嵌套第二层...）
 	scopeDepth int
 	// nextBlockID 下一个可用的块 ID
@@ -68,6 +74,14 @@ type LLRResult struct {
 	// AssignFrees 覆盖赋值点释放（按赋值 VarBlock 节点索引）：旧对象唯一、
 	// 未共享、未逃逸时，在 `x = ...` 写入新值前 freeSlot(&x)。
 	AssignFrees map[*parser.Node][]LLRFree `json:"-"`
+	// AssignTempFreesMap 赋值右值中的中间临时对象释放（按赋值节点索引）。
+	// 根右值若被变量持有则不释放，仅释放其内部消费的临时对象。
+	AssignTempFreesMap map[*parser.Node][]LLRCondFree `json:"-"`
+	// ExprTempFreesMap 普通表达式语句中的临时对象释放（按表达式节点索引）。
+	// 结果不被存储时根节点也可释放。
+	ExprTempFreesMap map[*parser.Node][]LLRCondFree `json:"-"`
+	// FieldAssignFrees 精确字段槽覆盖释放（按赋值节点索引）：字段槽绑定的 fresh alloc 被覆盖前释放。
+	FieldAssignFrees map[*parser.Node][]LLRFieldFree `json:"-"`
 	// LoopExitFrees 循环出口释放（按 for 节点索引）：仅包含循环体内声明的
 	// 块局部变量，用于覆盖 break 跳过 body 尾释放的路径；正常迭代已由
 	// BlockFreesMap 清槽，freeSlot 幂等跳过。
@@ -81,27 +95,31 @@ type LLRResult struct {
 	// RetScratchSlots 本函数单个 return/条件/增量清理点最多需要的临时对象
 	// scratch 槽数。Prologue 据此预留；三类清理点不会同时求值，槽位复用。
 	RetScratchSlots int `json:"-"`
+	// PoisonedFields 字段值已逃逸/不可由 deep drop 释放的字段（key: "varName.fieldName"）。
+	PoisonedFields map[string]bool `json:"-"`
 }
 
-// LLRCondFree 条件/增量表达式中的 owning call 临时对象释放标记。
-// 只在能证明调用结果独占（RetFresh、无 alias/borrow mask）且被调自身确有
-// 堆分配时登记；非分配包装器（如 strings.view）只建对象、不释放。
+// LLRCondFree 条件/增量表达式中的 owning 临时对象释放标记。
+// 只在能证明结果独占（RetFresh、无 alias/borrow mask）且确有堆分配时登记；
+// 非分配包装器（如 strings.view）只建对象、不释放。
 type LLRCondFree struct {
-	VarName string            `json:"varName"` // 合成槽名（$cond0…，调试用）
-	Callee  string            `json:"callee"`  // 调用摘要键
-	Call    *parser.CallBlock `json:"-"`       // 调用节点（codegen 捕获槽键）
-	Flag    int               `json:"flag"`    // 1 = 条件/增量求值后释放
+	VarName string             `json:"varName"` // 合成槽名（$cond0…，调试用）
+	Callee  string             `json:"callee"`  // 调用摘要键/分配来源
+	Call    *parser.CallBlock  `json:"-"`       // 调用节点（codegen 捕获槽键）
+	Expr    *parser.Expression `json:"-"`       // 非调用表达式临时（如字符串拼接）
+	Flag    int                `json:"flag"`    // 1 = 条件/增量求值后释放
 }
 
-// LLRRetFree ret 节点上的 call 后释放标记。
-// 语义：内层 call 返回的拥有型临时对象作为外层 call 的实参，外层不保存也不
+// LLRRetFree ret 节点上的临时对象释放标记。
+// 语义：内层 owning 临时对象作为外层 call 的实参，外层不保存也不
 // 返回该实参（ParamEscapes=EscNone 且 alias/borrow mask 未命中），故外层调用
 // 返回后即可释放。只登记嵌套实参临时，返回值本身不登记。
 type LLRRetFree struct {
-	VarName string            `json:"varName"` // 合成槽名（$ret0…，调试用）
-	Callee  string            `json:"callee"`  // 内层 call 的摘要键
-	Call    *parser.CallBlock `json:"-"`       // 内层调用节点（codegen 捕获槽键）
-	Flag    int               `json:"flag"`    // 1 = ret 节点上的 call 后释放
+	VarName string             `json:"varName"` // 合成槽名（$ret0…，调试用）
+	Callee  string             `json:"callee"`  // 内层 call 的摘要键/分配来源
+	Call    *parser.CallBlock  `json:"-"`       // 内层调用节点（codegen 捕获槽键）
+	Expr    *parser.Expression `json:"-"`       // 非调用表达式临时（如字符串拼接）
+	Flag    int                `json:"flag"`    // 1 = ret 节点上的 call 后释放
 }
 
 // LLRObj 一个抽象对象的完整信息。
@@ -131,12 +149,14 @@ type LLRFieldFree struct {
 // body 为函数体节点，fs 为该函数的摘要。
 func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.Node) *LLRResult {
 	res := &LLRResult{
-		Fn:            fnKey,
-		BlockFreesMap: map[*parser.Node][]LLRFree{},
-		AssignFrees:   map[*parser.Node][]LLRFree{},
-		LoopExitFrees: map[*parser.Node][]LLRFree{},
-		CondFreesMap:  map[*parser.Node][]LLRCondFree{},
-		IncrFreesMap:  map[*parser.Node][]LLRCondFree{},
+		Fn:                fnKey,
+		BlockFreesMap:     map[*parser.Node][]LLRFree{},
+		AssignFrees:       map[*parser.Node][]LLRFree{},
+		AssignTempFreesMap: map[*parser.Node][]LLRCondFree{},
+		ExprTempFreesMap:   map[*parser.Node][]LLRCondFree{},
+		LoopExitFrees:     map[*parser.Node][]LLRFree{},
+		CondFreesMap:      map[*parser.Node][]LLRCondFree{},
+		IncrFreesMap:      map[*parser.Node][]LLRCondFree{},
 	}
 
 	// 函数级保守门槛：仅当存在未知调用时禁用
@@ -163,6 +183,7 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 		objShared:   map[ObjID]bool{},
 		objReleased: map[ObjID]bool{},
 		varBlockID:  map[string]int{},
+		poisonedFields: map[string]bool{},
 		nextObj:     0,
 		nextBlockID: 1, // 从 1 开始，0 留给函数体
 	}
@@ -296,7 +317,17 @@ func ComputeLLR(fnKey string, fb *parser.FuncBlock, fs *FnSummary, body *parser.
 			res.RetScratchSlots = len(frees)
 		}
 	}
-
+	for _, frees := range res.AssignTempFreesMap {
+		if len(frees) > res.RetScratchSlots {
+			res.RetScratchSlots = len(frees)
+		}
+	}
+	for _, frees := range res.ExprTempFreesMap {
+		if len(frees) > res.RetScratchSlots {
+			res.RetScratchSlots = len(frees)
+		}
+	}
+	res.PoisonedFields = st.poisonedFields
 	return res
 }
 
@@ -314,17 +345,28 @@ func collectRetFrees(fb *parser.FuncBlock, body *parser.Node) ([]LLRRetFree, map
 			return
 		}
 		if ret, ok := n.Value.(*parser.ReturnBlock); ok {
-			seen := map[*parser.CallBlock]bool{}
+			seenCall := map[*parser.CallBlock]bool{}
+			seenExpr := map[*parser.Expression]bool{}
 			var frees []LLRRetFree
-			report := func(inner *parser.CallBlock, callee string) {
-				if inner == nil || seen[inner] {
+			report := func(inner *parser.CallBlock, innerExpr *parser.Expression, callee string) {
+				if inner != nil {
+					if seenCall[inner] {
+						return
+					}
+					seenCall[inner] = true
+				} else if innerExpr != nil {
+					if seenExpr[innerExpr] {
+						return
+					}
+					seenExpr[innerExpr] = true
+				} else {
 					return
 				}
-				seen[inner] = true
 				rf := LLRRetFree{
 					VarName: "$ret" + itoa(seq),
 					Callee:  callee,
 					Call:    inner,
+					Expr:    innerExpr,
 					Flag:    1,
 				}
 				seq++
@@ -354,15 +396,15 @@ func collectRetFrees(fb *parser.FuncBlock, body *parser.Node) ([]LLRRetFree, map
 }
 
 // collectRetFreesExpr 后序遍历表达式，识别可在外层 call 返回后释放的嵌套
-// owning call 临时对象。
+// owning 临时对象（调用结果或字符串拼接）。
 //
 // 安全条件（全部满足才登记）：
-//  1. 内层 call 返回值 RetFresh 且 alias/borrow mask 均为 0（caller 独占）；
-//  2. 内层 call 直接作为外层 call 的实参（不做任意表达式折叠）；
+//  1. 内层临时是独占的 fresh 堆分配；
+//  2. 内层临时直接作为外层 call 的实参；
 //  3. 外层参数摘要为 EscNone（不保存实参地址）；
 //  4. 外层摘要存在且不是 RetUnknown，且其返回 alias/borrow mask 未命中该实参
 //     （外层不会把该实参返回出去）；纯内建视为不返回实参。
-func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, string)) {
+func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, *parser.Expression, string)) {
 	if e == nil {
 		return
 	}
@@ -378,13 +420,7 @@ func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, st
 		}
 		if outerSafe {
 			for idx, ag := range outer.Args {
-				if ag == nil || ag.Value == nil || ag.Value.Call == nil {
-					continue
-				}
-				inner := ag.Value.Call
-				innerFS := Table[callKey(inner)]
-				if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
-					innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+				if ag == nil || ag.Value == nil {
 					continue
 				}
 				if ParamEscapes(outerKey, idx) != EscNone {
@@ -396,12 +432,39 @@ func collectRetFreesExpr(e *parser.Expression, report func(*parser.CallBlock, st
 						continue
 					}
 				}
-				report(inner, callKey(inner))
+				if ag.Value.Call != nil {
+					inner := ag.Value.Call
+					innerFS := Table[callKey(inner)]
+					if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
+						innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+						continue
+					}
+					report(inner, nil, callKey(inner))
+				} else if isRuntimeStringConcat(ag.Value) {
+					report(nil, ag.Value, "string-concat")
+				}
 			}
 		}
 		for _, ag := range outer.Args {
 			if ag != nil {
 				collectRetFreesExpr(ag.Value, report)
+			}
+		}
+	} else if isRuntimeStringConcat(e) {
+		for _, operand := range []*parser.Expression{e.Left, e.Right} {
+			if operand == nil {
+				continue
+			}
+			if operand.Call != nil {
+				inner := operand.Call
+				innerFS := Table[callKey(inner)]
+				if innerFS == nil || !innerFS.RetOwned || innerFS.RetKind != RetFresh ||
+					innerFS.RetAliasMask != 0 || innerFS.RetBorrowMask != 0 {
+					continue
+				}
+				report(inner, nil, callKey(inner))
+			} else if isRuntimeStringConcat(operand) {
+				report(nil, operand, "string-concat")
 			}
 		}
 	}
@@ -431,6 +494,24 @@ func CondFreesForNode(fnKey string, n *parser.Node) []LLRCondFree {
 		return nil
 	}
 	return llr.CondFreesMap[n]
+}
+
+// AssignTempFreesForNode 返回指定赋值节点右值中的中间临时对象释放标记。
+func AssignTempFreesForNode(fnKey string, n *parser.Node) []LLRCondFree {
+	llr := LLRResults[fnKey]
+	if llr == nil || llr.AssignTempFreesMap == nil {
+		return nil
+	}
+	return llr.AssignTempFreesMap[n]
+}
+
+// ExprTempFreesForNode 返回指定普通表达式语句的临时对象释放标记。
+func ExprTempFreesForNode(fnKey string, n *parser.Node) []LLRCondFree {
+	llr := LLRResults[fnKey]
+	if llr == nil || llr.ExprTempFreesMap == nil {
+		return nil
+	}
+	return llr.ExprTempFreesMap[n]
 }
 
 // IncrFreesForNode 返回指定 for 节点增量表达式上的临时对象释放标记。
@@ -633,12 +714,12 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 		}
 		switch v := n.Value.(type) {
 		case *parser.VarBlock:
-			processAssign(n, v, st, fb, paramNames, res.AssignFrees)
+			processAssign(n, v, st, fb, paramNames, res.AssignFrees, res.AssignTempFreesMap)
 		case *parser.Expression:
 			// 简单赋值/字段赋值可能以 Expression.Var 形式出现，统一走
 			// processAssign，保证覆盖释放计划与代码生成节点一致。
 			if v.Var != nil && v.Var.Value != nil {
-				processAssign(n, v.Var, st, fb, paramNames, res.AssignFrees)
+				processAssign(n, v.Var, st, fb, paramNames, res.AssignFrees, res.AssignTempFreesMap)
 			} else if v.Separator == "[]=" || v.Separator == "=" || v.Separator == "deref=" {
 				// 元素/字段/解引用写入会把值保存到容器或堆位置，形成非 canonical 别名。
 				// deref= 的被存储值在 Left，指针在 Right；[]= / = 的被存储值在 Right。
@@ -648,8 +729,36 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 				}
 				markStoredRefs(stored, st)
 				markStoredEscapes(stored, st)
+				var frees []LLRCondFree
+				if v.Separator == "[]=" {
+					if v.Left != nil {
+						frees = append(frees, collectExprTemps(v.Left, st, true, false)...)
+					}
+					for _, ix := range v.Index {
+						if ix != nil {
+							frees = append(frees, collectExprTemps(ix, st, true, false)...)
+						}
+					}
+					if v.Right != nil {
+						frees = append(frees, collectExprTemps(v.Right, st, true, false)...)
+					}
+				} else {
+					if v.Left != nil {
+						frees = append(frees, collectExprTemps(v.Left, st, true, false)...)
+					}
+					if v.Right != nil {
+						frees = append(frees, collectExprTemps(v.Right, st, true, false)...)
+					}
+				}
+				if len(frees) > 0 && res.AssignTempFreesMap != nil {
+					res.AssignTempFreesMap[n] = frees
+				}
+			} else {
+				if frees := collectExprTemps(v, st, true, true); len(frees) > 0 {
+					res.ExprTempFreesMap[n] = frees
+				}
 			}
-			markExprCallArgs(v.Right, st)
+			markExprCallArgs(v, st)
 		case *parser.ReturnBlock:
 			retOwns := len(fb.Return) > 0 && owningType(fb.Return[0])
 			if retOwns {
@@ -686,6 +795,10 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 					markExprCallArgs(ag.Value, st)
 				}
 			}
+			// 语句级调用：返回值若为 owning 且被丢弃，应作为临时释放。
+			if frees := collectExprTemps(&parser.Expression{Call: v}, st, true, true); len(frees) > 0 {
+				res.ExprTempFreesMap[n] = frees
+			}
 		case *parser.ForBlock:
 			// 循环初始化/条件/增量/range 表达式中的调用同样可能保存实参。
 			markExprCallArgs(v.Init, st)
@@ -694,16 +807,16 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			markExprCallArgs(v.Range, st)
 			// 初始化/range 只建临时对象（当前无清理点，不登记释放）；
 			// 条件每轮求值，增量每轮收尾，均可建立清理点。
-			collectExprTemps(v.Init, st, false)
-			if frees := collectExprTemps(v.Condition, st, true); len(frees) > 0 {
+			collectExprTemps(v.Init, st, false, false)
+			if frees := collectExprTemps(v.Condition, st, true, true); len(frees) > 0 {
 				res.CondFreesMap[n] = frees
 			}
 			// 增量是赋值时，右值结果会被变量持有，不能当临时释放。
 			incrFree := v.Increment != nil && v.Increment.Var == nil
-			if frees := collectExprTemps(v.Increment, st, incrFree); len(frees) > 0 {
+			if frees := collectExprTemps(v.Increment, st, incrFree, incrFree); len(frees) > 0 {
 				res.IncrFreesMap[n] = frees
 			}
-			collectExprTemps(v.Range, st, false)
+			collectExprTemps(v.Range, st, false, false)
 			st.scopeDepth++
 			st.loopDepth++
 			savedBlockID := st.currentBlockID
@@ -723,7 +836,7 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 			return
 		case *parser.IfBlock:
 			markExprCallArgs(v.Condition, st)
-			if frees := collectExprTemps(v.Condition, st, true); len(frees) > 0 {
+			if frees := collectExprTemps(v.Condition, st, true, true); len(frees) > 0 {
 				res.CondFreesMap[n] = frees
 			}
 			st.scopeDepth++
@@ -763,37 +876,44 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 	walk(body)
 }
 
-// collectExprTemps 为表达式中的 owning call 结果建立抽象对象；当 allowFree
-// 为真且能证明结果独占、被调自身有堆分配时，登记条件/增量临时释放标记。
-// 返回的槽名按清理点内序号编号；同一调用只登记一次。
-func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool) []LLRCondFree {
+// collectExprTemps 为表达式中的 owning 临时对象建立抽象对象；当 allowFree
+// 为真且能证明结果独占时登记临时释放标记。freeRoot 控制根节点本身是否可释放
+// （赋值/返回等“值被存储”的位置应传 false，只释放中间临时）。
+// 返回的槽名按清理点内序号编号；同一节点只登记一次。
+func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool, freeRoot bool) []LLRCondFree {
 	if e == nil {
 		return nil
 	}
 	var out []LLRCondFree
 	seen := map[*parser.CallBlock]bool{}
+	seenExpr := map[*parser.Expression]bool{}
 	var walk func(x *parser.Expression, freeOK bool)
 	walk = func(x *parser.Expression, freeOK bool) {
 		if x == nil {
 			return
 		}
+		isRootStored := x == e && !freeRoot
 		if x.Call != nil {
 			cb := x.Call
 			key := callKey(cb)
 			fs := Table[key]
 			if fs != nil && fs.RetOwned && !cb.IsRC && !seen[cb] {
 				seen[cb] = true
-				id := st.newObj("call:" + key)
-				if freeOK && allowFree && condTempFreeable(fs) {
-					out = append(out, LLRCondFree{
-						VarName: "$cond" + itoa(len(out)),
-						Callee:  key,
-						Call:    cb,
-						Flag:    1,
-					})
+				if isRootStored {
+					// 根节点值由赋值/返回持有；只释放其子表达式中的临时对象。
 				} else {
-					// 包装器/未知别名/被外层保存：保留对象可见性，但不自动释放。
-					st.objEscaped[id] = true
+					id := st.newObj("call:" + key)
+					if freeOK && allowFree && condTempFreeable(fs) {
+						out = append(out, LLRCondFree{
+							VarName: "$cond" + itoa(len(out)),
+							Callee:  key,
+							Call:    cb,
+							Flag:    1,
+						})
+					} else {
+						// 包装器/未知别名/被外层保存：保留对象可见性，但不自动释放。
+						st.objEscaped[id] = true
+					}
 				}
 			}
 			for i, ag := range cb.Args {
@@ -805,6 +925,23 @@ func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool) []LLRC
 			for _, ag := range cb.VariadicArgs {
 				if ag != nil {
 					walk(ag.Value, false)
+				}
+			}
+		} else if isRuntimeStringConcat(x) {
+			if !seenExpr[x] {
+				seenExpr[x] = true
+				if !isRootStored {
+					id := st.newObj("string-concat")
+					if freeOK && allowFree {
+						out = append(out, LLRCondFree{
+							VarName: "$cond" + itoa(len(out)),
+							Callee:  "string-concat",
+							Expr:    x,
+							Flag:    1,
+						})
+					} else {
+						st.objEscaped[id] = true
+					}
 				}
 			}
 		}
@@ -823,6 +960,10 @@ func collectExprTemps(e *parser.Expression, st *llrState, allowFree bool) []LLRC
 	}
 	walk(e, allowFree)
 	return out
+}
+
+func isRuntimeStringConcat(e *parser.Expression) bool {
+	return e != nil && e.Separator == "+" && e.Type != nil && typeSys.CheckKind(e.Type, "string")
 }
 
 // condTempFreeable 判断一次 owning call 的结果能否作为独立临时释放。
@@ -895,7 +1036,7 @@ func collectBlockFrees(st *llrState, blockID int, fb *parser.FuncBlock, body *pa
 }
 
 // processAssign 处理赋值/定义语句。
-func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool, assignFreesMap map[*parser.Node][]LLRFree) {
+func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.FuncBlock, paramNames map[string]bool, assignFreesMap map[*parser.Node][]LLRFree, assignTempFreesMap map[*parser.Node][]LLRCondFree) {
 	name := ""
 	if v.Name != nil {
 		name = v.Name.First()
@@ -908,6 +1049,11 @@ func processAssign(n *parser.Node, v *parser.VarBlock, st *llrState, fb *parser.
 	if v.Value != nil {
 		markExprCallArgs(v.Value, st)
 		markStoredRefs(v.Value, st)
+		if assignTempFreesMap != nil {
+			if frees := collectExprTemps(v.Value, st, true, false); len(frees) > 0 {
+				assignTempFreesMap[n] = frees
+			}
+		}
 	}
 
 	// 定义 + 无值 + owning 类型 → null_init 绑定（var x: *T）
@@ -1176,9 +1322,15 @@ func markAllReferencedObjs(v *parser.ReturnBlock, st *llrState, fb *parser.FuncB
 			return
 		}
 		if e.Var != nil && e.Var.Name != nil {
-			n := e.Var.Name.First()
-			if id, ok := st.bindings[n]; ok {
-				st.objEscaped[id] = true
+			if len(e.Var.Name) == 1 {
+				n := e.Var.Name.First()
+				if id, ok := st.bindings[n]; ok {
+					st.objEscaped[id] = true
+				}
+			} else {
+				base := e.Var.Name.First()
+				field := e.Var.Name.Last()
+				if st.poisonedFields != nil { st.poisonedFields[base+"."+field] = true }
 			}
 		}
 		rec(e.Left)
@@ -1222,11 +1374,19 @@ func markCallArgObjs(cb *parser.CallBlock, st *llrState, fb *parser.FuncBlock) {
 				return
 			}
 			if e.Var != nil && e.Var.Name != nil {
-				n := e.Var.Name.First()
-				if id, ok := st.bindings[n]; ok {
-					if esc > EscNone {
-						st.objEscaped[id] = true
+				if len(e.Var.Name) == 1 {
+					n := e.Var.Name.First()
+					if id, ok := st.bindings[n]; ok {
+						if esc > EscNone {
+							st.objEscaped[id] = true
+						}
 					}
+				}
+				if len(e.Var.Name) > 1 && esc > EscNone {
+					// 字段值逃逸：基对象不逃逸，但该字段不可由 deep drop 释放。
+					base := e.Var.Name.First()
+					field := e.Var.Name.Last()
+					if st.poisonedFields != nil { st.poisonedFields[base+"."+field] = true }
 				}
 			}
 			rec(e.Left)
@@ -1295,18 +1455,30 @@ func DumpLLR(res *LLRResult) string {
 		out += fmt.Sprintf("  FIELD_FREE %s.%s [%s]\n", ff.VarName, ff.FieldName, ff.Type)
 	}
 	for _, rf := range res.RetFrees {
-		out += fmt.Sprintf("  RET_FREE %s after=call:%s flag=%d\n", rf.VarName, rf.Callee, rf.Flag)
+		src := "call:" + rf.Callee
+		if rf.Call == nil && rf.Expr != nil {
+			src = "expr:" + rf.Callee
+		}
+		out += fmt.Sprintf("  RET_FREE %s after=%s flag=%d\n", rf.VarName, src, rf.Flag)
 	}
 	for node, frees := range res.CondFreesMap {
 		_ = node
 		for _, cf := range frees {
-			out += fmt.Sprintf("  COND_FREE %s after=call:%s flag=%d\n", cf.VarName, cf.Callee, cf.Flag)
+			src := "call:" + cf.Callee
+			if cf.Call == nil && cf.Expr != nil {
+				src = "expr:" + cf.Callee
+			}
+			out += fmt.Sprintf("  COND_FREE %s after=%s flag=%d\n", cf.VarName, src, cf.Flag)
 		}
 	}
 	for node, frees := range res.IncrFreesMap {
 		_ = node
 		for _, cf := range frees {
-			out += fmt.Sprintf("  INCR_FREE %s after=call:%s flag=%d\n", cf.VarName, cf.Callee, cf.Flag)
+			src := "call:" + cf.Callee
+			if cf.Call == nil && cf.Expr != nil {
+				src = "expr:" + cf.Callee
+			}
+			out += fmt.Sprintf("  INCR_FREE %s after=%s flag=%d\n", cf.VarName, src, cf.Flag)
 		}
 	}
 	return out
