@@ -15,6 +15,7 @@
 #   - -r|--run：构建成功后直接运行该 bin（rc 为 bin 的退出码）；
 #   - -c|--coredump 或 COREDUMP=1：运行时允许 core dump，异常退出后尽量
 #     收集 core 到 <pkg-dir>/<name>.core；
+#   - --hang 或 CUTE_HANG=1：编译时传 -hang，使 _start 在 main 返回后 pause 循环（泄漏检查用）；
 #   - 错误直接打印到终端；编译/汇编/链接任一步失败即非零退出（不运行）。
 set -euo pipefail
 
@@ -23,11 +24,13 @@ BIN="${BIN:-$ROOT/cuteify2}"
 
 wantRun=0
 wantCore="${COREDUMP:-0}"
+wantHang="${CUTE_HANG:-0}"
 positional=()
 for arg in "$@"; do
     case "$arg" in
         -r|--run) wantRun=1 ;;
         -c|--coredump) wantCore=1 ;;
+        --hang) wantHang=1 ;;
         -h|--help)
             sed -n '2,16p' "$0"
             exit 0
@@ -68,9 +71,11 @@ if [ ! -x "$BIN" ]; then
 fi
 
 cd "$pkg"
-CUTE_ROOT="$ROOT" CUTE_ARCH="$arch" "$BIN" "$PWD"
+hangFlag=()
+if [ "$wantHang" = "1" ] || [ "$wantHang" = "true" ]; then hangFlag=(-hang); fi
+CUTE_ROOT="$ROOT" CUTE_ARCH="$arch" "$BIN" ${hangFlag[@]+"${hangFlag[@]}"} "$PWD"
 nasm -f "$fmt" -w-label-redef-late -o "_main.o" _main.asm
-gcc "${gccargs[@]}" -nostartfiles -no-pie -e _start -o "$out" "_main.o" -nostdlib
+gcc "${gccargs[@]}" -nostartfiles -s -Wl,--build-id=none,--gc-sections -no-pie -e _start -o "$out" "_main.o" -nostdlib
 echo "BUILD_OK|$out"
 
 if [ "$wantRun" -eq 1 ]; then
