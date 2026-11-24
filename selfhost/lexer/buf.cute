@@ -202,6 +202,7 @@ fn RingBuffer.read(&self) *Token {
     }
 
     var val: *Token = self.buf[self.ReadPos]
+    self.buf[self.ReadPos] = 0
     // 移动读指针
     self.ReadPos = (self.ReadPos + 1) % len(self.buf)
 
@@ -210,9 +211,44 @@ fn RingBuffer.read(&self) *Token {
     ret val
 }
 
-// Clear 重置读写下标与满标记（不动槽位，也不释放已写入的 *Token）。
-// 用于位置回卷后丢弃预取残留——buffer 直接复用，零分配。
+// freeToken 释放 token 及其堆字符串值（仅 tracked 数据）。
+fn freeToken(t: *Token) {
+    if unsafe.cast[uint](t) == 0 { ret }
+    var sp: *ptr = unsafe.cast[*ptr](&t.Value)
+    var p: ptr = *sp
+    if p != 0 && memory.isTrackedAll(p) {
+        memory.free(p)
+    }
+    if memory.isTrackedAll(unsafe.cast[ptr](t)) {
+        memory.free(unsafe.cast[ptr](t))
+    }
+}
+
+// Clear 重置读写下标与满标记，释放未消费的缓存 token。
 fn RingBuffer.clear(&self) {
+    var n: int = len(self.buf)
+    if self.f {
+        var i: int = 0
+        for i < n {
+            var t: *Token = self.buf[i]
+            if unsafe.cast[uint](t) != 0 {
+                freeToken(t)
+                self.buf[i] = 0
+            }
+            i = i + 1
+        }
+    } else if !self.isEmpty() {
+        var i: int = self.ReadPos
+        for {
+            var t: *Token = self.buf[i]
+            if unsafe.cast[uint](t) != 0 {
+                freeToken(t)
+                self.buf[i] = 0
+            }
+            i = (i + 1) % n
+            if i == self.WritePos { break }
+        }
+    }
     self.ReadPos = 0
     self.WritePos = 0
     self.f = false

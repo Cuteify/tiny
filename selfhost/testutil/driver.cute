@@ -63,7 +63,9 @@ fn arg1() string {
 // 读缓冲必须用 memory.malloc：new(string, n) 的缓冲由 LLR 在函数帧尾释放，
 // 返回 view 给调用方读到的会是已释放内存（踩坑记录：selfhost_test 02-keywords 输出垃圾）。
 fn loadSourceFile(path string) *SourceFile {
-    var rawfd: u64 = syscall.syscall64(2, strings.toCstring(path), 0, 0, 0, 0)
+    var cpath: ptr = strings.toCstring(path)
+    var rawfd: u64 = syscall.syscall64(2, cpath, 0, 0, 0, 0)
+    memory.free(cpath)
     var r: *SourceFile = new(SourceFile)
     if rawfd > 9223372036854775807 {
         r.Src = ""
@@ -81,7 +83,12 @@ fn loadSourceFile(path string) *SourceFile {
         pos = pos + unsafe.cast[uint](n)
     }
     syscall.close(srcfd)
-    r.Src = strings.view(buf, pos, pos)
+    var dst: ptr = memory.malloc(pos)
+    if pos > 0 {
+        memory.memcpy(dst, buf, pos)
+    }
+    memory.free(buf)
+    r.Src = strings.view(dst, pos, pos)
     r.Ok = true
     ret r
 }

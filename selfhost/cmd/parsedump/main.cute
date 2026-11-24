@@ -8,8 +8,10 @@
 import parse "../../parse"
 import "../../lexer"
 import "std:console"
+import "std:strings"
+import "std:memory"
 import util "../../testutil"
-fn main() int {
+fn a() int {
     var sf: *util.SourceFile = util.loadSourceFile("/home/gx/Desktop/代码/tiny/pkg/console/console.cute")
     lex := lexer.newLexer(sf.Src)
     p := parse.newParser(lex)
@@ -18,5 +20,29 @@ fn main() int {
             break
         }
     }
+    ret 0
+}
+
+
+fn main() int {
+    a()
+    memory.dumpAllocator()
+    memory.releaseAllLeakTracker()  // 清 all-leak 表，块标 IS_FREE
+memory.releaseLeakTracker()     // 清 RC leak 表
+memory.trim()                   // 回缩堆顶连续空闲块
+    memory.dumpAllocator()
+    var a: uint = memory.reportAllAllocCount()
+var f: uint = memory.reportAllFreeCount()
+var lk: uint = memory.reportAllLeaks()
+// 先捕获再打印，避免打印本身污染计数
+console.print("SELFHOST_LEAK|alloc=")
+console.print(strings.toString(unsafe.cast[int](a), 10))
+console.print("|free=")
+console.print(strings.toString(unsafe.cast[int](f), 10))
+console.print("|leaks=")
+console.println(strings.toString(unsafe.cast[int](lk), 10))
+memory.releaseAllLeakTracker()  // 清 all-leak 表，块标 IS_FREE
+memory.releaseLeakTracker()     // 清 RC leak 表
+memory.trim()                   // 回缩堆顶连续空闲块
     ret 0
 }

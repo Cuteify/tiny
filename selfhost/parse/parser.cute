@@ -18,7 +18,7 @@ fn Parser.next(&self) bool {
 	if t.Type == lexer.KEYWORD {
 		switch t.Value {
 			case "fn":
-				f := FnBlock{}
+				f := new(FnBlock)
 				f.parse(self)
 		}
 	}

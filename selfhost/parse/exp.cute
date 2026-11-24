@@ -3,6 +3,7 @@ import (
 	"std:slices"
     "../lexer"
 )
+
 // Expression 表示表达式AST节点
 type Expression struct {
 
@@ -30,6 +31,7 @@ type Expression struct {
 	//Anon      *FuncBlock     // 匿名函数（闭包），非nil时表示 fn(...) R { ... } 字面量
 }
 
+
 enum ExpKind {
     ExprConst   // Const != nil 或 bool
     ExprVar                            // Ident  != nil
@@ -50,12 +52,7 @@ enum Kind {
     LParen
     RParen
 }
-
-type Token struct {
-    Kind: Kind
-    Text: string
-}
-
+/*
 type snap struct {
     r: *Expression
     t: *Expression
@@ -169,4 +166,4 @@ fn infix(n: *Expression) string {
         ret n.op + "(" + infix(n.right) + ")"
     }
     ret "(" + infix(n.left) + " " + n.op + " " + infix(n.right) + ")"
-}
+}*/
