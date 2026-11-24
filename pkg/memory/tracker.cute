@@ -1,110 +1,239 @@
 import "std:syscall"
 // ===== Cuteify Memory Manager v3 — Leak Tracker =====
 //
-// 泄漏追踪器用于检测 RC 块的内存泄漏。
-// 在 debug/test 模式下，每个 mallocRC 调用 trackAlloc，
-// 每次释放调用 trackFree。
-// 程序退出前调用 reportLeaks() 检查是否有未释放的块。
-//
-// 追踪表 gLeaks 是一个简单的线性数组（最大 256 条），
-// 插入追加到末尾，删除时用最后一个元素覆盖被删位置（O(n) 查找，O(1) 删除）。
-//
-// **F5（Wave M 文档化）**：256 条上限静默丢弃——gLeakCount >= 256 后
-// trackAlloc 不再记录新条目（计数仍累加，泄漏明细不全），而非扩容或报错。
-// 大量 RC 分配时 reportLeaks 的明细仅供参考，分配/释放**计数守恒不变**。
-// 参数化容量另期立项。
+// RC 泄漏追踪（旧 API，保持兼容）：trackAlloc/trackFree/reportLeaks/reportAllocCount/reportFreeCount
+// 全量分配追踪（新 API）：trackAllocAll/trackFreeAll/reportAllLeaks/reportAllAllocCount/reportAllFreeCount
+//   由 malloc/free 钩子调用，用于分析普通内存泄漏。
 
-var gAllocCount: uint = 0   // 总分配次数
-var gFreeCount: uint = 0    // 总释放次数
-var gLeaks: ptr             // 未释放的 RC 指针表（256*8=2048 字节，brk 直接分配）
-var gLeakCount: uint = 0    // 当前未释放数量
+var gAllocCount: uint = 0   // RC 分配次数（兼容）
+var gFreeCount: uint = 0    // RC 释放次数（兼容）
+var gLeaks: ptr             // RC 未释放指针表（4096*8）
+var gLeakSizes: ptr         // RC 未释放大小表（4096*8）
+var gLeakCount: uint = 0    // RC 未释放数量
 
-// initLeakTracker 初始化泄漏追踪表（用 brk 直接分配，不走 malloc）
+var gAllAllocCount: uint = 0
+var gAllFreeCount: uint = 0
+var gAllLeaks: ptr           // 全量未释放指针表（4096*8）
+var gAllLeakSizes: ptr       // 全量未释放大小表（4096*8）
+var gAllLeakCount: uint = 0
+var gAllLeakOverflow: uint = 0  // 表满后置 1：禁用幂等守卫，避免误跳过合法释放
+
+var gDropCount: uint = 0
+fn dropInc() { gDropCount = gDropCount + 1 }
+fn reportDropCount() uint { ret gDropCount }
+
 fn initLeakTracker() {
-    if gLeaks != 0 {
-        ret  // 已初始化
-    }
+    if gLeaks != 0 { ret }
     var cur: ptr = syscall.brk(0)
-    var nb: ptr = syscall.brk(cur + 2048)
-    if nb < cur + 2048 {
-        ret
-    }
-    gLeaks = cur
+    var total: uint = 65536 + PTR_SIZE * 2
+    var nb: ptr = syscall.brk(cur + total)
+    if nb < cur + total { ret }
+    hdrSetSizeRaw(cur, total)
+    hdrSetFooter(cur, total)
+    gLeaks = cur + PTR_SIZE
+    gLeakSizes = cur + PTR_SIZE + 32768
 }
 
-// leakLoad 读取 gLeaks[idx]
-fn leakLoad(idx: uint) ptr {
-    var _p: *ptr = gLeaks + idx * 8
+fn initAllLeakTracker() {
+    if gAllLeaks != 0 { ret }
+    var cur: ptr = syscall.brk(0)
+    var total: uint = 65536 + PTR_SIZE * 2
+    var nb: ptr = syscall.brk(cur + total)
+    if nb < cur + total { ret }
+    hdrSetSizeRaw(cur, total)
+    hdrSetFooter(cur, total)
+    gAllLeaks = cur + PTR_SIZE
+    gAllLeakSizes = cur + PTR_SIZE + 32768
+}
+
+fn leakLoad(tab: ptr, idx: uint) ptr {
+    var _p: *ptr = tab + idx * 8
     ret *_p
 }
-
-// leakStore 写入 gLeaks[idx]
-fn leakStore(idx: uint, v: ptr) {
-    var _p: *ptr = gLeaks + idx * 8
+fn leakStore(tab: ptr, idx: uint, v: ptr) {
+    var _p: *ptr = tab + idx * 8
     *_p = v
 }
+fn leakSizeLoad(tab: ptr, idx: uint) uint {
+    var _p: *ptr = tab + idx * 8
+    ret unsafe.cast[uint](*_p)
+}
+fn leakSizeStore(tab: ptr, idx: uint, v: uint) {
+    var _p: *ptr = tab + idx * 8
+    *_p = unsafe.cast[ptr](v)
+}
 
-// trackAlloc 记录一次 RC 分配
-// 将指针追加到 gLeaks 表，并递增分配计数器
-fn trackAlloc(p: ptr) {
-    if p == 0 {
-        ret
-    }
+fn trackAlloc(p: ptr, size: uint) {
+    if p == 0 { ret }
     initLeakTracker()
     gAllocCount = gAllocCount + 1
-    // 表满则静默丢弃（不影响正常运行，仅丢失追踪）
-    if gLeakCount < 256 {
-        // 缺陷⑫绕行（x86 生成器 push 无尺寸内存寻址）：全局实参先 staging var
+    if gLeakCount < 4096 {
         var cntV: uint = gLeakCount
-        leakStore(cntV, p)
+        leakStore(gLeaks, cntV, p)
+        leakSizeStore(gLeakSizes, cntV, size)
         gLeakCount = gLeakCount + 1
     }
 }
 
-// trackFree 从泄漏追踪列表中移除
-// 线性查找 p，找到后用最后一个元素覆盖（避免移动大量元素）
 fn trackFree(p: ptr) {
-    if p == 0 {
-        ret
-    }
+    if p == 0 { ret }
     initLeakTracker()
     gFreeCount = gFreeCount + 1
     var i: uint = 0
     for ; i < gLeakCount; {
-        if leakLoad(i) == p {
-            // 用最后一个元素覆盖当前位置（无序删除，O(1)）
+        if leakLoad(gLeaks, i) == p {
             var lastIdx: uint = gLeakCount - 1
-            var tmp: ptr = leakLoad(lastIdx)
-            leakStore(i, tmp)
+            leakStore(gLeaks, i, leakLoad(gLeaks, lastIdx))
+            leakSizeStore(gLeakSizes, i, leakSizeLoad(gLeakSizes, lastIdx))
             gLeakCount = gLeakCount - 1
             ret
         }
         i = i + 1
     }
-    // 未找到：可能是重复释放或非 RC 块，静默忽略
 }
 
-// reportLeaks 报告泄漏数量（gLeakCount > 0 表示有泄漏）
-fn reportLeaks() uint {
-    ret gLeakCount
+fn trackAllocAll(p: ptr, size: uint) {
+    if p == 0 { ret }
+    initAllLeakTracker()
+    gAllAllocCount = gAllAllocCount + 1
+    if gAllLeakCount < 4096 {
+        var cntV: uint = gAllLeakCount
+        leakStore(gAllLeaks, cntV, p)
+        leakSizeStore(gAllLeakSizes, cntV, size)
+        gAllLeakCount = gAllLeakCount + 1
+    } else {
+        gAllLeakOverflow = 1
+    }
 }
 
-// reportAllocCount 返回总分配次数
-fn reportAllocCount() uint {
-    ret gAllocCount
+fn trackFreeAll(p: ptr) {
+    if p == 0 { ret }
+    initAllLeakTracker()
+    gAllFreeCount = gAllFreeCount + 1
+    var i: uint = 0
+    for ; i < gAllLeakCount; {
+        if leakLoad(gAllLeaks, i) == p {
+            var lastIdx: uint = gAllLeakCount - 1
+            leakStore(gAllLeaks, i, leakLoad(gAllLeaks, lastIdx))
+            leakSizeStore(gAllLeakSizes, i, leakSizeLoad(gAllLeakSizes, lastIdx))
+            gAllLeakCount = gAllLeakCount - 1
+            ret
+        }
+        i = i + 1
+    }
 }
 
-// reportFreeCount 返回总释放次数
-fn reportFreeCount() uint {
-    ret gFreeCount
+// untrackAll 从全量泄漏表中移除指针，不改变 alloc/free 计数。
+// 用于进程生命周期内的永久分配（如 kw/delim 表），避免被误报为泄漏。
+fn untrackAll(p: ptr) {
+    if p == 0 { ret }
+    if gAllLeaks == 0 { ret }
+    var i: uint = 0
+    for ; i < gAllLeakCount; {
+        if leakLoad(gAllLeaks, i) == p {
+            var lastIdx: uint = gAllLeakCount - 1
+            leakStore(gAllLeaks, i, leakLoad(gAllLeaks, lastIdx))
+            leakSizeStore(gAllLeakSizes, i, leakSizeLoad(gAllLeakSizes, lastIdx))
+            gAllLeakCount = gAllLeakCount - 1
+            ret
+        }
+        i = i + 1
+    }
 }
 
-// resetLeakTracker 重置追踪器（测试前调用）
-// 清零所有计数器，但不清零 gLeaks 数组本身（不影响运行）
+fn reportLeaks() uint { ret gLeakCount }
+fn reportAllocCount() uint { ret gAllocCount }
+fn reportFreeCount() uint { ret gFreeCount }
+fn reportLeakPtr(idx: uint) ptr {
+    if idx >= gLeakCount { ret 0 }
+    ret leakLoad(gLeaks, idx)
+}
+fn reportLeakSize(idx: uint) uint {
+    if idx >= gLeakCount { ret 0 }
+    ret leakSizeLoad(gLeakSizes, idx)
+}
+
+fn reportAllLeaks() uint { ret gAllLeakCount }
+fn reportAllAllocCount() uint { ret gAllAllocCount }
+fn reportAllFreeCount() uint { ret gAllFreeCount }
+
+fn releaseAllLeakTracker() {
+    if gAllLeaks == 0 { ret }
+    var base: ptr = gAllLeaks - PTR_SIZE
+    var raw: uint = hdrSizeRaw(base)
+    var pure: uint = raw & ~FLAG_MASK
+    hdrSetSizeRaw(base, pure | IS_FREE)
+    hdrSetFooter(base, pure | IS_FREE)
+    var top: ptr = syscall.brk(0)
+    var next: ptr = base + pure
+    if next + PTR_SIZE <= top {
+        var ns: uint = hdrSizeRaw(next)
+        if ns != 0 {
+            hdrSetSizeRaw(next, ns | PREV_FREE)
+            hdrSetFooter(next, ns | PREV_FREE)
+        }
+    }
+    insertFreeList(base)
+    gAllLeaks = 0
+    gAllLeakSizes = 0
+    gAllLeakCount = 0
+    gAllAllocCount = 0
+    gAllFreeCount = 0
+    gAllLeakOverflow = 0
+}
+
+fn releaseLeakTracker() {
+    if gLeaks == 0 { ret }
+    var base: ptr = gLeaks - PTR_SIZE
+    var raw: uint = hdrSizeRaw(base)
+    var pure: uint = raw & ~FLAG_MASK
+    hdrSetSizeRaw(base, pure | IS_FREE)
+    hdrSetFooter(base, pure | IS_FREE)
+    var top: ptr = syscall.brk(0)
+    var next: ptr = base + pure
+    if next + PTR_SIZE <= top {
+        var ns: uint = hdrSizeRaw(next)
+        if ns != 0 {
+            hdrSetSizeRaw(next, ns | PREV_FREE)
+            hdrSetFooter(next, ns | PREV_FREE)
+        }
+    }
+    insertFreeList(base)
+    gLeaks = 0
+    gLeakSizes = 0
+    gLeakCount = 0
+    gAllocCount = 0
+    gFreeCount = 0
+}
+fn reportAllLeakPtr(idx: uint) ptr {
+    if idx >= gAllLeakCount { ret 0 }
+    ret leakLoad(gAllLeaks, idx)
+}
+fn reportAllLeakSize(idx: uint) uint {
+    if idx >= gAllLeakCount { ret 0 }
+    ret leakSizeLoad(gAllLeakSizes, idx)
+}
+
+fn isTrackedAll(p: ptr) bool {
+    if p == 0 { ret false }
+    if gAllLeaks == 0 { ret false }
+    var i: uint = 0
+    for ; i < gAllLeakCount; {
+        if leakLoad(gAllLeaks, i) == p { ret true }
+        i = i + 1
+    }
+    ret false
+}
+
 fn resetLeakTracker() {
-    // 缺陷⑫绕行（x86 生成器字面量全局写 mov [global],imm 无尺寸非法）：staging var 转存
     var zeroU: uint = 0
     gAllocCount = zeroU
     gFreeCount = zeroU
     gLeakCount = zeroU
+    gAllAllocCount = zeroU
+    gAllFreeCount = zeroU
+    gAllLeakCount = zeroU
+    gAllLeakOverflow = zeroU
+    gAllLeaks = 0
+    gAllLeakSizes = 0
 }

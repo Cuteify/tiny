@@ -269,32 +269,59 @@ fn commit(cls: uint, blkSize: uint) ptr {
     if nb < chunk + CHUNK_SIZE {
         ret 0  // 内存不足
     }
-    // 将新空间切成 blkSize 大小的空闲块，串成链表
-    var head: ptr = chunk
+    // 将新空间切成 blkSize 大小的空闲块，逐块入链。
     var prev: ptr = 0
     var p: ptr = chunk
     var end: ptr = chunk + CHUNK_SIZE
+    var firstPrevFree: uint = 0
+    if chunk > 0 {
+        var _pfp: *ptr = chunk - PTR_SIZE
+        var pf: uint = *_pfp
+        if (pf & IS_FREE) != 0 && (pf & ~FLAG_MASK) >= 32 {
+            firstPrevFree = PREV_FREE
+        }
+    }
     for ; p + blkSize <= end; {
-        // 第一个块无 PREV_FREE，后续块标记 PREV_FREE（因为前一块也是空闲的）
         var flags: uint = IS_FREE
         if prev != 0 {
             flags = flags | PREV_FREE
+        } else {
+            flags = flags | firstPrevFree
         }
         var full: uint = blkSize | flags
         hdrSetSizeRaw(p, full)
         hdrSetFooter(p, full)
-        // 串入双向链表
-        freeSetNext(p, 0)
-        freeSetPrev(p, prev)
-        if prev != 0 {
-            freeSetNext(prev, p)
-        }
+        insertFreeList(p)
         prev = p
         p = p + blkSize
     }
-    // 将整个 chunk 的链表头设为 cls 的空闲链表头
-    setHead(cls, head)
-    ret chunk
+    // 处理 chunk 尾部剩余空间：必须初始化为合法块，否则留下零 footer 破坏 trim/遍历。
+    var tail: uint = end - p
+    if tail >= 32 {
+        var flags: uint = IS_FREE
+        if prev != 0 {
+            flags = flags | PREV_FREE
+        }
+        var full: uint = tail | flags
+        hdrSetSizeRaw(p, full)
+        hdrSetFooter(p, full)
+        insertFreeList(p)
+    } else if tail > 0 && prev != 0 {
+        // tail 太小不能成独立空闲块：并入前一个块。
+        removeFreeList(prev)
+        var prevRaw: uint = hdrSizeRaw(prev)
+        var prevPure: uint = prevRaw & ~FLAG_MASK
+        var newSize: uint = prevPure + tail
+        var flags2: uint = IS_FREE
+        if (prevRaw & PREV_FREE) != 0 {
+            flags2 = flags2 | PREV_FREE
+        }
+        var full2: uint = newSize | flags2
+        hdrSetSizeRaw(prev, full2)
+        hdrSetFooter(prev, full2)
+        insertFreeList(prev)
+    }
+    ret headOf(cls)
 }
 
 // coalesce 合并相邻空闲块，返回合并后的块起始地址
@@ -380,7 +407,9 @@ fn malloc(size: uint) ptr {
         }
         hdrSetSizeRaw(old, aligned)
         hdrSetFooter(old, aligned)
-        ret old + PTR_SIZE  // 跳过 header
+        var p: ptr = old + PTR_SIZE  // 跳过 header
+        trackAllocAll(p, size)
+        ret p
     }
 
     // === 路径 2: LARGE 块 — brk 分配 + coalesce 合并 ===
@@ -411,7 +440,9 @@ fn malloc(size: uint) ptr {
                 hdrSetFooter(nextM, ns & ~PREV_FREE)
             }
         }
-        ret merged + PTR_SIZE
+        var lp: ptr = merged + PTR_SIZE
+        trackAllocAll(lp, size)
+        ret lp
     }
 
     // === 路径 3: TINY/SMALL 块 — 空闲链表分配 ===
@@ -489,7 +520,9 @@ fn malloc(size: uint) ptr {
         }
     }
 
-    ret head + PTR_SIZE  // 跳过 header，返回用户指针
+    var sp: ptr = head + PTR_SIZE  // 跳过 header，返回用户指针
+    trackAllocAll(sp, size)
+    ret sp
 }
 
 // freeAt 释放指定 blk（块起始地址，非用户指针）的内存，供 free/freeRC 共用
@@ -513,7 +546,7 @@ fn freeAt(blk: ptr) bool {
         ret false
     }
 
-    // LARGE 块：合并后如果在堆顶则释放
+    // LARGE 块：合并后如果在堆顶则释放，否则加入空闲链表
     if pure > MIDDLE_MAX {
         var merged: ptr = coalesce(blk)
         var mRaw: uint = hdrSizeRaw(merged)
@@ -523,7 +556,8 @@ fn freeAt(blk: ptr) bool {
             syscall.brk(merged)
             ret true
         }
-        ret false
+        insertFreeList(merged)
+        ret true
     }
 
     // TINY/SMALL 块：合并后加入空闲链表
@@ -542,6 +576,12 @@ fn free(ptr: ptr) bool {
     if ptr == 0 {
         ret true
     }
+    // 普通块双释放幂等守卫：all-tracker 已初始化、未溢出且指针不在其中，视为已释放。
+    // 必须在读取 flags/header 前检查，避免释放后复用内存上的 ABA 误判。
+    // 溢出后表不完整，禁用守卫以避免误跳过合法释放（宁可放过双释放，也不泄漏）。
+    if gAllLeaks != 0 && gAllLeakOverflow == 0 && !isTrackedAll(ptr) {
+        ret true
+    }
     // 读 flags 字段（在用户指针的前一个 PTR_SIZE 位置）
     var flags: uint = flagLoad(ptr)
     if (flags & RC_BIT) != 0 {
@@ -551,7 +591,11 @@ fn free(ptr: ptr) bool {
     }
     // 普通 malloc 分配的块：freeAt 需要块起始地址（ptr - PTR_SIZE）
     var base: ptr = ptr - PTR_SIZE
-    ret freeAt(base)
+    var ok: bool = freeAt(base)
+    if ok {
+        trackFreeAll(ptr)
+    }
+    ret ok
 }
 
 // freeSlot 释放 *slot 指向的对象；成功移交所有权后清空槽。
@@ -644,6 +688,171 @@ fn calloc(n: uint) ptr {
     }
     memset(p, 0, n)
     ret p
+}
+
+// trim 回收堆顶连续空闲块，brk 回缩。返回回收字节数。
+// 仅能回收堆顶空闲块（brk 模型限制）；中部空闲块无法归还 OS。
+fn trim() uint {
+    var total: uint = 0
+    for ; true; {
+        var top: ptr = syscall.brk(0)
+        if top == 0 { ret total }
+        var footerAddr: ptr = top - PTR_SIZE
+        var _fp: *ptr = footerAddr
+        var raw: uint = *_fp
+        var pure: uint = raw & ~FLAG_MASK
+        if pure < 32 { ret total }
+        var blk: ptr = top - pure
+        if blk >= top { ret total }
+        var hdr: uint = hdrSizeRaw(blk)
+        if (hdr & IS_FREE) == 0 { ret total }
+        removeFreeList(blk)
+        syscall.brk(blk)
+        total = total + pure
+    }
+    ret total
+}
+
+fn ws(s: string) {
+    var h: *strHdr = unsafe.cast[*strHdr](unsafe.cast[ptr](&s))
+    syscall.write(1, h.p, unsafe.cast[u64](h.n))
+}
+fn wnl() { ws("\n") }
+fn wu(v: uint) {
+    var buf: ptr = malloc(32)
+    if buf == 0 { ret }
+    var i: uint = 0
+    if v == 0 {
+        var _b: *u8 = buf
+        *_b = 48
+        syscall.write(1, buf, 1)
+        free(buf)
+        ret
+    }
+    var x: uint = v
+    for ; x > 0; {
+        var d: uint = x % 10
+        var _b: *u8 = buf + i
+        *_b = unsafe.cast[u8](d + 48)
+        i = i + 1
+        x = x / 10
+    }
+    var j: uint = 0
+    for ; j < i / 2; {
+        var _a: *u8 = buf + j
+        var _c: *u8 = buf + (i - 1 - j)
+        var tmp: u8 = *_a
+        *_a = *_c
+        *_c = tmp
+        j = j + 1
+    }
+    syscall.write(1, buf, unsafe.cast[u64](i))
+    free(buf)
+}
+
+// dumpAllocator 输出分配器状态：各 slot 空闲链表、堆扫描、堆顶块信息。
+// 调试用；输出到 stdout。
+fn dumpAllocator() {
+    initFreeHeads()
+    ws("=== allocator dump ===\n")
+    var top: ptr = syscall.brk(0)
+    ws("brk="); wu(unsafe.cast[uint](top)); wnl()
+    ws("freeHeads="); wu(unsafe.cast[uint](gFreeHeads)); wnl()
+
+    var cls: uint = 0
+    var totalFree: uint = 0
+    var totalFreeBytes: uint = 0
+    for ; cls < 60; {
+        var h: ptr = headOf(cls)
+        var n: uint = 0
+        var bytes: uint = 0
+        var cur: ptr = h
+        var guard: uint = 0
+        for ; cur != 0 && guard < 200000; {
+            var raw: uint = hdrSizeRaw(cur)
+            var pure: uint = raw & ~FLAG_MASK
+            n = n + 1
+            bytes = bytes + pure
+            cur = freeNext(cur)
+            guard = guard + 1
+        }
+        if n > 0 {
+            ws("slot="); wu(cls)
+            ws(" blk="); wu(blkSizeOf(cls))
+            ws(" free="); wu(n)
+            ws(" bytes="); wu(bytes)
+            if guard >= 200000 { ws(" CYCLE?") }
+            wnl()
+            totalFree = totalFree + n
+            totalFreeBytes = totalFreeBytes + bytes
+        }
+        cls = cls + 1
+    }
+    ws("freeTotal="); wu(totalFree)
+    ws(" freeBytes="); wu(totalFreeBytes); wnl()
+
+    if gFreeHeads == 0 { ret }
+    var cur: ptr = gFreeHeads + 480
+    var heapTop: ptr = syscall.brk(0)
+    var allocN: uint = 0
+    var allocB: uint = 0
+    var freeN: uint = 0
+    var freeB: uint = 0
+    var bad: uint = 0
+    for ; cur + PTR_SIZE <= heapTop; {
+        var raw: uint = hdrSizeRaw(cur)
+        var pure: uint = raw & ~FLAG_MASK
+        if pure < 32 { bad = bad + 1; break }
+        if (raw & IS_FREE) != 0 {
+            freeN = freeN + 1
+            freeB = freeB + pure
+        } else {
+            allocN = allocN + 1
+            allocB = allocB + pure
+            ws("ALLOC blk="); wu(unsafe.cast[uint](cur))
+            ws(" pure="); wu(pure)
+            ws(" hdr="); wu(raw)
+            ws(" rcbit="); wu((raw & RC_BIT) >> 2)
+            ws(" tracked="); wu(unsafe.cast[uint](isTrackedAll(cur + PTR_SIZE)))
+            if cur > gFreeHeads + 480 {
+                var _pfp: *ptr = cur - PTR_SIZE
+                var pf: uint = *_pfp
+                ws(" prevF="); wu(pf)
+                ws(" prevPure="); wu(pf & ~FLAG_MASK)
+            }
+            wnl()
+        }
+        var next: ptr = cur + pure
+        if next <= cur || next > heapTop { bad = bad + 1; break }
+        cur = next
+    }
+    ws("scan allocN="); wu(allocN)
+    ws(" allocB="); wu(allocB)
+    ws(" freeN="); wu(freeN)
+    ws(" freeB="); wu(freeB)
+    ws(" bad="); wu(bad)
+    ws(" end="); wu(unsafe.cast[uint](cur))
+    wnl()
+
+    if heapTop > PTR_SIZE {
+        var _fp: *ptr = heapTop - PTR_SIZE
+        var rawTop: uint = *_fp
+        var pureTop: uint = rawTop & ~FLAG_MASK
+        ws("topFooter raw="); wu(rawTop)
+        ws(" pure="); wu(pureTop)
+        ws(" isFree="); wu(rawTop & IS_FREE)
+        wnl()
+        if pureTop >= 32 && heapTop >= pureTop {
+            var blk: ptr = heapTop - pureTop
+            var hdr: uint = hdrSizeRaw(blk)
+            ws("topBlk hdr="); wu(hdr)
+            ws(" isFree="); wu(hdr & IS_FREE)
+            ws(" rc="); wu((hdr & RC_BIT) >> 2)
+            ws(" addr="); wu(unsafe.cast[uint](blk))
+            wnl()
+        }
+    }
+    ws("=== end ===\n")
 }
 
 // ptrToStringHeader 从 p 指向的 NUL 结尾字节串反向构造 string 头
