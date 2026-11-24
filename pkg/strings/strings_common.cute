@@ -612,7 +612,7 @@ fn hasSuffixAny(s: string, suffixes: string) bool {
 fn replaceAll(s: string, old: string, new: string) string {
     var oLen: uint = strings.len(old)
     if oLen == 0 {
-        ret s
+        ret strings.clone(s)
     }
     var sLen: uint = strings.len(s)
     var nLen: uint = strings.len(new)
@@ -695,6 +695,19 @@ fn parseUint(s: string, base: uint) (uint, bool) {
     ret v, true
 }
 
+fn digitToF64(d: int) f64 {
+    if d == 0 { ret 0.0 }
+    if d == 1 { ret 1.0 }
+    if d == 2 { ret 2.0 }
+    if d == 3 { ret 3.0 }
+    if d == 4 { ret 4.0 }
+    if d == 5 { ret 5.0 }
+    if d == 6 { ret 6.0 }
+    if d == 7 { ret 7.0 }
+    if d == 8 { ret 8.0 }
+    ret 9.0
+}
+
 // parseFloat 按十进制解析 f64；等价于 strconv.ParseFloat 的成功路径。
 // 格式：[+-]digits[.digits][eE[+-]digits]（调用方已验证输入形状）。
 fn parseFloat(s: string) (f64, bool) {
@@ -715,7 +728,7 @@ fn parseFloat(s: string) (f64, bool) {
     var intPart: f64 = 0.0
     var sawDigit: bool = false
     for ; i < sLen && isDigitByte(*(pU8 + i)); {
-        intPart = intPart * 10.0 + f64(int(*(pU8 + i)) - 48)
+        intPart = intPart * 10.0 + digitToF64(int(*(pU8 + i)) - 48)
         sawDigit = true
         i = i + 1
     }
@@ -724,7 +737,7 @@ fn parseFloat(s: string) (f64, bool) {
     if i < sLen && *(pU8 + i) == 46 {
         i = i + 1
         for ; i < sLen && isDigitByte(*(pU8 + i)); {
-            frac = frac * 10.0 + f64(int(*(pU8 + i)) - 48)
+            frac = frac * 10.0 + digitToF64(int(*(pU8 + i)) - 48)
             fracDiv = fracDiv * 10.0
             sawDigit = true
             i = i + 1
