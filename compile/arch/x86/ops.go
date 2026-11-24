@@ -544,11 +544,26 @@ func (a *x86Ops) emitCondCompare(cond *parser.Expression) string {
 	scratchReg2 := "ECX"
 	var code string
 
+	leftSavedReg := ""
 	if cond.Left != nil {
 		code += a.exp(cond.Left, scratchReg1, "left operand")
+		leftSavedReg = a.ctx.Reg.AllocCalleeSaveBind(cond.Left, a.CalleeSaveRegs(), a.CalleeSaveReg())
+		if leftSavedReg != "" {
+			code += utils.Format("mov " + leftSavedReg + ", " + scratchReg1 + "; 保存左操作数到callee-save")
+		} else {
+			code += utils.Format("push " + scratchReg1 + "; 保护左操作数\n")
+		}
 	}
 	if cond.Right != nil {
 		code += a.exp(cond.Right, scratchReg2, "right operand")
+	}
+	if cond.Left != nil {
+		if leftSavedReg != "" {
+			code += utils.Format("mov " + scratchReg1 + ", " + leftSavedReg + "; 恢复左操作数")
+			a.ctx.Reg.Free(cond.Left)
+		} else {
+			code += utils.Format("pop " + scratchReg1 + "; 恢复左操作数\n")
+		}
 	}
 	code += utils.Format("cmp " + scratchReg1 + ", " + scratchReg2)
 	return code

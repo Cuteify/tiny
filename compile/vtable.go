@@ -19,11 +19,20 @@ func (c *Compiler) CompileVtableSection() string {
 
 	code := "\n; ============= vtable section =============\n"
 	code += "section .data\n"
-	for _, entry := range c.Ctx.VtableEntries {
+	for i, entry := range c.Ctx.VtableEntries {
+		dropLabel := "0"
+		if st, ok := entry.Concrete.(*typeSys.StructType); ok {
+			dropLabel = c.ensureDropFunc(st)
+		} else if entry.Concrete != nil && entry.Concrete.IsPointer() {
+			if st, ok := entry.Concrete.Elem().(*typeSys.StructType); ok {
+				dropLabel = c.ensureDropFunc(st)
+			}
+		}
+		c.Ctx.VtableEntries[i].DropFunc = dropLabel
 		code += utils.Format(entry.Label + ":")
 		utils.Count++
-		// type_info placeholder (0 for now; could be a type descriptor pointer)
-		code += utils.Format(dq + " 0 ; type_info")
+		// slot 0: drop/destructor for data_ptr (used by deep drop of interface fields)
+		code += utils.Format(dq + " " + dropLabel + " ; drop_fn")
 		// method function pointers
 		for _, methodLabel := range entry.Methods {
 			code += utils.Format(dq + " " + methodLabel)

@@ -16,10 +16,10 @@ func (c *Compiler) isDCERoot(fb *parser.FuncBlock) bool {
 			return true
 		}
 	}
-	// runtime helpers that codegen emits directly
+	// runtime helpers that codegen emits directly (not present in AST call graph)
 	if len(fb.Name) >= 2 && fb.Name[0].IsPkgPath {
 		last := fb.Name.Last()
-		rcNames := map[string]bool{"rcDec": true, "rcInc": true, "rcGet": true, "mallocRC": true, "freeRC": true, "rcIsOne": true, "rcAdd": true, "rcSub": true, "rcTryRelease": true, "rcSet": true, "trackAlloc": true, "trackFree": true, "reportLeaks": true, "reportAllocCount": true, "reportFreeCount": true, "resetLeakTracker": true, "malloc": true, "realloc": true, "free": true, "freeSlot": true, "freeRCSlot": true}
+		rcNames := map[string]bool{"rcDec": true, "rcInc": true, "mallocRC": true, "malloc": true, "realloc": true, "free": true, "freeSlot": true, "dropInc": true}
 		if rcNames[last] {
 			return true
 		}
@@ -231,14 +231,17 @@ func (c *Compiler) propagateDead(fb *parser.FuncBlock, funcNodes map[*parser.Fun
 	}
 }
 
-// runDCE 执行引用计数 DCE 传播。应在顶层编译、check/预标记完成后调用。
+// runDCE 执行 mark-and-sweep DCE。应在顶层编译、check/预标记完成后调用。
+// 从根集合（main/export/codegen 直接发射/runtime helper）出发沿调用边标记可达，
+// 不可达函数 Useful 置 0，由后端跳过发射。比引用计数递减更稳健，避免重复 Check
+// 导致 Useful 膨胀。
 func (c *Compiler) runDCE(root *parser.Node) {
 	if root == nil {
 		return
 	}
 	funcNodes := map[*parser.FuncBlock]*parser.Node{}
 	collectFuncNodes(root, funcNodes)
-	// 发现通过调用边引用但不在 AST 节点映射中的 FuncBlock
+
 	allFuncs := map[*parser.FuncBlock]bool{}
 	for fb := range funcNodes {
 		allFuncs[fb] = true
@@ -259,11 +262,40 @@ func (c *Compiler) runDCE(root *parser.Node) {
 			}
 		}
 	}
-	dead := map[*parser.FuncBlock]bool{}
+
+	reachable := map[*parser.FuncBlock]bool{}
+	var work []*parser.FuncBlock
+	enqueue := func(fb *parser.FuncBlock) {
+		if fb == nil || reachable[fb] {
+			return
+		}
+		reachable[fb] = true
+		work = append(work, fb)
+	}
 	for fb := range allFuncs {
-		if fb.Useful <= 0 && !c.isDCERoot(fb) {
-			c.propagateDead(fb, funcNodes, dead)
+		if c.isDCERoot(fb) {
+			enqueue(fb)
 		}
 	}
-}
+	for i := 0; i < len(work); i++ {
+		fb := work[i]
+		body := funcNodes[fb]
+		if body == nil {
+			body = fb.Node
+		}
+		for _, callee := range collectCallees(body) {
+			enqueue(callee)
+		}
+	}
 
+	for fb := range allFuncs {
+		if reachable[fb] {
+			if fb.Useful <= 0 {
+				fb.Useful = 1
+			}
+		} else {
+			fb.Useful = 0
+		}
+	}
+
+}

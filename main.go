@@ -25,6 +25,7 @@ func main() {
 	output := flag.String("o", "", "指定输出文件路径")
 	gcReport := flag.Bool("gcreport", false, "打印 GC 分析报告（函数摘要 + LLR）")
 	nilCheck := flag.Bool("nilcheck", true, "在编译产物中插入 nil 指针检查（默认开启；可用 -nilcheck=false 关闭）")
+	hang := flag.Bool("hang", false, "主程序执行完后进入阻塞循环，不退出（用于泄漏/内存检查）")
 	flag.Parse()
 
 	// 获取路径参数
@@ -71,6 +72,7 @@ func main() {
 
 	// 编译
 	compile.NilCheck = *nilCheck
+	compile.HangAfterExit = *hang
 	co := &compile.Compiler{}
 	code := co.Compile(tmp.AST.(*parser.Node))
 
