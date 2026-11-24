@@ -26,13 +26,15 @@ func (i *IfBlock) Parse(p *Parser) {
 	// 找到末尾的{
 	for p.FindEndCursor() > p.Lexer.Cursor {
 		code := p.Lexer.Next()
-		switch code.Value {
-		case "(":
-			bracketsCount++
-		case ")":
-			bracketsCount--
+		if code.Type == lexer.SEPARATOR {
+			switch code.Value {
+			case "(":
+				bracketsCount++
+			case ")":
+				bracketsCount--
+			}
 		}
-		if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {
+		if bracketsCount == 0 && code.Value == "{" && (code.Type == lexer.SEPARATOR) {
 			break
 		}
 	}
@@ -113,13 +115,15 @@ func (e *ElseBlock) Parse(p *Parser) {
 		// 找到末尾的{
 		for p.FindEndCursor() > p.Lexer.Cursor {
 			code := p.Lexer.Next()
-			switch code.Value {
-			case "(":
-				bracketsCount++
-			case ")":
-				bracketsCount--
+			if code.Type == lexer.SEPARATOR {
+				switch code.Value {
+				case "(":
+					bracketsCount++
+				case ")":
+					bracketsCount--
+				}
 			}
-			if bracketsCount == 0 && code.Value == "{" && code.Type == lexer.SEPARATOR {
+			if bracketsCount == 0 && code.Value == "{" && (code.Type == lexer.SEPARATOR) {
 				break
 			}
 		}

@@ -119,7 +119,7 @@ func (s *StructBlock) parseLine(p *Parser) {
 	case token.Value == "?":
 		s.parseField(p, "", typeSys.AccessWriteOnly)
 
-	case token.Type == lexer.NAME:
+	case token.Type == lexer.NAME || isKeywordNameToken(token.Type):
 		nextToken := p.Lexer.Next()
 
 		switch nextToken.Value {
@@ -149,7 +149,7 @@ func (s *StructBlock) parseLine(p *Parser) {
 
 func (s *StructBlock) parseField(p *Parser, _ string, access typeSys.FieldAccess) {
 	nameToken := p.Lexer.Next()
-	if nameToken.Type != lexer.NAME {
+	if nameToken.Type != lexer.NAME && !isKeywordNameToken(nameToken.Type) {
 		p.Error.MissError("Struct Error", nameToken.Cursor, "expected field name")
 	}
 	s.parseFieldWithName(p, nameToken.Value, access)

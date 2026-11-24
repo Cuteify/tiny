@@ -453,7 +453,10 @@ func (c *CallBlock) Check(p *Parser) bool {
 			recv := &VarBlock{Name: receiverName}
 			recv.ParseDefine(p)
 			receiverExp = &Expression{Var: recv}
-			receiverExp.Check(p) // 填充 Type（仅供打分/方法查找；失败不致命）
+			// 投机性解析：只填充类型，不触发硬错误。
+			if recv.Type != nil {
+				receiverExp.Type = recv.Type
+			}
 			recvType := receiverExp.Type
 			if recvType == nil {
 				// 跨文件/跨包未解析：报告 nil（ref 可能是变量而非包路径）——

@@ -314,6 +314,16 @@ func NewName(parts ...string) Name {
 	return name
 }
 
+// isKeywordNameToken 关键字 token 在字段/成员位置可当作名称使用（如 obj.return）。
+func isKeywordNameToken(t lexer.TokenType) bool {
+	switch t {
+	case lexer.PROCESSCONTROL, lexer.TYPE, lexer.FUNC, lexer.VAR, lexer.BUILD, lexer.IMPORT, lexer.BOOL:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Parser) ParseName(wait bool) (name Name, cursor int) {
 	if wait {
 		// 等待名称
@@ -343,7 +353,12 @@ func (p *Parser) ParseName(wait bool) (name Name, cursor int) {
 	for {
 		code := p.Lexer.Next()
 		switch code.Type {
-		case lexer.NAME:
+		case lexer.NAME, lexer.PROCESSCONTROL, lexer.TYPE, lexer.FUNC, lexer.VAR, lexer.BUILD, lexer.IMPORT, lexer.BOOL:
+			// 关键字在 `.` 后允许作为字段/成员名（如 self.return），但不能作为名称首段。
+			if code.Type != lexer.NAME && len(name) == 0 {
+				p.Lexer.SetCursor(code.Cursor)
+				goto end
+			}
 			if !lastIsSep {
 				p.Lexer.SetCursor(code.Cursor)
 				goto end

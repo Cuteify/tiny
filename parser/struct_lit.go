@@ -85,7 +85,7 @@ func structLiteralFromType(p *Parser, st *typeSys.StructType) *Expression {
 				p.Error.MissError("Struct Error", token.Cursor, "expected field name in struct literal, got '"+token.Value+"'")
 			}
 		}
-		if token.Type != lexer.NAME {
+		if token.Type != lexer.NAME && !isKeywordNameToken(token.Type) {
 			p.Error.MissError("Struct Error", token.Cursor, "expected field name in struct literal")
 		}
 		fieldName := token.Value

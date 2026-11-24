@@ -778,13 +778,14 @@ func (v *VarBlock) Check(p *Parser) bool {
 		if v.Define.Value == nil {
 			// 包内文件按字母序解析，跨文件的全局变量前向引用此时还查不到
 			// （如 pkg/memory 的 allocator.cute 引用 memory.cute 里的 gDbgD）。
-			// 解析期不报错，标记未解析并让 AddChild 置 Checked=false，
+			// 解析期或非最终 merge round 不报错，标记未解析并让 AddChild 置 Checked=false，
 			// 等所有包合并成一棵树后的 rootNode.Check 再重查；仍找不到才报错。
-			if ParsePhase {
+			if ParsePhase || !p.FinalCheck || p.MergeRound < 49 {
 				v.Unresolved = true
 				return true
 			}
 			p.Error.MissError("Syntax Error", p.Lexer.Cursor, "need name "+v.Name.String())
+			return false
 		}
 		v.Unresolved = false
 		if v.Value == nil {
@@ -795,7 +796,12 @@ func (v *VarBlock) Check(p *Parser) bool {
 		}
 		// 字段访问时需要检查字段类型
 		if v.Type == nil && len(v.Name) > 1 {
+			if ParsePhase || !p.FinalCheck || p.MergeRound < 49 {
+				v.Unresolved = true
+				return true
+			}
 			p.Error.MissError("Type Error", p.Lexer.Cursor, "field type not resolved for "+v.Name.String())
+			return false
 		}
 		// 结构体字面量：值语义 —— 目标是值结构体时把 P{...} 包成 *lit 逐槽拷贝
 		if nvv := derefIfStructLiteralTo(v.Value, v.Type); nvv != v.Value {

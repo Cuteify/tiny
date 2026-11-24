@@ -172,6 +172,14 @@ func (exp *Expression) checkVar(p *Parser) bool {
 
 	// 同包跨文件/跨包定义在 parse 期不可见（parse 期只解析当前文件），
 	// 此处静默返回，由合并后的 rootNode.Check() 统一重试与报错。
+	if ParsePhase || !p.FinalCheck || p.MergeRound < 49 {
+		return false
+	}
+	if len(exp.Var.Name) > 1 {
+		p.Error.MissError("Type Error", p.Lexer.Cursor, "field type not resolved for "+exp.Var.Name.String())
+	} else {
+		p.Error.MissError("Syntax Error", p.Lexer.Cursor, "undefined name "+exp.Var.Name.String())
+	}
 	return false
 }
 
