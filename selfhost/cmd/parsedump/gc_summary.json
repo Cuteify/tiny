@@ -11,7 +11,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/builtin.print
 {
@@ -26,7 +27,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/builtin.println
 {
@@ -41,7 +43,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.bufAndStr
 {
@@ -50,7 +53,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearBlink
 {
@@ -59,7 +63,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearBold
 {
@@ -68,7 +73,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearDim
 {
@@ -77,7 +83,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearHidden
 {
@@ -86,7 +93,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearItalic
 {
@@ -95,7 +103,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearLine
 {
@@ -104,7 +113,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearReverse
 {
@@ -113,7 +123,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearScreen
 {
@@ -122,7 +133,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearStrikethrough
 {
@@ -131,7 +143,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearToEndOfLine
 {
@@ -140,7 +153,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearToEndOfScreen
 {
@@ -149,7 +163,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearToStartOfLine
 {
@@ -158,7 +173,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearToStartOfScreen
 {
@@ -167,7 +183,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.clearUnderline
 {
@@ -176,7 +193,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.cursorShape
 {
@@ -185,7 +203,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.deleteChars
 {
@@ -194,7 +213,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.deleteLines
 {
@@ -203,7 +223,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.detectAllCaps
 {
@@ -230,7 +251,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.disableMouseSgr
 {
@@ -239,7 +261,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.enableAll
 {
@@ -257,7 +280,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.enableMouseSgr
 {
@@ -266,7 +290,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.eraseChars
 {
@@ -275,7 +300,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.getAdvancedMode
 {
@@ -320,7 +346,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.insertChars
 {
@@ -329,7 +356,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.insertLines
 {
@@ -338,7 +366,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.moveCursor
 {
@@ -347,7 +376,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.moveDown
 {
@@ -356,7 +386,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.moveLeft
 {
@@ -365,7 +396,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.moveRight
 {
@@ -374,7 +406,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.moveUp
 {
@@ -383,7 +416,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.print
 {
@@ -398,7 +432,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.println
 {
@@ -413,7 +448,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.read
 {
@@ -437,7 +473,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.redetectCaps
 {
@@ -455,7 +492,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.resetStyle
 {
@@ -464,7 +502,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.restoreCursor
 {
@@ -473,7 +512,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.rgbToAnsi256
 {
@@ -491,7 +531,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.scrollDown
 {
@@ -500,7 +541,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.scrollUp
 {
@@ -509,7 +551,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setAdvancedMode
 {
@@ -527,7 +570,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setBg256
 {
@@ -536,7 +580,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setBgBright
 {
@@ -545,7 +590,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setBgRGB
 {
@@ -554,7 +600,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setBlink
 {
@@ -563,7 +610,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setBold
 {
@@ -572,7 +620,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setColorMode
 {
@@ -590,7 +639,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setFg
 {
@@ -599,7 +649,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setFg256
 {
@@ -608,7 +659,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setFgBright
 {
@@ -617,7 +669,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setFgRGB
 {
@@ -626,7 +679,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setHidden
 {
@@ -635,7 +689,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setItalic
 {
@@ -644,7 +699,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setMouseMode
 {
@@ -662,7 +718,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setScrollRegion
 {
@@ -671,7 +728,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setSixelMode
 {
@@ -689,7 +747,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setTabWidth
 {
@@ -698,7 +757,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setUnderline
 {
@@ -707,7 +767,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.setWindowTitle
 {
@@ -722,7 +783,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.shouldUseAdvanced
 {
@@ -740,7 +802,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelBegin
 {
@@ -749,7 +812,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelClear
 {
@@ -758,7 +822,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelColor
 {
@@ -767,7 +832,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelData
 {
@@ -785,7 +851,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelEnd
 {
@@ -794,7 +861,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.sixelRowEnd
 {
@@ -803,7 +871,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.supports256Color
 {
@@ -848,7 +917,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.writeEsc2Param
 {
@@ -857,7 +927,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.writeEscCSI
 {
@@ -866,7 +937,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.writeEscParamCSI
 {
@@ -875,7 +947,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.writeHexByte
 {
@@ -884,7 +957,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/console.writeStr
 {
@@ -899,7 +973,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/maps._bytesEq
 {
@@ -944,7 +1019,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/maps.delete
 {
@@ -1007,7 +1083,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/maps.len
 {
@@ -1031,7 +1108,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/maps.set
 {
@@ -1046,7 +1124,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/maps.values
 {
@@ -1055,7 +1134,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/memory.blkSizeOf
 {
@@ -1100,7 +1180,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/memory.coalesce
 {
@@ -1119,6 +1200,25 @@
   "retEscape": 0,
   "retKind": 0,
   "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.dropInc
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.dropInc",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.dumpAllocator
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.dumpAllocator",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/memory.flagLoad
 {
@@ -1285,6 +1385,15 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/memory.initAllLeakTracker
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.initAllLeakTracker",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/memory.initFreeHeads",
@@ -1312,9 +1421,36 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/memory.isTrackedAll
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.isTrackedAll",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/pkg/memory.leakLoad
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/memory.leakLoad",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.leakSizeLoad
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.leakSizeLoad",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.leakSizeStore
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.leakSizeStore",
   "params": null,
   "retOwned": false,
   "retEscape": 0,
@@ -1382,7 +1518,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/memory.rcAdd
 {
@@ -1481,11 +1618,75 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.releaseAllLeakTracker
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.releaseAllLeakTracker",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.releaseLeakTracker
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.releaseLeakTracker",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
   "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/memory.removeFreeList
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/memory.removeFreeList",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllAllocCount
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllAllocCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllFreeCount
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllFreeCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllLeakPtr
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllLeakPtr",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllLeakSize
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllLeakSize",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportAllLeaks
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportAllLeaks",
   "params": null,
   "retOwned": false,
   "retEscape": 0,
@@ -1501,9 +1702,36 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/memory.reportDropCount
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportDropCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportFreeCount",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportLeakPtr
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportLeakPtr",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.reportLeakSize
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.reportLeakSize",
   "params": null,
   "retOwned": false,
   "retEscape": 0,
@@ -1600,6 +1828,15 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/memory.trackAllocAll
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.trackAllocAll",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/pkg/memory.trackFree
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/memory.trackFree",
@@ -1608,6 +1845,67 @@
   "retEscape": 0,
   "retKind": 0,
   "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.trackFreeAll
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.trackFreeAll",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.trim
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.trim",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.untrackAll
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.untrackAll",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.wnl
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.wnl",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.ws
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.ws",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
+== /home/gx/Desktop/______/tiny/pkg/memory.wu
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/memory.wu",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices._elemPtr
 {
@@ -1651,7 +1949,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.clear
 {
@@ -1681,7 +1980,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.compact
 {
@@ -1856,7 +2156,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.index
 {
@@ -1896,7 +2197,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.join
 {
@@ -1921,7 +2223,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.len
 {
@@ -1963,7 +2266,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.pop
 {
@@ -1998,7 +2302,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/slices.remove
 {
@@ -2075,7 +2380,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings._byteAt
 {
@@ -2111,7 +2417,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.atoi
 {
@@ -2144,7 +2451,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.bufSetByte
 {
@@ -2198,7 +2506,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.builderString
 {
@@ -2207,7 +2516,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.builderWrite
 {
@@ -2216,7 +2526,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.builderWriteString
 {
@@ -2231,7 +2542,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.cap
 {
@@ -2262,7 +2574,8 @@
   "retEscape": 1,
   "retKind": 4,
   "retAliasMask": 1,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.compare
 {
@@ -2374,6 +2687,15 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/pkg/strings.digitToF64
+{
+  "name": "/home/gx/Desktop/______/tiny/pkg/strings.digitToF64",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/pkg/strings.eq
 {
   "name": "/home/gx/Desktop/______/tiny/pkg/strings.eq",
@@ -2427,7 +2749,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.formatBool
 {
@@ -2436,7 +2759,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.formatUint
 {
@@ -2445,7 +2769,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.fromByte
 {
@@ -2454,7 +2779,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.fromI64
 {
@@ -2652,7 +2978,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.join
 {
@@ -2667,7 +2994,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.lastIndex
 {
@@ -2791,10 +3119,7 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": [
-    "f64",
-    "int"
-  ]
+  "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.parseUint
 {
@@ -2824,7 +3149,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.repeatN
 {
@@ -2839,7 +3165,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.replace
 {
@@ -2865,7 +3192,8 @@
   "retEscape": 1,
   "retKind": 4,
   "retAliasMask": 1,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.replaceAll
 {
@@ -2890,8 +3218,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "retAliasMask": 1,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.reverse
 {
@@ -2907,7 +3235,8 @@
   "retEscape": 1,
   "retKind": 4,
   "retAliasMask": 1,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.split
 {
@@ -2927,7 +3256,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.splitFree
 {
@@ -2974,7 +3304,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.strcmp
 {
@@ -3016,7 +3347,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.toLower
 {
@@ -3031,7 +3363,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.toString
 {
@@ -3040,7 +3373,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.toU64
 {
@@ -3064,7 +3398,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trim
 {
@@ -3084,7 +3419,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimLeft
 {
@@ -3104,7 +3440,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
 {
@@ -3124,7 +3461,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimRight
 {
@@ -3144,7 +3482,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSpace
 {
@@ -3159,7 +3498,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.trimSuffix
 {
@@ -3179,7 +3519,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/pkg/strings.view
 {
@@ -3370,6 +3711,16 @@
   "retKind": 0,
   "callsAny": null
 }
+== /home/gx/Desktop/______/tiny/selfhost/cmd/parsedump.a
+{
+  "name": "/home/gx/Desktop/______/tiny/selfhost/cmd/parsedump.a",
+  "params": null,
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null,
+  "hasHeapAllocs": true
+}
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.consume
 {
   "name": "/home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.consume",
@@ -3423,10 +3774,8 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "retKind": 4,
-  "callsAny": [
-    "f64"
-  ],
+  "retKind": 1,
+  "callsAny": null,
   "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.handleString
@@ -3446,7 +3795,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "retKind": 4,
+  "retKind": 1,
   "callsAny": null,
   "hasHeapAllocs": true
 }
@@ -3478,7 +3827,7 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3494,7 +3843,7 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3510,12 +3859,12 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     }
   ],
   "retOwned": true,
   "retEscape": 1,
-  "retKind": 4,
+  "retKind": 1,
   "callsAny": null,
   "hasHeapAllocs": true
 }
@@ -3525,8 +3874,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 0,
-      "escape": 0
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3541,8 +3890,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 0,
-      "escape": 0
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3569,7 +3918,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.Lexer.setPosAsPfPos
 {
@@ -3593,7 +3943,7 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     }
   ],
   "retOwned": false,
@@ -3609,7 +3959,7 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     }
   ],
   "retOwned": false,
@@ -3625,7 +3975,7 @@
     {
       "index": 0,
       "mode": 4,
-      "escape": 1
+      "escape": 2
     },
     {
       "index": 1,
@@ -3667,6 +4017,7 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
+  "retBorrowMask": 1,
   "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.RingBuffer.isEmpty
@@ -3712,6 +4063,7 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
+  "retBorrowMask": 1,
   "callsAny": null
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.RingBuffer.resize
@@ -3821,8 +4173,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 4,
-      "escape": 1
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": true,
@@ -3846,8 +4198,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 0,
-      "escape": 0
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3862,8 +4214,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 0,
-      "escape": 0
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -3880,7 +4232,8 @@
   "retEscape": 1,
   "retKind": 4,
   "callsAny": null,
-  "hasGlobalOwnStore": true
+  "hasGlobalOwnStore": true,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.error.error
 {
@@ -3898,6 +4251,21 @@
   "callsAny": null,
   "hasHeapAllocs": true
 }
+== /home/gx/Desktop/______/tiny/selfhost/lexer.freeToken
+{
+  "name": "/home/gx/Desktop/______/tiny/selfhost/lexer.freeToken",
+  "params": [
+    {
+      "index": 0,
+      "mode": 0,
+      "escape": 0
+    }
+  ],
+  "retOwned": false,
+  "retEscape": 0,
+  "retKind": 0,
+  "callsAny": null
+}
 == /home/gx/Desktop/______/tiny/selfhost/lexer.isDelimiter
 {
   "name": "/home/gx/Desktop/______/tiny/selfhost/lexer.isDelimiter",
@@ -3911,7 +4279,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.isKeyword
 {
@@ -3926,7 +4295,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.kwTable
 {
@@ -3936,7 +4306,8 @@
   "retEscape": 1,
   "retKind": 4,
   "callsAny": null,
-  "hasGlobalOwnStore": true
+  "hasGlobalOwnStore": true,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/lexer.newLexer
 {
@@ -3991,7 +4362,7 @@
   ],
   "retOwned": true,
   "retEscape": 1,
-  "retKind": 1,
+  "retKind": 4,
   "retAliasMask": 1,
   "callsAny": null,
   "hasHeapAllocs": true
@@ -4006,26 +4377,6 @@
   "callsAny": null,
   "hasHeapAllocs": true
 }
-== /home/gx/Desktop/______/tiny/selfhost/parse.Expression.attach
-{
-  "name": "/home/gx/Desktop/______/tiny/selfhost/parse.Expression.attach",
-  "params": [
-    {
-      "index": 0,
-      "mode": 4,
-      "escape": 2
-    },
-    {
-      "index": 1,
-      "mode": 4,
-      "escape": 2
-    }
-  ],
-  "retOwned": false,
-  "retEscape": 0,
-  "retKind": 0,
-  "callsAny": null
-}
 == /home/gx/Desktop/______/tiny/selfhost/parse.FnBlock.parse
 {
   "name": "/home/gx/Desktop/______/tiny/selfhost/parse.FnBlock.parse",
@@ -4037,8 +4388,8 @@
     },
     {
       "index": 1,
-      "mode": 4,
-      "escape": 1
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": false,
@@ -4058,8 +4409,8 @@
     },
     {
       "index": 1,
-      "mode": 4,
-      "escape": 1
+      "mode": 0,
+      "escape": 0
     }
   ],
   "retOwned": false,
@@ -4074,55 +4425,6 @@
   "params": [
     {
       "index": 0,
-      "mode": 4,
-      "escape": 1
-    }
-  ],
-  "retOwned": false,
-  "retEscape": 0,
-  "retKind": 0,
-  "callsAny": null,
-  "hasHeapAllocs": true
-}
-== /home/gx/Desktop/______/tiny/selfhost/parse.Parser.parseExp
-{
-  "name": "/home/gx/Desktop/______/tiny/selfhost/parse.Parser.parseExp",
-  "params": [
-    {
-      "index": 0,
-      "mode": 4,
-      "escape": 1
-    }
-  ],
-  "retOwned": true,
-  "retEscape": 1,
-  "retKind": 4,
-  "callsAny": null,
-  "hasHeapAllocs": true
-}
-== /home/gx/Desktop/______/tiny/selfhost/parse.infix
-{
-  "name": "/home/gx/Desktop/______/tiny/selfhost/parse.infix",
-  "params": [
-    {
-      "index": 0,
-      "mode": 4,
-      "escape": 1
-    }
-  ],
-  "retOwned": true,
-  "retEscape": 1,
-  "retKind": 1,
-  "retBorrowMask": 1,
-  "callsAny": null,
-  "hasHeapAllocs": true
-}
-== /home/gx/Desktop/______/tiny/selfhost/parse.isOp
-{
-  "name": "/home/gx/Desktop/______/tiny/selfhost/parse.isOp",
-  "params": [
-    {
-      "index": 0,
       "mode": 0,
       "escape": 0
     }
@@ -4130,7 +4432,8 @@
   "retOwned": false,
   "retEscape": 0,
   "retKind": 0,
-  "callsAny": null
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/parse.newParser
 {
@@ -4138,8 +4441,8 @@
   "params": [
     {
       "index": 0,
-      "mode": 0,
-      "escape": 0
+      "mode": 4,
+      "escape": 2
     }
   ],
   "retOwned": true,
@@ -4155,9 +4458,8 @@
   "retOwned": true,
   "retEscape": 1,
   "retKind": 4,
-  "callsAny": [
-    "u64"
-  ]
+  "callsAny": null,
+  "hasHeapAllocs": true
 }
 == /home/gx/Desktop/______/tiny/selfhost/testutil.loadSourceFile
 {

@@ -1,6 +1,9 @@
 section .bss
     __global_std_memory_gFreeHeads resq 1
     __global_std_memory_gLeaks resq 1
+    __global_std_memory_gLeakSizes resq 1
+    __global_std_memory_gAllLeaks resq 1
+    __global_std_memory_gAllLeakSizes resq 1
 section .data
     __global_std_memory_TINY_MAX dq 1024
     __global_std_memory_SMALL_MAX dq 4096
@@ -16,9 +19,376 @@ section .data
     __global_std_memory_gAllocCount dq 0
     __global_std_memory_gFreeCount dq 0
     __global_std_memory_gLeakCount dq 0
-    __global_std_testing_assertFailCnt dq 0
+    __global_std_memory_gAllAllocCount dq 0
+    __global_std_memory_gAllFreeCount dq 0
+    __global_std_memory_gAllLeakCount dq 0
+    __global_std_memory_gAllLeakOverflow dq 0
+    __global_std_memory_gDropCount dq 0
 section .text progbits alloc exec nowrite align=16
 global _start
+
+section .text.test_gcRetFree_cmpLen progbits alloc exec nowrite align=16
+global test_gcRetFree_cmpLen
+; ==============================
+; Function: test_gcRetFree_cmpLen
+test_gcRetFree_cmpLen:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 152; 分配局部变量空间(152字节, 含对齐)
+    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
+    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
+    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
+    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
+    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
+    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
+    mov RDI, QWORD [rbp-64]
+    mov RSI, QWORD [rbp-64+8]
+    mov RDX, QWORD [rbp-64+16]
+    call __string_len
+    mov QWORD[rbp-96], RAX
+; 设置变量la
+    mov RDI, QWORD [rbp-88]
+    mov RSI, QWORD [rbp-88+8]
+    mov RDX, QWORD [rbp-88+16]
+    call __string_len
+    mov QWORD[rbp-104], RAX
+; 设置变量lb
+    mov RAX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-104]
+    sub RAX, RBX
+; return值存入RAX
+    jmp func_end_test_gcRetFree_cmpLen
+    func_end_test_gcRetFree_cmpLen:
+    add rsp, 152; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.test_gcRetFree_twoTemps progbits alloc exec nowrite align=16
+global test_gcRetFree_twoTemps
+; ==============================
+; Function: test_gcRetFree_twoTemps
+test_gcRetFree_twoTemps:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-96], 0; gc ret scratch 清零
+    mov QWORD [rbp-88], 0; gc ret scratch 清零
+    sub rsp, 48; register args buffer
+    sub rsp, 32; register args buffer
+    mov QWORD [rsp+0], str_1
+    mov QWORD [rsp+0+8], 2
+    mov QWORD [rsp+0+16], 2
+; 参数0
+    mov QWORD [rsp+24], 2
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_repeatN
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-96], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+0+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+0+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+0+16], RAX
+; 参数0
+    sub rsp, 32; register args buffer
+    mov QWORD [rsp+0], str_2
+    mov QWORD [rsp+0+8], 2
+    mov QWORD [rsp+0+16], 2
+; 参数0
+    mov QWORD [rsp+24], 2
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_repeatN
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-88], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+24+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+24+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+24+16], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    call test_gcRetFree_cmpLen
+; return值存入RAX
+    push RAX; gc ret 保存返回值
+    push RDX; gc ret 保存返回值
+    ; gc: ret free $ret0 after=call:/home/gx/Desktop/______/tiny/pkg/strings.repeatN
+    lea RDI, [rbp-96]
+    call std_memory_freeSlot
+    ; gc: ret free $ret1 after=call:/home/gx/Desktop/______/tiny/pkg/strings.repeatN
+    lea RDI, [rbp-88]
+    call std_memory_freeSlot
+    pop RDX; gc ret 恢复返回值
+    pop RAX; gc ret 恢复返回值
+    jmp func_end_test_gcRetFree_twoTemps
+    func_end_test_gcRetFree_twoTemps:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.test_gcRetFree_oneTemp progbits alloc exec nowrite align=16
+global test_gcRetFree_oneTemp
+; ==============================
+; Function: test_gcRetFree_oneTemp
+test_gcRetFree_oneTemp:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-96], 0; gc ret scratch 清零
+    mov QWORD [rbp-88], 0; gc ret scratch 清零
+    sub rsp, 48; register args buffer
+    sub rsp, 32; register args buffer
+    mov QWORD [rsp+0], str_1
+    mov QWORD [rsp+0+8], 2
+    mov QWORD [rsp+0+16], 2
+; 参数0
+    mov QWORD [rsp+24], 2
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_repeatN
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-96], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+0+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+0+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+0+16], RAX
+; 参数0
+    sub rsp, 48; register args buffer
+    mov QWORD [rsp+0], str_3
+    mov QWORD [rsp+0+8], 4
+    mov QWORD [rsp+0+16], 4
+; 参数0
+    mov QWORD [rsp+24], str_4
+    mov QWORD [rsp+24+8], 3
+    mov QWORD [rsp+24+16], 3
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_trimPrefix
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-88], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+24+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+24+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+24+16], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    call test_gcRetFree_cmpLen
+; return值存入RAX
+    push RAX; gc ret 保存返回值
+    push RDX; gc ret 保存返回值
+    ; gc: ret free $ret0 after=call:/home/gx/Desktop/______/tiny/pkg/strings.repeatN
+    lea RDI, [rbp-96]
+    call std_memory_freeSlot
+    ; gc: ret free $ret1 after=call:/home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+    lea RDI, [rbp-88]
+    call std_memory_freeSlot
+    pop RDX; gc ret 恢复返回值
+    pop RAX; gc ret 恢复返回值
+    jmp func_end_test_gcRetFree_oneTemp
+    func_end_test_gcRetFree_oneTemp:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.test_gcRetFree_aliasRisk progbits alloc exec nowrite align=16
+global test_gcRetFree_aliasRisk
+; ==============================
+; Function: test_gcRetFree_aliasRisk
+test_gcRetFree_aliasRisk:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-96], 0; gc ret scratch 清零
+    mov QWORD [rbp-88], 0; gc ret scratch 清零
+    sub rsp, 48; register args buffer
+    sub rsp, 48; register args buffer
+    sub rsp, 32; register args buffer
+    mov QWORD [rsp+0], str_5
+    mov QWORD [rsp+0+8], 3
+    mov QWORD [rsp+0+16], 3
+; 参数0
+    mov QWORD [rsp+24], 1
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_repeatN
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+0+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+0+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+0+16], RAX
+; 参数0
+    mov QWORD [rsp+24], str_4
+    mov QWORD [rsp+24+8], 3
+    mov QWORD [rsp+24+16], 3
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_trimPrefix
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-96], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+0+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+0+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+0+16], RAX
+; 参数0
+    sub rsp, 48; register args buffer
+    mov QWORD [rsp+0], str_5
+    mov QWORD [rsp+0+8], 3
+    mov QWORD [rsp+0+16], 3
+; 参数0
+    mov QWORD [rsp+24], str_4
+    mov QWORD [rsp+24+8], 3
+    mov QWORD [rsp+24+16], 3
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    lea R10, [rbp-80]; 大值返回槽地址
+    call std_strings_trimPrefix
+    mov RAX, QWORD [rbp-80]; gc ret scratch ptr
+    mov QWORD [rbp-88], RAX; gc ret scratch store
+    mov RAX, QWORD [RBP-80]
+    mov QWORD [rsp+24+0], RAX
+    mov RAX, QWORD [RBP-80+8]
+    mov QWORD [rsp+24+8], RAX
+    mov RAX, QWORD [RBP-80+16]
+    mov QWORD [rsp+24+16], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    call test_gcRetFree_cmpLen
+; return值存入RAX
+    push RAX; gc ret 保存返回值
+    push RDX; gc ret 保存返回值
+    ; gc: ret free $ret0 after=call:/home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+    lea RDI, [rbp-96]
+    call std_memory_freeSlot
+    ; gc: ret free $ret1 after=call:/home/gx/Desktop/______/tiny/pkg/strings.trimPrefix
+    lea RDI, [rbp-88]
+    call std_memory_freeSlot
+    pop RDX; gc ret 恢复返回值
+    pop RAX; gc ret 恢复返回值
+    jmp func_end_test_gcRetFree_aliasRisk
+    func_end_test_gcRetFree_aliasRisk:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
 
 section .text.main progbits alloc exec nowrite align=16
 global main
@@ -32,82 +402,118 @@ main:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    sub rsp, 16; register args buffer
-    mov QWORD [rsp+0], 8
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_slices_make__T__int
+    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
+    call test_gcRetFree_twoTemps
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_1
+    if_1:
+    mov RAX, 1
+; return值存入RAX
+    jmp func_end_main
+    end_if_1:
+    call test_gcRetFree_oneTemp
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_2
+    if_2:
+    mov RAX, 2
+; return值存入RAX
+    jmp func_end_main
+    end_if_2:
+    call test_gcRetFree_aliasRisk
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_3
+    if_3:
+    mov RAX, 3
+; return值存入RAX
+    jmp func_end_main
+    end_if_3:
+    mov QWORD[rbp-48], 0
+; 设置变量i
+
+
+
+
+    for_1: ; for循环开始
+    mov RAX, QWORD[rbp-48]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 2000
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jge for_1_end
+    for_1_body:
+
+
+    call test_gcRetFree_twoTemps
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_4
+    if_4:
+    mov RAX, 4
+; return值存入RAX
+    jmp func_end_main
+    end_if_4:
+    call test_gcRetFree_oneTemp
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_5
+    if_5:
+    mov RAX, 5
+; return值存入RAX
+    jmp func_end_main
+    end_if_5:
+    call test_gcRetFree_aliasRisk
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_6
+    if_6:
+    mov RAX, 6
+; return值存入RAX
+    jmp func_end_main
+    end_if_6:
+    mov RAX, QWORD[rbp-48]
+    mov RBX, 1
     mov QWORD[rbp-48], RAX
-; 设置变量s
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_slices_len__T__int
-    mov QWORD[rbp-56], RAX
-; 设置变量l
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-56]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov QWORD [rsp+8], 0
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_testing_assertEq
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_slices_free__T__int
-; expression statement
+    add QWORD[rbp-48], RBX
+; 设置变量i
+    for_1_continue:
+
+
+    jmp for_1; for循环
+    for_1_end: ; for循环结束
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_main
     func_end_main:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_syscall_syscall progbits alloc exec nowrite align=16
-global std_syscall_syscall
-; ==============================
-; Function: std_syscall_syscall
-std_syscall_syscall:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov QWORD [rbp-72], RCX; 保存参数3到栈
-    mov RAX, QWORD[rbp-48]
-    mov RDI, QWORD[rbp-56]
-    mov RSI, QWORD[rbp-64]
-    mov RDX, QWORD[rbp-72]
-    syscall
-    func_end_std_syscall_syscall:
-    add rsp, 120; 清理局部变量 + 对齐
+    add rsp, 88; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -147,49 +553,6 @@ std_syscall_syscall64:
     syscall
     func_end_std_syscall_syscall64:
     add rsp, 136; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_syscall_exit progbits alloc exec nowrite align=16
-global std_syscall_exit
-; ==============================
-; Function: std_syscall_exit
-std_syscall_exit:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov DWORD [rbp-48], EDI; 保存参数0到栈
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], 60
-; 参数0
-    mov EAX, DWORD[rbp-48]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov QWORD [rsp+16], 0
-; 参数2
-    mov QWORD [rsp+24], 0
-; 参数3
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_syscall_syscall
-    func_end_std_syscall_exit:
-    add rsp, 88; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -252,216 +615,6 @@ std_syscall_brk:
 ; ======函数完毕=======
 
 
-section .text.std_syscall_write progbits alloc exec nowrite align=16
-global std_syscall_write
-; ==============================
-; Function: std_syscall_write
-std_syscall_write:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov DWORD [rbp-48], EDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    sub rsp, 48; register args buffer
-    mov QWORD [rsp+0], 1
-; 参数0
-    mov EBX, DWORD[rbp-48]
-    mov QWORD [rsp+8], RBX
-; 参数1
-    mov RBX, QWORD[rbp-56]
-    mov QWORD [rsp+16], RBX
-; 参数2
-    mov RBX, QWORD[rbp-64]
-    mov QWORD [rsp+24], RBX
-; 参数3
-    mov QWORD [rsp+32], 0
-; 参数4
-    mov QWORD [rsp+40], 0
-; 参数5
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    mov R9, QWORD [rsp+40]; 装载参数5
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_syscall_syscall64
-; return值存入RAX
-    jmp func_end_std_syscall_write
-    func_end_std_syscall_write:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_syscall_read progbits alloc exec nowrite align=16
-global std_syscall_read
-; ==============================
-; Function: std_syscall_read
-std_syscall_read:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov DWORD [rbp-48], EDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    sub rsp, 48; register args buffer
-    mov QWORD [rsp+0], 0
-; 参数0
-    mov EBX, DWORD[rbp-48]
-    mov QWORD [rsp+8], RBX
-; 参数1
-    mov RBX, QWORD[rbp-56]
-    mov QWORD [rsp+16], RBX
-; 参数2
-    mov RBX, QWORD[rbp-64]
-    mov QWORD [rsp+24], RBX
-; 参数3
-    mov QWORD [rsp+32], 0
-; 参数4
-    mov QWORD [rsp+40], 0
-; 参数5
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    mov R9, QWORD [rsp+40]; 装载参数5
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_syscall_syscall64
-; return值存入RAX
-    jmp func_end_std_syscall_read
-    func_end_std_syscall_read:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_syscall_open progbits alloc exec nowrite align=16
-global std_syscall_open
-; ==============================
-; Function: std_syscall_open
-std_syscall_open:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov DWORD [rbp-56], ESI; 保存参数1到栈
-    mov DWORD [rbp-64], EDX; 保存参数2到栈
-    sub rsp, 48; register args buffer
-    mov QWORD [rsp+0], 2
-; 参数0
-    mov RBX, QWORD[rbp-48]
-    mov QWORD [rsp+8], RBX
-; 参数1
-    mov EBX, DWORD[rbp-56]
-    mov QWORD [rsp+16], RBX
-; 参数2
-    mov EBX, DWORD[rbp-64]
-    mov QWORD [rsp+24], RBX
-; 参数3
-    mov QWORD [rsp+32], 0
-; 参数4
-    mov QWORD [rsp+40], 0
-; 参数5
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    mov R9, QWORD [rsp+40]; 装载参数5
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_syscall_syscall64
-; return值存入RAX
-    jmp func_end_std_syscall_open
-    func_end_std_syscall_open:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_syscall_close progbits alloc exec nowrite align=16
-global std_syscall_close
-; ==============================
-; Function: std_syscall_close
-std_syscall_close:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov DWORD [rbp-48], EDI; 保存参数0到栈
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], 3
-; 参数0
-    mov EBX, DWORD[rbp-48]
-    mov QWORD [rsp+8], RBX
-; 参数1
-    mov QWORD [rsp+16], 0
-; 参数2
-    mov QWORD [rsp+24], 0
-; 参数3
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_syscall_syscall
-; return值存入RAX
-    jmp func_end_std_syscall_close
-    func_end_std_syscall_close:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
 section .text.std_memory_initFreeHeads progbits alloc exec nowrite align=16
 global std_memory_initFreeHeads
 ; ==============================
@@ -482,10 +635,10 @@ std_memory_initFreeHeads:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_1
-    if_1:
+    je end_if_7
+    if_7:
     jmp func_end_std_memory_initFreeHeads
-    end_if_1:
+    end_if_7:
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
@@ -514,10 +667,10 @@ std_memory_initFreeHeads:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_2
-    if_2:
+    jnb end_if_8
+    if_8:
     jmp func_end_std_memory_initFreeHeads
-    end_if_2:
+    end_if_8:
     mov RAX, QWORD[rbp-48]
     mov QWORD[rel __global_std_memory_gFreeHeads], RAX
 ; 设置变量gFreeHeads
@@ -555,12 +708,12 @@ std_memory_blkSizeOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_3
-    if_3:
+    jne end_if_9
+    if_9:
     mov RAX, 32
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOfTiny
-    end_if_3:
+    end_if_9:
     mov QWORD[rbp-56], 32
 ; 设置变量s
     mov QWORD[rbp-64], 0
@@ -569,7 +722,7 @@ std_memory_blkSizeOfTiny:
 
 
 
-    for_1: ; for循环开始
+    for_2: ; for循环开始
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -577,8 +730,8 @@ std_memory_blkSizeOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_1_end
-    for_1_body:
+    jnb for_2_end
+    for_2_body:
 
 
     mov RAX, QWORD[rbp-56]
@@ -598,11 +751,11 @@ std_memory_blkSizeOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_4
-    if_4:
+    jnb end_if_10
+    if_10:
     mov QWORD[rbp-72], 16
 ; 设置变量step
-    end_if_4:
+    end_if_10:
     mov RAX, QWORD[rbp-56]
     mov RBX, QWORD[rbp-72]
     mov QWORD[rbp-56], RAX
@@ -613,11 +766,11 @@ std_memory_blkSizeOfTiny:
     mov QWORD[rbp-64], RAX
     add QWORD[rbp-64], RBX
 ; 设置变量i
-    for_1_continue:
+    for_2_continue:
 
 
-    jmp for_1; for循环
-    for_1_end: ; for循环结束
+    jmp for_2; for循环
+    for_2_end: ; for循环结束
     mov RAX, QWORD[rbp-56]
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RAX, RBX
@@ -665,12 +818,12 @@ std_memory_blkSizeOfSmall:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_5
-    if_5:
+    jne end_if_11
+    if_11:
     mov RAX, 2048
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOfSmall
-    end_if_5:
+    end_if_11:
     mov RAX, 4096
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOfSmall
@@ -709,7 +862,7 @@ std_memory_blkSizeOfMiddle:
 
 
 
-    for_2: ; for循环开始
+    for_3: ; for循环开始
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -717,8 +870,8 @@ std_memory_blkSizeOfMiddle:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_2_end
-    for_2_body:
+    jnb for_3_end
+    for_3_body:
 
 
     mov RAX, QWORD[rbp-56]
@@ -734,11 +887,11 @@ std_memory_blkSizeOfMiddle:
     mov QWORD[rbp-64], RAX
     add QWORD[rbp-64], RBX
 ; 设置变量i
-    for_2_continue:
+    for_3_continue:
 
 
-    jmp for_2; for循环
-    for_2_end: ; for循环结束
+    jmp for_3; for循环
+    for_3_end: ; for循环结束
     mov RAX, QWORD[rbp-56]
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOfMiddle
@@ -776,8 +929,8 @@ std_memory_blkSizeOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_6
-    if_6:
+    jnbe end_if_12
+    if_12:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -787,7 +940,7 @@ std_memory_blkSizeOf:
     call std_memory_blkSizeOfTiny
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOf
-    end_if_6:
+    end_if_12:
     mov RAX, QWORD[rbp-48]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -795,8 +948,8 @@ std_memory_blkSizeOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_7
-    if_7:
+    jnbe end_if_13
+    if_13:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov RCX, 34
@@ -808,7 +961,7 @@ std_memory_blkSizeOf:
     call std_memory_blkSizeOfSmall
 ; return值存入RAX
     jmp func_end_std_memory_blkSizeOf
-    end_if_7:
+    end_if_13:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov RCX, 36
@@ -854,12 +1007,12 @@ std_memory_slotOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_8
-    if_8:
+    jnbe end_if_14
+    if_14:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_slotOfTiny
-    end_if_8:
+    end_if_14:
     mov QWORD[rbp-56], 32
 ; 设置变量s
     mov QWORD[rbp-64], 0
@@ -868,7 +1021,7 @@ std_memory_slotOfTiny:
 
 
 
-    for_3: ; for循环开始
+    for_4: ; for循环开始
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -876,8 +1029,8 @@ std_memory_slotOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_3_end
-    for_3_body:
+    jnb for_4_end
+    for_4_body:
 
 
     mov RAX, QWORD[rbp-56]
@@ -897,11 +1050,11 @@ std_memory_slotOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_9
-    if_9:
+    jnb end_if_15
+    if_15:
     mov QWORD[rbp-72], 16
 ; 设置变量step
-    end_if_9:
+    end_if_15:
     mov RAX, QWORD[rbp-56]
     mov RBX, QWORD[rbp-72]
     mov QWORD[rbp-80], RAX
@@ -914,14 +1067,14 @@ std_memory_slotOfTiny:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_10
-    if_10:
+    jb end_if_16
+    if_16:
     mov RAX, QWORD[rbp-64]
     mov RBX, 1
     add RAX, RBX
 ; return值存入RAX
     jmp func_end_std_memory_slotOfTiny
-    end_if_10:
+    end_if_16:
     mov RAX, QWORD[rbp-80]
     mov QWORD[rbp-56], RAX
 ; 设置变量s
@@ -930,11 +1083,11 @@ std_memory_slotOfTiny:
     mov QWORD[rbp-64], RAX
     add QWORD[rbp-64], RBX
 ; 设置变量cls
-    for_3_continue:
+    for_4_continue:
 
 
-    jmp for_3; for循环
-    for_3_end: ; for循环结束
+    jmp for_4; for循环
+    for_4_end: ; for循环结束
     mov RAX, 33
 ; return值存入RAX
     jmp func_end_std_memory_slotOfTiny
@@ -972,12 +1125,12 @@ std_memory_slotOfSmall:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_11
-    if_11:
+    jnbe end_if_17
+    if_17:
     mov RAX, 34
 ; return值存入RAX
     jmp func_end_std_memory_slotOfSmall
-    end_if_11:
+    end_if_17:
     mov RAX, 35
 ; return值存入RAX
     jmp func_end_std_memory_slotOfSmall
@@ -1015,12 +1168,12 @@ std_memory_slotOfMiddle:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_12
-    if_12:
+    jnbe end_if_18
+    if_18:
     mov RAX, 36
 ; return值存入RAX
     jmp func_end_std_memory_slotOfMiddle
-    end_if_12:
+    end_if_18:
     mov QWORD[rbp-56], 4096
 ; 设置变量s
     mov QWORD[rbp-64], 0
@@ -1029,7 +1182,7 @@ std_memory_slotOfMiddle:
 
 
 
-    for_4: ; for循环开始
+    for_5: ; for循环开始
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1037,8 +1190,8 @@ std_memory_slotOfMiddle:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_4_end
-    for_4_body:
+    jnb for_5_end
+    for_5_body:
 
 
     mov RAX, QWORD[rbp-56]
@@ -1058,8 +1211,8 @@ std_memory_slotOfMiddle:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_13
-    if_13:
+    jb end_if_19
+    if_19:
     mov RBX, QWORD[rbp-64]
     mov RAX, 36
     add RAX, RBX
@@ -1067,7 +1220,7 @@ std_memory_slotOfMiddle:
     add RAX, RBX
 ; return值存入RAX
     jmp func_end_std_memory_slotOfMiddle
-    end_if_13:
+    end_if_19:
     mov RAX, QWORD[rbp-72]
     mov QWORD[rbp-56], RAX
 ; 设置变量s
@@ -1076,11 +1229,11 @@ std_memory_slotOfMiddle:
     mov QWORD[rbp-64], RAX
     add QWORD[rbp-64], RBX
 ; 设置变量cls
-    for_4_continue:
+    for_5_continue:
 
 
-    jmp for_4; for循环
-    for_4_end: ; for循环结束
+    jmp for_5; for循环
+    for_5_end: ; for循环结束
     mov RAX, 59
 ; return值存入RAX
     jmp func_end_std_memory_slotOfMiddle
@@ -1118,8 +1271,8 @@ std_memory_slotOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_14
-    if_14:
+    jnbe end_if_20
+    if_20:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -1129,7 +1282,7 @@ std_memory_slotOf:
     call std_memory_slotOfTiny
 ; return值存入RAX
     jmp func_end_std_memory_slotOf
-    end_if_14:
+    end_if_20:
     mov RAX, QWORD[rbp-48]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1137,8 +1290,8 @@ std_memory_slotOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_15
-    if_15:
+    jnbe end_if_21
+    if_21:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -1148,7 +1301,7 @@ std_memory_slotOf:
     call std_memory_slotOfSmall
 ; return值存入RAX
     jmp func_end_std_memory_slotOf
-    end_if_15:
+    end_if_21:
     mov RAX, QWORD[rbp-48]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1156,8 +1309,8 @@ std_memory_slotOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_16
-    if_16:
+    jnbe end_if_22
+    if_22:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -1167,7 +1320,7 @@ std_memory_slotOf:
     call std_memory_slotOfMiddle
 ; return值存入RAX
     jmp func_end_std_memory_slotOf
-    end_if_16:
+    end_if_22:
     mov RAX, 60
 ; return值存入RAX
     jmp func_end_std_memory_slotOf
@@ -1291,17 +1444,17 @@ std_memory_freeListClassOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_17
-    if_17:
+    jb end_if_23
+    if_23:
     mov RAX, 60
 ; return值存入RAX
     jmp func_end_std_memory_freeListClassOf
-    end_if_17:
+    end_if_23:
 
 
 
 
-    for_5: ; for循环开始
+    for_6: ; for循环开始
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1309,8 +1462,8 @@ std_memory_freeListClassOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe for_5_end
-    for_5_body:
+    jbe for_6_end
+    for_6_body:
 
 
     sub rsp, 16; register args buffer
@@ -1326,22 +1479,22 @@ std_memory_freeListClassOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_18
-    if_18:
+    jnbe end_if_24
+    if_24:
     mov RAX, QWORD[rbp-56]
 ; return值存入RAX
     jmp func_end_std_memory_freeListClassOf
-    end_if_18:
+    end_if_24:
     mov RAX, QWORD[rbp-56]
     mov RBX, 1
     mov QWORD[rbp-56], RAX
     sub QWORD[rbp-56], RBX
 ; 设置变量cls
-    for_5_continue:
+    for_6_continue:
 
 
-    jmp for_5; for循环
-    for_5_end: ; for循环结束
+    jmp for_6; for循环
+    for_6_end: ; for循环结束
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
@@ -1354,12 +1507,12 @@ std_memory_freeListClassOf:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_19
-    if_19:
+    jbe end_if_25
+    if_25:
     mov RAX, 60
 ; return值存入RAX
     jmp func_end_std_memory_freeListClassOf
-    end_if_19:
+    end_if_25:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_freeListClassOf
@@ -1419,10 +1572,10 @@ std_memory_insertFreeList:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_20
-    if_20:
+    jb end_if_26
+    if_26:
     jmp func_end_std_memory_insertFreeList
-    end_if_20:
+    end_if_26:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+0], RAX
@@ -1460,8 +1613,8 @@ std_memory_insertFreeList:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_21
-    if_21:
+    je end_if_27
+    if_27:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-72]
     mov QWORD [rsp+0], RAX
@@ -1473,7 +1626,7 @@ std_memory_insertFreeList:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetPrev
-    end_if_21:
+    end_if_27:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+0], RAX
@@ -1559,10 +1712,10 @@ std_memory_removeFreeList:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_22
-    if_22:
+    jb end_if_28
+    if_28:
     jmp func_end_std_memory_removeFreeList
-    end_if_22:
+    end_if_28:
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1570,8 +1723,8 @@ std_memory_removeFreeList:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je else_if_23
-    if_23:
+    je else_if_29
+    if_29:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-56]
     mov QWORD [rsp+0], RAX
@@ -1583,8 +1736,8 @@ std_memory_removeFreeList:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetNext
-    jmp end_if_23
-    else_if_23:
+    jmp end_if_29
+    else_if_29:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-80]
     mov QWORD [rsp+0], RAX
@@ -1596,7 +1749,7 @@ std_memory_removeFreeList:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_setHead
-    end_if_23:
+    end_if_29:
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -1604,8 +1757,8 @@ std_memory_removeFreeList:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_24
-    if_24:
+    je end_if_30
+    if_30:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+0], RAX
@@ -1617,7 +1770,7 @@ std_memory_removeFreeList:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetPrev
-    end_if_24:
+    end_if_30:
     func_end_std_memory_removeFreeList:
     add rsp, 120; 清理局部变量 + 对齐
     pop R15; 恢复R15
@@ -1674,12 +1827,12 @@ std_memory_commit:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_25
-    if_25:
+    jnb end_if_31
+    if_31:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_commit
-    end_if_25:
+    end_if_31:
     mov RAX, QWORD[rbp-64]
     mov QWORD[rbp-80], RAX
 ; 设置变量head
@@ -1697,7 +1850,7 @@ std_memory_commit:
 
 
 
-    for_6: ; for循环开始
+    for_7: ; for循环开始
     mov RAX, QWORD[rbp-96]
     mov RBX, QWORD[rbp-56]
     add RAX, RBX
@@ -1707,8 +1860,8 @@ std_memory_commit:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe for_6_end
-    for_6_body:
+    jnbe for_7_end
+    for_7_body:
 
 
     mov RBX, QWORD[rel __global_std_memory_IS_FREE]
@@ -1721,14 +1874,14 @@ std_memory_commit:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_26
-    if_26:
+    je end_if_32
+    if_32:
     mov RBX, QWORD[rbp-112]
     mov RDX, QWORD[rel __global_std_memory_PREV_FREE]
     mov QWORD[rbp-112], RBX
     or QWORD[rbp-112], RDX
 ; 设置变量flags
-    end_if_26:
+    end_if_32:
     mov RBX, QWORD[rbp-56]
     mov RDX, QWORD[rbp-112]
     mov QWORD[rbp-120], RBX
@@ -1784,8 +1937,8 @@ std_memory_commit:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_27
-    if_27:
+    je end_if_33
+    if_33:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-88]
     mov QWORD [rsp+0], RBX
@@ -1797,7 +1950,7 @@ std_memory_commit:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetNext
-    end_if_27:
+    end_if_33:
     mov RBX, QWORD[rbp-96]
     mov QWORD[rbp-88], RBX
 ; 设置变量prev
@@ -1806,11 +1959,11 @@ std_memory_commit:
     mov QWORD[rbp-96], RDX
     add QWORD[rbp-96], RBX
 ; 设置变量p
-    for_6_continue:
+    for_7_continue:
 
 
-    jmp for_6; for循环
-    for_6_end: ; for循环结束
+    jmp for_7; for循环
+    for_7_end: ; for循环结束
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -1890,8 +2043,8 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_28
-    if_28:
+    jnbe end_if_34
+    if_34:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-80]
     mov QWORD [rsp+0], RBX
@@ -1908,7 +2061,7 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_29
+    je end_if_35
     and_mid_1:
     mov RAX, QWORD[rbp-88]
     mov RCX, QWORD[rel __global_std_memory_IS_FREE]
@@ -1919,8 +2072,8 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_29
-    if_29:
+    je end_if_35
+    if_35:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-80]
     mov QWORD [rsp+0], RBX
@@ -1935,8 +2088,8 @@ std_memory_coalesce:
     and RBX, RCX
     add QWORD[rbp-64], RBX
 ; 设置变量pure
-    end_if_29:
-    end_if_28:
+    end_if_35:
+    end_if_34:
     mov RAX, QWORD[rbp-56]
     mov RDX, QWORD[rel __global_std_memory_PREV_FREE]
     and RAX, RDX
@@ -1946,8 +2099,8 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je else_if_30
-    if_30:
+    je else_if_36
+    if_36:
     mov RDX, QWORD[rbp-48]
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     mov QWORD[rbp-96], RDX
@@ -2017,8 +2170,8 @@ std_memory_coalesce:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    jmp end_if_30
-    else_if_30:
+    jmp end_if_36
+    else_if_36:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -2045,7 +2198,7 @@ std_memory_coalesce:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_30:
+    end_if_36:
     mov RBX, QWORD[rbp-48]
     mov RDX, QWORD[rbp-64]
     mov QWORD[rbp-136], RBX
@@ -2060,8 +2213,8 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_31
-    if_31:
+    jnbe end_if_37
+    if_37:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-136]
     mov QWORD [rsp+0], RBX
@@ -2078,8 +2231,8 @@ std_memory_coalesce:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_32
-    if_32:
+    je end_if_38
+    if_38:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-136]
     mov QWORD [rsp+0], RBX
@@ -2106,8 +2259,8 @@ std_memory_coalesce:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_32:
-    end_if_31:
+    end_if_38:
+    end_if_37:
     mov RAX, QWORD[rbp-48]
 ; return值存入RAX
     jmp func_end_std_memory_coalesce
@@ -2136,7 +2289,7 @@ std_memory_malloc:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 328; 分配局部变量空间(328字节, 含对齐)
+    sub rsp, 344; 分配局部变量空间(344字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
     call std_memory_initFreeHeads
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
@@ -2164,12 +2317,12 @@ std_memory_malloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_33
-    if_33:
+    jnb end_if_39
+    if_39:
     mov RAX, QWORD[rbp-64]
     mov QWORD[rbp-56], RAX
 ; 设置变量req
-    end_if_33:
+    end_if_39:
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -2177,8 +2330,8 @@ std_memory_malloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_34
-    if_34:
+    jbe end_if_40
+    if_40:
     mov RBX, QWORD[rbp-56]
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RBX, RAX
@@ -2220,12 +2373,12 @@ std_memory_malloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_35
-    if_35:
+    jnb end_if_41
+    if_41:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_malloc
-    end_if_35:
+    end_if_41:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-80]
     mov QWORD [rsp+0], RAX
@@ -2248,12 +2401,26 @@ std_memory_malloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    mov RAX, QWORD[rbp-80]
-    mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
-    add RAX, RBX
+    mov RBX, QWORD[rbp-80]
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov QWORD[rbp-96], RBX
+    add QWORD[rbp-96], RAX
+; 设置变量p
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-96]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
+    mov RAX, QWORD[rbp-96]
 ; return值存入RAX
     jmp func_end_std_memory_malloc
-    end_if_34:
+    end_if_40:
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -2261,8 +2428,8 @@ std_memory_malloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_36
-    if_36:
+    jbe end_if_42
+    if_42:
     mov RBX, QWORD[rbp-56]
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RBX, RAX
@@ -2273,8 +2440,8 @@ std_memory_malloc:
     sub RDX, RSI
     mov RAX, RDX
     not RAX
-    mov QWORD[rbp-96], RBX
-    and QWORD[rbp-96], RAX
+    mov QWORD[rbp-104], RBX
+    and QWORD[rbp-104], RAX
 ; 设置变量aligned
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
@@ -2282,39 +2449,39 @@ std_memory_malloc:
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-104], RAX
+    mov QWORD[rbp-112], RAX
 ; 设置变量old
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-104]
-    mov RAX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-112]
+    mov RAX, QWORD[rbp-104]
     mov QWORD [rsp+0], RBX
     add QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-112], RAX
+    mov QWORD[rbp-120], RAX
 ; 设置变量nb
-    mov RAX, QWORD[rbp-112]
+    mov RAX, QWORD[rbp-120]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-104]
-    mov RAX, QWORD[rbp-96]
+    mov RCX, QWORD[rbp-112]
+    mov RAX, QWORD[rbp-104]
     add RCX, RAX
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_37
-    if_37:
+    jnb end_if_43
+    if_43:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_malloc
-    end_if_37:
+    end_if_43:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-104]
+    mov RAX, QWORD[rbp-112]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RBX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-104]
     mov RAX, QWORD[rel __global_std_memory_IS_FREE]
     mov QWORD [rsp+8], RBX
     or QWORD [rsp+8], RAX
@@ -2324,10 +2491,10 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-104]
+    mov RAX, QWORD[rbp-112]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RBX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-104]
     mov RAX, QWORD[rel __global_std_memory_IS_FREE]
     mov QWORD [rsp+8], RBX
     or QWORD [rsp+8], RAX
@@ -2337,35 +2504,35 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-104]
+    mov RAX, QWORD[rbp-112]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_coalesce
-    mov QWORD[rbp-120], RAX
+    mov QWORD[rbp-128], RAX
 ; 设置变量merged
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-120]
+    mov RAX, QWORD[rbp-128]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSizeRaw
-    mov QWORD[rbp-128], RAX
+    mov QWORD[rbp-136], RAX
 ; 设置变量mRaw
-    mov RBX, QWORD[rbp-128]
+    mov RBX, QWORD[rbp-136]
     mov RDX, QWORD[rel __global_std_memory_FLAG_MASK]
     mov RAX, RDX
     not RAX
-    mov QWORD[rbp-136], RBX
-    and QWORD[rbp-136], RAX
+    mov QWORD[rbp-144], RBX
+    and QWORD[rbp-144], RAX
 ; 设置变量mPure
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-120]
+    mov RAX, QWORD[rbp-128]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-136]
+    mov RAX, QWORD[rbp-144]
     mov QWORD [rsp+8], RAX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
@@ -2373,20 +2540,20 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-120]
+    mov RAX, QWORD[rbp-128]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-136]
+    mov RAX, QWORD[rbp-144]
     mov QWORD [rsp+8], RAX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    mov RBX, QWORD[rbp-120]
-    mov RDX, QWORD[rbp-136]
-    mov QWORD[rbp-144], RBX
-    add QWORD[rbp-144], RDX
+    mov RBX, QWORD[rbp-128]
+    mov RDX, QWORD[rbp-144]
+    mov QWORD[rbp-152], RBX
+    add QWORD[rbp-152], RDX
 ; 设置变量nextM
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
@@ -2394,42 +2561,42 @@ std_memory_malloc:
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-152], RAX
+    mov QWORD[rbp-160], RAX
 ; 设置变量brkTop
-    mov RAX, QWORD[rbp-144]
+    mov RAX, QWORD[rbp-152]
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RAX, RBX
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-152]
+    mov RCX, QWORD[rbp-160]
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_38
-    if_38:
+    jnbe end_if_44
+    if_44:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-144]
+    mov RBX, QWORD[rbp-152]
     mov QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSizeRaw
-    mov QWORD[rbp-160], RAX
+    mov QWORD[rbp-168], RAX
 ; 设置变量ns
-    mov RAX, QWORD[rbp-160]
+    mov RAX, QWORD[rbp-168]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_39
-    if_39:
+    je end_if_45
+    if_45:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-144]
+    mov RBX, QWORD[rbp-152]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-160]
+    mov RDX, QWORD[rbp-168]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov RBX, RSI
     not RBX
@@ -2441,10 +2608,10 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-144]
+    mov RBX, QWORD[rbp-152]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-160]
+    mov RDX, QWORD[rbp-168]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov RBX, RSI
     not RBX
@@ -2455,14 +2622,28 @@ std_memory_malloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_39:
-    end_if_38:
-    mov RAX, QWORD[rbp-120]
-    mov RDX, QWORD[rel __global_std_memory_PTR_SIZE]
-    add RAX, RDX
+    end_if_45:
+    end_if_44:
+    mov RDX, QWORD[rbp-128]
+    mov RSI, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov QWORD[rbp-176], RDX
+    add QWORD[rbp-176], RSI
+; 设置变量lp
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-176]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
+    mov RAX, QWORD[rbp-176]
 ; return值存入RAX
     jmp func_end_std_memory_malloc
-    end_if_36:
+    end_if_42:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-56]
     mov QWORD [rsp+0], RAX
@@ -2470,93 +2651,93 @@ std_memory_malloc:
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_slotOf
-    mov QWORD[rbp-168], RAX
+    mov QWORD[rbp-184], RAX
 ; 设置变量cls
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-168]
+    mov RAX, QWORD[rbp-184]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_blkSizeOf
-    mov QWORD[rbp-176], RAX
+    mov QWORD[rbp-192], RAX
 ; 设置变量blkSize
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-168]
+    mov RAX, QWORD[rbp-184]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_headOf
-    mov QWORD[rbp-184], RAX
+    mov QWORD[rbp-200], RAX
 ; 设置变量head
-    mov RAX, QWORD[rbp-184]
+    mov RAX, QWORD[rbp-200]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_40
-    if_40:
+    jne end_if_46
+    if_46:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-168]
+    mov RAX, QWORD[rbp-184]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-176]
+    mov RAX, QWORD[rbp-192]
     mov QWORD [rsp+8], RAX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_commit
-    mov QWORD[rbp-184], RAX
+    mov QWORD[rbp-200], RAX
 ; 设置变量head
-    mov RAX, QWORD[rbp-184]
+    mov RAX, QWORD[rbp-200]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_41
-    if_41:
+    jne end_if_47
+    if_47:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_malloc
-    end_if_41:
-    end_if_40:
+    end_if_47:
+    end_if_46:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-184]
+    mov RAX, QWORD[rbp-200]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeNext
-    mov QWORD[rbp-192], RAX
+    mov QWORD[rbp-208], RAX
 ; 设置变量next
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-168]
+    mov RAX, QWORD[rbp-184]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-192]
+    mov RAX, QWORD[rbp-208]
     mov QWORD [rsp+8], RAX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_setHead
-    mov RAX, QWORD[rbp-192]
+    mov RAX, QWORD[rbp-208]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_42
-    if_42:
+    je end_if_48
+    if_48:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-192]
+    mov RAX, QWORD[rbp-208]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov QWORD [rsp+8], 0
@@ -2565,9 +2746,9 @@ std_memory_malloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetPrev
-    end_if_42:
+    end_if_48:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-184]
+    mov RAX, QWORD[rbp-200]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
@@ -2575,23 +2756,23 @@ std_memory_malloc:
     call std_memory_hdrSizeRaw
     mov RDX, RAX
     mov RSI, QWORD[rel __global_std_memory_FLAG_MASK]
-    mov RBX, RSI
-    not RBX
-    mov QWORD[rbp-200], RDX
-    and QWORD[rbp-200], RBX
+    mov RAX, RSI
+    not RAX
+    mov QWORD[rbp-216], RDX
+    and QWORD[rbp-216], RAX
 ; 设置变量rawSize
     mov RDX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov RBX, 4
-    mov QWORD[rbp-208], RDX
+    mov RAX, 4
+    mov QWORD[rbp-224], RDX
     push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov RAX, QWORD[rbp-208]
+    push RAX; 暂存乘数
+    mov RAX, QWORD[rbp-224]
     imul RAX, qword [rsp]
-    mov QWORD[rbp-208], RAX
+    mov QWORD[rbp-224], RAX
     add rsp, 8; 清理乘数
     pop RAX; 恢复RAX(左子结果)
 ; 设置变量minBlk
-    mov RAX, QWORD[rbp-208]
+    mov RAX, QWORD[rbp-224]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     sub rsp, 16; register args buffer
@@ -2604,98 +2785,98 @@ std_memory_malloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_43
-    if_43:
+    jnb end_if_49
+    if_49:
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_blkSizeOf
-    mov QWORD[rbp-208], RAX
+    mov QWORD[rbp-224], RAX
 ; 设置变量minBlk
-    end_if_43:
-    mov RAX, QWORD[rbp-200]
-    mov QWORD[rbp-216], RAX
+    end_if_49:
+    mov RBX, QWORD[rbp-216]
+    mov QWORD[rbp-232], RBX
 ; 设置变量useSize
-    mov QWORD[rbp-224], 0
+    mov QWORD[rbp-240], 0
 ; 设置变量rem
-    mov RAX, QWORD[rbp-200]
+    mov RAX, QWORD[rbp-216]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-176]
-    mov RDX, QWORD[rbp-208]
+    mov RCX, QWORD[rbp-192]
+    mov RDX, QWORD[rbp-224]
     add RCX, RDX
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb else_if_44
-    if_44:
-    mov RAX, QWORD[rbp-176]
-    mov QWORD[rbp-216], RAX
+    jb else_if_50
+    if_50:
+    mov RBX, QWORD[rbp-192]
+    mov QWORD[rbp-232], RBX
 ; 设置变量useSize
-    mov RDX, QWORD[rbp-200]
-    mov RSI, QWORD[rbp-176]
-    mov QWORD[rbp-224], RDX
-    sub QWORD[rbp-224], RSI
+    mov RDX, QWORD[rbp-216]
+    mov RSI, QWORD[rbp-192]
+    mov QWORD[rbp-240], RDX
+    sub QWORD[rbp-240], RSI
 ; 设置变量rem
-    jmp end_if_44
-    else_if_44:
-    mov RAX, QWORD[rbp-200]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-176]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb end_if_45
-    if_45:
-    mov RAX, QWORD[rbp-176]
-    mov QWORD[rbp-216], RAX
-; 设置变量useSize
-    end_if_45:
-    end_if_44:
-    mov RAX, QWORD[rbp-224]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-208]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jb else_if_46
-    if_46:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-184]
-    mov QWORD [rsp+0], RAX
-; 参数0
+    jmp end_if_50
+    else_if_50:
     mov RAX, QWORD[rbp-216]
-    mov QWORD [rsp+8], RAX
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-192]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb end_if_51
+    if_51:
+    mov RBX, QWORD[rbp-192]
+    mov QWORD[rbp-232], RBX
+; 设置变量useSize
+    end_if_51:
+    end_if_50:
+    mov RAX, QWORD[rbp-240]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-224]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jb else_if_52
+    if_52:
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-200]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RBX, QWORD[rbp-232]
+    mov QWORD [rsp+8], RBX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-184]
-    mov QWORD [rsp+0], RAX
+    mov RBX, QWORD[rbp-200]
+    mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RAX, QWORD[rbp-216]
-    mov QWORD [rsp+8], RAX
+    mov RBX, QWORD[rbp-232]
+    mov QWORD [rsp+8], RBX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    mov RDX, QWORD[rbp-184]
-    mov RSI, QWORD[rbp-216]
-    mov QWORD[rbp-232], RDX
-    add QWORD[rbp-232], RSI
+    mov RDX, QWORD[rbp-200]
+    mov RSI, QWORD[rbp-232]
+    mov QWORD[rbp-248], RDX
+    add QWORD[rbp-248], RSI
 ; 设置变量remBlk
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-232]
-    mov QWORD [rsp+0], RAX
+    mov RBX, QWORD[rbp-248]
+    mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-224]
+    mov RDX, QWORD[rbp-240]
     mov RSI, QWORD[rel __global_std_memory_IS_FREE]
     mov QWORD [rsp+8], RDX
     or QWORD [rsp+8], RSI
@@ -2705,10 +2886,10 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-232]
-    mov QWORD [rsp+0], RAX
+    mov RBX, QWORD[rbp-248]
+    mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-224]
+    mov RDX, QWORD[rbp-240]
     mov RSI, QWORD[rel __global_std_memory_IS_FREE]
     mov QWORD [rsp+8], RDX
     or QWORD [rsp+8], RSI
@@ -2718,16 +2899,16 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-232]
-    mov QWORD [rsp+0], RAX
+    mov RBX, QWORD[rbp-248]
+    mov QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_insertFreeList
-    mov RDX, QWORD[rbp-232]
-    mov RSI, QWORD[rbp-224]
-    mov QWORD[rbp-240], RDX
-    add QWORD[rbp-240], RSI
+    mov RDX, QWORD[rbp-248]
+    mov RSI, QWORD[rbp-240]
+    mov QWORD[rbp-256], RDX
+    add QWORD[rbp-256], RSI
 ; 设置变量afterRem
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
@@ -2735,42 +2916,42 @@ std_memory_malloc:
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-248], RAX
+    mov QWORD[rbp-264], RAX
 ; 设置变量brkRem
-    mov RAX, QWORD[rbp-240]
+    mov RAX, QWORD[rbp-256]
     mov RDX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RAX, RDX
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-248]
+    mov RCX, QWORD[rbp-264]
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_47
-    if_47:
+    jnbe end_if_53
+    if_53:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-240]
+    mov RBX, QWORD[rbp-256]
     mov QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSizeRaw
-    mov QWORD[rbp-256], RAX
+    mov QWORD[rbp-272], RAX
 ; 设置变量nsr
-    mov RAX, QWORD[rbp-256]
+    mov RAX, QWORD[rbp-272]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_48
-    if_48:
+    je end_if_54
+    if_54:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-240]
+    mov RBX, QWORD[rbp-256]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-256]
+    mov RDX, QWORD[rbp-272]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov QWORD [rsp+8], RDX
     or QWORD [rsp+8], RSI
@@ -2780,10 +2961,10 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-240]
+    mov RBX, QWORD[rbp-256]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-256]
+    mov RDX, QWORD[rbp-272]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov QWORD [rsp+8], RDX
     or QWORD [rsp+8], RSI
@@ -2792,15 +2973,15 @@ std_memory_malloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_48:
-    end_if_47:
-    jmp end_if_46
-    else_if_46:
+    end_if_54:
+    end_if_53:
+    jmp end_if_52
+    else_if_52:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-184]
+    mov RBX, QWORD[rbp-200]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RBX, QWORD[rbp-216]
+    mov RBX, QWORD[rbp-232]
     mov QWORD [rsp+8], RBX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
@@ -2808,21 +2989,21 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-184]
+    mov RBX, QWORD[rbp-200]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RBX, QWORD[rbp-216]
+    mov RBX, QWORD[rbp-232]
     mov QWORD [rsp+8], RBX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_46:
-    mov RDX, QWORD[rbp-184]
-    mov RSI, QWORD[rbp-216]
-    mov QWORD[rbp-264], RDX
-    add QWORD[rbp-264], RSI
+    end_if_52:
+    mov RDX, QWORD[rbp-200]
+    mov RSI, QWORD[rbp-232]
+    mov QWORD[rbp-280], RDX
+    add QWORD[rbp-280], RSI
 ; 设置变量nextBlk
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
@@ -2830,42 +3011,42 @@ std_memory_malloc:
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-272], RAX
+    mov QWORD[rbp-288], RAX
 ; 设置变量brkTop
-    mov RAX, QWORD[rbp-264]
+    mov RAX, QWORD[rbp-280]
     mov RDX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RAX, RDX
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-272]
+    mov RCX, QWORD[rbp-288]
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_49
-    if_49:
+    jnbe end_if_55
+    if_55:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-264]
+    mov RBX, QWORD[rbp-280]
     mov QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSizeRaw
-    mov QWORD[rbp-280], RAX
+    mov QWORD[rbp-296], RAX
 ; 设置变量ns
-    mov RAX, QWORD[rbp-280]
+    mov RAX, QWORD[rbp-296]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, 0
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_50
-    if_50:
+    je end_if_56
+    if_56:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-264]
+    mov RBX, QWORD[rbp-280]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-280]
+    mov RDX, QWORD[rbp-296]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov RBX, RSI
     not RBX
@@ -2877,10 +3058,10 @@ std_memory_malloc:
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetSizeRaw
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-264]
+    mov RBX, QWORD[rbp-280]
     mov QWORD [rsp+0], RBX
 ; 参数0
-    mov RDX, QWORD[rbp-280]
+    mov RDX, QWORD[rbp-296]
     mov RSI, QWORD[rel __global_std_memory_PREV_FREE]
     mov RBX, RSI
     not RBX
@@ -2891,15 +3072,29 @@ std_memory_malloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_50:
-    end_if_49:
-    mov RAX, QWORD[rbp-184]
-    mov RDX, QWORD[rel __global_std_memory_PTR_SIZE]
-    add RAX, RDX
+    end_if_56:
+    end_if_55:
+    mov RDX, QWORD[rbp-200]
+    mov RSI, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov QWORD[rbp-304], RDX
+    add QWORD[rbp-304], RSI
+; 设置变量sp
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-304]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
+    mov RAX, QWORD[rbp-304]
 ; return值存入RAX
     jmp func_end_std_memory_malloc
     func_end_std_memory_malloc:
-    add rsp, 328; 清理局部变量 + 对齐
+    add rsp, 344; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -2948,8 +3143,8 @@ std_memory_freeAt:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_51
-    if_51:
+    jbe end_if_57
+    if_57:
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
@@ -2967,8 +3162,8 @@ std_memory_freeAt:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_52
-    if_52:
+    jne end_if_58
+    if_58:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -2979,11 +3174,11 @@ std_memory_freeAt:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeAt
-    end_if_52:
+    end_if_58:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_freeAt
-    end_if_51:
+    end_if_57:
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -2991,8 +3186,8 @@ std_memory_freeAt:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_53
-    if_53:
+    jbe end_if_59
+    if_59:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -3035,8 +3230,8 @@ std_memory_freeAt:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_54
-    if_54:
+    jne end_if_60
+    if_60:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-80]
     mov QWORD [rsp+0], RBX
@@ -3047,11 +3242,18 @@ std_memory_freeAt:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeAt
-    end_if_54:
-    mov RAX, 0
+    end_if_60:
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-80]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_insertFreeList
+    mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeAt
-    end_if_53:
+    end_if_59:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -3096,7 +3298,7 @@ std_memory_free:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
     mov RAX, QWORD[rbp-48]
 ; left operand
@@ -3105,15 +3307,51 @@ std_memory_free:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_55
-    if_55:
+    jne end_if_61
+    if_61:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_free
-    end_if_55:
+    end_if_61:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_62
+    and_mid_3:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakOverflow]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_62
+    and_mid_2:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_isTrackedAll
+    cmp RAX, 0
+    sete al
+    movzx RAX, al
+; condition
+    test RAX, RAX
+    jz end_if_62
+    if_62:
+    mov RAX, 1
+; return值存入RAX
+    jmp func_end_std_memory_free
+    end_if_62:
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
@@ -3129,8 +3367,8 @@ std_memory_free:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_56
-    if_56:
+    je end_if_63
+    if_63:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -3141,23 +3379,39 @@ std_memory_free:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_free
-    end_if_56:
+    end_if_63:
     mov RAX, QWORD[rbp-48]
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     mov QWORD[rbp-64], RAX
     sub QWORD[rbp-64], RBX
 ; 设置变量base
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-64]
-    mov QWORD [rsp+0], RBX
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeAt
+    mov BYTE[rbp-65], al
+; 设置变量ok
+    movzx RAX, BYTE[rbp-65]
+; condition
+    test RAX, RAX
+    jz end_if_64
+    if_64:
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackFreeAll
+    end_if_64:
+    movzx RAX, BYTE[rbp-65]
 ; return值存入RAX
     jmp func_end_std_memory_free
     func_end_std_memory_free:
-    add rsp, 104; 清理局部变量 + 对齐
+    add rsp, 120; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -3194,12 +3448,12 @@ std_memory_freeSlot:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_57
-    if_57:
+    jne end_if_65
+    if_65:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeSlot
-    end_if_57:
+    end_if_65:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-56]
     mov QWORD [rsp+0], RAX
@@ -3209,8 +3463,8 @@ std_memory_freeSlot:
     call std_memory_free
 ; condition
     test RAX, RAX
-    jz end_if_58
-    if_58:
+    jz end_if_66
+    if_66:
     mov RAX, 0
     mov RBX, QWORD[rbp-48]
     mov QWORD [RBX], RAX
@@ -3218,7 +3472,7 @@ std_memory_freeSlot:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeSlot
-    end_if_58:
+    end_if_66:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_freeSlot
@@ -3257,8 +3511,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_59
-    if_59:
+    jne end_if_67
+    if_67:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-56]
     mov QWORD [rsp+0], RBX
@@ -3268,7 +3522,7 @@ std_memory_realloc:
     call std_memory_malloc
 ; return值存入RAX
     jmp func_end_std_memory_realloc
-    end_if_59:
+    end_if_67:
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -3276,8 +3530,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_60
-    if_60:
+    jne end_if_68
+    if_68:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-48]
     mov QWORD [rsp+0], RBX
@@ -3288,7 +3542,7 @@ std_memory_realloc:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_realloc
-    end_if_60:
+    end_if_68:
     mov RAX, QWORD[rbp-48]
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     mov QWORD[rbp-64], RAX
@@ -3321,12 +3575,12 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_61
-    if_61:
+    jnbe end_if_69
+    if_69:
     mov RAX, QWORD[rbp-48]
 ; return值存入RAX
     jmp func_end_std_memory_realloc
-    end_if_61:
+    end_if_69:
     mov RCX, QWORD[rbp-64]
     mov RAX, QWORD[rbp-72]
     mov QWORD[rbp-88], RCX
@@ -3349,8 +3603,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_62
-    if_62:
+    jnbe end_if_70
+    if_70:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-88]
     mov QWORD [rsp+0], RBX
@@ -3367,8 +3621,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_63
-    and_mid_2:
+    je end_if_71
+    and_mid_4:
     mov RAX, QWORD[rbp-104]
     mov RCX, QWORD[rel __global_std_memory_IS_FREE]
     and RAX, RCX
@@ -3378,8 +3632,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_63
-    if_63:
+    je end_if_71
+    if_71:
     mov RBX, QWORD[rbp-104]
     mov RDX, QWORD[rel __global_std_memory_FLAG_MASK]
     mov RCX, RDX
@@ -3396,8 +3650,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb end_if_64
-    if_64:
+    jb end_if_72
+    if_72:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-88]
     mov QWORD [rsp+0], RBX
@@ -3441,8 +3695,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_65
-    if_65:
+    jnbe end_if_73
+    if_73:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-120]
     mov QWORD [rsp+0], RBX
@@ -3459,8 +3713,8 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_66
-    if_66:
+    je end_if_74
+    if_74:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-120]
     mov QWORD [rsp+0], RBX
@@ -3491,14 +3745,14 @@ std_memory_realloc:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_66:
-    end_if_65:
+    end_if_74:
+    end_if_73:
     mov RAX, QWORD[rbp-48]
 ; return值存入RAX
     jmp func_end_std_memory_realloc
-    end_if_64:
-    end_if_63:
-    end_if_62:
+    end_if_72:
+    end_if_71:
+    end_if_70:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-56]
     mov QWORD [rsp+0], RAX
@@ -3515,12 +3769,12 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_67
-    if_67:
+    jne end_if_75
+    if_75:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_realloc
-    end_if_67:
+    end_if_75:
     mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
     mov RAX, 2
     imul RBX, RAX
@@ -3535,12 +3789,12 @@ std_memory_realloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_68
-    if_68:
+    jbe end_if_76
+    if_76:
     mov RAX, QWORD[rbp-56]
     mov QWORD[rbp-144], RAX
 ; 设置变量copySize
-    end_if_68:
+    end_if_76:
     sub rsp, 32; register args buffer
     mov RAX, QWORD[rbp-136]
     mov QWORD [rsp+0], RAX
@@ -3568,39 +3822,6 @@ std_memory_realloc:
     jmp func_end_std_memory_realloc
     func_end_std_memory_realloc:
     add rsp, 184; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_memmove progbits alloc exec nowrite align=16
-global std_memory_memmove
-; ==============================
-; Function: std_memory_memmove
-std_memory_memmove:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov rdi, [rbp-48]
-    mov rsi, [rbp-56]
-    mov rdx, [rbp-64]
-    call _memmove
-    func_end_std_memory_memmove:
-    add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -3646,7 +3867,7 @@ std_memory_memcpy:
 
 
 
-    for_7: ; for循环开始
+    for_8: ; for循环开始
     mov RAX, QWORD[rbp-80]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -3654,8 +3875,8 @@ std_memory_memcpy:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_7_end
-    for_7_body:
+    jnb for_8_end
+    for_8_body:
 
 
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
@@ -3682,11 +3903,11 @@ std_memory_memcpy:
     mov QWORD[rbp-80], RBX
     add QWORD[rbp-80], RAX
 ; 设置变量i
-    for_7_continue:
+    for_8_continue:
 
 
-    jmp for_7; for循环
-    for_7_end: ; for循环结束
+    jmp for_8; for循环
+    for_8_end: ; for循环结束
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
     mov RBX, QWORD[rbp-72]
     imul RAX, RBX
@@ -3700,7 +3921,7 @@ std_memory_memcpy:
 
 
 
-    for_8: ; for循环开始
+    for_9: ; for循环开始
     mov RAX, QWORD[rbp-112]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -3708,8 +3929,8 @@ std_memory_memcpy:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_8_end
-    for_8_body:
+    jnb for_9_end
+    for_9_body:
 
 
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
@@ -3740,196 +3961,15 @@ std_memory_memcpy:
     mov QWORD[rbp-112], RBX
     add QWORD[rbp-112], RCX
 ; 设置变量j
-    for_8_continue:
-
-
-    jmp for_8; for循环
-    for_8_end: ; for循环结束
-    mov RAX, QWORD[rbp-48]
-; return值存入RAX
-    jmp func_end_std_memory_memcpy
-    func_end_std_memory_memcpy:
-    add rsp, 168; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_memset progbits alloc exec nowrite align=16
-global std_memory_memset
-; ==============================
-; Function: std_memory_memset
-std_memory_memset:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 168; 分配局部变量空间(168字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov BYTE [rbp-56], SIL; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    movzx RAX, BYTE[rbp-56]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_69
-    if_69:
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov QWORD[rbp-72], RAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 保存除数
-    mov rax, QWORD[rbp-72]
-    cqo
-    idiv qword [rsp]
-    add rsp, 8; 清理除数
-    mov QWORD[rbp-72], rax
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量words
-    mov QWORD[rbp-80], 0
-; 设置变量i
-
-
-
-
-    for_9: ; for循环开始
-    mov RAX, QWORD[rbp-80]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-72]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_9_end
-    for_9_body:
-
-
-    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov RBX, QWORD[rbp-80]
-    imul RAX, RBX
-    mov RBX, QWORD[rbp-48]
-    mov QWORD[rbp-88], RBX
-    add QWORD[rbp-88], RAX
-; 设置变量p
-    mov RBX, 0
-    mov RAX, QWORD[rbp-88]
-    mov QWORD [RAX], RBX
-; expression statement
-    mov RBX, QWORD[rbp-80]
-    mov RAX, 1
-    mov QWORD[rbp-80], RBX
-    add QWORD[rbp-80], RAX
-; 设置变量i
     for_9_continue:
 
 
     jmp for_9; for循环
     for_9_end: ; for循环结束
-    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov RBX, QWORD[rbp-72]
-    imul RAX, RBX
-    mov RBX, QWORD[rbp-64]
-    mov QWORD[rbp-96], RBX
-    sub QWORD[rbp-96], RAX
-; 设置变量rem
-    mov QWORD[rbp-104], 0
-; 设置变量j
-
-
-
-
-    for_10: ; for循环开始
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-96]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_10_end
-    for_10_body:
-
-
-    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov RCX, QWORD[rbp-72]
-    imul RAX, RCX
-    mov RBX, QWORD[rbp-48]
-    add RBX, RAX
-    mov RCX, QWORD[rbp-104]
-    mov QWORD[rbp-112], RBX
-    add QWORD[rbp-112], RCX
-; 设置变量bp
-    movzx RBX, BYTE[rbp-56]
-    mov RAX, QWORD[rbp-112]
-    mov BYTE [RAX], bl
-; expression statement
-    mov RAX, QWORD[rbp-104]
-    mov RCX, 1
-    mov QWORD[rbp-104], RAX
-    add QWORD[rbp-104], RCX
-; 设置变量j
-    for_10_continue:
-
-
-    jmp for_10; for循环
-    for_10_end: ; for循环结束
     mov RAX, QWORD[rbp-48]
 ; return值存入RAX
-    jmp func_end_std_memory_memset
-    end_if_69:
-    mov QWORD[rbp-120], 0
-; 设置变量b
-
-
-
-
-    for_11: ; for循环开始
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-64]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_11_end
-    for_11_body:
-
-
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-128], RAX
-    add QWORD[rbp-128], RBX
-; 设置变量bp2
-    movzx RAX, BYTE[rbp-56]
-    mov RBX, QWORD[rbp-128]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-120]
-    mov RCX, 1
-    mov QWORD[rbp-120], RAX
-    add QWORD[rbp-120], RCX
-; 设置变量b
-    for_11_continue:
-
-
-    jmp for_11; for循环
-    for_11_end: ; for循环结束
-    mov RAX, QWORD[rbp-48]
-; return值存入RAX
-    jmp func_end_std_memory_memset
-    func_end_std_memory_memset:
+    jmp func_end_std_memory_memcpy
+    func_end_std_memory_memcpy:
     add rsp, 168; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
@@ -4404,12 +4444,12 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_70
-    if_70:
+    jnb end_if_77
+    if_77:
     mov RAX, QWORD[rbp-72]
     mov QWORD[rbp-64], RAX
 ; 设置变量req
-    end_if_70:
+    end_if_77:
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -4417,8 +4457,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_71
-    if_71:
+    jbe end_if_78
+    if_78:
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
@@ -4447,12 +4487,12 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_72
-    if_72:
+    jnb end_if_79
+    if_79:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
-    end_if_72:
+    end_if_79:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-80]
     mov QWORD [rsp+0], RAX
@@ -4508,13 +4548,28 @@ std_memory_mallocRC:
     mov RAX, QWORD[rbp-96]
     mov QWORD [rsp+0], RAX
 ; 参数0
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RAX
+; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_trackAlloc
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-96]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
     mov RAX, QWORD[rbp-96]
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
-    end_if_71:
+    end_if_78:
     mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -4522,8 +4577,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_73
-    if_73:
+    jbe end_if_80
+    if_80:
     mov RBX, QWORD[rbp-64]
     mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
     add RBX, RAX
@@ -4565,12 +4620,12 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_74
-    if_74:
+    jnb end_if_81
+    if_81:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
-    end_if_74:
+    end_if_81:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-120]
     mov QWORD [rsp+0], RAX
@@ -4666,8 +4721,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_75
-    if_75:
+    jnbe end_if_82
+    if_82:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-160]
     mov QWORD [rsp+0], RBX
@@ -4684,8 +4739,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_76
-    if_76:
+    je end_if_83
+    if_83:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-160]
     mov QWORD [rsp+0], RBX
@@ -4716,8 +4771,8 @@ std_memory_mallocRC:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_76:
-    end_if_75:
+    end_if_83:
+    end_if_82:
     mov RDX, QWORD[rbp-136]
     mov RSI, QWORD[rbp-56]
     mov QWORD[rbp-184], RDX
@@ -4751,13 +4806,28 @@ std_memory_mallocRC:
     mov RBX, QWORD[rbp-184]
     mov QWORD [rsp+0], RBX
 ; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_trackAlloc
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-184]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
     mov RAX, QWORD[rbp-184]
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
-    end_if_73:
+    end_if_80:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+0], RAX
@@ -4792,8 +4862,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_77
-    if_77:
+    jne end_if_84
+    if_84:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-200]
     mov QWORD [rsp+0], RAX
@@ -4814,13 +4884,13 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_78
-    if_78:
+    jne end_if_85
+    if_85:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
-    end_if_78:
-    end_if_77:
+    end_if_85:
+    end_if_84:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-216]
     mov QWORD [rsp+0], RAX
@@ -4848,8 +4918,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_79
-    if_79:
+    je end_if_86
+    if_86:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-224]
     mov QWORD [rsp+0], RAX
@@ -4860,7 +4930,7 @@ std_memory_mallocRC:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeSetPrev
-    end_if_79:
+    end_if_86:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-216]
     mov QWORD [rsp+0], RAX
@@ -4905,8 +4975,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_80
-    if_80:
+    jnbe end_if_87
+    if_87:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-232]
     mov QWORD [rsp+0], RBX
@@ -4923,8 +4993,8 @@ std_memory_mallocRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_81
-    if_81:
+    je end_if_88
+    if_88:
     sub rsp, 16; register args buffer
     mov RBX, QWORD[rbp-232]
     mov QWORD [rsp+0], RBX
@@ -4955,8 +5025,8 @@ std_memory_mallocRC:
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_hdrSetFooter
-    end_if_81:
-    end_if_80:
+    end_if_88:
+    end_if_87:
     mov RDX, QWORD[rbp-216]
     mov RSI, QWORD[rbp-56]
     mov QWORD[rbp-256], RDX
@@ -4990,9 +5060,24 @@ std_memory_mallocRC:
     mov RBX, QWORD[rbp-256]
     mov QWORD [rsp+0], RBX
 ; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_trackAlloc
+    sub rsp, 16; register args buffer
+    mov RBX, QWORD[rbp-256]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+8], RBX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_trackAllocAll
     mov RAX, QWORD[rbp-256]
 ; return值存入RAX
     jmp func_end_std_memory_mallocRC
@@ -5021,7 +5106,7 @@ std_memory_freeRC:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
     mov RAX, QWORD[rbp-48]
 ; left operand
@@ -5030,92 +5115,78 @@ std_memory_freeRC:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_82
-    if_82:
+    jne end_if_89
+    if_89:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_freeRC
-    end_if_82:
+    end_if_89:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_90
+    and_mid_6:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakOverflow]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_90
+    and_mid_5:
     sub rsp, 16; register args buffer
-    mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
-    mov RCX, 3
-    imul RBX, RCX
-    mov RCX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RCX
-    sub QWORD [rsp+0], RBX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RBX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_isTrackedAll
+    cmp RAX, 0
+    sete al
+    movzx RAX, al
+; condition
+    test RAX, RAX
+    jz end_if_90
+    if_90:
+    mov RAX, 1
+; return值存入RAX
+    jmp func_end_std_memory_freeRC
+    end_if_90:
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov RBX, 3
+    imul RAX, RBX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RBX
+    sub QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_freeAt
-; return值存入RAX
-    jmp func_end_std_memory_freeRC
-    func_end_std_memory_freeRC:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_freeRCSlot progbits alloc exec nowrite align=16
-global std_memory_freeRCSlot
-; ==============================
-; Function: std_memory_freeRCSlot
-std_memory_freeRCSlot:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-    mov RAX, QWORD [RAX]
-    mov QWORD[rbp-56], RAX
-; 设置变量p
-    mov RAX, QWORD[rbp-56]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_83
-    if_83:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_memory_freeRCSlot
-    end_if_83:
+    mov BYTE[rbp-49], al
+; 设置变量ok
+    movzx RAX, BYTE[rbp-49]
+; condition
+    test RAX, RAX
+    jz end_if_91
+    if_91:
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-56]
+    mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_freeRC
-; condition
-    test RAX, RAX
-    jz end_if_84
-    if_84:
-    mov RAX, 0
-    mov RBX, QWORD[rbp-48]
-    mov QWORD [RBX], RAX
-; expression statement
-    mov RAX, 1
+    call std_memory_trackFreeAll
+    end_if_91:
+    movzx RAX, BYTE[rbp-49]
 ; return值存入RAX
-    jmp func_end_std_memory_freeRCSlot
-    end_if_84:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_memory_freeRCSlot
-    func_end_std_memory_freeRCSlot:
+    jmp func_end_std_memory_freeRC
+    func_end_std_memory_freeRC:
     add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
@@ -5149,10 +5220,10 @@ std_memory_rcInc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_85
-    if_85:
+    jne end_if_92
+    if_92:
     jmp func_end_std_memory_rcInc
-    end_if_85:
+    end_if_92:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
@@ -5209,12 +5280,12 @@ std_memory_rcDec:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_86
-    if_86:
+    jne end_if_93
+    if_93:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_rcDec
-    end_if_86:
+    end_if_93:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
@@ -5231,12 +5302,12 @@ std_memory_rcDec:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_87
-    if_87:
+    jne end_if_94
+    if_94:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_rcDec
-    end_if_87:
+    end_if_94:
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -5244,8 +5315,8 @@ std_memory_rcDec:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe end_if_88
-    if_88:
+    jnbe end_if_95
+    if_95:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
@@ -5273,7 +5344,7 @@ std_memory_rcDec:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_memory_rcDec
-    end_if_88:
+    end_if_95:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
@@ -5303,11 +5374,11 @@ std_memory_rcDec:
 ; ======函数完毕=======
 
 
-section .text.std_memory_rcGet progbits alloc exec nowrite align=16
-global std_memory_rcGet
+section .text.std_memory_dropInc progbits alloc exec nowrite align=16
+global std_memory_dropInc
 ; ==============================
-; Function: std_memory_rcGet
-std_memory_rcGet:
+; Function: std_memory_dropInc
+std_memory_dropInc:
     push rbp
     mov rbp, rsp
     push RBX; 保存RBX
@@ -5316,386 +5387,13 @@ std_memory_rcGet:
     push R14; 保存R14
     push R15; 保存R15
     sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_89
-    if_89:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_memory_rcGet
-    end_if_89:
-    sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RBX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcLoad
-; return值存入RAX
-    jmp func_end_std_memory_rcGet
-    func_end_std_memory_rcGet:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_rcTryRelease progbits alloc exec nowrite align=16
-global std_memory_rcTryRelease
-; ==============================
-; Function: std_memory_rcTryRelease
-std_memory_rcTryRelease:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_90
-    if_90:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_memory_rcTryRelease
-    end_if_90:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcLoad
-    mov QWORD[rbp-56], RAX
-; 设置变量rc
-    mov RAX, QWORD[rbp-56]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 1
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnbe end_if_91
-    if_91:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov QWORD [rsp+8], 0
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_memory_rcTryRelease
-    end_if_91:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-56]
+    mov RAX, QWORD[rel __global_std_memory_gDropCount]
     mov RBX, 1
-    mov QWORD [rsp+8], RAX
-    sub QWORD [rsp+8], RBX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_memory_rcTryRelease
-    func_end_std_memory_rcTryRelease:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_rcIsOne progbits alloc exec nowrite align=16
-global std_memory_rcIsOne
-; ==============================
-; Function: std_memory_rcIsOne
-std_memory_rcIsOne:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_92
-    if_92:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_memory_rcIsOne
-    end_if_92:
-    sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RBX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcLoad
-    mov RBX, 1
-    cmp RAX, RBX
-    sete al
-    movzx RAX, al
-; return值存入RAX
-    jmp func_end_std_memory_rcIsOne
-    func_end_std_memory_rcIsOne:
+    mov QWORD[rel __global_std_memory_gDropCount], RAX
+    add QWORD[rel __global_std_memory_gDropCount], RBX
+; 设置变量gDropCount
+    func_end_std_memory_dropInc:
     add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_rcSet progbits alloc exec nowrite align=16
-global std_memory_rcSet
-; ==============================
-; Function: std_memory_rcSet
-std_memory_rcSet:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_93
-    if_93:
-    jmp func_end_std_memory_rcSet
-    end_if_93:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-56]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    func_end_std_memory_rcSet:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_rcAdd progbits alloc exec nowrite align=16
-global std_memory_rcAdd
-; ==============================
-; Function: std_memory_rcAdd
-std_memory_rcAdd:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_94
-    if_94:
-    jmp func_end_std_memory_rcAdd
-    end_if_94:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcLoad
-    mov QWORD[rbp-64], RAX
-; 设置变量rc
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rbp-56]
-    mov QWORD [rsp+8], RAX
-    add QWORD [rsp+8], RBX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    func_end_std_memory_rcAdd:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_rcSub progbits alloc exec nowrite align=16
-global std_memory_rcSub
-; ==============================
-; Function: std_memory_rcSub
-std_memory_rcSub:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_95
-    if_95:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_memory_rcSub
-    end_if_95:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcLoad
-    mov QWORD[rbp-64], RAX
-; 设置变量rc
-    mov RAX, QWORD[rbp-64]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-56]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnbe end_if_96
-    if_96:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov QWORD [rsp+8], 0
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_trackFree
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_freeRC
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_memory_rcSub
-    end_if_96:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rbp-56]
-    mov QWORD [rsp+8], RAX
-    sub QWORD [rsp+8], RBX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_rcStore
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_memory_rcSub
-    func_end_std_memory_rcSub:
-    add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -5727,10 +5425,10 @@ std_memory_initLeakTracker:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_97
-    if_97:
+    je end_if_96
+    if_96:
     jmp func_end_std_memory_initLeakTracker
-    end_if_97:
+    end_if_96:
     sub rsp, 16; register args buffer
     mov QWORD [rsp+0], 0
 ; 参数0
@@ -5739,34 +5437,180 @@ std_memory_initLeakTracker:
     call std_syscall_brk
     mov QWORD[rbp-48], RAX
 ; 设置变量cur
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov RBX, 2
+    imul RAX, RBX
+    mov QWORD[rbp-56], 65536
+    add QWORD[rbp-56], RAX
+; 设置变量total
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
-    mov RBX, 2048
+    mov RBX, QWORD[rbp-56]
     mov QWORD [rsp+0], RAX
     add QWORD [rsp+0], RBX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
     add rsp, 16; 释放寄存器参数 buffer
     call std_syscall_brk
-    mov QWORD[rbp-56], RAX
+    mov QWORD[rbp-64], RAX
 ; 设置变量nb
-    mov RAX, QWORD[rbp-56]
+    mov RAX, QWORD[rbp-64]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
     mov RCX, QWORD[rbp-48]
-    mov RBX, 2048
-    add RCX, RBX
+    mov RAX, QWORD[rbp-56]
+    add RCX, RAX
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_98
-    if_98:
+    jnb end_if_97
+    if_97:
     jmp func_end_std_memory_initLeakTracker
-    end_if_98:
+    end_if_97:
+    sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
-    mov QWORD[rel __global_std_memory_gLeaks], RAX
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_hdrSetSizeRaw
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_hdrSetFooter
+    mov RBX, QWORD[rbp-48]
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov QWORD[rel __global_std_memory_gLeaks], RBX
+    add QWORD[rel __global_std_memory_gLeaks], RAX
 ; 设置变量gLeaks
+    mov RAX, QWORD[rbp-48]
+    mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
+    add RAX, RBX
+    mov RBX, 32768
+    mov QWORD[rel __global_std_memory_gLeakSizes], RAX
+    add QWORD[rel __global_std_memory_gLeakSizes], RBX
+; 设置变量gLeakSizes
     func_end_std_memory_initLeakTracker:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_initAllLeakTracker progbits alloc exec nowrite align=16
+global std_memory_initAllLeakTracker
+; ==============================
+; Function: std_memory_initAllLeakTracker
+std_memory_initAllLeakTracker:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    je end_if_98
+    if_98:
+    jmp func_end_std_memory_initAllLeakTracker
+    end_if_98:
+    sub rsp, 16; register args buffer
+    mov QWORD [rsp+0], 0
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_syscall_brk
+    mov QWORD[rbp-48], RAX
+; 设置变量cur
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov RBX, 2
+    imul RAX, RBX
+    mov QWORD[rbp-56], 65536
+    add QWORD[rbp-56], RAX
+; 设置变量total
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-48]
+    mov RBX, QWORD[rbp-56]
+    mov QWORD [rsp+0], RAX
+    add QWORD [rsp+0], RBX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_syscall_brk
+    mov QWORD[rbp-64], RAX
+; 设置变量nb
+    mov RAX, QWORD[rbp-64]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-48]
+    mov RAX, QWORD[rbp-56]
+    add RCX, RAX
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb end_if_99
+    if_99:
+    jmp func_end_std_memory_initAllLeakTracker
+    end_if_99:
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_hdrSetSizeRaw
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_hdrSetFooter
+    mov RBX, QWORD[rbp-48]
+    mov RAX, QWORD[rel __global_std_memory_PTR_SIZE]
+    mov QWORD[rel __global_std_memory_gAllLeaks], RBX
+    add QWORD[rel __global_std_memory_gAllLeaks], RAX
+; 设置变量gAllLeaks
+    mov RAX, QWORD[rbp-48]
+    mov RBX, QWORD[rel __global_std_memory_PTR_SIZE]
+    add RAX, RBX
+    mov RBX, 32768
+    mov QWORD[rel __global_std_memory_gAllLeakSizes], RAX
+    add QWORD[rel __global_std_memory_gAllLeakSizes], RBX
+; 设置变量gAllLeakSizes
+    func_end_std_memory_initAllLeakTracker:
     add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
@@ -5793,14 +5637,15 @@ std_memory_leakLoad:
     push R15; 保存R15
     sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
+    mov QWORD [rbp-56], RSI; 保存参数1到栈
+    mov RAX, QWORD[rbp-56]
     mov RBX, 8
     imul RAX, RBX
-    mov RBX, QWORD[rel __global_std_memory_gLeaks]
-    mov QWORD[rbp-56], RBX
-    add QWORD[rbp-56], RAX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD[rbp-64], RBX
+    add QWORD[rbp-64], RAX
 ; 设置变量_p
-    mov RBX, QWORD[rbp-56]
+    mov RBX, QWORD[rbp-64]
     mov RAX, QWORD [RBX]
 ; return值存入RAX
     jmp func_end_std_memory_leakLoad
@@ -5829,22 +5674,102 @@ std_memory_leakStore:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
     mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
+    mov QWORD [rbp-64], RDX; 保存参数2到栈
+    mov RAX, QWORD[rbp-56]
     mov RBX, 8
     imul RAX, RBX
-    mov RBX, QWORD[rel __global_std_memory_gLeaks]
-    mov QWORD[rbp-64], RBX
-    add QWORD[rbp-64], RAX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD[rbp-72], RBX
+    add QWORD[rbp-72], RAX
 ; 设置变量_p
-    mov RBX, QWORD[rbp-56]
-    mov RAX, QWORD[rbp-64]
+    mov RBX, QWORD[rbp-64]
+    mov RAX, QWORD[rbp-72]
     mov QWORD [RAX], RBX
 ; expression statement
     func_end_std_memory_leakStore:
+    add rsp, 120; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_leakSizeLoad progbits alloc exec nowrite align=16
+global std_memory_leakSizeLoad
+; ==============================
+; Function: std_memory_leakSizeLoad
+std_memory_leakSizeLoad:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov QWORD [rbp-56], RSI; 保存参数1到栈
+    mov RAX, QWORD[rbp-56]
+    mov RBX, 8
+    imul RAX, RBX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD[rbp-64], RBX
+    add QWORD[rbp-64], RAX
+; 设置变量_p
+    mov RBX, QWORD[rbp-64]
+    mov RAX, QWORD [RBX]
+; return值存入RAX
+    jmp func_end_std_memory_leakSizeLoad
+    func_end_std_memory_leakSizeLoad:
     add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_leakSizeStore progbits alloc exec nowrite align=16
+global std_memory_leakSizeStore
+; ==============================
+; Function: std_memory_leakSizeStore
+std_memory_leakSizeStore:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
+    mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov QWORD [rbp-56], RSI; 保存参数1到栈
+    mov QWORD [rbp-64], RDX; 保存参数2到栈
+    mov RAX, QWORD[rbp-56]
+    mov RBX, 8
+    imul RAX, RBX
+    mov RBX, QWORD[rbp-48]
+    mov QWORD[rbp-72], RBX
+    add QWORD[rbp-72], RAX
+; 设置变量_p
+    mov RBX, QWORD[rbp-64]
+    mov RAX, QWORD[rbp-72]
+    mov QWORD [RAX], RBX
+; expression statement
+    func_end_std_memory_leakSizeStore:
+    add rsp, 120; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -5870,6 +5795,7 @@ std_memory_trackAlloc:
     push R15; 保存R15
     sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov QWORD [rbp-56], RSI; 保存参数1到栈
     mov RAX, QWORD[rbp-48]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -5877,10 +5803,10 @@ std_memory_trackAlloc:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_99
-    if_99:
+    jne end_if_100
+    if_100:
     jmp func_end_std_memory_trackAlloc
-    end_if_99:
+    end_if_100:
     call std_memory_initLeakTracker
     mov RAX, QWORD[rel __global_std_memory_gAllocCount]
     mov RBX, 1
@@ -5890,32 +5816,51 @@ std_memory_trackAlloc:
     mov RAX, QWORD[rel __global_std_memory_gLeakCount]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 256
+    mov RCX, 4096
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_100
-    if_100:
+    jnb end_if_101
+    if_101:
     mov RAX, QWORD[rel __global_std_memory_gLeakCount]
-    mov QWORD[rbp-56], RAX
+    mov QWORD[rbp-64], RAX
 ; 设置变量cntV
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-56]
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeaks]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-48]
+    mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+8], RAX
 ; 参数1
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+16], RAX
+; 参数2
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
     call std_memory_leakStore
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakSizeStore
     mov RAX, QWORD[rel __global_std_memory_gLeakCount]
     mov RBX, 1
     mov QWORD[rel __global_std_memory_gLeakCount], RAX
     add QWORD[rel __global_std_memory_gLeakCount], RBX
 ; 设置变量gLeakCount
-    end_if_100:
+    end_if_101:
     func_end_std_memory_trackAlloc:
     add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
@@ -5941,7 +5886,7 @@ std_memory_trackFree:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
     mov QWORD [rbp-48], RDI; 保存参数0到栈
     mov RAX, QWORD[rbp-48]
 ; left operand
@@ -5950,10 +5895,10 @@ std_memory_trackFree:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_101
-    if_101:
+    jne end_if_102
+    if_102:
     jmp func_end_std_memory_trackFree
-    end_if_101:
+    end_if_102:
     call std_memory_initLeakTracker
     mov RAX, QWORD[rel __global_std_memory_gFreeCount]
     mov RBX, 1
@@ -5966,7 +5911,7 @@ std_memory_trackFree:
 
 
 
-    for_12: ; for循环开始
+    for_10: ; for循环开始
     mov RAX, QWORD[rbp-56]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -5974,15 +5919,19 @@ std_memory_trackFree:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_12_end
-    for_12_body:
+    jnb for_10_end
+    for_10_body:
 
 
     sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-56]
+    mov RAX, QWORD[rel __global_std_memory_gLeaks]
     mov QWORD [rsp+0], RAX
 ; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
     call std_memory_leakLoad
 ; left operand
@@ -5991,40 +5940,424 @@ std_memory_trackFree:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_102
-    if_102:
+    jne end_if_103
+    if_103:
     mov RAX, QWORD[rel __global_std_memory_gLeakCount]
     mov RBX, 1
     mov QWORD[rbp-64], RAX
     sub QWORD[rbp-64], RBX
 ; 设置变量lastIdx
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-64]
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeaks]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_leakLoad
-    mov QWORD[rbp-72], RAX
-; 设置变量tmp
-    sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeaks]
     mov QWORD [rsp+0], RAX
 ; 参数0
-    mov RAX, QWORD[rbp-72]
+    mov RAX, QWORD[rbp-64]
     mov QWORD [rsp+8], RAX
 ; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数1
     add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakLoad
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
     call std_memory_leakStore
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakSizeLoad
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakSizeStore
     mov RAX, QWORD[rel __global_std_memory_gLeakCount]
     mov RBX, 1
     mov QWORD[rel __global_std_memory_gLeakCount], RAX
     sub QWORD[rel __global_std_memory_gLeakCount], RBX
 ; 设置变量gLeakCount
     jmp func_end_std_memory_trackFree
-    end_if_102:
+    end_if_103:
+    mov RAX, QWORD[rbp-56]
+    mov RBX, 1
+    mov QWORD[rbp-56], RAX
+    add QWORD[rbp-56], RBX
+; 设置变量i
+    for_10_continue:
+
+
+    jmp for_10; for循环
+    for_10_end: ; for循环结束
+    func_end_std_memory_trackFree:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_trackAllocAll progbits alloc exec nowrite align=16
+global std_memory_trackAllocAll
+; ==============================
+; Function: std_memory_trackAllocAll
+std_memory_trackAllocAll:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov QWORD [rbp-56], RSI; 保存参数1到栈
+    mov RAX, QWORD[rbp-48]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_104
+    if_104:
+    jmp func_end_std_memory_trackAllocAll
+    end_if_104:
+    call std_memory_initAllLeakTracker
+    mov RAX, QWORD[rel __global_std_memory_gAllAllocCount]
+    mov RBX, 1
+    mov QWORD[rel __global_std_memory_gAllAllocCount], RAX
+    add QWORD[rel __global_std_memory_gAllAllocCount], RBX
+; 设置变量gAllAllocCount
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakCount]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 4096
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb else_if_105
+    if_105:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakCount]
+    mov QWORD[rbp-64], RAX
+; 设置变量cntV
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RAX, QWORD[rbp-48]
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakStore
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakSizeStore
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakCount]
+    mov RBX, 1
+    mov QWORD[rel __global_std_memory_gAllLeakCount], RAX
+    add QWORD[rel __global_std_memory_gAllLeakCount], RBX
+; 设置变量gAllLeakCount
+    jmp end_if_105
+    else_if_105:
+    mov QWORD[rel __global_std_memory_gAllLeakOverflow], 1
+; 设置变量gAllLeakOverflow
+    end_if_105:
+    func_end_std_memory_trackAllocAll:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_trackFreeAll progbits alloc exec nowrite align=16
+global std_memory_trackFreeAll
+; ==============================
+; Function: std_memory_trackFreeAll
+std_memory_trackFreeAll:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov RAX, QWORD[rbp-48]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_106
+    if_106:
+    jmp func_end_std_memory_trackFreeAll
+    end_if_106:
+    call std_memory_initAllLeakTracker
+    mov RAX, QWORD[rel __global_std_memory_gAllFreeCount]
+    mov RBX, 1
+    mov QWORD[rel __global_std_memory_gAllFreeCount], RAX
+    add QWORD[rel __global_std_memory_gAllFreeCount], RBX
+; 设置变量gAllFreeCount
+    mov QWORD[rbp-56], 0
+; 设置变量i
+
+
+
+
+    for_11: ; for循环开始
+    mov RAX, QWORD[rbp-56]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rel __global_std_memory_gAllLeakCount]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb for_11_end
+    for_11_body:
+
+
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakLoad
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-48]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_107
+    if_107:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakCount]
+    mov RBX, 1
+    mov QWORD[rbp-64], RAX
+    sub QWORD[rbp-64], RBX
+; 设置变量lastIdx
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakLoad
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakStore
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakSizes]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-64]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakSizeLoad
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    call std_memory_leakSizeStore
+    mov RAX, QWORD[rel __global_std_memory_gAllLeakCount]
+    mov RBX, 1
+    mov QWORD[rel __global_std_memory_gAllLeakCount], RAX
+    sub QWORD[rel __global_std_memory_gAllLeakCount], RBX
+; 设置变量gAllLeakCount
+    jmp func_end_std_memory_trackFreeAll
+    end_if_107:
+    mov RAX, QWORD[rbp-56]
+    mov RBX, 1
+    mov QWORD[rbp-56], RAX
+    add QWORD[rbp-56], RBX
+; 设置变量i
+    for_11_continue:
+
+
+    jmp for_11; for循环
+    for_11_end: ; for循环结束
+    func_end_std_memory_trackFreeAll:
+    add rsp, 104; 清理局部变量 + 对齐
+    pop R15; 恢复R15
+    pop R14; 恢复R14
+    pop R13; 恢复R13
+    pop R12; 恢复R12
+    pop RBX; 恢复RBX
+    leave; 恢复栈帧
+    ret
+
+; ======函数完毕=======
+
+
+section .text.std_memory_isTrackedAll progbits alloc exec nowrite align=16
+global std_memory_isTrackedAll
+; ==============================
+; Function: std_memory_isTrackedAll
+std_memory_isTrackedAll:
+    push rbp
+    mov rbp, rsp
+    push RBX; 保存RBX
+    push R12; 保存R12
+    push R13; 保存R13
+    push R14; 保存R14
+    push R15; 保存R15
+    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
+    mov QWORD [rbp-48], RDI; 保存参数0到栈
+    mov RAX, QWORD[rbp-48]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_108
+    if_108:
+    mov RAX, 0
+; return值存入RAX
+    jmp func_end_std_memory_isTrackedAll
+    end_if_108:
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_109
+    if_109:
+    mov RAX, 0
+; return值存入RAX
+    jmp func_end_std_memory_isTrackedAll
+    end_if_109:
+    mov QWORD[rbp-56], 0
+; 设置变量i
+
+
+
+
+    for_12: ; for循环开始
+    mov RAX, QWORD[rbp-56]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rel __global_std_memory_gAllLeakCount]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb for_12_end
+    for_12_body:
+
+
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rel __global_std_memory_gAllLeaks]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-56]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_leakLoad
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-48]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jne end_if_110
+    if_110:
+    mov RAX, 1
+; return值存入RAX
+    jmp func_end_std_memory_isTrackedAll
+    end_if_110:
     mov RAX, QWORD[rbp-56]
     mov RBX, 1
     mov QWORD[rbp-56], RAX
@@ -6035,1099 +6368,11 @@ std_memory_trackFree:
 
     jmp for_12; for循环
     for_12_end: ; for循环结束
-    func_end_std_memory_trackFree:
-    add rsp, 120; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_reportLeaks progbits alloc exec nowrite align=16
-global std_memory_reportLeaks
-; ==============================
-; Function: std_memory_reportLeaks
-std_memory_reportLeaks:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov RAX, QWORD[rel __global_std_memory_gLeakCount]
-; return值存入RAX
-    jmp func_end_std_memory_reportLeaks
-    func_end_std_memory_reportLeaks:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_reportAllocCount progbits alloc exec nowrite align=16
-global std_memory_reportAllocCount
-; ==============================
-; Function: std_memory_reportAllocCount
-std_memory_reportAllocCount:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov RAX, QWORD[rel __global_std_memory_gAllocCount]
-; return值存入RAX
-    jmp func_end_std_memory_reportAllocCount
-    func_end_std_memory_reportAllocCount:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_reportFreeCount progbits alloc exec nowrite align=16
-global std_memory_reportFreeCount
-; ==============================
-; Function: std_memory_reportFreeCount
-std_memory_reportFreeCount:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov RAX, QWORD[rel __global_std_memory_gFreeCount]
-; return值存入RAX
-    jmp func_end_std_memory_reportFreeCount
-    func_end_std_memory_reportFreeCount:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_memory_resetLeakTracker progbits alloc exec nowrite align=16
-global std_memory_resetLeakTracker
-; ==============================
-; Function: std_memory_resetLeakTracker
-std_memory_resetLeakTracker:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov QWORD[rbp-48], 0
-; 设置变量zeroU
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rel __global_std_memory_gAllocCount], RAX
-; 设置变量gAllocCount
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rel __global_std_memory_gFreeCount], RAX
-; 设置变量gFreeCount
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rel __global_std_memory_gLeakCount], RAX
-; 设置变量gLeakCount
-    func_end_std_memory_resetLeakTracker:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_count progbits alloc exec nowrite align=16
-global std_strings_count
-; ==============================
-; Function: std_strings_count
-std_strings_count:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 200; 分配局部变量空间(200字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-96], RAX
-; 设置变量sPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-104], RAX
-; 设置变量sLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
-; 设置变量tPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-120], RAX
-; 设置变量tLen
-    call std_strings_notFound
-    mov QWORD[rbp-128], RAX
-; 设置变量nf
-    mov QWORD[rbp-136], 0
-; 设置变量cnt
-    mov QWORD[rbp-144], 0
-; 设置变量scanPos
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 1
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb end_if_103
-    if_103:
-    mov RAX, QWORD[rbp-104]
-    mov RBX, 1
-    add RAX, RBX
-; return值存入RAX
-    jmp func_end_std_strings_count
-    end_if_103:
-
-
-
-
-    for_13: ; for循环开始
-
-
-    sub rsp, 48; register args buffer
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-104]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-112]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-120]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov RAX, QWORD[rbp-144]
-    mov QWORD [rsp+32], RAX
-; 参数4
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_strings_indexFrom
-    mov QWORD[rbp-152], RAX
-; 设置变量idx
-    mov RAX, QWORD[rbp-152]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-128]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jb end_if_104
-    if_104:
-    jmp for_13_end
-    end_if_104:
-    mov RAX, QWORD[rbp-136]
-    mov RBX, 1
-    mov QWORD[rbp-136], RAX
-    add QWORD[rbp-136], RBX
-; 设置变量cnt
-    mov RAX, QWORD[rbp-152]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-144], RAX
-    add QWORD[rbp-144], RBX
-; 设置变量scanPos
-    for_13_continue:
-
-
-    jmp for_13; for循环
-    for_13_end: ; for循环结束
-    mov RAX, QWORD[rbp-136]
-; return值存入RAX
-    jmp func_end_std_strings_count
-    func_end_std_strings_count:
-    add rsp, 200; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_isSpace progbits alloc exec nowrite align=16
-global std_strings_isSpace
-; ==============================
-; Function: std_strings_isSpace
-std_strings_isSpace:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 32
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_105
-    if_105:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_isSpace
-    end_if_105:
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 9
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_106
-    if_106:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_isSpace
-    end_if_106:
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 10
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_107
-    if_107:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_isSpace
-    end_if_107:
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 13
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_108
-    if_108:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_isSpace
-    end_if_108:
     mov RAX, 0
 ; return值存入RAX
-    jmp func_end_std_strings_isSpace
-    func_end_std_strings_isSpace:
-    add rsp, 88; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_trimLeft progbits alloc exec nowrite align=16
-global std_strings_trimLeft
-; ==============================
-; Function: std_strings_trimLeft
-std_strings_trimLeft:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 280; 分配局部变量空间(280字节, 含对齐)
-    mov QWORD [rbp-248], R10; 保存返回槽地址
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-96], RAX
-; 设置变量sPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-104], RAX
-; 设置变量sLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
-; 设置变量cPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-120], RAX
-; 设置变量cLen
-    mov QWORD[rbp-128], 0
-; 设置变量i
-
-
-
-
-    for_14: ; for循环开始
-    mov RAX, QWORD[rbp-128]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-104]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_14_end
-    for_14_body:
-
-
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-128]
-    mov QWORD[rbp-136], RAX
-    add QWORD[rbp-136], RBX
-; 设置变量_p1
-    mov RAX, QWORD[rbp-136]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-144], RAX
-; 设置变量ch
-    mov BYTE[rbp-145], 0
-; 设置变量found
-    mov QWORD[rbp-153], 0
-; 设置变量j
-
-
-
-
-    for_15: ; for循环开始
-    mov RAX, QWORD[rbp-153]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-120]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_15_end
-    for_15_body:
-
-
-    mov RAX, QWORD[rbp-112]
-    mov RBX, QWORD[rbp-153]
-    mov QWORD[rbp-161], RAX
-    add QWORD[rbp-161], RBX
-; 设置变量_p2
-    mov RAX, QWORD[rbp-161]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-169], RAX
-; 设置变量cj
-    mov RAX, QWORD[rbp-144]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-169]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_109
-    if_109:
-    mov BYTE[rbp-145], 1
-; 设置变量found
-    jmp for_15_end
-    end_if_109:
-    mov RAX, QWORD[rbp-153]
-    mov RBX, 1
-    mov QWORD[rbp-153], RAX
-    add QWORD[rbp-153], RBX
-; 设置变量j
-    for_15_continue:
-
-
-    jmp for_15; for循环
-    for_15_end: ; for循环结束
-    movzx RAX, BYTE[rbp-145]
-    cmp RAX, 0
-    sete al
-    movzx RAX, al
-; condition
-    test RAX, RAX
-    jz end_if_110
-    if_110:
-    jmp for_14_end
-    end_if_110:
-    mov RAX, QWORD[rbp-128]
-    mov RBX, 1
-    mov QWORD[rbp-128], RAX
-    add QWORD[rbp-128], RBX
-; 设置变量i
-    for_14_continue:
-
-
-    jmp for_14; for循环
-    for_14_end: ; for循环结束
-    mov RAX, QWORD[rbp-104]
-    mov RBX, QWORD[rbp-128]
-    mov QWORD[rbp-177], RAX
-    sub QWORD[rbp-177], RBX
-; 设置变量newLen
-    mov RAX, QWORD[rbp-177]
-    mov RBX, 1
-    mov QWORD[rbp-185], RAX
-    add QWORD[rbp-185], RBX
-; 设置变量bufN
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-185]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-193], RAX
-; 设置变量buf
-    mov QWORD[rbp-201], 0
-; 设置变量k
-
-
-
-
-    for_16: ; for循环开始
-    mov RAX, QWORD[rbp-201]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-177]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_16_end
-    for_16_body:
-
-
-    mov RAX, QWORD[rbp-193]
-    mov RBX, QWORD[rbp-201]
-    mov QWORD[rbp-209], RAX
-    add QWORD[rbp-209], RBX
-; 设置变量_p3
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-128]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-201]
-    mov QWORD[rbp-217], RAX
-    add QWORD[rbp-217], RBX
-; 设置变量_p4
-    mov RAX, QWORD[rbp-217]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-225], RAX
-; 设置变量_pc_p4
-    mov RAX, QWORD[rbp-225]
-    mov RBX, QWORD[rbp-209]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-201]
-    mov RBX, 1
-    mov QWORD[rbp-201], RAX
-    add QWORD[rbp-201], RBX
-; 设置变量k
-    for_16_continue:
-
-
-    jmp for_16; for循环
-    for_16_end: ; for循环结束
-    mov RAX, QWORD[rbp-193]
-    mov RBX, QWORD[rbp-177]
-    mov QWORD[rbp-233], RAX
-    add QWORD[rbp-233], RBX
-; 设置变量_p5
-    mov RAX, 0
-    mov RBX, QWORD[rbp-233]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-193]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-177]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-177]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    lea R10, [rbp-272]; 大值返回槽地址
-    call std_strings_view
-    mov RAX, QWORD [RBP-272]
-    mov QWORD [rbp-272+0], RAX
-    mov RAX, QWORD [RBP-272+8]
-    mov QWORD [rbp-272+8], RAX
-    mov RAX, QWORD [RBP-272+16]
-    mov QWORD [rbp-272+16], RAX
-; return值存入返回槽
-    mov R10, QWORD [rbp-248]; 恢复返回槽地址
-    mov RAX, QWORD [rbp-272]
-    mov QWORD [R10], RAX
-    mov RAX, QWORD [rbp-264]
-    mov QWORD [R10+8], RAX
-    mov RAX, QWORD [rbp-256]
-    mov QWORD [R10+16], RAX
-    jmp func_end_std_strings_trimLeft
-    func_end_std_strings_trimLeft:
-    add rsp, 280; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_trimRight progbits alloc exec nowrite align=16
-global std_strings_trimRight
-; ==============================
-; Function: std_strings_trimRight
-std_strings_trimRight:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 280; 分配局部变量空间(280字节, 含对齐)
-    mov QWORD [rbp-248], R10; 保存返回槽地址
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-96], RAX
-; 设置变量sPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-104], RAX
-; 设置变量sLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
-; 设置变量cPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-120], RAX
-; 设置变量cLen
-    mov RAX, QWORD[rbp-104]
-    mov QWORD[rbp-128], RAX
-; 设置变量end
-
-
-
-
-    for_17: ; for循环开始
-    mov RAX, QWORD[rbp-128]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe for_17_end
-    for_17_body:
-
-
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-128]
-    add RAX, RBX
-    mov RBX, 1
-    mov QWORD[rbp-136], RAX
-    sub QWORD[rbp-136], RBX
-; 设置变量_p6
-    mov RAX, QWORD[rbp-136]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-144], RAX
-; 设置变量ch
-    mov BYTE[rbp-145], 0
-; 设置变量found
-    mov QWORD[rbp-153], 0
-; 设置变量j
-
-
-
-
-    for_18: ; for循环开始
-    mov RAX, QWORD[rbp-153]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-120]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_18_end
-    for_18_body:
-
-
-    mov RAX, QWORD[rbp-112]
-    mov RBX, QWORD[rbp-153]
-    mov QWORD[rbp-161], RAX
-    add QWORD[rbp-161], RBX
-; 设置变量_p7
-    mov RAX, QWORD[rbp-161]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-169], RAX
-; 设置变量cj
-    mov RAX, QWORD[rbp-144]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-169]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_111
-    if_111:
-    mov BYTE[rbp-145], 1
-; 设置变量found
-    jmp for_18_end
-    end_if_111:
-    mov RAX, QWORD[rbp-153]
-    mov RBX, 1
-    mov QWORD[rbp-153], RAX
-    add QWORD[rbp-153], RBX
-; 设置变量j
-    for_18_continue:
-
-
-    jmp for_18; for循环
-    for_18_end: ; for循环结束
-    movzx RAX, BYTE[rbp-145]
-    cmp RAX, 0
-    sete al
-    movzx RAX, al
-; condition
-    test RAX, RAX
-    jz end_if_112
-    if_112:
-    jmp for_17_end
-    end_if_112:
-    mov RAX, QWORD[rbp-128]
-    mov RBX, 1
-    mov QWORD[rbp-128], RAX
-    sub QWORD[rbp-128], RBX
-; 设置变量end
-    for_17_continue:
-
-
-    jmp for_17; for循环
-    for_17_end: ; for循环结束
-    mov RAX, QWORD[rbp-128]
-    mov RBX, 1
-    mov QWORD[rbp-177], RAX
-    add QWORD[rbp-177], RBX
-; 设置变量bufN
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-177]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-185], RAX
-; 设置变量buf
-    mov QWORD[rbp-193], 0
-; 设置变量k
-
-
-
-
-    for_19: ; for循环开始
-    mov RAX, QWORD[rbp-193]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-128]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_19_end
-    for_19_body:
-
-
-    mov RAX, QWORD[rbp-185]
-    mov RBX, QWORD[rbp-193]
-    mov QWORD[rbp-201], RAX
-    add QWORD[rbp-201], RBX
-; 设置变量_p8
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-193]
-    mov QWORD[rbp-209], RAX
-    add QWORD[rbp-209], RBX
-; 设置变量_p9
-    mov RAX, QWORD[rbp-209]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-217], RAX
-; 设置变量_pc_p9
-    mov RAX, QWORD[rbp-217]
-    mov RBX, QWORD[rbp-201]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-193]
-    mov RBX, 1
-    mov QWORD[rbp-193], RAX
-    add QWORD[rbp-193], RBX
-; 设置变量k
-    for_19_continue:
-
-
-    jmp for_19; for循环
-    for_19_end: ; for循环结束
-    mov RAX, QWORD[rbp-185]
-    mov RBX, QWORD[rbp-128]
-    mov QWORD[rbp-225], RAX
-    add QWORD[rbp-225], RBX
-; 设置变量_p10
-    mov RAX, 0
-    mov RBX, QWORD[rbp-225]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-185]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-128]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-128]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    lea R10, [rbp-272]; 大值返回槽地址
-    call std_strings_view
-    mov RAX, QWORD [RBP-272]
-    mov QWORD [rbp-272+0], RAX
-    mov RAX, QWORD [RBP-272+8]
-    mov QWORD [rbp-272+8], RAX
-    mov RAX, QWORD [RBP-272+16]
-    mov QWORD [rbp-272+16], RAX
-; return值存入返回槽
-    mov R10, QWORD [rbp-248]; 恢复返回槽地址
-    mov RAX, QWORD [rbp-272]
-    mov QWORD [R10], RAX
-    mov RAX, QWORD [rbp-264]
-    mov QWORD [R10+8], RAX
-    mov RAX, QWORD [rbp-256]
-    mov QWORD [R10+16], RAX
-    jmp func_end_std_strings_trimRight
-    func_end_std_strings_trimRight:
-    add rsp, 280; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_indexByte progbits alloc exec nowrite align=16
-global std_strings_indexByte
-; ==============================
-; Function: std_strings_indexByte
-std_strings_indexByte:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 168; 分配局部变量空间(168字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-72], RCX; 保存参数1到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-80], RAX
-; 设置变量sPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-88], RAX
-; 设置变量sLen
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[rbp-96], RAX
-; 设置变量byteVal
-    mov QWORD[rbp-104], 0
-; 设置变量i
-
-
-
-
-    for_20: ; for循环开始
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-88]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_20_end
-    for_20_body:
-
-
-    mov RAX, QWORD[rbp-80]
-    mov RBX, QWORD[rbp-104]
-    mov QWORD[rbp-112], RAX
-    add QWORD[rbp-112], RBX
-; 设置变量_p13
-    mov RAX, QWORD[rbp-112]
-    movzx RAX, BYTE [RAX]
-    mov QWORD[rbp-120], RAX
-; 设置变量mv
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-96]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_113
-    if_113:
-    mov RAX, QWORD[rbp-104]
-; return值存入RAX
-    jmp func_end_std_strings_indexByte
-    end_if_113:
-    mov RAX, QWORD[rbp-104]
-    mov RBX, 1
-    mov QWORD[rbp-104], RAX
-    add QWORD[rbp-104], RBX
-; 设置变量i
-    for_20_continue:
-
-
-    jmp for_20; for循环
-    for_20_end: ; for循环结束
-    mov RAX, -1
-; return值存入RAX
-    jmp func_end_std_strings_indexByte
-    func_end_std_strings_indexByte:
-    add rsp, 168; 清理局部变量 + 对齐
+    jmp func_end_std_memory_isTrackedAll
+    func_end_std_memory_isTrackedAll:
+    add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -7158,20 +6403,8 @@ std_strings_compare:
     mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
     mov QWORD [rbp-80], R8; 保存参数1槽1到栈
     mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-96], RAX
+    mov QWORD [rbp-96], RAX
 ; 设置变量aPtr
     sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-64]
@@ -7188,20 +6421,8 @@ std_strings_compare:
     call std_strings_len
     mov QWORD[rbp-104], RAX
 ; 设置变量aLen
-    sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
+    mov QWORD [rbp-112], RAX
 ; 设置变量bPtr
     sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-88]
@@ -7228,19 +6449,19 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_114
-    if_114:
+    jnb end_if_111
+    if_111:
     mov RAX, QWORD[rbp-120]
     mov QWORD[rbp-128], RAX
 ; 设置变量minLen
-    end_if_114:
+    end_if_111:
     mov QWORD[rbp-136], 0
 ; 设置变量i
 
 
 
 
-    for_21: ; for循环开始
+    for_13: ; for循环开始
     mov RAX, QWORD[rbp-136]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7248,8 +6469,8 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_21_end
-    for_21_body:
+    jnb for_13_end
+    for_13_body:
 
 
     mov RAX, QWORD[rbp-96]
@@ -7277,12 +6498,12 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_115
-    if_115:
+    jnb end_if_112
+    if_112:
     mov RAX, -1
 ; return值存入RAX
     jmp func_end_std_strings_compare
-    end_if_115:
+    end_if_112:
     mov RAX, QWORD[rbp-152]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7290,22 +6511,22 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_116
-    if_116:
+    jbe end_if_113
+    if_113:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_compare
-    end_if_116:
+    end_if_113:
     mov RAX, QWORD[rbp-136]
     mov RBX, 1
     mov QWORD[rbp-136], RAX
     add QWORD[rbp-136], RBX
 ; 设置变量i
-    for_21_continue:
+    for_13_continue:
 
 
-    jmp for_21; for循环
-    for_21_end: ; for循环结束
+    jmp for_13; for循环
+    for_13_end: ; for循环结束
     mov RAX, QWORD[rbp-104]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7313,12 +6534,12 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb end_if_117
-    if_117:
+    jnb end_if_114
+    if_114:
     mov RAX, -1
 ; return值存入RAX
     jmp func_end_std_strings_compare
-    end_if_117:
+    end_if_114:
     mov RAX, QWORD[rbp-104]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7326,12 +6547,12 @@ std_strings_compare:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_118
-    if_118:
+    jbe end_if_115
+    if_115:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_compare
-    end_if_118:
+    end_if_115:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_strings_compare
@@ -7348,11 +6569,11 @@ std_strings_compare:
 ; ======函数完毕=======
 
 
-section .text.std_strings_isDigitByte progbits alloc exec nowrite align=16
-global std_strings_isDigitByte
+section .text.std_strings_repeatN progbits alloc exec nowrite align=16
+global std_strings_repeatN
 ; ==============================
-; Function: std_strings_isDigitByte
-std_strings_isDigitByte:
+; Function: std_strings_repeatN
+std_strings_repeatN:
     push rbp
     mov rbp, rsp
     push RBX; 保存RBX
@@ -7360,23 +6581,69 @@ std_strings_isDigitByte:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 88; 分配局部变量空间(88字节, 含对齐)
-    mov BYTE [rbp-48], DIL; 保存参数0到栈
-    movzx RAX, BYTE[rbp-48]
-    mov RBX, 48
-    cmp RAX, RBX
-    setge al
-    movzx RAX, al
-    movzx RBX, BYTE[rbp-48]
-    mov RCX, 57
-    cmp RBX, RCX
-    setle bl
-    movzx RBX, bl
-    and RAX, RBX
-; return值存入RAX
-    jmp func_end_std_strings_isDigitByte
-    func_end_std_strings_isDigitByte:
-    add rsp, 88; 清理局部变量 + 对齐
+    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
+    mov QWORD [rbp-88], R10; 保存返回槽地址
+    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
+    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
+    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
+    mov QWORD [rbp-72], RCX; 保存参数1到栈
+    mov RAX, QWORD[rbp-72]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, 0
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jg end_if_116
+    if_116:
+    mov QWORD QWORD[rbp-112], 0
+    mov QWORD [rbp-112+8], 0
+    mov QWORD [rbp-112+16], 0
+; return值存入返回槽
+    mov R10, QWORD [rbp-88]; 恢复返回槽地址
+    mov RAX, QWORD [rbp-112]
+    mov QWORD [R10], RAX
+    mov RAX, QWORD [rbp-104]
+    mov QWORD [R10+8], RAX
+    mov RAX, QWORD [rbp-96]
+    mov QWORD [R10+16], RAX
+    jmp func_end_std_strings_repeatN
+    end_if_116:
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD [rbp-64]
+    mov QWORD [rsp+0+0], RAX
+    mov RAX, QWORD [rbp-64+8]
+    mov QWORD [rsp+0+8], RAX
+    mov RAX, QWORD [rbp-64+16]
+    mov QWORD [rsp+0+16], RAX
+; 参数0
+    mov RAX, QWORD[rbp-72]
+    mov QWORD [rsp+24], RAX
+; 参数1
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数0
+    mov RDX, QWORD [rsp+16]; 装载参数0
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-112]; 大值返回槽地址
+    call std_strings_repeat
+    mov RAX, QWORD [RBP-112]
+    mov QWORD [rbp-112+0], RAX
+    mov RAX, QWORD [RBP-112+8]
+    mov QWORD [rbp-112+8], RAX
+    mov RAX, QWORD [RBP-112+16]
+    mov QWORD [rbp-112+16], RAX
+; return值存入返回槽
+    mov R10, QWORD [rbp-88]; 恢复返回槽地址
+    mov RAX, QWORD [rbp-112]
+    mov QWORD [R10], RAX
+    mov RAX, QWORD [rbp-104]
+    mov QWORD [R10+8], RAX
+    mov RAX, QWORD [rbp-96]
+    mov QWORD [R10+16], RAX
+    jmp func_end_std_strings_repeatN
+    func_end_std_strings_repeatN:
+    add rsp, 120; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -7524,12 +6791,12 @@ std_strings_eq:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_119
-    if_119:
+    jne end_if_117
+    if_117:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_eq
-    end_if_119:
+    end_if_117:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_strings_eq
@@ -7596,12 +6863,12 @@ std_strings_ne:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_120
-    if_120:
+    je end_if_118
+    if_118:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_ne
-    end_if_120:
+    end_if_118:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_strings_ne
@@ -7632,22 +6899,102 @@ std_strings_toCstring:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
+    sub rsp, 200; 分配局部变量空间(200字节, 含对齐)
     mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
     mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
     mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    lea RAX, [rbp-64]
+    mov RDI, QWORD [rbp-64]
+    mov RSI, QWORD [rbp-64+8]
+    mov RDX, QWORD [rbp-64+16]
+    call __string_len
     mov QWORD[rbp-72], RAX
-; 设置变量p
+; 设置变量n
     mov RAX, QWORD[rbp-72]
+    mov RBX, 1
     mov QWORD[rbp-80], RAX
-; 设置变量_p11
-    mov RBX, QWORD[rbp-80]
-    mov RAX, QWORD [RBX]
+    add QWORD[rbp-80], RBX
+; 设置变量bufN
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-80]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_malloc
+    mov QWORD[rbp-88], RAX
+; 设置变量buf
+    mov RAX, QWORD [rbp-64]
+    mov QWORD [rbp-96], RAX
+; 设置变量src
+    mov QWORD[rbp-104], 0
+; 设置变量i
+
+
+
+
+    for_14: ; for循环开始
+    mov RAX, QWORD[rbp-104]
+; left operand
+    mov R12, RAX; 保存左操作数到callee-save
+    mov RCX, QWORD[rbp-72]
+; right operand
+    mov RAX, R12; 恢复左操作数
+    cmp RAX, RCX
+    jnb for_14_end
+    for_14_body:
+
+
+    mov RAX, QWORD[rbp-88]
+    mov RBX, QWORD[rbp-104]
+    mov QWORD[rbp-112], RAX
+    add QWORD[rbp-112], RBX
+; 设置变量_dst
+    mov RAX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-104]
+    mov QWORD[rbp-120], RAX
+    add QWORD[rbp-120], RBX
+; 设置变量_src
+    mov RAX, QWORD[rbp-120]
+    movzx RAX, BYTE [RAX]
+    mov QWORD[rbp-128], RAX
+; 设置变量_ch
+    mov RAX, QWORD[rbp-128]
+    mov RBX, QWORD[rbp-112]
+    mov BYTE [RBX], al
+; expression statement
+    mov RAX, QWORD[rbp-104]
+    mov RBX, 1
+    mov QWORD[rbp-104], RAX
+    add QWORD[rbp-104], RBX
+; 设置变量i
+    for_14_continue:
+
+
+    jmp for_14; for循环
+    for_14_end: ; for循环结束
+    mov RAX, QWORD[rbp-88]
+    mov RBX, QWORD[rbp-72]
+    mov QWORD[rbp-136], RAX
+    add QWORD[rbp-136], RBX
+; 设置变量_tail
+    mov RAX, 0
+    mov RBX, QWORD[rbp-136]
+    mov BYTE [RBX], al
+; expression statement
+    mov QWORD[rbp-144], 0
+; 设置变量r
+    lea RAX, [rbp-144]
+    mov QWORD[rbp-152], RAX
+; 设置变量rp
+    mov RBX, QWORD[rbp-88]
+    mov RAX, QWORD[rbp-152]
+    mov QWORD [RAX], RBX
+; expression statement
+    mov RAX, QWORD[rbp-144]
 ; return值存入RAX
     jmp func_end_std_strings_toCstring
     func_end_std_strings_toCstring:
-    add rsp, 120; 清理局部变量 + 对齐
+    add rsp, 200; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -7771,8 +7118,8 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jge else_if_121
-    if_121:
+    jge else_if_119
+    if_119:
     mov BYTE[rbp-57], 1
 ; 设置变量neg
     sub rsp, 16; register args buffer
@@ -7785,8 +7132,8 @@ std_strings_toString:
     call std_strings_toU64
     mov QWORD[rbp-65], RAX
 ; 设置变量num
-    jmp end_if_121
-    else_if_121:
+    jmp end_if_119
+    else_if_119:
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-48]
     mov QWORD [rsp+0], RAX
@@ -7796,7 +7143,7 @@ std_strings_toString:
     call std_strings_toU64
     mov QWORD[rbp-65], RAX
 ; 设置变量num
-    end_if_121:
+    end_if_119:
     mov QWORD[rbp-73], 1
 ; 设置变量digits
     mov RAX, QWORD[rbp-65]
@@ -7806,7 +7153,7 @@ std_strings_toString:
 
 
 
-    for_22: ; for循环开始
+    for_15: ; for循环开始
     mov RAX, QWORD[rbp-81]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7814,8 +7161,8 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb for_22_end
-    for_22_body:
+    jb for_15_end
+    for_15_body:
 
 
     mov RAX, QWORD[rbp-81]
@@ -7835,25 +7182,25 @@ std_strings_toString:
     mov QWORD[rbp-73], RAX
     add QWORD[rbp-73], RBX
 ; 设置变量digits
-    for_22_continue:
+    for_15_continue:
 
 
-    jmp for_22; for循环
-    for_22_end: ; for循环结束
+    jmp for_15; for循环
+    for_15_end: ; for循环结束
     mov RAX, QWORD[rbp-73]
     mov QWORD[rbp-89], RAX
 ; 设置变量total
     movzx RAX, BYTE[rbp-57]
 ; condition
     test RAX, RAX
-    jz end_if_122
-    if_122:
+    jz end_if_120
+    if_120:
     mov RAX, QWORD[rbp-89]
     mov RBX, 1
     mov QWORD[rbp-89], RAX
     add QWORD[rbp-89], RBX
 ; 设置变量total
-    end_if_122:
+    end_if_120:
     mov RAX, QWORD[rbp-89]
     mov RBX, 1
     mov QWORD[rbp-97], RAX
@@ -7878,8 +7225,8 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne else_if_123
-    if_123:
+    jne else_if_121
+    if_121:
     mov RAX, QWORD[rbp-105]
     mov QWORD[rbp-121], RAX
 ; 设置变量_p14
@@ -7887,15 +7234,15 @@ std_strings_toString:
     mov RBX, QWORD[rbp-121]
     mov BYTE [RBX], al
 ; expression statement
-    jmp end_if_123
-    else_if_123:
+    jmp end_if_121
+    else_if_121:
     mov QWORD[rbp-129], 0
 ; 设置变量i
 
 
 
 
-    for_23: ; for循环开始
+    for_16: ; for循环开始
     mov RAX, QWORD[rbp-113]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7903,8 +7250,8 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe for_23_end
-    for_23_body:
+    jbe for_16_end
+    for_16_body:
 
 
     mov RAX, QWORD[rbp-113]
@@ -7928,15 +7275,15 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb else_if_124
-    if_124:
+    jnb else_if_122
+    if_122:
     mov RAX, QWORD[rbp-137]
     mov RBX, 48
     mov QWORD[rbp-145], RAX
     add QWORD[rbp-145], RBX
 ; 设置变量ch
-    jmp end_if_124
-    else_if_124:
+    jmp end_if_122
+    else_if_122:
     mov RAX, QWORD[rbp-137]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -7944,8 +7291,8 @@ std_strings_toString:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb else_if_125
-    if_125:
+    jnb else_if_123
+    if_123:
     mov RAX, QWORD[rbp-137]
     mov RBX, 97
     add RAX, RBX
@@ -7953,8 +7300,8 @@ std_strings_toString:
     mov QWORD[rbp-145], RAX
     sub QWORD[rbp-145], RBX
 ; 设置变量ch
-    jmp end_if_125
-    else_if_125:
+    jmp end_if_123
+    else_if_123:
     mov RAX, QWORD[rbp-137]
     mov RBX, 65
     add RAX, RBX
@@ -7962,8 +7309,8 @@ std_strings_toString:
     mov QWORD[rbp-145], RAX
     sub QWORD[rbp-145], RBX
 ; 设置变量ch
-    end_if_125:
-    end_if_124:
+    end_if_123:
+    end_if_122:
     mov RAX, QWORD[rbp-89]
     mov RBX, 1
     sub RAX, RBX
@@ -7994,17 +7341,17 @@ std_strings_toString:
     mov QWORD[rbp-129], RAX
     add QWORD[rbp-129], RBX
 ; 设置变量i
-    for_23_continue:
+    for_16_continue:
 
 
-    jmp for_23; for循环
-    for_23_end: ; for循环结束
-    end_if_123:
+    jmp for_16; for循环
+    for_16_end: ; for循环结束
+    end_if_121:
     movzx RAX, BYTE[rbp-57]
 ; condition
     test RAX, RAX
-    jz end_if_126
-    if_126:
+    jz end_if_124
+    if_124:
     mov RAX, QWORD[rbp-105]
     mov QWORD[rbp-161], RAX
 ; 设置变量_p16
@@ -8012,7 +7359,7 @@ std_strings_toString:
     mov RBX, QWORD[rbp-161]
     mov BYTE [RBX], al
 ; expression statement
-    end_if_126:
+    end_if_124:
     mov RAX, QWORD[rbp-105]
     mov RBX, QWORD[rbp-89]
     mov QWORD[rbp-169], RAX
@@ -8141,13 +7488,13 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_127
-    if_127:
+    jne end_if_125
+    if_125:
     mov BYTE[rbp-121], 1
 ; 设置变量neg
     mov QWORD[rbp-120], 1
 ; 设置变量i
-    end_if_127:
+    end_if_125:
     mov QWORD[rbp-145], 0
 ; 设置变量val
     mov BYTE[rbp-146], 0
@@ -8156,7 +7503,7 @@ std_strings_parse:
 
 
 
-    for_24: ; for循环开始
+    for_17: ; for循环开始
     mov RAX, QWORD[rbp-120]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8164,8 +7511,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_24_end
-    for_24_body:
+    jnb for_17_end
+    for_17_body:
 
 
     mov RAX, QWORD[rbp-96]
@@ -8186,8 +7533,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb else_if_128
-    and_mid_3:
+    jb else_if_126
+    and_mid_7:
     mov RAX, QWORD[rbp-162]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8195,15 +7542,15 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe else_if_128
-    if_128:
+    jnbe else_if_126
+    if_126:
     mov RAX, QWORD[rbp-162]
     mov RBX, 48
     mov QWORD[rbp-170], RAX
     sub QWORD[rbp-170], RBX
 ; 设置变量v
-    jmp end_if_128
-    else_if_128:
+    jmp end_if_126
+    else_if_126:
     mov RAX, QWORD[rbp-162]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8211,8 +7558,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb else_if_129
-    and_mid_4:
+    jb else_if_127
+    and_mid_8:
     mov RAX, QWORD[rbp-162]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8220,8 +7567,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe else_if_129
-    if_129:
+    jnbe else_if_127
+    if_127:
     mov RAX, QWORD[rbp-162]
     mov RBX, 97
     sub RAX, RBX
@@ -8229,8 +7576,8 @@ std_strings_parse:
     mov QWORD[rbp-170], RAX
     add QWORD[rbp-170], RBX
 ; 设置变量v
-    jmp end_if_129
-    else_if_129:
+    jmp end_if_127
+    else_if_127:
     mov RAX, QWORD[rbp-162]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8238,8 +7585,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jb else_if_130
-    and_mid_5:
+    jb else_if_128
+    and_mid_9:
     mov RAX, QWORD[rbp-162]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8247,8 +7594,8 @@ std_strings_parse:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnbe else_if_130
-    if_130:
+    jnbe else_if_128
+    if_128:
     mov RAX, QWORD[rbp-162]
     mov RBX, 65
     sub RAX, RBX
@@ -8256,21 +7603,21 @@ std_strings_parse:
     mov QWORD[rbp-170], RAX
     add QWORD[rbp-170], RBX
 ; 设置变量v
-    jmp end_if_130
-    else_if_130:
+    jmp end_if_128
+    else_if_128:
     mov BYTE[rbp-146], 1
 ; 设置变量bad
-    end_if_130:
-    end_if_129:
     end_if_128:
+    end_if_127:
+    end_if_126:
     movzx RAX, BYTE[rbp-146]
     cmp RAX, 0
     sete al
     movzx RAX, al
 ; condition
     test RAX, RAX
-    jz end_if_131
-    if_131:
+    jz end_if_129
+    if_129:
     mov RAX, QWORD[rbp-145]
     mov RBX, QWORD[rbp-72]
     imul RAX, RBX
@@ -8278,17 +7625,17 @@ std_strings_parse:
     mov QWORD[rbp-145], RAX
     add QWORD[rbp-145], RBX
 ; 设置变量val
-    end_if_131:
+    end_if_129:
     mov RAX, QWORD[rbp-120]
     mov RBX, 1
     mov QWORD[rbp-120], RAX
     add QWORD[rbp-120], RBX
 ; 设置变量i
-    for_24_continue:
+    for_17_continue:
 
 
-    jmp for_24; for循环
-    for_24_end: ; for循环结束
+    jmp for_17; for循环
+    for_17_end: ; for循环结束
     sub rsp, 16; register args buffer
     mov RAX, QWORD[rbp-145]
     mov QWORD [rsp+0], RAX
@@ -8301,56 +7648,18 @@ std_strings_parse:
     movzx RAX, BYTE[rbp-121]
 ; condition
     test RAX, RAX
-    jz end_if_132
-    if_132:
+    jz end_if_130
+    if_130:
     mov RBX, QWORD[rbp-178]
     mov QWORD[rbp-178], 0
     sub QWORD[rbp-178], RBX
 ; 设置变量r
-    end_if_132:
+    end_if_130:
     mov RAX, QWORD[rbp-178]
 ; return值存入RAX
     jmp func_end_std_strings_parse
     func_end_std_strings_parse:
     add rsp, 232; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_notFound progbits alloc exec nowrite align=16
-global std_strings_notFound
-; ==============================
-; Function: std_strings_notFound
-std_strings_notFound:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD[rbp-48], -1
-; 设置变量v
-    lea RAX, [rbp-48]
-    mov QWORD[rbp-56], RAX
-; 设置变量p
-    mov RAX, QWORD[rbp-56]
-    mov QWORD[rbp-64], RAX
-; 设置变量_p25
-    mov RBX, QWORD[rbp-64]
-    mov RAX, QWORD [RBX]
-; return值存入RAX
-    jmp func_end_std_strings_notFound
-    func_end_std_strings_notFound:
-    add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -8439,283 +7748,6 @@ std_strings_view:
 ; ======函数完毕=======
 
 
-section .text.std_strings_indexFrom progbits alloc exec nowrite align=16
-global std_strings_indexFrom
-; ==============================
-; Function: std_strings_indexFrom
-std_strings_indexFrom:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 168; 分配局部变量空间(168字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov QWORD [rbp-72], RCX; 保存参数3到栈
-    mov QWORD [rbp-80], R8; 保存参数4到栈
-    mov RAX, QWORD[rbp-72]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_133
-    if_133:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_strings_indexFrom
-    end_if_133:
-    mov RAX, QWORD[rbp-72]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-56]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_134
-    if_134:
-    call std_strings_notFound
-; return值存入RAX
-    jmp func_end_std_strings_indexFrom
-    end_if_134:
-    mov RAX, QWORD[rbp-80]
-    mov QWORD[rbp-88], RAX
-; 设置变量i
-    mov RAX, QWORD[rbp-56]
-    mov RBX, QWORD[rbp-72]
-    mov QWORD[rbp-96], RAX
-    sub QWORD[rbp-96], RBX
-; 设置变量limit
-
-
-
-
-    for_25: ; for循环开始
-    mov RAX, QWORD[rbp-88]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-96]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnbe for_25_end
-    for_25_body:
-
-
-    mov BYTE[rbp-97], 1
-; 设置变量found
-    mov QWORD[rbp-105], 0
-; 设置变量j
-
-
-
-
-    for_26: ; for循环开始
-    mov RAX, QWORD[rbp-105]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-72]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_26_end
-    for_26_body:
-
-
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-88]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-105]
-    mov QWORD[rbp-113], RAX
-    add QWORD[rbp-113], RBX
-; 设置变量_p29
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rbp-105]
-    mov QWORD[rbp-121], RAX
-    add QWORD[rbp-121], RBX
-; 设置变量_p30
-    mov RAX, QWORD[rbp-113]
-    movzx RAX, BYTE [RAX]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RAX, QWORD[rbp-121]
-    movzx RCX, BYTE [RAX]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_135
-    if_135:
-    mov BYTE[rbp-97], 0
-; 设置变量found
-    jmp for_26_end
-    end_if_135:
-    mov RAX, QWORD[rbp-105]
-    mov RBX, 1
-    mov QWORD[rbp-105], RAX
-    add QWORD[rbp-105], RBX
-; 设置变量j
-    for_26_continue:
-
-
-    jmp for_26; for循环
-    for_26_end: ; for循环结束
-    movzx RAX, BYTE[rbp-97]
-; condition
-    test RAX, RAX
-    jz end_if_136
-    if_136:
-    mov RAX, QWORD[rbp-88]
-; return值存入RAX
-    jmp func_end_std_strings_indexFrom
-    end_if_136:
-    mov RAX, QWORD[rbp-88]
-    mov RBX, 1
-    mov QWORD[rbp-88], RAX
-    add QWORD[rbp-88], RBX
-; 设置变量i
-    for_25_continue:
-
-
-    jmp for_25; for循环
-    for_25_end: ; for循环结束
-    call std_strings_notFound
-; return值存入RAX
-    jmp func_end_std_strings_indexFrom
-    func_end_std_strings_indexFrom:
-    add rsp, 168; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_index progbits alloc exec nowrite align=16
-global std_strings_index
-; ==============================
-; Function: std_strings_index
-std_strings_index:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 184; 分配局部变量空间(184字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-96], RAX
-; 设置变量sPtr
-    mov RDI, QWORD [rbp-64]
-    mov RSI, QWORD [rbp-64+8]
-    mov RDX, QWORD [rbp-64+16]
-    call __string_len
-    mov QWORD[rbp-104], RAX
-; 设置变量sLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
-; 设置变量tPtr
-    mov RDI, QWORD [rbp-88]
-    mov RSI, QWORD [rbp-88+8]
-    mov RDX, QWORD [rbp-88+16]
-    call __string_len
-    mov QWORD[rbp-120], RAX
-; 设置变量tLen
-    call std_strings_notFound
-    mov QWORD[rbp-128], RAX
-; 设置变量nf
-    sub rsp, 48; register args buffer
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-104]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-112]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-120]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov QWORD [rsp+32], 0
-; 参数4
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_strings_indexFrom
-    mov QWORD[rbp-136], RAX
-; 设置变量r
-    mov RAX, QWORD[rbp-136]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-128]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_137
-    if_137:
-    mov RAX, -1
-; return值存入RAX
-    jmp func_end_std_strings_index
-    end_if_137:
-    mov RAX, QWORD[rbp-136]
-; return值存入RAX
-    jmp func_end_std_strings_index
-    func_end_std_strings_index:
-    add rsp, 184; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
 section .text.std_strings_hasPrefix progbits alloc exec nowrite align=16
 global std_strings_hasPrefix
 ; ==============================
@@ -8754,12 +7786,12 @@ std_strings_hasPrefix:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jbe end_if_138
-    if_138:
+    jbe end_if_131
+    if_131:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_strings_hasPrefix
-    end_if_138:
+    end_if_131:
     mov RAX, QWORD[rbp-104]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8767,41 +7799,17 @@ std_strings_hasPrefix:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jne end_if_139
-    if_139:
+    jne end_if_132
+    if_132:
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_hasPrefix
-    end_if_139:
-    sub rsp, 32; register args buffer
+    end_if_132:
     mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
+    mov QWORD [rbp-112], RAX
 ; 设置变量sPtr
-    sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-120], RAX
+    mov QWORD [rbp-120], RAX
 ; 设置变量tPtr
     mov QWORD[rbp-128], 0
 ; 设置变量i
@@ -8809,7 +7817,7 @@ std_strings_hasPrefix:
 
 
 
-    for_27: ; for循环开始
+    for_18: ; for循环开始
     mov RAX, QWORD[rbp-128]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -8817,8 +7825,8 @@ std_strings_hasPrefix:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_27_end
-    for_27_body:
+    jnb for_18_end
+    for_18_body:
 
 
     mov RAX, QWORD[rbp-112]
@@ -8840,22 +7848,22 @@ std_strings_hasPrefix:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    je end_if_140
-    if_140:
+    je end_if_133
+    if_133:
     mov RAX, 0
 ; return值存入RAX
     jmp func_end_std_strings_hasPrefix
-    end_if_140:
+    end_if_133:
     mov RAX, QWORD[rbp-128]
     mov RBX, 1
     mov QWORD[rbp-128], RAX
     add QWORD[rbp-128], RBX
 ; 设置变量i
-    for_27_continue:
+    for_18_continue:
 
 
-    jmp for_27; for循环
-    for_27_end: ; for循环结束
+    jmp for_18; for循环
+    for_18_end: ; for循环结束
     mov RAX, 1
 ; return值存入RAX
     jmp func_end_std_strings_hasPrefix
@@ -8872,11 +7880,11 @@ std_strings_hasPrefix:
 ; ======函数完毕=======
 
 
-section .text.std_strings_hasSuffix progbits alloc exec nowrite align=16
-global std_strings_hasSuffix
+section .text.std_strings_trimPrefix progbits alloc exec nowrite align=16
+global std_strings_trimPrefix
 ; ==============================
-; Function: std_strings_hasSuffix
-std_strings_hasSuffix:
+; Function: std_strings_trimPrefix
+std_strings_trimPrefix:
     push rbp
     mov rbp, rsp
     push RBX; 保存RBX
@@ -8884,52 +7892,15 @@ std_strings_hasSuffix:
     push R13; 保存R13
     push R14; 保存R14
     push R15; 保存R15
-    sub rsp, 200; 分配局部变量空间(200字节, 含对齐)
+    sub rsp, 216; 分配局部变量空间(216字节, 含对齐)
+    mov QWORD [rbp-184], R10; 保存返回槽地址
     mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
     mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
     mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
     mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
     mov QWORD [rbp-80], R8; 保存参数1槽1到栈
     mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    mov RDI, QWORD [rbp-64]
-    mov RSI, QWORD [rbp-64+8]
-    mov RDX, QWORD [rbp-64+16]
-    call __string_len
-    mov QWORD[rbp-96], RAX
-; 设置变量sLen
-    mov RDI, QWORD [rbp-88]
-    mov RSI, QWORD [rbp-88+8]
-    mov RDX, QWORD [rbp-88+16]
-    call __string_len
-    mov QWORD[rbp-104], RAX
-; 设置变量tLen
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-96]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_141
-    if_141:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_strings_hasSuffix
-    end_if_141:
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_142
-    if_142:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_hasSuffix
-    end_if_142:
-    sub rsp, 32; register args buffer
+    sub rsp, 48; register args buffer
     mov RAX, QWORD [rbp-64]
     mov QWORD [rsp+0+0], RAX
     mov RAX, QWORD [rbp-64+8]
@@ -8937,93 +7908,165 @@ std_strings_hasSuffix:
     mov RAX, QWORD [rbp-64+16]
     mov QWORD [rsp+0+16], RAX
 ; 参数0
+    mov RAX, QWORD [rbp-88]
+    mov QWORD [rsp+24+0], RAX
+    mov RAX, QWORD [rbp-88+8]
+    mov QWORD [rsp+24+8], RAX
+    mov RAX, QWORD [rbp-88+16]
+    mov QWORD [rsp+24+16], RAX
+; 参数1
     mov RDI, QWORD [rsp+0]; 装载参数0
     mov RSI, QWORD [rsp+8]; 装载参数0
     mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
+    mov RCX, QWORD [rsp+24]; 装载参数1
+    mov R8, QWORD [rsp+32]; 装载参数1
+    mov R9, QWORD [rsp+40]; 装载参数1
+    add rsp, 48; 释放寄存器参数 buffer
+    call std_strings_hasPrefix
+; condition
+    test RAX, RAX
+    jz end_if_134
+    if_134:
+    mov RAX, QWORD [rbp-64]
+    mov QWORD [rbp-96], RAX
 ; 设置变量sPtr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
+    mov RDI, QWORD [rbp-64]
+    mov RSI, QWORD [rbp-64+8]
+    mov RDX, QWORD [rbp-64+16]
+    call __string_len
+    mov QWORD[rbp-104], RAX
+; 设置变量sLen
+    mov RDI, QWORD [rbp-88]
+    mov RSI, QWORD [rbp-88+8]
+    mov RDX, QWORD [rbp-88+16]
+    call __string_len
+    mov QWORD[rbp-112], RAX
+; 设置变量tLen
+    mov RAX, QWORD[rbp-104]
+    mov RBX, QWORD[rbp-112]
+    mov QWORD[rbp-120], RAX
+    sub QWORD[rbp-120], RBX
+; 设置变量newLen
+    mov RAX, QWORD[rbp-120]
+    mov RBX, 1
+    mov QWORD[rbp-128], RAX
+    add QWORD[rbp-128], RBX
+; 设置变量bufN
+    sub rsp, 16; register args buffer
+    mov RAX, QWORD[rbp-128]
+    mov QWORD [rsp+0], RAX
 ; 参数0
     mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-120], RAX
-; 设置变量tPtr
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-104]
-    mov QWORD[rbp-128], RAX
-    sub QWORD[rbp-128], RBX
-; 设置变量offset
-    mov QWORD[rbp-136], 0
+    add rsp, 16; 释放寄存器参数 buffer
+    call std_memory_malloc
+    mov QWORD[rbp-136], RAX
+; 设置变量buf
+    mov QWORD[rbp-144], 0
 ; 设置变量i
 
 
 
 
-    for_28: ; for循环开始
-    mov RAX, QWORD[rbp-136]
+    for_19: ; for循环开始
+    mov RAX, QWORD[rbp-144]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-104]
+    mov RCX, QWORD[rbp-120]
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_28_end
-    for_28_body:
+    jnb for_19_end
+    for_19_body:
 
 
-    mov RAX, QWORD[rbp-112]
-    mov RBX, QWORD[rbp-128]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-136]
-    mov QWORD[rbp-144], RAX
-    add QWORD[rbp-144], RBX
-; 设置变量_p33
-    mov RAX, QWORD[rbp-120]
-    mov RBX, QWORD[rbp-136]
+    mov RAX, QWORD[rbp-136]
+    mov RBX, QWORD[rbp-144]
     mov QWORD[rbp-152], RAX
     add QWORD[rbp-152], RBX
-; 设置变量_p34
-    mov RAX, QWORD[rbp-144]
+; 设置变量_p46
+    mov RAX, QWORD[rbp-96]
+    mov RBX, QWORD[rbp-112]
+    add RAX, RBX
+    mov RBX, QWORD[rbp-144]
+    mov QWORD[rbp-160], RAX
+    add QWORD[rbp-160], RBX
+; 设置变量_p47
+    mov RAX, QWORD[rbp-160]
     movzx RAX, BYTE [RAX]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RAX, QWORD[rbp-152]
-    movzx RCX, BYTE [RAX]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_143
-    if_143:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_strings_hasSuffix
-    end_if_143:
-    mov RAX, QWORD[rbp-136]
+    mov QWORD[rbp-168], RAX
+; 设置变量_pc_p47
+    mov RAX, QWORD[rbp-168]
+    mov RBX, QWORD[rbp-152]
+    mov BYTE [RBX], al
+; expression statement
+    mov RAX, QWORD[rbp-144]
     mov RBX, 1
-    mov QWORD[rbp-136], RAX
-    add QWORD[rbp-136], RBX
+    mov QWORD[rbp-144], RAX
+    add QWORD[rbp-144], RBX
 ; 设置变量i
-    for_28_continue:
+    for_19_continue:
 
 
-    jmp for_28; for循环
-    for_28_end: ; for循环结束
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_strings_hasSuffix
-    func_end_std_strings_hasSuffix:
-    add rsp, 200; 清理局部变量 + 对齐
+    jmp for_19; for循环
+    for_19_end: ; for循环结束
+    mov RAX, QWORD[rbp-136]
+    mov RBX, QWORD[rbp-120]
+    mov QWORD[rbp-176], RAX
+    add QWORD[rbp-176], RBX
+; 设置变量_p48
+    mov RAX, 0
+    mov RBX, QWORD[rbp-176]
+    mov BYTE [RBX], al
+; expression statement
+    sub rsp, 32; register args buffer
+    mov RAX, QWORD[rbp-136]
+    mov QWORD [rsp+0], RAX
+; 参数0
+    mov RAX, QWORD[rbp-120]
+    mov QWORD [rsp+8], RAX
+; 参数1
+    mov RAX, QWORD[rbp-120]
+    mov QWORD [rsp+16], RAX
+; 参数2
+    mov RDI, QWORD [rsp+0]; 装载参数0
+    mov RSI, QWORD [rsp+8]; 装载参数1
+    mov RDX, QWORD [rsp+16]; 装载参数2
+    add rsp, 32; 释放寄存器参数 buffer
+    lea R10, [rbp-208]; 大值返回槽地址
+    call std_strings_view
+    mov RAX, QWORD [RBP-208]
+    mov QWORD [rbp-208+0], RAX
+    mov RAX, QWORD [RBP-208+8]
+    mov QWORD [rbp-208+8], RAX
+    mov RAX, QWORD [RBP-208+16]
+    mov QWORD [rbp-208+16], RAX
+; return值存入返回槽
+    mov R10, QWORD [rbp-184]; 恢复返回槽地址
+    mov RAX, QWORD [rbp-208]
+    mov QWORD [R10], RAX
+    mov RAX, QWORD [rbp-200]
+    mov QWORD [R10+8], RAX
+    mov RAX, QWORD [rbp-192]
+    mov QWORD [R10+16], RAX
+    jmp func_end_std_strings_trimPrefix
+    end_if_134:
+    mov RAX, QWORD [rbp-64]
+    mov QWORD [rbp-208+0], RAX
+    mov RAX, QWORD [rbp-64+8]
+    mov QWORD [rbp-208+8], RAX
+    mov RAX, QWORD [rbp-64+16]
+    mov QWORD [rbp-208+16], RAX
+; return值存入返回槽
+    mov R10, QWORD [rbp-184]; 恢复返回槽地址
+    mov RAX, QWORD [rbp-208]
+    mov QWORD [R10], RAX
+    mov RAX, QWORD [rbp-200]
+    mov QWORD [R10+8], RAX
+    mov RAX, QWORD [rbp-192]
+    mov QWORD [R10+16], RAX
+    jmp func_end_std_strings_trimPrefix
+    func_end_std_strings_trimPrefix:
+    add rsp, 216; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -9053,20 +8096,8 @@ std_strings_repeat:
     mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
     mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
     mov QWORD [rbp-72], RCX; 保存参数1到栈
-    sub rsp, 32; register args buffer
     mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-80], RAX
+    mov QWORD [rbp-80], RAX
 ; 设置变量sPtr
     mov RDI, QWORD [rbp-64]
     mov RSI, QWORD [rbp-64+8]
@@ -9105,7 +8136,7 @@ std_strings_repeat:
 
 
 
-    for_29: ; for循环开始
+    for_20: ; for循环开始
     mov RAX, QWORD[rbp-120]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -9113,8 +8144,8 @@ std_strings_repeat:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_29_end
-    for_29_body:
+    jnb for_20_end
+    for_20_body:
 
 
     mov QWORD[rbp-128], 0
@@ -9123,7 +8154,7 @@ std_strings_repeat:
 
 
 
-    for_30: ; for循环开始
+    for_21: ; for循环开始
     mov RAX, QWORD[rbp-128]
 ; left operand
     mov R12, RAX; 保存左操作数到callee-save
@@ -9131,8 +8162,8 @@ std_strings_repeat:
 ; right operand
     mov RAX, R12; 恢复左操作数
     cmp RAX, RCX
-    jnb for_30_end
-    for_30_body:
+    jnb for_21_end
+    for_21_body:
 
 
     mov RBX, QWORD[rbp-120]
@@ -9162,21 +8193,21 @@ std_strings_repeat:
     mov QWORD[rbp-128], RAX
     add QWORD[rbp-128], RCX
 ; 设置变量j
-    for_30_continue:
+    for_21_continue:
 
 
-    jmp for_30; for循环
-    for_30_end: ; for循环结束
+    jmp for_21; for循环
+    for_21_end: ; for循环结束
     mov RAX, QWORD[rbp-120]
     mov RCX, 1
     mov QWORD[rbp-120], RAX
     add QWORD[rbp-120], RCX
 ; 设置变量i
-    for_29_continue:
+    for_20_continue:
 
 
-    jmp for_29; for循环
-    for_29_end: ; for循环结束
+    jmp for_20; for循环
+    for_20_end: ; for循环结束
     mov RAX, QWORD[rbp-112]
     mov RBX, QWORD[rbp-96]
     mov QWORD[rbp-160], RAX
@@ -9219,2682 +8250,6 @@ std_strings_repeat:
     jmp func_end_std_strings_repeat
     func_end_std_strings_repeat:
     add rsp, 200; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_putByte progbits alloc exec nowrite align=16
-global std_strings_putByte
-; ==============================
-; Function: std_strings_putByte
-std_strings_putByte:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 152; 分配局部变量空间(152字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-64]
-    mov QWORD[rbp-72], RAX
-    add QWORD[rbp-72], RBX
-; 设置变量dAddr
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[rbp-80], RAX
-; 设置变量dP
-    mov RBX, QWORD[rbp-56]
-    mov RAX, QWORD[rbp-64]
-    mov QWORD[rbp-88], RBX
-    add QWORD[rbp-88], RAX
-; 设置变量sAddr
-    mov RAX, QWORD[rbp-88]
-    mov QWORD[rbp-96], RAX
-; 设置变量sP
-    mov RBX, QWORD[rbp-96]
-    movzx RAX, BYTE [RBX]
-    mov QWORD[rbp-104], RAX
-; 设置变量v
-    mov RBX, QWORD[rbp-104]
-    mov RAX, QWORD[rbp-80]
-    mov BYTE [RAX], bl
-; expression statement
-    jmp func_end_std_strings_putByte
-    func_end_std_strings_putByte:
-    add rsp, 152; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_byteAt progbits alloc exec nowrite align=16
-global std_strings_byteAt
-; ==============================
-; Function: std_strings_byteAt
-std_strings_byteAt:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-56]
-    mov QWORD[rbp-64], RAX
-    add QWORD[rbp-64], RBX
-; 设置变量bAddr
-    mov RAX, QWORD[rbp-64]
-    mov QWORD[rbp-72], RAX
-; 设置变量bP
-    mov RBX, QWORD[rbp-72]
-    movzx RAX, BYTE [RBX]
-    mov QWORD[rbp-80], RAX
-; 设置变量bV
-    mov RAX, QWORD[rbp-80]
-; return值存入RAX
-    jmp func_end_std_strings_byteAt
-    func_end_std_strings_byteAt:
-    add rsp, 120; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_putPiece progbits alloc exec nowrite align=16
-global std_strings_putPiece
-; ==============================
-; Function: std_strings_putPiece
-std_strings_putPiece:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 200; 分配局部变量空间(200字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov QWORD [rbp-72], RCX; 保存参数3到栈
-    mov RAX, QWORD[rbp-72]
-    mov RBX, 1
-    mov QWORD[rbp-80], RAX
-    add QWORD[rbp-80], RBX
-; 设置变量bufN
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-80]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-88], RAX
-; 设置变量buf
-    mov QWORD[rbp-96], 0
-; 设置变量i
-
-
-
-
-    for_31: ; for循环开始
-    mov RAX, QWORD[rbp-96]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-72]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_31_end
-    for_31_body:
-
-
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-88]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-64]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_putByte
-    mov RAX, QWORD[rbp-96]
-    mov RBX, 1
-    mov QWORD[rbp-96], RAX
-    add QWORD[rbp-96], RBX
-; 设置变量i
-    for_31_continue:
-
-
-    jmp for_31; for循环
-    for_31_end: ; for循环结束
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[rbp-104], RAX
-; 设置变量tailIdx
-    mov RAX, QWORD[rbp-88]
-    mov RBX, QWORD[rbp-104]
-    mov QWORD[rbp-112], RAX
-    add QWORD[rbp-112], RBX
-; 设置变量tailAddr
-    mov RAX, QWORD[rbp-112]
-    mov QWORD[rbp-120], RAX
-; 设置变量tailP
-    mov QWORD[rbp-128], 0
-; 设置变量zeroU
-    mov RBX, QWORD[rbp-128]
-    mov RAX, QWORD[rbp-120]
-    mov BYTE [RAX], bl
-; expression statement
-    mov QWORD[rbp-136], 24
-; 设置变量elemSize
-    mov RAX, QWORD[rbp-56]
-    mov RBX, QWORD[rbp-136]
-    mov QWORD[rbp-144], RAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov RAX, QWORD[rbp-144]
-    imul RAX, qword [rsp]
-    mov QWORD[rbp-144], RAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量dstOff
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-144]
-    mov QWORD[rbp-152], RAX
-    add QWORD[rbp-152], RBX
-; 设置变量cellAddr
-    mov RAX, QWORD[rbp-152]
-    mov QWORD[rbp-160], RAX
-; 设置变量cell
-    mov RBX, QWORD [RBP-160]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-88]
-    mov QWORD[RBX], RAX
-; 设置变量cell.p
-    mov RBX, QWORD [RBP-160]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[RBX+8], RAX
-; 设置变量cell.n
-    mov RBX, QWORD [RBP-160]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[RBX+16], RAX
-; 设置变量cell.c
-    jmp func_end_std_strings_putPiece
-    func_end_std_strings_putPiece:
-    add rsp, 200; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_splitN progbits alloc exec nowrite align=16
-global std_strings_splitN
-; ==============================
-; Function: std_strings_splitN
-std_strings_splitN:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 392; 分配局部变量空间(392字节, 含对齐)
-    mov RAX, [rbp+16]; 保存栈参数2槽0到栈
-    mov [rbp-96], RAX
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-104], RAX
-; 设置变量sPtr
-    mov RDI, QWORD [rbp-64]
-    mov RSI, QWORD [rbp-64+8]
-    mov RDX, QWORD [rbp-64+16]
-    call __string_len
-    mov QWORD[rbp-112], RAX
-; 设置变量sLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-120], RAX
-; 设置变量sepPtr
-    mov RDI, QWORD [rbp-88]
-    mov RSI, QWORD [rbp-88+8]
-    mov RDX, QWORD [rbp-88+16]
-    call __string_len
-    mov QWORD[rbp-128], RAX
-; 设置变量sepLen
-    mov RAX, QWORD[rbp-96]
-    mov RBX, 0
-    mov BYTE[rbp-129], al
-    cmp BYTE[rbp-129], bl
-    setl al
-    mov BYTE[rbp-129], al
-; 设置变量nNeg
-    mov QWORD[rbp-137], 0
-; 设置变量nMag
-    movzx RAX, BYTE[rbp-129]
-; condition
-    test RAX, RAX
-    jz else_if_144
-    if_144:
-    mov RBX, QWORD[rbp-96]
-    mov QWORD[rbp-145], 0
-    sub QWORD[rbp-145], RBX
-; 设置变量absN
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-145]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_strings_toU64
-    mov QWORD[rbp-137], RAX
-; 设置变量nMag
-    jmp end_if_144
-    else_if_144:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_strings_toU64
-    mov QWORD[rbp-137], RAX
-; 设置变量nMag
-    end_if_144:
-    mov QWORD[rbp-153], 0
-; 设置变量totalPieces
-    mov RAX, QWORD[rbp-128]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe else_if_145
-    if_145:
-    sub rsp, 48; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+24+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+24+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+24+16], RAX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    mov RCX, QWORD [rsp+24]; 装载参数1
-    mov R8, QWORD [rsp+32]; 装载参数1
-    mov R9, QWORD [rsp+40]; 装载参数1
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_strings_count
-    mov QWORD[rbp-161], RAX
-; 设置变量numSeps
-    mov RAX, QWORD[rbp-161]
-    mov RBX, 1
-    mov QWORD[rbp-169], RAX
-    add QWORD[rbp-169], RBX
-; 设置变量withSelf
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-169]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_strings_toU64
-    mov QWORD[rbp-153], RAX
-; 设置变量totalPieces
-    jmp end_if_145
-    else_if_145:
-    mov RAX, QWORD[rbp-112]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 1
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb else_if_146
-    if_146:
-    mov QWORD[rbp-153], 1
-; 设置变量totalPieces
-    jmp end_if_146
-    else_if_146:
-    mov RAX, QWORD[rbp-112]
-    mov QWORD[rbp-153], RAX
-; 设置变量totalPieces
-    end_if_146:
-    end_if_145:
-    mov RAX, QWORD[rbp-153]
-    mov QWORD[rbp-177], RAX
-; 设置变量pieces
-    movzx RAX, BYTE[rbp-129]
-    cmp RAX, 0
-    sete al
-    movzx RAX, al
-; condition
-    test RAX, RAX
-    jz end_if_147
-    if_147:
-    mov RAX, QWORD[rbp-177]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-137]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_148
-    if_148:
-    mov RAX, QWORD[rbp-137]
-    mov QWORD[rbp-177], RAX
-; 设置变量pieces
-    end_if_148:
-    end_if_147:
-    sub rsp, 16; register args buffer
-    mov QWORD [rsp+0], 24
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-185], RAX
-; 设置变量outer
-    mov QWORD[rbp-193], 24
-; 设置变量elemSize
-    mov QWORD[rbp-201], 0
-; 设置变量dataSize
-    mov RAX, QWORD[rbp-177]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_149
-    if_149:
-    mov RAX, QWORD[rbp-177]
-    mov RBX, QWORD[rbp-193]
-    mov QWORD[rbp-201], RAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov RAX, QWORD[rbp-201]
-    imul RAX, qword [rsp]
-    mov QWORD[rbp-201], RAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量dataSize
-    end_if_149:
-    mov RAX, QWORD[rbp-185]
-    mov QWORD[rbp-209], RAX
-; 设置变量hdr
-    mov QWORD[rbp-217], 0
-; 设置变量data
-    mov RAX, QWORD[rbp-177]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_150
-    if_150:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-201]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-217], RAX
-; 设置变量data
-    end_if_150:
-    mov RBX, QWORD [RBP-209]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-217]
-    mov QWORD[RBX], RAX
-; 设置变量hdr.p
-    mov RBX, QWORD [RBP-209]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-177]
-    mov QWORD[RBX+16], RAX
-; 设置变量hdr.c
-    mov QWORD[rbp-225], 0
-; 设置变量cellCount
-    mov RAX, QWORD[rbp-177]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_151
-    if_151:
-    mov QWORD[rbp-233], 0
-; 设置变量scanPos
-    mov QWORD[rbp-241], 0
-; 设置变量pieceI
-    call std_strings_notFound
-    mov QWORD[rbp-249], RAX
-; 设置变量nf
-    mov RAX, QWORD[rbp-128]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe else_if_152
-    if_152:
-    mov RAX, QWORD[rbp-177]
-    mov RBX, 1
-    mov QWORD[rbp-257], RAX
-    sub QWORD[rbp-257], RBX
-; 设置变量limitM1
-
-
-
-
-    for_32: ; for循环开始
-    mov RAX, QWORD[rbp-241]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-257]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_32_end
-    for_32_body:
-
-
-    sub rsp, 48; register args buffer
-    mov RAX, QWORD[rbp-104]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-112]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-120]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-128]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov RAX, QWORD[rbp-233]
-    mov QWORD [rsp+32], RAX
-; 参数4
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    mov R8, QWORD [rsp+32]; 装载参数4
-    add rsp, 48; 释放寄存器参数 buffer
-    call std_strings_indexFrom
-    mov QWORD[rbp-265], RAX
-; 设置变量sIdx
-    mov RAX, QWORD[rbp-265]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-249]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jne end_if_153
-    if_153:
-    jmp for_32_end
-    end_if_153:
-    mov RAX, QWORD[rbp-233]
-    mov QWORD[rbp-273], RAX
-; 设置变量segOff
-    mov RAX, QWORD[rbp-104]
-    mov RBX, QWORD[rbp-273]
-    mov QWORD[rbp-281], RAX
-    add QWORD[rbp-281], RBX
-; 设置变量segSrc
-    mov RAX, QWORD[rbp-265]
-    mov RBX, QWORD[rbp-233]
-    mov QWORD[rbp-289], RAX
-    sub QWORD[rbp-289], RBX
-; 设置变量segLenU
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-217]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-241]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-281]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-289]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_putPiece
-    mov RBX, QWORD[rbp-265]
-    mov RAX, QWORD[rbp-128]
-    mov QWORD[rbp-233], RBX
-    add QWORD[rbp-233], RAX
-; 设置变量scanPos
-    mov RAX, QWORD[rbp-241]
-    mov RBX, 1
-    mov QWORD[rbp-241], RAX
-    add QWORD[rbp-241], RBX
-; 设置变量pieceI
-    for_32_continue:
-
-
-    jmp for_32; for循环
-    for_32_end: ; for循环结束
-    jmp end_if_152
-    else_if_152:
-    mov RAX, QWORD[rbp-177]
-    mov RBX, 1
-    mov QWORD[rbp-297], RAX
-    sub QWORD[rbp-297], RBX
-; 设置变量bsLimit
-
-
-
-
-    for_33: ; for循环开始
-    mov RAX, QWORD[rbp-241]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-297]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_33_end
-    for_33_body:
-
-
-    mov RAX, QWORD[rbp-233]
-    mov QWORD[rbp-305], RAX
-; 设置变量bOff
-    mov RAX, QWORD[rbp-104]
-    mov RBX, QWORD[rbp-305]
-    mov QWORD[rbp-313], RAX
-    add QWORD[rbp-313], RBX
-; 设置变量bSrc
-    mov QWORD[rbp-321], 1
-; 设置变量bLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-217]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-241]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-313]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-321]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_putPiece
-    mov RBX, QWORD[rbp-233]
-    mov RAX, 1
-    mov QWORD[rbp-233], RBX
-    add QWORD[rbp-233], RAX
-; 设置变量scanPos
-    mov RBX, QWORD[rbp-241]
-    mov RAX, 1
-    mov QWORD[rbp-241], RBX
-    add QWORD[rbp-241], RAX
-; 设置变量pieceI
-    for_33_continue:
-
-
-    jmp for_33; for循环
-    for_33_end: ; for循环结束
-    end_if_152:
-    mov RAX, QWORD[rbp-233]
-    mov QWORD[rbp-329], RAX
-; 设置变量tailOff
-    mov RBX, QWORD[rbp-104]
-    mov RAX, QWORD[rbp-329]
-    mov QWORD[rbp-337], RBX
-    add QWORD[rbp-337], RAX
-; 设置变量tailSrc
-    mov RAX, QWORD[rbp-112]
-    mov RBX, QWORD[rbp-233]
-    mov QWORD[rbp-345], RAX
-    sub QWORD[rbp-345], RBX
-; 设置变量tailLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-217]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-241]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-337]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RAX, QWORD[rbp-345]
-    mov QWORD [rsp+24], RAX
-; 参数3
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    mov RCX, QWORD [rsp+24]; 装载参数3
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_putPiece
-    mov RBX, QWORD[rbp-241]
-    mov RAX, 1
-    mov QWORD[rbp-241], RBX
-    add QWORD[rbp-241], RAX
-; 设置变量pieceI
-    mov RAX, QWORD[rbp-241]
-    mov QWORD[rbp-225], RAX
-; 设置变量cellCount
-    end_if_151:
-    mov RBX, QWORD [RBP-209]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-225]
-    mov QWORD[RBX+8], RAX
-; 设置变量hdr.n
-    mov RAX, QWORD[rbp-185]
-; return值存入RAX
-    jmp func_end_std_strings_splitN
-    func_end_std_strings_splitN:
-    add rsp, 392; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_cellP progbits alloc exec nowrite align=16
-global std_strings_cellP
-; ==============================
-; Function: std_strings_cellP
-std_strings_cellP:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 168; 分配局部变量空间(168字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-64], RAX
-; 设置变量rAddrH
-    mov RAX, QWORD[rbp-64]
-    mov QWORD[rbp-72], RAX
-; 设置变量hdrH
-    mov RBX, QWORD [RBP-72]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX]
-    mov QWORD[rbp-80], RAX
-; 设置变量dataH
-    mov QWORD[rbp-88], 24
-; 设置变量elemH
-    mov RAX, QWORD[rbp-56]
-    mov RBX, QWORD[rbp-88]
-    mov QWORD[rbp-96], RAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov RAX, QWORD[rbp-96]
-    imul RAX, qword [rsp]
-    mov QWORD[rbp-96], RAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量offH
-    mov RAX, QWORD[rbp-80]
-    mov RBX, QWORD[rbp-96]
-    mov QWORD[rbp-104], RAX
-    add QWORD[rbp-104], RBX
-; 设置变量cellAddrH
-    mov RAX, QWORD[rbp-104]
-    mov QWORD[rbp-112], RAX
-; 设置变量cellH
-    mov RBX, QWORD [RBP-112]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX]
-    mov QWORD[rbp-120], RAX
-; 设置变量cellPH
-    mov RAX, QWORD[rbp-120]
-; return值存入RAX
-    jmp func_end_std_strings_cellP
-    func_end_std_strings_cellP:
-    add rsp, 168; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_strings_bGrow progbits alloc exec nowrite align=16
-global std_strings_bGrow
-; ==============================
-; Function: std_strings_bGrow
-std_strings_bGrow:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 168; 分配局部变量空间(168字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-64], RAX
-; 设置变量box
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX+8]
-    mov QWORD[rbp-72], RAX
-; 设置变量n0
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX+16]
-    mov QWORD[rbp-80], RAX
-; 设置变量c0
-    mov RAX, QWORD[rbp-72]
-    mov RBX, QWORD[rbp-56]
-    mov QWORD[rbp-88], RAX
-    add QWORD[rbp-88], RBX
-; 设置变量total
-    mov RAX, QWORD[rbp-88]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-80]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_154
-    if_154:
-    mov RAX, QWORD[rbp-80]
-    mov QWORD[rbp-96], RAX
-; 设置变量ncap
-    mov RAX, QWORD[rbp-80]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 512
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb else_if_155
-    if_155:
-    mov RBX, QWORD[rbp-80]
-    mov RAX, 2
-    mov QWORD[rbp-96], RBX
-    push RAX; 保护RAX(左子结果)
-    push RAX; 暂存乘数
-    mov RAX, QWORD[rbp-96]
-    imul RAX, qword [rsp]
-    mov QWORD[rbp-96], RAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量ncap
-    jmp end_if_155
-    else_if_155:
-    mov RBX, QWORD[rbp-80]
-    mov RAX, 4
-    mov QWORD[rbp-104], RBX
-    push RAX; 保护RAX(左子结果)
-    push RAX; 保存除数
-    mov rax, QWORD[rbp-104]
-    cqo
-    idiv qword [rsp]
-    add rsp, 8; 清理除数
-    mov QWORD[rbp-104], rax
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量q
-    mov RBX, QWORD[rbp-80]
-    mov RAX, QWORD[rbp-104]
-    mov QWORD[rbp-96], RBX
-    add QWORD[rbp-96], RAX
-; 设置变量ncap
-    end_if_155:
-    mov RAX, QWORD[rbp-96]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-88]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb end_if_156
-    if_156:
-    mov RAX, QWORD[rbp-88]
-    mov QWORD[rbp-96], RAX
-; 设置变量ncap
-    end_if_156:
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX]
-    mov QWORD[rbp-112], RAX
-; 设置变量oldData
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-120], RAX
-; 设置变量nbuf
-    mov RAX, QWORD[rbp-72]
-    mov QWORD[rbp-128], RAX
-; 设置变量moveN
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-120]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-112]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-128]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_memory_memmove
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-112]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_free
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-120]
-    mov QWORD[RBX], RAX
-; 设置变量box.p
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-96]
-    mov QWORD[RBX+16], RAX
-; 设置变量box.c
-    end_if_154:
-    jmp func_end_std_strings_bGrow
-    func_end_std_strings_bGrow:
-    add rsp, 168; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_builtin_print progbits alloc exec nowrite align=16
-global std_builtin_print
-; ==============================
-; Function: std_builtin_print
-std_builtin_print:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], 1
-; 参数0
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD [rsp+8], RAX
-; 参数1
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_syscall_write
-; return值存入RAX
-    jmp func_end_std_builtin_print
-    func_end_std_builtin_print:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_builtin_println progbits alloc exec nowrite align=16
-global std_builtin_println
-; ==============================
-; Function: std_builtin_println
-std_builtin_println:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 136; 分配局部变量空间(136字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_builtin_print
-    mov DWORD[rbp-68], EAX
-; 设置变量n
-    sub rsp, 16; register args buffer
-    mov QWORD [rsp+0], 1
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-76], RAX
-; 设置变量buf
-    mov RAX, QWORD[rbp-76]
-    mov QWORD[rbp-84], RAX
-; 设置变量q
-    mov RAX, 10
-    mov RBX, QWORD[rbp-84]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], 1
-; 参数0
-    mov RAX, QWORD[rbp-76]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov QWORD [rsp+16], 1
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_syscall_write
-    mov DWORD[rbp-88], EAX
-; 设置变量w
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-76]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_free
-    mov EAX, DWORD[rbp-68]
-    mov EBX, DWORD[rbp-88]
-    add RAX, RBX
-; return值存入RAX
-    jmp func_end_std_builtin_println
-    func_end_std_builtin_println:
-    add rsp, 136; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_maps_roundUpU progbits alloc exec nowrite align=16
-global std_maps_roundUpU
-; ==============================
-; Function: std_maps_roundUpU
-std_maps_roundUpU:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-56]
-    add RAX, RBX
-    mov RBX, 1
-    mov QWORD[rbp-64], RAX
-    sub QWORD[rbp-64], RBX
-; 设置变量q
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rbp-56]
-    push RBX; 保存除数
-    mov rax, RAX
-    cqo
-    idiv qword [rsp]
-    add rsp, 8; 清理除数
-    mov RAX, rax
-    mov RBX, QWORD[rbp-56]
-    imul RAX, RBX
-; return值存入RAX
-    jmp func_end_std_maps_roundUpU
-    func_end_std_maps_roundUpU:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_maps_fnv1a progbits alloc exec nowrite align=16
-global std_maps_fnv1a
-; ==============================
-; Function: std_maps_fnv1a
-std_maps_fnv1a:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov DWORD[rbp-60], 2166136261
-; 设置变量h
-    mov QWORD[rbp-68], 0
-; 设置变量i
-
-
-
-
-    for_34: ; for循环开始
-    mov RAX, QWORD[rbp-68]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-56]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_34_end
-    for_34_body:
-
-
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-68]
-    mov QWORD[rbp-76], RAX
-    add QWORD[rbp-76], RBX
-; 设置变量bp
-    mov RAX, QWORD[rbp-76]
-    movzx RAX, BYTE [RAX]
-    mov DWORD[rbp-80], EAX
-; 设置变量b
-    mov EAX, DWORD[rbp-60]
-    mov EBX, DWORD[rbp-80]
-    mov DWORD[rbp-60], EAX
-    xor DWORD[rbp-60], EBX
-; 设置变量h
-    mov EAX, DWORD[rbp-60]
-    mov RBX, 16777619
-    mov DWORD[rbp-60], EAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov eax, DWORD[rbp-60]
-    imul RAX, qword [rsp]
-    mov DWORD[rbp-60], EAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量h
-    mov RAX, QWORD[rbp-68]
-    mov RBX, 1
-    mov QWORD[rbp-68], RAX
-    add QWORD[rbp-68], RBX
-; 设置变量i
-    for_34_continue:
-
-
-    jmp for_34; for循环
-    for_34_end: ; for循环结束
-    mov EAX, DWORD[rbp-60]
-; return值存入RAX
-    jmp func_end_std_maps_fnv1a
-    func_end_std_maps_fnv1a:
-    add rsp, 120; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_maps_bytesEq progbits alloc exec nowrite align=16
-global std_maps_bytesEq
-; ==============================
-; Function: std_maps_bytesEq
-std_maps_bytesEq:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 136; 分配局部变量空间(136字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov QWORD [rbp-64], RDX; 保存参数2到栈
-    mov QWORD [rbp-72], RCX; 保存参数3到栈
-    mov RAX, QWORD[rbp-56]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-72]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_157
-    if_157:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_maps_bytesEq
-    end_if_157:
-    mov QWORD[rbp-80], 0
-; 设置变量i
-
-
-
-
-    for_35: ; for循环开始
-    mov RAX, QWORD[rbp-80]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-56]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_35_end
-    for_35_body:
-
-
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-80]
-    mov QWORD[rbp-88], RAX
-    add QWORD[rbp-88], RBX
-; 设置变量ap
-    mov RAX, QWORD[rbp-64]
-    mov RBX, QWORD[rbp-80]
-    mov QWORD[rbp-96], RAX
-    add QWORD[rbp-96], RBX
-; 设置变量bp
-    mov RAX, QWORD[rbp-88]
-    movzx RAX, BYTE [RAX]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RAX, QWORD[rbp-96]
-    movzx RCX, BYTE [RAX]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_158
-    if_158:
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_maps_bytesEq
-    end_if_158:
-    mov RAX, QWORD[rbp-80]
-    mov RBX, 1
-    mov QWORD[rbp-80], RAX
-    add QWORD[rbp-80], RBX
-; 设置变量i
-    for_35_continue:
-
-
-    jmp for_35; for循环
-    for_35_end: ; for循环结束
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_maps_bytesEq
-    func_end_std_maps_bytesEq:
-    add rsp, 136; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_tgFailed progbits alloc exec nowrite align=16
-global std_testing_tgFailed
-; ==============================
-; Function: std_testing_tgFailed
-std_testing_tgFailed:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-56], RAX
-; 设置变量tp
-    mov RAX, QWORD[rbp-56]
-    mov RBX, 16
-    mov QWORD[rbp-64], RAX
-    add QWORD[rbp-64], RBX
-; 设置变量_p5
-    mov RBX, QWORD[rbp-64]
-    movzx RAX, BYTE [RBX]
-    mov RBX, 0
-    cmp RAX, RBX
-    setne al
-    movzx RAX, al
-; return值存入RAX
-    jmp func_end_std_testing_tgFailed
-    func_end_std_testing_tgFailed:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_tgErr progbits alloc exec nowrite align=16
-global std_testing_tgErr
-; ==============================
-; Function: std_testing_tgErr
-std_testing_tgErr:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-56], RAX
-; 设置变量tp
-    mov RAX, QWORD[rbp-56]
-    mov RBX, 17
-    mov QWORD[rbp-64], RAX
-    add QWORD[rbp-64], RBX
-; 设置变量_p6
-    mov RBX, QWORD[rbp-64]
-    mov RAX, QWORD [RBX]
-; return值存入RAX
-    jmp func_end_std_testing_tgErr
-    func_end_std_testing_tgErr:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_tgSetErr progbits alloc exec nowrite align=16
-global std_testing_tgSetErr
-; ==============================
-; Function: std_testing_tgSetErr
-std_testing_tgSetErr:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 136; 分配局部变量空间(136字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-72], RSI; 保存参数1槽0到栈
-    mov QWORD [rbp-64], RDX; 保存参数1槽1到栈
-    mov QWORD [rbp-56], RCX; 保存参数1槽2到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-80], RAX
-; 设置变量tp
-    mov RAX, QWORD[rbp-80]
-    mov RBX, 17
-    mov QWORD[rbp-88], RAX
-    add QWORD[rbp-88], RBX
-; 设置变量_p7
-    mov RAX, QWORD [rbp-72]
-    mov RBX, QWORD[rbp-88]
-    mov QWORD [RBX], RAX
-; expression statement
-    func_end_std_testing_tgSetErr:
-    add rsp, 136; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_error progbits alloc exec nowrite align=16
-global std_testing_error
-; ==============================
-; Function: std_testing_error
-std_testing_error:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 296; 分配局部变量空间(296字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-72], RSI; 保存参数1槽0到栈
-    mov QWORD [rbp-64], RDX; 保存参数1槽1到栈
-    mov QWORD [rbp-56], RCX; 保存参数1槽2到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-80], RAX
-; 设置变量tp
-    mov RAX, QWORD[rbp-80]
-    mov RBX, 16
-    mov QWORD[rbp-88], RAX
-    add QWORD[rbp-88], RBX
-; 设置变量_p8
-    mov RAX, 1
-    mov RBX, QWORD[rbp-88]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_testing_tgErr
-    mov QWORD[rbp-96], RAX
-; 设置变量oldErrP
-    mov QWORD[rbp-104], 0
-; 设置变量oldLen
-    mov RAX, QWORD[rbp-96]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_159
-    if_159:
-    mov QWORD [rbp-128], 0
-    mov QWORD [rbp-128+8], 0
-    mov QWORD [rbp-128+16], 0
-    ; 零值容器 oldStr
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_testing_tgErr
-    mov [rbp-128], RAX
-; 设置变量oldStr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-128]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-128+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-128+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-104], RAX
-; 设置变量oldLen
-    end_if_159:
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-72]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-72+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-72+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-136], RAX
-; 设置变量newLen
-    mov QWORD[rbp-144], 0
-; 设置变量sep
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_160
-    if_160:
-    mov QWORD[rbp-144], 2
-; 设置变量sep
-    end_if_160:
-    mov RBX, QWORD[rbp-104]
-    mov RAX, QWORD[rbp-144]
-    add RBX, RAX
-    mov RAX, QWORD[rbp-136]
-    mov QWORD[rbp-152], RBX
-    add QWORD[rbp-152], RAX
-; 设置变量totalLen
-    sub rsp, 16; register args buffer
-    mov RBX, QWORD[rbp-152]
-    mov RAX, 1
-    mov QWORD [rsp+0], RBX
-    add QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-160], RAX
-; 设置变量buf
-    mov QWORD[rbp-168], 0
-; 设置变量pos
-    mov RAX, QWORD[rbp-104]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jbe end_if_161
-    if_161:
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-96]
-    mov [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-176], RAX
-; 设置变量oldPtr
-    mov QWORD[rbp-184], 0
-; 设置变量k
-
-
-
-
-    for_36: ; for循环开始
-    mov RAX, QWORD[rbp-184]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-104]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_36_end
-    for_36_body:
-
-
-    mov RBX, QWORD[rbp-160]
-    mov RAX, QWORD[rbp-184]
-    mov QWORD[rbp-192], RBX
-    add QWORD[rbp-192], RAX
-; 设置变量_p7
-    mov RAX, QWORD[rbp-176]
-    mov RBX, QWORD[rbp-184]
-    mov QWORD[rbp-200], RAX
-    add QWORD[rbp-200], RBX
-; 设置变量_p8
-    mov RBX, QWORD[rbp-200]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-192]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-184]
-    mov RBX, 1
-    mov QWORD[rbp-184], RAX
-    add QWORD[rbp-184], RBX
-; 设置变量k
-    for_36_continue:
-
-
-    jmp for_36; for循环
-    for_36_end: ; for循环结束
-    mov RAX, QWORD[rbp-104]
-    mov QWORD[rbp-168], RAX
-; 设置变量pos
-    mov RAX, QWORD[rbp-160]
-    mov RBX, QWORD[rbp-168]
-    mov QWORD[rbp-208], RAX
-    add QWORD[rbp-208], RBX
-; 设置变量_p9
-    mov RAX, 10
-    mov RBX, QWORD[rbp-208]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-168]
-    mov RBX, 1
-    mov QWORD[rbp-168], RAX
-    add QWORD[rbp-168], RBX
-; 设置变量pos
-    mov RAX, QWORD[rbp-160]
-    mov RBX, QWORD[rbp-168]
-    mov QWORD[rbp-216], RAX
-    add QWORD[rbp-216], RBX
-; 设置变量_p10
-    mov RAX, 32
-    mov RBX, QWORD[rbp-216]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-168]
-    mov RBX, 1
-    mov QWORD[rbp-168], RAX
-    add QWORD[rbp-168], RBX
-; 设置变量pos
-    end_if_161:
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-72]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-72+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-72+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-224], RAX
-; 设置变量newPtr
-    mov QWORD[rbp-232], 0
-; 设置变量k2
-
-
-
-
-    for_37: ; for循环开始
-    mov RAX, QWORD[rbp-232]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-136]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_37_end
-    for_37_body:
-
-
-    mov RAX, QWORD[rbp-160]
-    mov RBX, QWORD[rbp-168]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-232]
-    mov QWORD[rbp-240], RAX
-    add QWORD[rbp-240], RBX
-; 设置变量_p11
-    mov RAX, QWORD[rbp-224]
-    mov RBX, QWORD[rbp-232]
-    mov QWORD[rbp-248], RAX
-    add QWORD[rbp-248], RBX
-; 设置变量_p12
-    mov RBX, QWORD[rbp-248]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-240]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-232]
-    mov RBX, 1
-    mov QWORD[rbp-232], RAX
-    add QWORD[rbp-232], RBX
-; 设置变量k2
-    for_37_continue:
-
-
-    jmp for_37; for循环
-    for_37_end: ; for循环结束
-    mov RAX, QWORD[rbp-168]
-    mov RBX, QWORD[rbp-136]
-    mov QWORD[rbp-168], RAX
-    add QWORD[rbp-168], RBX
-; 设置变量pos
-    mov RAX, QWORD[rbp-160]
-    mov RBX, QWORD[rbp-168]
-    mov QWORD[rbp-256], RAX
-    add QWORD[rbp-256], RBX
-; 设置变量_p13
-    mov RAX, 0
-    mov RBX, QWORD[rbp-256]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-48]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-160]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-152]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-152]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    lea R10, [rbp-288]; 大值返回槽地址
-    call std_strings_view
-    mov RAX, QWORD [RBP-288]
-    mov QWORD [rsp+8+0], RAX
-    mov RAX, QWORD [RBP-288+8]
-    mov QWORD [rsp+8+8], RAX
-    mov RAX, QWORD [RBP-288+16]
-    mov QWORD [rsp+8+16], RAX
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数1
-    mov RCX, QWORD [rsp+24]; 装载参数1
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_testing_tgSetErr
-    func_end_std_testing_error:
-    add rsp, 296; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_mkNeq progbits alloc exec nowrite align=16
-global std_testing_mkNeq
-; ==============================
-; Function: std_testing_mkNeq
-std_testing_mkNeq:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 328; 分配局部变量空间(328字节, 含对齐)
-    mov QWORD [rbp-296], R10; 保存返回槽地址
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-72], RCX; 保存参数1到栈
-    mov QWORD [rbp-80], R8; 保存参数2到栈
-    sub rsp, 16; register args buffer
-    mov QWORD [rsp+0], 128
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-88], RAX
-; 设置变量msgBuf
-    mov QWORD[rbp-96], 0
-; 设置变量pos
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-104], RAX
-; 设置变量hp
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-112], RAX
-; 设置变量hn
-    mov QWORD[rbp-120], 0
-; 设置变量k
-
-
-
-
-    for_38: ; for循环开始
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-112]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_38_end
-    for_38_body:
-
-
-    mov RAX, QWORD[rbp-88]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-128], RAX
-    add QWORD[rbp-128], RBX
-; 设置变量_p15
-    mov RAX, QWORD[rbp-104]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-136], RAX
-    add QWORD[rbp-136], RBX
-; 设置变量_p16
-    mov RBX, QWORD[rbp-136]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-128]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-120]
-    mov RBX, 1
-    mov QWORD[rbp-120], RAX
-    add QWORD[rbp-120], RBX
-; 设置变量k
-    for_38_continue:
-
-
-    jmp for_38; for循环
-    for_38_end: ; for循环结束
-    mov RAX, QWORD[rbp-112]
-    mov QWORD[rbp-96], RAX
-; 设置变量pos
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-72]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov QWORD [rsp+8], 10
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    lea R10, [rbp-320]; 大值返回槽地址
-    call std_strings_toString
-    mov RAX, QWORD [RBP-320]
-    mov QWORD [rbp-160+0], RAX
-    mov RAX, QWORD [RBP-320+8]
-    mov QWORD [rbp-160+8], RAX
-    mov RAX, QWORD [RBP-320+16]
-    mov QWORD [rbp-160+16], RAX
-; 设置变量aStr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-160]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-160+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-160+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-168], RAX
-; 设置变量ap
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-160]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-160+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-160+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-176], RAX
-; 设置变量an
-    mov QWORD[rbp-120], 0
-; 设置变量k
-
-
-
-
-    for_39: ; for循环开始
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-176]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_39_end
-    for_39_body:
-
-
-    mov RAX, QWORD[rbp-88]
-    mov RBX, QWORD[rbp-96]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-184], RAX
-    add QWORD[rbp-184], RBX
-; 设置变量_p17
-    mov RAX, QWORD[rbp-168]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-192], RAX
-    add QWORD[rbp-192], RBX
-; 设置变量_p18
-    mov RBX, QWORD[rbp-192]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-184]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-120]
-    mov RBX, 1
-    mov QWORD[rbp-120], RAX
-    add QWORD[rbp-120], RBX
-; 设置变量k
-    for_39_continue:
-
-
-    jmp for_39; for循环
-    for_39_end: ; for循环结束
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-176]
-    mov QWORD[rbp-96], RAX
-    add QWORD[rbp-96], RBX
-; 设置变量pos
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], str_1
-    mov QWORD [rsp+0+8], 5
-    mov QWORD [rsp+0+16], 5
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-200], RAX
-; 设置变量gp
-    sub rsp, 32; register args buffer
-    mov QWORD [rsp+0], str_1
-    mov QWORD [rsp+0+8], 5
-    mov QWORD [rsp+0+16], 5
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-208], RAX
-; 设置变量gn
-    mov QWORD[rbp-120], 0
-; 设置变量k
-
-
-
-
-    for_40: ; for循环开始
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-208]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_40_end
-    for_40_body:
-
-
-    mov RAX, QWORD[rbp-88]
-    mov RBX, QWORD[rbp-96]
-    add RAX, RBX
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-216], RAX
-    add QWORD[rbp-216], RBX
-; 设置变量_p19
-    mov RAX, QWORD[rbp-200]
-    mov RBX, QWORD[rbp-120]
-    mov QWORD[rbp-224], RAX
-    add QWORD[rbp-224], RBX
-; 设置变量_p20
-    mov RBX, QWORD[rbp-224]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-216]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-120]
-    mov RBX, 1
-    mov QWORD[rbp-120], RAX
-    add QWORD[rbp-120], RBX
-; 设置变量k
-    for_40_continue:
-
-
-    jmp for_40; for循环
-    for_40_end: ; for循环结束
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-208]
-    mov QWORD[rbp-96], RAX
-    add QWORD[rbp-96], RBX
-; 设置变量pos
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-80]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov QWORD [rsp+8], 10
-; 参数1
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    add rsp, 16; 释放寄存器参数 buffer
-    lea R10, [rbp-320]; 大值返回槽地址
-    call std_strings_toString
-    mov RAX, QWORD [RBP-320]
-    mov QWORD [rbp-248+0], RAX
-    mov RAX, QWORD [RBP-320+8]
-    mov QWORD [rbp-248+8], RAX
-    mov RAX, QWORD [RBP-320+16]
-    mov QWORD [rbp-248+16], RAX
-; 设置变量bStr
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-248]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-248+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-248+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-256], RAX
-; 设置变量bp
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-248]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-248+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-248+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-264], RAX
-; 设置变量bn
-    mov QWORD[rbp-120], 0
-; 设置变量k
-
-
-
-
-    for_41: ; for循环开始
-    mov RAX, QWORD[rbp-120]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-264]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_41_end
-    for_41_body:
-
-
-    mov RBX, QWORD[rbp-88]
-    mov RAX, QWORD[rbp-96]
-    add RBX, RAX
-    mov RAX, QWORD[rbp-120]
-    mov QWORD[rbp-272], RBX
-    add QWORD[rbp-272], RAX
-; 设置变量_p21
-    mov RBX, QWORD[rbp-256]
-    mov RAX, QWORD[rbp-120]
-    mov QWORD[rbp-280], RBX
-    add QWORD[rbp-280], RAX
-; 设置变量_p22
-    mov RBX, QWORD[rbp-280]
-    movzx RAX, BYTE [RBX]
-    mov RBX, QWORD[rbp-272]
-    mov BYTE [RBX], al
-; expression statement
-    mov RAX, QWORD[rbp-120]
-    mov RBX, 1
-    mov QWORD[rbp-120], RAX
-    add QWORD[rbp-120], RBX
-; 设置变量k
-    for_41_continue:
-
-
-    jmp for_41; for循环
-    for_41_end: ; for循环结束
-    mov RAX, QWORD[rbp-96]
-    mov RBX, QWORD[rbp-264]
-    mov QWORD[rbp-96], RAX
-    add QWORD[rbp-96], RBX
-; 设置变量pos
-    mov RAX, QWORD[rbp-88]
-    mov RBX, QWORD[rbp-96]
-    mov QWORD[rbp-288], RAX
-    add QWORD[rbp-288], RBX
-; 设置变量_p23
-    mov RAX, 0
-    mov RBX, QWORD[rbp-288]
-    mov BYTE [RBX], al
-; expression statement
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD[rbp-88]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+8], RAX
-; 参数1
-    mov RAX, QWORD[rbp-96]
-    mov QWORD [rsp+16], RAX
-; 参数2
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数1
-    mov RDX, QWORD [rsp+16]; 装载参数2
-    add rsp, 32; 释放寄存器参数 buffer
-    lea R10, [rbp-320]; 大值返回槽地址
-    call std_strings_view
-    mov RAX, QWORD [RBP-320]
-    mov QWORD [rbp-320+0], RAX
-    mov RAX, QWORD [RBP-320+8]
-    mov QWORD [rbp-320+8], RAX
-    mov RAX, QWORD [RBP-320+16]
-    mov QWORD [rbp-320+16], RAX
-; return值存入返回槽
-    mov R10, QWORD [rbp-296]; 恢复返回槽地址
-    mov RAX, QWORD [rbp-320]
-    mov QWORD [R10], RAX
-    mov RAX, QWORD [rbp-312]
-    mov QWORD [R10+8], RAX
-    mov RAX, QWORD [rbp-304]
-    mov QWORD [R10+16], RAX
-    jmp func_end_std_testing_mkNeq
-    func_end_std_testing_mkNeq:
-    add rsp, 328; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_strEqWalk progbits alloc exec nowrite align=16
-global std_testing_strEqWalk
-; ==============================
-; Function: std_testing_strEqWalk
-std_testing_strEqWalk:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 184; 分配局部变量空间(184字节, 含对齐)
-    mov QWORD [rbp-64], RDI; 保存参数0槽0到栈
-    mov QWORD [rbp-56], RSI; 保存参数0槽1到栈
-    mov QWORD [rbp-48], RDX; 保存参数0槽2到栈
-    mov QWORD [rbp-88], RCX; 保存参数1槽0到栈
-    mov QWORD [rbp-80], R8; 保存参数1槽1到栈
-    mov QWORD [rbp-72], R9; 保存参数1槽2到栈
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-96], RAX
-; 设置变量aLen
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_len
-    mov QWORD[rbp-104], RAX
-; 设置变量bLen
-    mov RAX, QWORD[rbp-96]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-104]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_162
-    if_162:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_testing_strEqWalk
-    end_if_162:
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-64]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-64+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-64+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-112], RAX
-; 设置变量ap
-    sub rsp, 32; register args buffer
-    mov RAX, QWORD [rbp-88]
-    mov QWORD [rsp+0+0], RAX
-    mov RAX, QWORD [rbp-88+8]
-    mov QWORD [rsp+0+8], RAX
-    mov RAX, QWORD [rbp-88+16]
-    mov QWORD [rsp+0+16], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    mov RSI, QWORD [rsp+8]; 装载参数0
-    mov RDX, QWORD [rsp+16]; 装载参数0
-    add rsp, 32; 释放寄存器参数 buffer
-    call std_strings_toCstring
-    mov QWORD[rbp-120], RAX
-; 设置变量bp
-    mov QWORD[rbp-128], 0
-; 设置变量i
-
-
-
-
-    for_42: ; for循环开始
-    mov RAX, QWORD[rbp-128]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-96]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    jnb for_42_end
-    for_42_body:
-
-
-    mov RAX, QWORD[rbp-112]
-    mov RBX, QWORD[rbp-128]
-    mov QWORD[rbp-136], RAX
-    add QWORD[rbp-136], RBX
-; 设置变量_pa
-    mov RAX, QWORD[rbp-120]
-    mov RBX, QWORD[rbp-128]
-    mov QWORD[rbp-144], RAX
-    add QWORD[rbp-144], RBX
-; 设置变量_pb
-    mov RAX, QWORD[rbp-136]
-    movzx RAX, BYTE [RAX]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RAX, QWORD[rbp-144]
-    movzx RCX, BYTE [RAX]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_163
-    if_163:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_testing_strEqWalk
-    end_if_163:
-    mov RAX, QWORD[rbp-128]
-    mov RBX, 1
-    mov QWORD[rbp-128], RAX
-    add QWORD[rbp-128], RBX
-; 设置变量i
-    for_42_continue:
-
-
-    jmp for_42; for循环
-    for_42_end: ; for循环结束
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_testing_strEqWalk
-    func_end_std_testing_strEqWalk:
-    add rsp, 184; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_testing_assertEq progbits alloc exec nowrite align=16
-global std_testing_assertEq
-; ==============================
-; Function: std_testing_assertEq
-std_testing_assertEq:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD [rbp-56], RSI; 保存参数1到栈
-    mov RAX, QWORD[rbp-48]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, QWORD[rbp-56]
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_164
-    if_164:
-    mov RAX, QWORD[rel __global_std_testing_assertFailCnt]
-    mov RBX, 1
-    mov QWORD[rel __global_std_testing_assertFailCnt], RAX
-    add QWORD[rel __global_std_testing_assertFailCnt], RBX
-; 设置变量assertFailCnt
-    mov RAX, 0
-; return值存入RAX
-    jmp func_end_std_testing_assertEq
-    end_if_164:
-    mov RAX, 1
-; return值存入RAX
-    jmp func_end_std_testing_assertEq
-    func_end_std_testing_assertEq:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_slices_make__T__int progbits alloc exec nowrite align=16
-global std_slices_make__T__int
-; ==============================
-; Function: std_slices_make__T__int
-std_slices_make__T__int:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 120; 分配局部变量空间(120字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov QWORD[rbp-56], 8
-; 设置变量elemSize
-    sub rsp, 16; register args buffer
-    mov QWORD [rsp+0], 24
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[rbp-64], RAX
-; 设置变量s
-    mov RAX, QWORD[rbp-64]
-    mov QWORD[rbp-72], RAX
-; 设置变量hdr
-    mov RAX, QWORD[rbp-48]
-    mov RBX, QWORD[rbp-56]
-    mov QWORD[rbp-80], RAX
-    push RAX; 保护RAX(左子结果)
-    push RBX; 暂存乘数
-    mov RAX, QWORD[rbp-80]
-    imul RAX, qword [rsp]
-    mov QWORD[rbp-80], RAX
-    add rsp, 8; 清理乘数
-    pop RAX; 恢复RAX(左子结果)
-; 设置变量bufSize
-    mov RBX, QWORD [RBP-72]
-    test RBX, RBX
-    je _panic_nil_deref
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-80]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_malloc
-    mov QWORD[RBX], RAX
-; 设置变量hdr.p
-    mov RBX, QWORD [RBP-72]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov QWORD[RBX+8], 0
-; 设置变量hdr.n
-    mov RBX, QWORD [RBP-72]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[RBX+16], RAX
-; 设置变量hdr.c
-    mov RAX, QWORD[rbp-64]
-; return值存入RAX
-    jmp func_end_std_slices_make__T__int
-    func_end_std_slices_make__T__int:
-    add rsp, 120; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_slices_len__T__int progbits alloc exec nowrite align=16
-global std_slices_len__T__int
-; ==============================
-; Function: std_slices_len__T__int
-std_slices_len__T__int:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-56], RAX
-; 设置变量sAddr
-    mov RAX, QWORD[rbp-56]
-    mov QWORD[rbp-64], RAX
-; 设置变量hdr
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX+8]
-; return值存入RAX
-    jmp func_end_std_slices_len__T__int
-    func_end_std_slices_len__T__int:
-    add rsp, 104; 清理局部变量 + 对齐
-    pop R15; 恢复R15
-    pop R14; 恢复R14
-    pop R13; 恢复R13
-    pop R12; 恢复R12
-    pop RBX; 恢复RBX
-    leave; 恢复栈帧
-    ret
-
-; ======函数完毕=======
-
-
-section .text.std_slices_free__T__int progbits alloc exec nowrite align=16
-global std_slices_free__T__int
-; ==============================
-; Function: std_slices_free__T__int
-std_slices_free__T__int:
-    push rbp
-    mov rbp, rsp
-    push RBX; 保存RBX
-    push R12; 保存R12
-    push R13; 保存R13
-    push R14; 保存R14
-    push R15; 保存R15
-    sub rsp, 104; 分配局部变量空间(104字节, 含对齐)
-    mov QWORD [rbp-48], RDI; 保存参数0到栈
-    mov RAX, QWORD[rbp-48]
-    mov QWORD[rbp-56], RAX
-; 设置变量sAddr
-    mov RAX, QWORD[rbp-56]
-    mov QWORD[rbp-64], RAX
-; 设置变量hdr
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX]
-; left operand
-    mov R12, RAX; 保存左操作数到callee-save
-    mov RCX, 0
-; right operand
-    mov RAX, R12; 恢复左操作数
-    cmp RAX, RCX
-    je end_if_165
-    if_165:
-    sub rsp, 16; register args buffer
-    mov RBX, QWORD [RBP-64]
-    test RBX, RBX
-    je _panic_nil_deref
-    mov RAX, QWORD [RBX]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_free
-    end_if_165:
-    sub rsp, 16; register args buffer
-    mov RAX, QWORD[rbp-56]
-    mov QWORD [rsp+0], RAX
-; 参数0
-    mov RDI, QWORD [rsp+0]; 装载参数0
-    add rsp, 16; 释放寄存器参数 buffer
-    call std_memory_free
-    func_end_std_slices_free__T__int:
-    add rsp, 104; 清理局部变量 + 对齐
     pop R15; 恢复R15
     pop R14; 恢复R14
     pop R13; 恢复R13
@@ -11981,5 +8336,13 @@ section .data._oob_msg progbits alloc nowrite align=1
     _nil_msg db "nil pointer dereference", 10
     _nil_msg_len equ $ - _nil_msg
 section .data
-    str_1 db ` got `, 0
+    str_1 db `ab`, 0
     str_1_len equ $ - str_1
+    str_2 db `cd`, 0
+    str_2_len equ $ - str_2
+    str_3 db `abcd`, 0
+    str_3_len equ $ - str_3
+    str_4 db `zzz`, 0
+    str_4_len equ $ - str_4
+    str_5 db `abc`, 0
+    str_5_len equ $ - str_5
