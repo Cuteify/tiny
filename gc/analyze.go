@@ -1274,14 +1274,15 @@ func exprAllocates(e *parser.Expression) bool {
 		if e.Call.IsBuiltinNewAlloc() {
 			return true
 		}
-		// 用摘要键解析悬空调用（跨文件/跨包调用在 gc.Analyze 时 Func 可能尚未绑定）
-		// 只有 RetFresh 才表示返回值归调用方所有；RetUnknown（如
-		// strings.view 通过指针写入局部容器）绝不能当作本帧分配，
-		// 否则调用方会释放参数/静态缓冲区。
-		if fs := callSummary(e.Call); fs != nil && fs.RetOwned && fs.RetKind == RetFresh {
-			return true
+				// 用摘要键解析悬空调用（跨文件/跨包调用在 gc.Analyze 时 Func 可能尚未绑定）
+		// RetFresh 直接是本帧分配；RetUnknown 仅在 condTempFreeable 启发式
+		// 判定安全时视为分配（覆盖 strings.toString/mk 等 raw-malloc 构造）。
+		if fs := callSummary(e.Call); fs != nil && fs.RetOwned {
+			if fs.RetKind == RetFresh || condTempFreeable(fs) {
+				return true
+			}
 		}
-		for _, ag := range e.Call.Args {
+for _, ag := range e.Call.Args {
 			if ag != nil && exprAllocates(ag.Value) {
 				return true
 			}
@@ -1419,10 +1420,18 @@ func callSummary(cb *parser.CallBlock) *FnSummary {
 // pureBuiltinEscapes 纯内建参数逃逸摘要：只读实参，不保存/返回地址。
 // unsafe.cast 是编译器 no-op 内建（位级重解释，从不逃逸实参）：不入清单时，
 // 含 cast 的函数被 LLR 整体禁用帧内释放（CallsAny 非空即早退）。
+// 内建数值/bool/byte/ptr 类型转换同样纯且不逃逸；f64(x) 之类的 cast
+// 之前被当成未知调用写入 CallsAny，导致整个函数 LLR 早退。
 func pureBuiltinEscapes(name string) (Escape, bool) {
 	switch name {
 	case "len", "cap", "sizeof", "print", "println", "panic", "unsafe.cast":
 		return EscNone, true
+	}
+	if t := typeSys.GetSystemType(name); t != nil {
+		switch t.Type() {
+		case "int", "uint", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "bool", "byte", "ptr":
+			return EscNone, true
+		}
 	}
 	return EscNone, false
 }

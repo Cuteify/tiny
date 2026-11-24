@@ -2,6 +2,7 @@ package gc
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 
@@ -779,10 +780,12 @@ func scanStatements(body *parser.Node, st *llrState, fb *parser.FuncBlock, param
 					}
 				}
 				// Escape field/element results of owning type in return (e.g. ret node.left)
-				if rv.Left != nil && rv.Left.Var != nil && rv.Left.Var.Name != nil {
-					n := rv.Left.Var.Name.First()
-					if id, ok := st.bindings[n]; ok && st.objSite[id] != "" && !st.objEscaped[id] {
-						st.objEscaped[id] = true
+				if retOwns && rv.Left != nil && rv.Left.Var != nil && rv.Left.Var.Name != nil {
+					if rv.Left.Type != nil && owningType(rv.Left.Type) {
+						n := rv.Left.Var.Name.First()
+						if id, ok := st.bindings[n]; ok && st.objSite[id] != "" && !st.objEscaped[id] {
+							st.objEscaped[id] = true
+						}
 					}
 				}
 			}
@@ -1001,11 +1004,8 @@ func condTempFreeable(fs *FnSummary) bool {
 	if fs.RetEscape >= EscGlobal {
 		return false
 	}
-	for _, p := range fs.Params {
-		if p.Escape >= EscHeapObj {
-			return false
-		}
-	}
+	// Param escape does not taint return freeability when return does not
+	// alias/borrow any param (guarded above by RetAliasMask/RetBorrowMask).
 	return true
 }
 
@@ -1351,6 +1351,9 @@ func getRefObj(e *parser.Expression, st *llrState) ObjID {
 		return NilObj
 	}
 	if e.Var != nil && e.Var.Name != nil {
+		if len(e.Var.Name) != 1 {
+			return NilObj
+		}
 		n := e.Var.Name.First()
 		if id, ok := st.bindings[n]; ok {
 			return id
@@ -1428,6 +1431,7 @@ func markCallArgObjs(cb *parser.CallBlock, st *llrState, fb *parser.FuncBlock) {
 					if id, ok := st.bindings[n]; ok {
 						if esc > EscNone {
 							st.objEscaped[id] = true
+							if n=="t" { fmt.Fprintf(os.Stderr,"[escArg] id=%d name=%s\\n", id, n) }
 						}
 					}
 				}

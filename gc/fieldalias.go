@@ -43,7 +43,14 @@ func walkFieldAliases(fb *parser.FuncBlock, body *parser.Node, mark func(*typeSy
 				ref := vb.Value.Var.Name
 				if len(ref) > 1 && ref.First() == base {
 					if st := structTypeOfVar(fb, body, base); st != nil {
-						mark(st)
+						st.Layout()
+						lf := st.Field(vb.Name.Last())
+						rf := st.Field(ref.Last())
+						// 仅 owning/含 owning 字段的字段互赋才有双释放风险；int/bool 等值拷贝无害。
+						if (lf != nil && (owningType(lf.Type) || copiesFields(lf.Type))) ||
+							(rf != nil && (owningType(rf.Type) || copiesFields(rf.Type))) {
+							mark(st)
+						}
 					}
 				}
 			}
@@ -99,3 +106,5 @@ func structTypeOfVar(fb *parser.FuncBlock, body *parser.Node, name string) *type
 	walk(body)
 	return found
 }
+
+func IsFieldAliasStruct(name string) bool { return fieldAliasStructs[name] }
