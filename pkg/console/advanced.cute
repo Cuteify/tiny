@@ -50,7 +50,10 @@ const CURSOR_LEFT: int = 68
 
 // writeStr 向 stdout 写入字符串
 fn writeStr(s: string) int {
-    ret syscall.write(STDOUT_FD, strings.toCstring(s), strings.len(s))
+    var cstr: uint = strings.toCstring(s)
+    var n: i32 = syscall.write(STDOUT_FD, unsafe.cast[ptr](cstr), strings.len(s))
+    memory.free(unsafe.cast[ptr](cstr))
+    ret unsafe.cast[int](n)
 }
 
 // bufAndStr 构建字符串并输出，释放缓冲区
@@ -483,6 +486,7 @@ fn setWindowTitle(title: string) int {
     var titlePtr: ptr = strings.toCstring(title)
     var titleLen: int = strings.len(title)
     strings.bufCopyFrom(buf, 4, titlePtr, titleLen)
+    memory.free(titlePtr)
     strings.bufSetByte(buf, 4 + titleLen, 7)
     ret bufAndStr(buf, 4 + titleLen + 1)
 }

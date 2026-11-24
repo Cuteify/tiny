@@ -13,7 +13,10 @@ const O_TRUNC: i32 = 512
 const O_APPEND: i32 = 1024
 
 fn open(path: string, flags: i32, mode: u32) i32 {
-    ret syscall.open(strings.toCstring(path), flags, mode)
+    var cpath: uint = strings.toCstring(path)
+    var fd: i32 = syscall.open(unsafe.cast[ptr](cpath), flags, mode)
+    memory.free(unsafe.cast[ptr](cpath))
+    ret fd
 }
 
 fn read(fd: i32, buf: *u64, count: u64) i32 {
@@ -33,19 +36,33 @@ fn seek(fd: i32, offset: i64, whence: i32) i64 {
 }
 
 fn mkdir(path: string, mode: u32) i32 {
-    ret syscall.mkdir(strings.toCstring(path), mode)
+    var cpath: uint = strings.toCstring(path)
+    var r: i32 = syscall.mkdir(unsafe.cast[ptr](cpath), mode)
+    memory.free(unsafe.cast[ptr](cpath))
+    ret r
 }
 
 fn remove(path: string) i32 {
-    ret syscall.unlink(strings.toCstring(path))
+    var cpath: uint = strings.toCstring(path)
+    var r: i32 = syscall.unlink(unsafe.cast[ptr](cpath))
+    memory.free(unsafe.cast[ptr](cpath))
+    ret r
 }
 
 fn rename(old: string, new: string) i32 {
-    ret syscall.rename(strings.toCstring(old), strings.toCstring(new))
+    var cold: uint = strings.toCstring(old)
+    var cnew: uint = strings.toCstring(new)
+    var r: i32 = syscall.rename(unsafe.cast[ptr](cold), unsafe.cast[ptr](cnew))
+    memory.free(unsafe.cast[ptr](cold))
+    memory.free(unsafe.cast[ptr](cnew))
+    ret r
 }
 
 fn stat(path: string, statbuf: ptr) i32 {
-    ret syscall.stat(strings.toCstring(path), statbuf)
+    var cpath: uint = strings.toCstring(path)
+    var r: i32 = syscall.stat(unsafe.cast[ptr](cpath), statbuf)
+    memory.free(unsafe.cast[ptr](cpath))
+    ret r
 }
 
 fn fstat(fd: i32, statbuf: ptr) i32 {
@@ -53,7 +70,10 @@ fn fstat(fd: i32, statbuf: ptr) i32 {
 }
 
 fn create(path: string, mode: u32) i32 {
-    ret syscall.open(strings.toCstring(path), O_CREAT | O_TRUNC | O_WRONLY, mode)
+    var cpath: uint = strings.toCstring(path)
+    var fd: i32 = syscall.open(unsafe.cast[ptr](cpath), O_CREAT | O_TRUNC | O_WRONLY, mode)
+    memory.free(unsafe.cast[ptr](cpath))
+    ret fd
 }
 
 fn readFile(path: string) ptr {

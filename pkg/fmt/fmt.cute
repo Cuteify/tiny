@@ -46,6 +46,8 @@ fn appendInt(s: string, n: int) string {
     }
     var _p5: *u8 = buf + totalLen
     *_p5 = unsafe.cast[u8](0)
+    memory.free(sPtr)
+    memory.free(nPtr)
     ret strings.view(buf, totalLen, totalLen)
 }
 
@@ -75,6 +77,8 @@ fn appendStr(s: string, suffix: string) string {
     }
     var _p10: *u8 = buf + totalLen
     *_p10 = unsafe.cast[u8](0)
+    memory.free(sPtr)
+    memory.free(nPtr)
     ret strings.view(buf, totalLen, totalLen)
 }
 
@@ -96,5 +100,6 @@ fn appendChar(s: string, c: int) string {
     *_p13 = unsafe.cast[u8](c)
     var _p14: *u8 = buf + sLen + 1
     *_p14 = unsafe.cast[u8](0)
+    memory.free(sPtr)
     ret strings.view(buf, sLen + 1, sLen + 1)
 }

@@ -9,7 +9,10 @@ import "std:syscall"
 
 // print 打印字符串到标准输出，返回写出的字节数
 fn print(s: string) i32 {
-    ret syscall.write(1, strings.toCstring(s), strings.len(s))
+    var cstr: uint = strings.toCstring(s)
+    var n: i32 = syscall.write(1, unsafe.cast[ptr](cstr), strings.len(s))
+    memory.free(unsafe.cast[ptr](cstr))
+    ret n
 }
 
 // println 打印字符串并换行，返回写出的字节数（含换行）

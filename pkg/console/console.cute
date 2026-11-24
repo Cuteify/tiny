@@ -11,7 +11,10 @@ const STDERR: i32 = 2
 
 // 打印字符串（返回写出的字节数）
 fn print(s:string) i32 {
-    ret syscall.write(STDOUT, strings.toCstring(s), strings.len(s))
+    var cstr: uint = strings.toCstring(s)
+    var n: i32 = syscall.write(STDOUT, unsafe.cast[ptr](cstr), strings.len(s))
+    memory.free(unsafe.cast[ptr](cstr))
+    ret n
 }
 
 // 打印字符串并换行（返回写出的字节数，含换行）

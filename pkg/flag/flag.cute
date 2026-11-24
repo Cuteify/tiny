@@ -128,11 +128,19 @@ fn printUsage() {
     var k: uint = 0
     for ; k < defaultSet.count; {
         // 打印标志名
-        syscall.write(1, strings.toCstring(f.name), strings.len(f.name))
-        syscall.write(1, strings.toCstring("  "), 2)
+        var c1: uint = strings.toCstring(f.name)
+        syscall.write(1, unsafe.cast[ptr](c1), strings.len(f.name))
+        memory.free(unsafe.cast[ptr](c1))
+        var c2: uint = strings.toCstring("  ")
+        syscall.write(1, unsafe.cast[ptr](c2), 2)
+        memory.free(unsafe.cast[ptr](c2))
         // 打印使用说明
-        syscall.write(1, strings.toCstring(f.usage), strings.len(f.usage))
-        syscall.write(1, strings.toCstring("\n"), 1)
+        var c3: uint = strings.toCstring(f.usage)
+        syscall.write(1, unsafe.cast[ptr](c3), strings.len(f.usage))
+        memory.free(unsafe.cast[ptr](c3))
+        var c4: uint = strings.toCstring("\n")
+        syscall.write(1, unsafe.cast[ptr](c4), 1)
+        memory.free(unsafe.cast[ptr](c4))
         f = f.next
         k = k + 1
     }
